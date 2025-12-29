@@ -3,7 +3,9 @@ import type { IChunkCoordinate } from '../interfaces/ICoordinates.ts'
 import { createChunkKey, type ChunkKey } from '../interfaces/ICoordinates.ts'
 import { worldToChunk } from '../coordinates/CoordinateUtils.ts'
 import { GenerationConfig, type IGenerationConfig } from './GenerationConfig.ts'
+import { BiomeGenerator } from './BiomeGenerator.ts'
 import { PlainsGenerator } from './biomes/PlainsGenerator.ts'
+import { GrassyHillsGenerator } from './biomes/GrassyHillsGenerator.ts'
 
 interface QueuedChunk {
   coordinate: IChunkCoordinate
@@ -19,7 +21,7 @@ interface QueuedChunk {
 export class WorldGenerator {
   private readonly world: WorldManager
   private readonly config: GenerationConfig
-  private readonly generator: PlainsGenerator
+  private readonly generator: BiomeGenerator
 
   private readonly chunkQueue: QueuedChunk[] = []
   private readonly generatingChunks: Set<ChunkKey> = new Set()
@@ -33,7 +35,16 @@ export class WorldGenerator {
   constructor(world: WorldManager, config?: Partial<IGenerationConfig>) {
     this.world = world
     this.config = new GenerationConfig(config)
-    this.generator = new PlainsGenerator(this.config)
+    this.generator = this.createGenerator()
+  }
+
+  private createGenerator(): BiomeGenerator {
+    switch (this.config.biome) {
+      case 'plains':
+        return new PlainsGenerator(this.config)
+      case 'grassy-hills':
+        return new GrassyHillsGenerator(this.config)
+    }
   }
 
   /**
