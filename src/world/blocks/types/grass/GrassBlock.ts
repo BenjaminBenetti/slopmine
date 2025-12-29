@@ -1,8 +1,10 @@
 import * as THREE from 'three'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
+import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { DirtBlockItem } from '../../../../items/blocks/dirt/DirtBlockItem.ts'
 import grassTexUrl from './assets/grass.webp'
 import dirtTexUrl from './assets/dirt.webp'
 import grassDirtTexUrl from './assets/grass-dirt.webp'
@@ -22,7 +24,7 @@ export class GrassBlock extends SolidBlock {
     isOpaque: true,
     isSolid: true,
     isLiquid: false,
-    hardness: 0.6,
+    hardness: 0.3,
     lightLevel: 0,
     lightBlocking: 15,
   }
@@ -37,5 +39,10 @@ export class GrassBlock extends SolidBlock {
       grassDirtMaterial, // +Z (front)
       grassDirtMaterial, // -Z (back)
     ]
+  }
+
+  getDrops(): IItem[] {
+    // Grass drops dirt (like Minecraft)
+    return [new DirtBlockItem()]
   }
 }

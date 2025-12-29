@@ -1,4 +1,5 @@
 import type * as THREE from 'three'
+import type { IItem } from '../../items/Item.ts'
 
 /**
  * Block ID type - uint16 supports 0-65535 block types.
@@ -68,6 +69,12 @@ export interface IBlock {
    * Called when a neighbor block changes.
    */
   onNeighborChange?(world: IWorld, x: bigint, y: bigint, z: bigint, face: BlockFace): void
+
+  /**
+   * Get items dropped when this block is broken.
+   * Block handles any random drop logic internally.
+   */
+  getDrops?(): IItem[]
 
   /**
    * Create a Three.js mesh for this block.

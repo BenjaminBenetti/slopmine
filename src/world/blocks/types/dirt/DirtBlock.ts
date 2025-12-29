@@ -1,8 +1,10 @@
 import * as THREE from 'three'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
+import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { DirtBlockItem } from '../../../../items/blocks/dirt/DirtBlockItem.ts'
 import dirtTexUrl from './assets/dirt.webp'
 
 const dirtTexture = loadBlockTexture(dirtTexUrl)
@@ -15,12 +17,16 @@ export class DirtBlock extends SolidBlock {
     isOpaque: true,
     isSolid: true,
     isLiquid: false,
-    hardness: 0.5,
+    hardness: 0.2,
     lightLevel: 0,
     lightBlocking: 15,
   }
 
   protected getMaterials(): THREE.Material {
     return dirtMaterial
+  }
+
+  getDrops(): IItem[] {
+    return [new DirtBlockItem()]
   }
 }

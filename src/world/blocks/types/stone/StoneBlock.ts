@@ -1,8 +1,10 @@
 import * as THREE from 'three'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
+import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { StoneBlockItem } from '../../../../items/blocks/stone/StoneBlockItem.ts'
 import stoneTexUrl from './assets/stone.webp'
 
 const stoneTexture = loadBlockTexture(stoneTexUrl)
@@ -15,12 +17,16 @@ export class StoneBlock extends SolidBlock {
     isOpaque: true,
     isSolid: true,
     isLiquid: false,
-    hardness: 1.5,
+    hardness: 2.0,
     lightLevel: 0,
     lightBlocking: 15,
   }
 
   protected getMaterials(): THREE.Material {
     return stoneMaterial
+  }
+
+  getDrops(): IItem[] {
+    return [new StoneBlockItem()]
   }
 }

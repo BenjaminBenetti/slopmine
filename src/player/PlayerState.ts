@@ -154,6 +154,13 @@ export interface PlayerInventoryState {
 
 export interface IPlayerState {
   readonly inventory: PlayerInventoryState
+
+  /**
+   * Try to add an item to the player's inventory.
+   * Tries toolbar first, then main inventory.
+   * @returns true if item was added, false if inventory is full
+   */
+  addItem(item: IItem): boolean
 }
 
 /**
@@ -167,6 +174,32 @@ export class PlayerState implements IPlayerState {
       toolbar: new ToolbarState(toolbarSize),
       inventory: new InventoryGridState(inventoryWidth, inventoryHeight),
     }
+  }
+
+  /**
+   * Try to add an item to the player's inventory.
+   * Tries toolbar first, then main inventory.
+   * @returns true if item was added, false if inventory is full
+   */
+  addItem(item: IItem): boolean {
+    // Try toolbar first
+    for (let i = 0; i < this.inventory.toolbar.size; i++) {
+      if (this.inventory.toolbar.getItem(i) === null) {
+        this.inventory.toolbar.setItem(i, item)
+        return true
+      }
+    }
+
+    // Try main inventory
+    const invSize = this.inventory.inventory.slots.length
+    for (let i = 0; i < invSize; i++) {
+      if (this.inventory.inventory.getItem(i) === null) {
+        this.inventory.inventory.setItem(i, item)
+        return true
+      }
+    }
+
+    return false
   }
 }
 

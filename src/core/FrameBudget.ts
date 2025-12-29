@@ -9,7 +9,7 @@ export class FrameBudget {
   /**
    * @param budgetMs Time budget per frame in milliseconds (default 2ms works for 240Hz+)
    */
-  constructor(budgetMs: number = 2) {
+  constructor(budgetMs: number = 1) {
     this.budgetMs = budgetMs
   }
 

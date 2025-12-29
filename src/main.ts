@@ -8,6 +8,7 @@ import {
 import { PlayerState } from './player/PlayerState.ts'
 import { ToolbarInputHandler } from './player/ToolbarInput.ts'
 import { InventoryInputHandler } from './player/InventoryInput.ts'
+import { BlockInteraction } from './player/BlockInteraction.ts'
 import { createCrosshairUI } from './ui/Crosshair.ts'
 import { createToolbarUI } from './ui/Toolbar.ts'
 import { createInventoryUI } from './ui/Inventory.ts'
@@ -132,6 +133,15 @@ const skybox = new Skybox()
 skybox.setSunPosition(lighting.sun.position)
 skybox.addTo(renderer.scene)
 
+// Block interaction system (mining)
+const blockInteraction = new BlockInteraction(
+  renderer.camera,
+  world,
+  playerState,
+  renderer.scene,
+  renderer.renderer.domElement
+)
+
 let frameCpuStart = 0
 let frameDeltaTime = 0
 
@@ -141,6 +151,7 @@ const gameLoop = new GameLoop({
     frameDeltaTime = deltaTime
     cameraControls.update(deltaTime)
     physicsEngine.update(deltaTime)
+    blockInteraction.update(deltaTime)
 
     // Update world generation based on camera position
     worldGenerator.update(
