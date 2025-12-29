@@ -32,6 +32,8 @@ export { WorldManager } from './WorldManager.ts'
 export { StoneBlock } from './blocks/types/stone/StoneBlock.ts'
 export { DirtBlock } from './blocks/types/dirt/DirtBlock.ts'
 export { GrassBlock } from './blocks/types/grass/GrassBlock.ts'
+export { OakLogBlock } from './blocks/types/oak_log/OakLogBlock.ts'
+export { OakLeavesBlock } from './blocks/types/oak_leaves/OakLeavesBlock.ts'
 
 // Block registration
 export { registerDefaultBlocks } from './blocks/registerDefaultBlocks.ts'

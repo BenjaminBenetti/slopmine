@@ -1,0 +1,120 @@
+export interface FpsCounterOptions {
+  updateIntervalMs?: number
+  color?: string
+  fontSize?: string
+}
+
+export interface FrameMetrics {
+  deltaTime: number
+  cpuTime: number
+}
+
+export interface FpsCounterUI {
+  readonly element: HTMLDivElement
+  update(metrics: FrameMetrics): void
+  show(): void
+  hide(): void
+  toggle(): boolean
+  readonly visible: boolean
+  destroy(): void
+}
+
+/**
+ * Creates a performance stats display fixed at the top-right corner of the screen.
+ * Shows FPS, frame time, and CPU busy time.
+ * Implemented as a simple DOM overlay above the WebGL canvas.
+ */
+export function createFpsCounterUI(
+  parent: HTMLElement = document.body,
+  options: FpsCounterOptions = {}
+): FpsCounterUI {
+  const updateInterval = options.updateIntervalMs ?? 500
+  const color = options.color ?? '#ffffff'
+  const fontSize = options.fontSize ?? '13px'
+
+  const el = document.createElement('div')
+  el.style.position = 'fixed'
+  el.style.top = '10px'
+  el.style.right = '10px'
+  el.style.fontFamily = 'monospace'
+  el.style.fontSize = fontSize
+  el.style.color = color
+  el.style.textShadow = '0 0 4px rgba(0, 0, 0, 0.8)'
+  el.style.pointerEvents = 'none'
+  el.style.zIndex = '30'
+  el.style.userSelect = 'none'
+  el.style.textAlign = 'right'
+  el.style.lineHeight = '1.4'
+  el.innerHTML = 'FPS: --<br>Frame: --<br>CPU: --'
+
+  parent.appendChild(el)
+
+  let isVisible = true
+
+  let frameCount = 0
+  let elapsedTime = 0
+  let totalCpuTime = 0
+
+  // Target frame budget for 60 FPS
+  const frameBudgetMs = 16.67
+
+  return {
+    element: el,
+
+    update(metrics: FrameMetrics): void {
+      frameCount++
+      const deltaMs = metrics.deltaTime * 1000
+      elapsedTime += deltaMs
+      totalCpuTime += metrics.cpuTime
+
+      if (elapsedTime >= updateInterval) {
+        const fps = Math.round((frameCount / elapsedTime) * 1000)
+        const avgFrameTime = elapsedTime / frameCount
+        const avgCpuTime = totalCpuTime / frameCount
+        const headroom = Math.max(0, frameBudgetMs - avgCpuTime)
+        const cpuPercent = Math.min(100, (avgCpuTime / frameBudgetMs) * 100)
+
+        el.innerHTML = [
+          `FPS: ${fps}`,
+          `Frame: ${avgFrameTime.toFixed(1)}ms`,
+          `CPU: ${avgCpuTime.toFixed(2)}ms (${cpuPercent.toFixed(0)}%)`,
+          `Headroom: ${headroom.toFixed(1)}ms`,
+        ].join('<br>')
+
+        frameCount = 0
+        elapsedTime = 0
+        totalCpuTime = 0
+      }
+    },
+
+    show(): void {
+      el.style.display = 'block'
+      isVisible = true
+    },
+
+    hide(): void {
+      el.style.display = 'none'
+      isVisible = false
+    },
+
+    toggle(): boolean {
+      if (isVisible) {
+        this.hide()
+      } else {
+        this.show()
+      }
+      return isVisible
+    },
+
+    get visible(): boolean {
+      return isVisible
+    },
+
+    destroy(): void {
+      if (el.parentElement === parent) {
+        parent.removeChild(el)
+      }
+    },
+  }
+}
+

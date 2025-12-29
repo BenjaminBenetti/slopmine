@@ -7,4 +7,6 @@ export enum BlockIds {
   STONE = 1,
   DIRT = 2,
   GRASS = 3,
+  OAK_LOG = 4,
+  OAK_LEAVES = 5,
 }

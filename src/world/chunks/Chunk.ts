@@ -103,6 +103,39 @@ export class Chunk implements IChunk {
     this._dirty = true
   }
 
+  /**
+   * Iterate over all blocks in the chunk.
+   * Callback receives local coordinates and block ID.
+   */
+  forEachBlock(callback: (x: number, y: number, z: number, blockId: BlockId) => void): void {
+    for (let y = 0; y < CHUNK_HEIGHT; y++) {
+      for (let z = 0; z < CHUNK_SIZE_Z; z++) {
+        for (let x = 0; x < CHUNK_SIZE_X; x++) {
+          const blockId = this.blocks[localToIndex(x, y, z)]
+          callback(x, y, z, blockId)
+        }
+      }
+    }
+  }
+
+  /**
+   * Get highest non-air block Y at local x,z position.
+   * Returns null if no solid blocks exist at this column.
+   */
+  getHighestBlockAt(x: number, z: number): number | null {
+    if (x < 0 || x >= CHUNK_SIZE_X || z < 0 || z >= CHUNK_SIZE_Z) {
+      return null
+    }
+
+    for (let y = CHUNK_HEIGHT - 1; y >= 0; y--) {
+      const blockId = this.blocks[localToIndex(x, y, z)]
+      if (blockId !== BlockIds.AIR) {
+        return y
+      }
+    }
+    return null
+  }
+
   dispose(): void {
     // Uint16Array will be garbage collected
   }
