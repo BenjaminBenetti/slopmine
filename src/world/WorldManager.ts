@@ -5,7 +5,7 @@ import { worldToChunk, worldToLocal, localToWorld } from './coordinates/Coordina
 import { ChunkManager, type ChunkManagerConfig } from './chunks/ChunkManager.ts'
 import { BlockRegistry, getBlock } from './blocks/BlockRegistry.ts'
 import { Chunk } from './chunks/Chunk.ts'
-import { AIR_BLOCK_ID } from './interfaces/IBlock.ts'
+import { BlockIds } from './blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT } from './interfaces/IChunk.ts'
 
 /**
@@ -47,7 +47,7 @@ export class WorldManager {
     const chunk = this.chunkManager.getChunk(chunkCoord)
 
     if (!chunk) {
-      return AIR_BLOCK_ID
+      return BlockIds.AIR
     }
 
     const local = worldToLocal(world)
@@ -203,7 +203,7 @@ export class WorldManager {
           const blockId = chunk.getBlockId(localX, localY, localZ)
 
           // Skip air blocks
-          if (blockId === AIR_BLOCK_ID) continue
+          if (blockId === BlockIds.AIR) continue
 
           // Get the block type and create its mesh
           const block = getBlock(blockId)

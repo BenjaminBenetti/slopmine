@@ -1,7 +1,8 @@
 import { registerBlock } from './BlockRegistry.ts'
-import { StoneBlock, STONE_BLOCK_ID } from './types/StoneBlock.ts'
-import { DirtBlock, DIRT_BLOCK_ID } from './types/DirtBlock.ts'
-import { GrassBlock, GRASS_BLOCK_ID } from './types/GrassBlock.ts'
+import { BlockIds } from './BlockIds.ts'
+import { StoneBlock } from './types/stone/StoneBlock.ts'
+import { DirtBlock } from './types/dirt/DirtBlock.ts'
+import { GrassBlock } from './types/grass/GrassBlock.ts'
 
 /**
  * Register all default block types.
@@ -10,7 +11,7 @@ import { GrassBlock, GRASS_BLOCK_ID } from './types/GrassBlock.ts'
 export function registerDefaultBlocks(): void {
   registerBlock({
     properties: {
-      id: STONE_BLOCK_ID,
+      id: BlockIds.STONE,
       name: 'stone',
       isOpaque: true,
       isSolid: true,
@@ -24,7 +25,7 @@ export function registerDefaultBlocks(): void {
 
   registerBlock({
     properties: {
-      id: DIRT_BLOCK_ID,
+      id: BlockIds.DIRT,
       name: 'dirt',
       isOpaque: true,
       isSolid: true,
@@ -38,7 +39,7 @@ export function registerDefaultBlocks(): void {
 
   registerBlock({
     properties: {
-      id: GRASS_BLOCK_ID,
+      id: BlockIds.GRASS,
       name: 'grass',
       isOpaque: true,
       isSolid: true,

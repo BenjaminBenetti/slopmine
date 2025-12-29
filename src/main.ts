@@ -6,14 +6,14 @@ import {
 	} from './player/FirstPersonCameraControls.ts'
 import { PlayerState } from './player/PlayerState.ts'
 import { ToolbarInputHandler } from './player/ToolbarInput.ts'
+import { InventoryInputHandler } from './player/InventoryInput.ts'
 import { createCrosshairUI } from './ui/Crosshair.ts'
 import { createToolbarUI } from './ui/Toolbar.ts'
+import { createInventoryUI } from './ui/Inventory.ts'
 import {
   WorldManager,
   registerDefaultBlocks,
-  STONE_BLOCK_ID,
-  DIRT_BLOCK_ID,
-  GRASS_BLOCK_ID,
+  BlockIds,
 } from './world/index.ts'
 
 // Initialize world system
@@ -28,6 +28,11 @@ const playerState = new PlayerState(10)
 createCrosshairUI()
 const toolbarUI = createToolbarUI(undefined, {
 	  slotCount: playerState.inventory.toolbar.size,
+})
+
+const inventoryUI = createInventoryUI(undefined, {
+  columns: playerState.inventory.inventory.width,
+  rows: playerState.inventory.inventory.height,
 })
 
 // First-person camera controls
@@ -47,14 +52,21 @@ const toolbarInput = new ToolbarInputHandler(
 	  renderer.renderer.domElement,
 	)
 
+const inventoryInput = new InventoryInputHandler(
+  renderer.renderer.domElement,
+  inventoryUI,
+  playerState.inventory.inventory,
+  cameraControls,
+)
+
 // Create world and place blocks
 const world = new WorldManager()
 world.loadChunk({ x: 0n, z: 0n })
 
 // Place 3 blocks in the world
-world.setBlock(0n, 0n, 0n, STONE_BLOCK_ID)
-world.setBlock(1n, 0n, 0n, DIRT_BLOCK_ID)
-world.setBlock(2n, 0n, 0n, GRASS_BLOCK_ID)
+world.setBlock(0n, 0n, 0n, BlockIds.STONE)
+world.setBlock(1n, 0n, 0n, BlockIds.DIRT)
+world.setBlock(2n, 0n, 0n, BlockIds.GRASS)
 
 // Render the world blocks to the scene
 world.render(renderer.scene)

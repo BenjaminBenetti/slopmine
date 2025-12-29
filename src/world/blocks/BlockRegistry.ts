@@ -1,6 +1,6 @@
 import type { BlockId, IBlock } from '../interfaces/IBlock.ts'
 import type { IBlockRegistry, IBlockRegistration } from '../interfaces/IBlockRegistry.ts'
-import { AIR_BLOCK_ID } from '../interfaces/IBlock.ts'
+import { BlockIds } from './BlockIds.ts'
 import { AirBlock } from './Block.ts'
 
 /**
@@ -16,7 +16,7 @@ export class BlockRegistry implements IBlockRegistry {
 
   private constructor() {
     this.airBlock = new AirBlock()
-    this.blocks.set(AIR_BLOCK_ID, this.airBlock)
+    this.blocks.set(BlockIds.AIR, this.airBlock)
     this.blocksByName.set('air', this.airBlock)
   }
 

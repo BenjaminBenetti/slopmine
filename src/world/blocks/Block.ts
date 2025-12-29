@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import type { IBlock, IBlockProperties, BlockFace, IWorld } from '../interfaces/IBlock.ts'
-import { AIR_BLOCK_ID } from '../interfaces/IBlock.ts'
+import { BlockIds } from './BlockIds.ts'
 
 /**
  * Shared geometry cache for reusable block shapes.
@@ -79,7 +79,7 @@ export abstract class Block implements IBlock {
    * Override for fully custom mesh creation.
    */
   createMesh(): THREE.Mesh | null {
-    if (!this.properties.isSolid && this.properties.id === AIR_BLOCK_ID) {
+    if (!this.properties.isSolid && this.properties.id === BlockIds.AIR) {
       return null
     }
     return new THREE.Mesh(this.getGeometry(), this.getMaterials())
@@ -117,7 +117,7 @@ export abstract class Block implements IBlock {
  */
 export class AirBlock extends Block {
   readonly properties: IBlockProperties = {
-    id: AIR_BLOCK_ID,
+    id: BlockIds.AIR,
     name: 'air',
     isOpaque: false,
     isSolid: false,
@@ -154,7 +154,7 @@ export abstract class SolidBlock extends Block {
  */
 export abstract class TransparentBlock extends Block {
   shouldRenderFace(_face: BlockFace, neighbor: IBlock): boolean {
-    if (neighbor.properties.id === AIR_BLOCK_ID) {
+    if (neighbor.properties.id === BlockIds.AIR) {
       return true
     }
 

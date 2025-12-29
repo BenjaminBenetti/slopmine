@@ -5,7 +5,8 @@ export type { IWorldCoordinate, IChunkCoordinate, ILocalCoordinate, ChunkKey } f
 export type { IBlockRegistry, IBlockRegistration } from './interfaces/IBlockRegistry.ts'
 
 // Constants and Enums
-export { AIR_BLOCK_ID, BlockFace } from './interfaces/IBlock.ts'
+export { BlockFace } from './interfaces/IBlock.ts'
+export { BlockIds } from './blocks/BlockIds.ts'
 export { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, CHUNK_VOLUME, ChunkState } from './interfaces/IChunk.ts'
 
 // Coordinate utilities
@@ -28,9 +29,9 @@ export { ChunkManager, type ChunkManagerConfig } from './chunks/ChunkManager.ts'
 export { WorldManager } from './WorldManager.ts'
 
 // Block types
-export { StoneBlock, STONE_BLOCK_ID } from './blocks/types/StoneBlock.ts'
-export { DirtBlock, DIRT_BLOCK_ID } from './blocks/types/DirtBlock.ts'
-export { GrassBlock, GRASS_BLOCK_ID } from './blocks/types/GrassBlock.ts'
+export { StoneBlock } from './blocks/types/stone/StoneBlock.ts'
+export { DirtBlock } from './blocks/types/dirt/DirtBlock.ts'
+export { GrassBlock } from './blocks/types/grass/GrassBlock.ts'
 
 // Block registration
 export { registerDefaultBlocks } from './blocks/registerDefaultBlocks.ts'

@@ -8,6 +8,7 @@ export interface FirstPersonCameraControlOptions {
 export interface CameraControls {
   update(deltaTime: number): void
   dispose(): void
+  setInputEnabled(enabled: boolean): void
 }
 
 /**
@@ -21,6 +22,8 @@ export class FirstPersonCameraControls implements CameraControls {
   private readonly domElement: HTMLElement
   private readonly movementSpeed: number
   private readonly lookSensitivity: number
+
+  private inputEnabled = true
 
   private yaw = 0
   private pitch = 0
@@ -74,7 +77,7 @@ export class FirstPersonCameraControls implements CameraControls {
   }
 
   private onMouseMove = (event: MouseEvent): void => {
-    if (!this.pointerLocked) return
+	    if (!this.pointerLocked || !this.inputEnabled) return
 
     const movementX = event.movementX || 0
     const movementY = event.movementY || 0
@@ -88,6 +91,8 @@ export class FirstPersonCameraControls implements CameraControls {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
+	    if (!this.inputEnabled) return
+
     switch (event.code) {
       case 'KeyW':
         this.moveForward = true
@@ -112,6 +117,8 @@ export class FirstPersonCameraControls implements CameraControls {
   }
 
   private onKeyUp = (event: KeyboardEvent): void => {
+	    if (!this.inputEnabled) return
+
     switch (event.code) {
       case 'KeyW':
         this.moveForward = false
@@ -149,6 +156,13 @@ export class FirstPersonCameraControls implements CameraControls {
     this.moveRight = false
     this.moveUp = false
     this.moveDown = false
+  }
+
+  setInputEnabled(enabled: boolean): void {
+    this.inputEnabled = enabled
+    if (!enabled) {
+      this.resetMovement()
+    }
   }
 
   update(deltaTime: number): void {

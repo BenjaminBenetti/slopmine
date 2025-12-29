@@ -6,8 +6,6 @@ import type * as THREE from 'three'
  */
 export type BlockId = number
 
-export const AIR_BLOCK_ID: BlockId = 0
-
 /**
  * Block face directions for neighbor lookups and face culling.
  */

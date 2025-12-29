@@ -1,13 +1,13 @@
-import type { Item } from '../items/Item.ts'
+import type { IItem } from '../items/Item.ts'
 
 export interface IToolbarState {
   readonly size: number
-  readonly slots: ReadonlyArray<Item | null>
+  readonly slots: ReadonlyArray<IItem | null>
   readonly selectedIndex: number
 
-  getItem(index: number): Item | null
+  getItem(index: number): IItem | null
   selectSlot(index: number): void
-  setItem(index: number, item: Item | null): void
+  setItem(index: number, item: IItem | null): void
   clearSlot(index: number): void
   moveItem(fromIndex: number, toIndex: number): void
 }
@@ -18,7 +18,7 @@ export interface IToolbarState {
  */
 export class ToolbarState implements IToolbarState {
   private readonly sizeInternal: number
-  private readonly slotsInternal: (Item | null)[]
+  private readonly slotsInternal: (IItem | null)[]
   private selectedIndexInternal = 0
 
   constructor(size = 10) {
@@ -26,14 +26,14 @@ export class ToolbarState implements IToolbarState {
       throw new Error('Toolbar size must be positive')
     }
     this.sizeInternal = size
-    this.slotsInternal = new Array<Item | null>(size).fill(null)
+    this.slotsInternal = new Array<IItem | null>(size).fill(null)
   }
 
   get size(): number {
     return this.sizeInternal
   }
 
-  get slots(): ReadonlyArray<Item | null> {
+  get slots(): ReadonlyArray<IItem | null> {
     return this.slotsInternal
   }
 
@@ -47,7 +47,7 @@ export class ToolbarState implements IToolbarState {
     }
   }
 
-  getItem(index: number): Item | null {
+  getItem(index: number): IItem | null {
     this.assertIndex(index)
     return this.slotsInternal[index]
   }
@@ -57,7 +57,76 @@ export class ToolbarState implements IToolbarState {
     this.selectedIndexInternal = index
   }
 
-  setItem(index: number, item: Item | null): void {
+  setItem(index: number, item: IItem | null): void {
+    this.assertIndex(index)
+    this.slotsInternal[index] = item
+  }
+
+  clearSlot(index: number): void {
+    this.setItem(index, null)
+  }
+
+  moveItem(fromIndex: number, toIndex: number): void {
+    this.assertIndex(fromIndex)
+    this.assertIndex(toIndex)
+    if (fromIndex === toIndex) return
+
+    const fromItem = this.slotsInternal[fromIndex]
+    const toItem = this.slotsInternal[toIndex]
+    this.slotsInternal[toIndex] = fromItem
+    this.slotsInternal[fromIndex] = toItem
+  }
+}
+
+export interface IInventoryGridState {
+  readonly width: number
+  readonly height: number
+  readonly slots: ReadonlyArray<IItem | null>
+
+  getItem(index: number): IItem | null
+  setItem(index: number, item: IItem | null): void
+  clearSlot(index: number): void
+  moveItem(fromIndex: number, toIndex: number): void
+}
+
+export class InventoryGridState implements IInventoryGridState {
+  private readonly widthInternal: number
+  private readonly heightInternal: number
+  private readonly slotsInternal: (IItem | null)[]
+
+  constructor(width: number, height: number) {
+    if (width <= 0 || height <= 0) {
+      throw new Error('Inventory dimensions must be positive')
+    }
+    this.widthInternal = width
+    this.heightInternal = height
+    this.slotsInternal = new Array<IItem | null>(width * height).fill(null)
+  }
+
+  get width(): number {
+    return this.widthInternal
+  }
+
+  get height(): number {
+    return this.heightInternal
+  }
+
+  get slots(): ReadonlyArray<IItem | null> {
+    return this.slotsInternal
+  }
+
+  private assertIndex(index: number): void {
+    if (!Number.isInteger(index) || index < 0 || index >= this.slotsInternal.length) {
+      throw new Error(`Inventory index out of range: ${index}`)
+    }
+  }
+
+  getItem(index: number): IItem | null {
+    this.assertIndex(index)
+    return this.slotsInternal[index]
+  }
+
+  setItem(index: number, item: IItem | null): void {
     this.assertIndex(index)
     this.slotsInternal[index] = item
   }
@@ -80,6 +149,7 @@ export class ToolbarState implements IToolbarState {
 
 export interface PlayerInventoryState {
   toolbar: IToolbarState
+  inventory: IInventoryGridState
 }
 
 export interface IPlayerState {
@@ -92,9 +162,10 @@ export interface IPlayerState {
 export class PlayerState implements IPlayerState {
   readonly inventory: PlayerInventoryState
 
-  constructor(toolbarSize = 10) {
+  constructor(toolbarSize = 10, inventoryWidth = 10, inventoryHeight = 8) {
     this.inventory = {
       toolbar: new ToolbarState(toolbarSize),
+      inventory: new InventoryGridState(inventoryWidth, inventoryHeight),
     }
   }
 }

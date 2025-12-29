@@ -3,7 +3,7 @@ import type { IChunk } from '../interfaces/IChunk.ts'
 import type { IChunkCoordinate } from '../interfaces/ICoordinates.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, CHUNK_VOLUME, ChunkState } from '../interfaces/IChunk.ts'
 import { localToIndex, isValidLocal } from '../coordinates/CoordinateUtils.ts'
-import { AIR_BLOCK_ID } from '../interfaces/IBlock.ts'
+import { BlockIds } from '../blocks/BlockIds.ts'
 
 /**
  * Chunk implementation using Uint16Array for block storage.
@@ -37,7 +37,7 @@ export class Chunk implements IChunk {
 
   getBlockId(x: number, y: number, z: number): BlockId {
     if (!isValidLocal(x, y, z)) {
-      return AIR_BLOCK_ID
+      return BlockIds.AIR
     }
     return this.blocks[localToIndex(x, y, z)]
   }
