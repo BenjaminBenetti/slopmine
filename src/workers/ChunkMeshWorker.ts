@@ -20,7 +20,15 @@ function localToIndex(x: number, y: number, z: number): number {
 }
 
 /**
+ * Check if a block is opaque (blocks visibility).
+ */
+function isOpaque(blockId: number, opaqueSet: Set<number>): boolean {
+  return opaqueSet.has(blockId)
+}
+
+/**
  * Check if a block has any exposed faces.
+ * A face is exposed if the adjacent block is not opaque.
  * For edge blocks without neighbor data, assume exposed.
  */
 function hasExposedFace(
@@ -28,48 +36,49 @@ function hasExposedFace(
   x: number,
   y: number,
   z: number,
-  neighbors: NeighborData
+  neighbors: NeighborData,
+  opaqueSet: Set<number>
 ): boolean {
   // Check Y neighbors (within chunk)
   if (y === 0 || y === CHUNK_HEIGHT - 1) return true
-  if (blocks[localToIndex(x, y + 1, z)] === AIR) return true
-  if (blocks[localToIndex(x, y - 1, z)] === AIR) return true
+  if (!isOpaque(blocks[localToIndex(x, y + 1, z)], opaqueSet)) return true
+  if (!isOpaque(blocks[localToIndex(x, y - 1, z)], opaqueSet)) return true
 
   // Check X neighbors
   if (x === 0) {
     // Left edge - check neighbor chunk or assume exposed
-    if (!neighbors.negX || neighbors.negX[localToIndex(CHUNK_SIZE_X - 1, y, z)] === AIR) {
+    if (!neighbors.negX || !isOpaque(neighbors.negX[localToIndex(CHUNK_SIZE_X - 1, y, z)], opaqueSet)) {
       return true
     }
-  } else if (blocks[localToIndex(x - 1, y, z)] === AIR) {
+  } else if (!isOpaque(blocks[localToIndex(x - 1, y, z)], opaqueSet)) {
     return true
   }
 
   if (x === CHUNK_SIZE_X - 1) {
     // Right edge - check neighbor chunk or assume exposed
-    if (!neighbors.posX || neighbors.posX[localToIndex(0, y, z)] === AIR) {
+    if (!neighbors.posX || !isOpaque(neighbors.posX[localToIndex(0, y, z)], opaqueSet)) {
       return true
     }
-  } else if (blocks[localToIndex(x + 1, y, z)] === AIR) {
+  } else if (!isOpaque(blocks[localToIndex(x + 1, y, z)], opaqueSet)) {
     return true
   }
 
   // Check Z neighbors
   if (z === 0) {
     // Back edge - check neighbor chunk or assume exposed
-    if (!neighbors.negZ || neighbors.negZ[localToIndex(x, y, CHUNK_SIZE_Z - 1)] === AIR) {
+    if (!neighbors.negZ || !isOpaque(neighbors.negZ[localToIndex(x, y, CHUNK_SIZE_Z - 1)], opaqueSet)) {
       return true
     }
-  } else if (blocks[localToIndex(x, y, z - 1)] === AIR) {
+  } else if (!isOpaque(blocks[localToIndex(x, y, z - 1)], opaqueSet)) {
     return true
   }
 
   if (z === CHUNK_SIZE_Z - 1) {
     // Front edge - check neighbor chunk or assume exposed
-    if (!neighbors.posZ || neighbors.posZ[localToIndex(x, y, 0)] === AIR) {
+    if (!neighbors.posZ || !isOpaque(neighbors.posZ[localToIndex(x, y, 0)], opaqueSet)) {
       return true
     }
-  } else if (blocks[localToIndex(x, y, z + 1)] === AIR) {
+  } else if (!isOpaque(blocks[localToIndex(x, y, z + 1)], opaqueSet)) {
     return true
   }
 
@@ -89,6 +98,8 @@ export interface ChunkMeshRequest {
   chunkZ: number
   blocks: Uint16Array
   neighbors: NeighborData
+  // Set of block IDs that are opaque (blocks visibility)
+  opaqueBlockIds: number[]
 }
 
 export interface ChunkMeshResponse {
@@ -103,7 +114,10 @@ export interface ChunkMeshResponse {
  * Process a chunk and find all visible blocks.
  */
 function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
-  const { chunkX, chunkZ, blocks, neighbors } = request
+  const { chunkX, chunkZ, blocks, neighbors, opaqueBlockIds } = request
+
+  // Create set of opaque block IDs for fast lookup
+  const opaqueSet = new Set(opaqueBlockIds)
 
   // Collect visible blocks by type
   const blockPositions = new Map<number, number[]>()
@@ -119,7 +133,7 @@ function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
 
         if (blockId === AIR) continue
 
-        if (!hasExposedFace(blocks, x, y, z, neighbors)) continue
+        if (!hasExposedFace(blocks, x, y, z, neighbors, opaqueSet)) continue
 
         // Add to visible blocks
         let positions = blockPositions.get(blockId)

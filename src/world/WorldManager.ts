@@ -29,10 +29,24 @@ export class WorldManager {
   private readonly pendingChunks: Map<string, Chunk> = new Map()
   private readonly WORKER_COUNT = Math.min(navigator.hardwareConcurrency || 4, 4)
 
+  // Cache of opaque block IDs for worker visibility checks
+  private opaqueBlockIds: number[] = []
+
   constructor(config?: Partial<ChunkManagerConfig>) {
     this.chunkManager = new ChunkManager(config)
     this.blockRegistry = BlockRegistry.getInstance()
     this.initWorkers()
+    this.updateOpaqueBlockIds()
+  }
+
+  /**
+   * Update the cached list of opaque block IDs.
+   * Call this after registering new blocks.
+   */
+  updateOpaqueBlockIds(): void {
+    this.opaqueBlockIds = this.blockRegistry
+      .getAllBlockIds()
+      .filter((id) => getBlock(id).properties.isOpaque)
   }
 
   /**
@@ -128,6 +142,7 @@ export class WorldManager {
       chunkZ: Number(coord.z),
       blocks: blocksCopy,
       neighbors,
+      opaqueBlockIds: this.opaqueBlockIds,
     }
 
     this.pendingChunks.set(chunkKey, chunk)
