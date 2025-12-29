@@ -2,26 +2,14 @@ import * as THREE from 'three'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import grassTexUrl from './assets/grass.webp'
 import dirtTexUrl from './assets/dirt.webp'
 import grassDirtTexUrl from './assets/grass-dirt.webp'
 
-const loader = new THREE.TextureLoader()
-
-const grassTexture = loader.load(grassTexUrl)
-grassTexture.magFilter = THREE.NearestFilter
-grassTexture.minFilter = THREE.NearestFilter
-grassTexture.colorSpace = THREE.SRGBColorSpace
-
-const dirtTexture = loader.load(dirtTexUrl)
-dirtTexture.magFilter = THREE.NearestFilter
-dirtTexture.minFilter = THREE.NearestFilter
-dirtTexture.colorSpace = THREE.SRGBColorSpace
-
-const grassDirtTexture = loader.load(grassDirtTexUrl)
-grassDirtTexture.magFilter = THREE.NearestFilter
-grassDirtTexture.minFilter = THREE.NearestFilter
-grassDirtTexture.colorSpace = THREE.SRGBColorSpace
+const grassTexture = loadBlockTexture(grassTexUrl)
+const dirtTexture = loadBlockTexture(dirtTexUrl)
+const grassDirtTexture = loadBlockTexture(grassDirtTexUrl)
 
 const grassMaterial = new THREE.MeshLambertMaterial({ map: grassTexture })
 const dirtMaterial = new THREE.MeshLambertMaterial({ map: dirtTexture })

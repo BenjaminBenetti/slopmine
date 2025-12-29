@@ -2,13 +2,10 @@ import * as THREE from 'three'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import dirtTexUrl from './assets/dirt.webp'
 
-const loader = new THREE.TextureLoader()
-const dirtTexture = loader.load(dirtTexUrl)
-dirtTexture.magFilter = THREE.NearestFilter
-dirtTexture.minFilter = THREE.NearestFilter
-dirtTexture.colorSpace = THREE.SRGBColorSpace
+const dirtTexture = loadBlockTexture(dirtTexUrl)
 
 export class DirtBlock extends SolidBlock {
   readonly properties: IBlockProperties = {

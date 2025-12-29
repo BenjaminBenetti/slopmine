@@ -2,20 +2,12 @@ import * as THREE from 'three'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import oakLogTexUrl from './assets/oak-log.webp'
 import oakLogTopTexUrl from './assets/oak-log-top.webp'
 
-const loader = new THREE.TextureLoader()
-
-const oakLogTexture = loader.load(oakLogTexUrl)
-oakLogTexture.magFilter = THREE.NearestFilter
-oakLogTexture.minFilter = THREE.NearestFilter
-oakLogTexture.colorSpace = THREE.SRGBColorSpace
-
-const oakLogTopTexture = loader.load(oakLogTopTexUrl)
-oakLogTopTexture.magFilter = THREE.NearestFilter
-oakLogTopTexture.minFilter = THREE.NearestFilter
-oakLogTopTexture.colorSpace = THREE.SRGBColorSpace
+const oakLogTexture = loadBlockTexture(oakLogTexUrl)
+const oakLogTopTexture = loadBlockTexture(oakLogTopTexUrl)
 
 const oakLogMaterial = new THREE.MeshLambertMaterial({ map: oakLogTexture })
 const oakLogTopMaterial = new THREE.MeshLambertMaterial({ map: oakLogTopTexture })

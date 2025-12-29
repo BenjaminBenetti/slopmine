@@ -1,4 +1,7 @@
 import * as THREE from 'three'
+import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
+import type { PhysicsEngine } from '../physics/PhysicsEngine.ts'
+import { EYE_HEIGHT, JUMP_VELOCITY } from '../physics/constants.ts'
 
 export interface FirstPersonCameraControlOptions {
   movementSpeed?: number
@@ -12,10 +15,12 @@ export interface CameraControls {
 }
 
 /**
- * First-person "noclip" style camera controller.
+ * First-person camera controller with physics integration.
  * - WASD for horizontal movement
- * - Space / Shift for vertical movement
+ * - Space for jump (when grounded)
  * - Mouse look with pointer lock
+ *
+ * Camera position follows the physics body with eye height offset.
  */
 export class FirstPersonCameraControls implements CameraControls {
   private readonly camera: THREE.PerspectiveCamera
@@ -32,10 +37,13 @@ export class FirstPersonCameraControls implements CameraControls {
   private moveBackward = false
   private moveLeft = false
   private moveRight = false
-  private moveUp = false
-  private moveDown = false
+  private jumpPressed = false
 
   private pointerLocked = false
+
+  // Physics references
+  private physicsBody: IPhysicsBody | null = null
+  private physicsEngine: PhysicsEngine | null = null
 
   constructor(
     camera: THREE.PerspectiveCamera,
@@ -59,6 +67,14 @@ export class FirstPersonCameraControls implements CameraControls {
     window.addEventListener('blur', this.onWindowBlur)
   }
 
+  /**
+   * Connect this controller to the physics system.
+   */
+  setPhysics(body: IPhysicsBody, engine: PhysicsEngine): void {
+    this.physicsBody = body
+    this.physicsEngine = engine
+  }
+
   private onClick = (): void => {
     if (document.pointerLockElement !== this.domElement) {
       this.domElement.requestPointerLock()
@@ -77,7 +93,7 @@ export class FirstPersonCameraControls implements CameraControls {
   }
 
   private onMouseMove = (event: MouseEvent): void => {
-	    if (!this.pointerLocked || !this.inputEnabled) return
+    if (!this.pointerLocked || !this.inputEnabled) return
 
     const movementX = event.movementX || 0
     const movementY = event.movementY || 0
@@ -91,7 +107,7 @@ export class FirstPersonCameraControls implements CameraControls {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
-	    if (!this.inputEnabled) return
+    if (!this.inputEnabled) return
 
     switch (event.code) {
       case 'KeyW':
@@ -107,17 +123,13 @@ export class FirstPersonCameraControls implements CameraControls {
         this.moveRight = true
         break
       case 'Space':
-        this.moveUp = true
-        break
-      case 'ShiftLeft':
-      case 'ShiftRight':
-        this.moveDown = true
+        this.jumpPressed = true
         break
     }
   }
 
   private onKeyUp = (event: KeyboardEvent): void => {
-	    if (!this.inputEnabled) return
+    if (!this.inputEnabled) return
 
     switch (event.code) {
       case 'KeyW':
@@ -133,11 +145,7 @@ export class FirstPersonCameraControls implements CameraControls {
         this.moveRight = false
         break
       case 'Space':
-        this.moveUp = false
-        break
-      case 'ShiftLeft':
-      case 'ShiftRight':
-        this.moveDown = false
+        this.jumpPressed = false
         break
     }
   }
@@ -154,8 +162,7 @@ export class FirstPersonCameraControls implements CameraControls {
     this.moveBackward = false
     this.moveLeft = false
     this.moveRight = false
-    this.moveUp = false
-    this.moveDown = false
+    this.jumpPressed = false
   }
 
   setInputEnabled(enabled: boolean): void {
@@ -165,12 +172,55 @@ export class FirstPersonCameraControls implements CameraControls {
     }
   }
 
-  update(deltaTime: number): void {
+  update(_deltaTime: number): void {
     // Apply yaw/pitch rotation to the camera
     this.camera.rotation.x = this.pitch
     this.camera.rotation.y = this.yaw
     this.camera.rotation.z = 0
 
+    if (!this.physicsBody || !this.physicsEngine) {
+      // Fallback to noclip mode if physics not set
+      this.updateNoclip(_deltaTime)
+      return
+    }
+
+    // Calculate horizontal movement direction based on yaw
+    const direction = new THREE.Vector3()
+    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
+    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw))
+
+    if (this.moveForward) direction.add(forward)
+    if (this.moveBackward) direction.sub(forward)
+    if (this.moveLeft) direction.sub(right)
+    if (this.moveRight) direction.add(right)
+
+    // Normalize and apply movement speed to horizontal velocity
+    if (direction.lengthSq() > 0) {
+      direction.normalize()
+      direction.multiplyScalar(this.movementSpeed)
+    }
+
+    // Set horizontal velocity (physics handles vertical via gravity)
+    this.physicsBody.velocity.x = direction.x
+    this.physicsBody.velocity.z = direction.z
+
+    // Handle jump
+    if (this.jumpPressed) {
+      this.physicsEngine.applyJump(this.physicsBody, JUMP_VELOCITY)
+    }
+
+    // Sync camera position with physics body (add eye height)
+    this.camera.position.set(
+      this.physicsBody.position.x,
+      this.physicsBody.position.y + EYE_HEIGHT,
+      this.physicsBody.position.z
+    )
+  }
+
+  /**
+   * Fallback noclip movement when physics not connected.
+   */
+  private updateNoclip(deltaTime: number): void {
     const direction = new THREE.Vector3()
     const forward = new THREE.Vector3()
     const right = new THREE.Vector3()
@@ -183,8 +233,6 @@ export class FirstPersonCameraControls implements CameraControls {
     if (this.moveBackward) direction.sub(forward)
     if (this.moveLeft) direction.sub(right)
     if (this.moveRight) direction.add(right)
-    if (this.moveUp) direction.y += 1
-    if (this.moveDown) direction.y -= 1
 
     if (direction.lengthSq() > 0) {
       direction.normalize()
@@ -202,4 +250,3 @@ export class FirstPersonCameraControls implements CameraControls {
     window.removeEventListener('blur', this.onWindowBlur)
   }
 }
-

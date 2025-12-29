@@ -2,13 +2,10 @@ import * as THREE from 'three'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import stoneTexUrl from './assets/stone.webp'
 
-const loader = new THREE.TextureLoader()
-const stoneTexture = loader.load(stoneTexUrl)
-stoneTexture.magFilter = THREE.NearestFilter
-stoneTexture.minFilter = THREE.NearestFilter
-stoneTexture.colorSpace = THREE.SRGBColorSpace
+const stoneTexture = loadBlockTexture(stoneTexUrl)
 
 export class StoneBlock extends SolidBlock {
   readonly properties: IBlockProperties = {

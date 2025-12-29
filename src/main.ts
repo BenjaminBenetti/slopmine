@@ -1,6 +1,7 @@
 import { GameLoop } from './core/GameLoop.ts'
 import { Renderer } from './renderer/Renderer.ts'
 import { WorldLighting } from './renderer/WorldLighting.ts'
+import { Skybox } from './renderer/skybox/Skybox.ts'
 import {
 	  FirstPersonCameraControls,
 	} from './player/FirstPersonCameraControls.ts'
@@ -16,6 +17,16 @@ import {
   registerDefaultBlocks,
   BlockIds,
 } from './world/index.ts'
+import * as THREE from 'three'
+import {
+  PhysicsEngine,
+  PhysicsBody,
+  WorldPhysicsAdapter,
+  PLAYER_WIDTH,
+  PLAYER_HEIGHT,
+  PLAYER_DEPTH,
+  EYE_HEIGHT,
+} from './physics/index.ts'
 
 // Initialize world system
 registerDefaultBlocks()
@@ -77,16 +88,39 @@ const inventoryInput = new InventoryInputHandler(
   cameraControls,
 )
 
-// Create world and place blocks
+// Create world and load a 3x3 grid of chunks
 const world = new WorldManager()
-world.loadChunk({ x: 0n, z: 0n })
+for (let cx = -1n; cx <= 1n; cx++) {
+  for (let cz = -1n; cz <= 1n; cz++) {
+    world.loadChunk({ x: cx, z: cz })
+  }
+}
 
-// Place 5 blocks in the world
-world.setBlock(0n, 0n, 0n, BlockIds.STONE)
-world.setBlock(1n, 0n, 0n, BlockIds.DIRT)
-world.setBlock(2n, 0n, 0n, BlockIds.GRASS)
-world.setBlock(3n, 0n, 0n, BlockIds.OAK_LOG)
-world.setBlock(4n, 0n, 0n, BlockIds.OAK_LEAVES)
+// Create a grass testing plane centered roughly on player
+// Plane is 64x64 blocks, from -32 to 31 on x and z, at y=0
+world.fillRegion(-32n, 0n, -32n, 31n, 0n, 31n, BlockIds.GRASS)
+
+// Create physics system
+const physicsWorld = new WorldPhysicsAdapter(world)
+const physicsEngine = new PhysicsEngine(physicsWorld)
+
+// Create player physics body at spawn position (above the grass plane)
+const spawnPosition = new THREE.Vector3(0, 5, 0)
+const playerBody = new PhysicsBody(
+  spawnPosition,
+  new THREE.Vector3(PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_DEPTH)
+)
+physicsEngine.addBody(playerBody)
+
+// Connect camera controls to physics
+cameraControls.setPhysics(playerBody, physicsEngine)
+
+// Position camera at player spawn with eye height offset
+renderer.camera.position.set(
+  spawnPosition.x,
+  spawnPosition.y + EYE_HEIGHT,
+  spawnPosition.z
+)
 
 // Render the world blocks to the scene
 world.render(renderer.scene)
@@ -94,6 +128,11 @@ world.render(renderer.scene)
 // Add world lighting (sun at 10am)
 const lighting = new WorldLighting({ timeOfDay: 10 })
 lighting.addTo(renderer.scene)
+
+// Add skybox with sun positioned to match the directional light
+const skybox = new Skybox()
+skybox.setSunPosition(lighting.sun.position)
+skybox.addTo(renderer.scene)
 
 let frameCpuStart = 0
 let frameDeltaTime = 0
@@ -103,6 +142,7 @@ const gameLoop = new GameLoop({
     frameCpuStart = performance.now()
     frameDeltaTime = deltaTime
     cameraControls.update(deltaTime)
+    physicsEngine.update(deltaTime)
   },
   render() {
     renderer.render()

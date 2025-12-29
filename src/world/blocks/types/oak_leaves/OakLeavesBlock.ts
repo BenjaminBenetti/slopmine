@@ -2,14 +2,10 @@ import * as THREE from 'three'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import oakLeavesTexUrl from './assets/oak-leaves.webp'
 
-const loader = new THREE.TextureLoader()
-
-const oakLeavesTexture = loader.load(oakLeavesTexUrl)
-oakLeavesTexture.magFilter = THREE.NearestFilter
-oakLeavesTexture.minFilter = THREE.NearestFilter
-oakLeavesTexture.colorSpace = THREE.SRGBColorSpace
+const oakLeavesTexture = loadBlockTexture(oakLeavesTexUrl)
 
 const oakLeavesMaterial = new THREE.MeshLambertMaterial({
   map: oakLeavesTexture,

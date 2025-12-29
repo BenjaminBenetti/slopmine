@@ -12,7 +12,7 @@ export class Renderer {
     document.body.appendChild(this.renderer.domElement)
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x1a1a2e)
+    // Background is handled by Skybox - no solid color needed
 
     this.camera = new THREE.PerspectiveCamera(
       100,
