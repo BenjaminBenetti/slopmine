@@ -3,13 +3,42 @@ import type { IBlock, IBlockProperties, BlockFace, IWorld } from '../interfaces/
 import { AIR_BLOCK_ID } from '../interfaces/IBlock.ts'
 
 /**
- * Shared geometry for all block meshes.
+ * Shared geometry cache for reusable block shapes.
+ * Prevents creating duplicate geometries for common shapes.
  */
-const sharedBlockGeometry = new THREE.BoxGeometry(1, 1, 1)
+export const SharedGeometry = {
+  /** Standard 1x1x1 cube */
+  cube: new THREE.BoxGeometry(1, 1, 1),
+  /** Half slab (bottom) */
+  slabBottom: new THREE.BoxGeometry(1, 0.5, 1).translate(0, -0.25, 0),
+  /** Half slab (top) */
+  slabTop: new THREE.BoxGeometry(1, 0.5, 1).translate(0, 0.25, 0),
+  /** Cross shape for plants/flowers (two intersecting planes) */
+  cross: (() => {
+    const geo = new THREE.BufferGeometry()
+    const vertices = new Float32Array([
+      // First plane (diagonal)
+      -0.5, -0.5, -0.5,  0.5, -0.5, 0.5,  0.5, 0.5, 0.5,
+      -0.5, -0.5, -0.5,  0.5, 0.5, 0.5,  -0.5, 0.5, -0.5,
+      // Second plane (other diagonal)
+      -0.5, -0.5, 0.5,  0.5, -0.5, -0.5,  0.5, 0.5, -0.5,
+      -0.5, -0.5, 0.5,  0.5, 0.5, -0.5,  -0.5, 0.5, 0.5,
+    ])
+    geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
+    geo.computeVertexNormals()
+    return geo
+  })(),
+} as const
 
 /**
  * Abstract base block class implementing common functionality.
  * Uses flyweight pattern - block instances are stateless singletons.
+ *
+ * Override these methods for custom blocks:
+ * - getColor(): Change block color
+ * - getMaterials(): Multi-textured faces
+ * - getGeometry(): Custom shapes (slabs, stairs, plants)
+ * - createMesh(): Full control over mesh creation
  */
 export abstract class Block implements IBlock {
   abstract readonly properties: IBlockProperties
@@ -29,6 +58,14 @@ export abstract class Block implements IBlock {
   }
 
   /**
+   * Get the geometry for this block. Override for non-cube shapes.
+   * Use SharedGeometry for common shapes to save memory.
+   */
+  protected getGeometry(): THREE.BufferGeometry {
+    return SharedGeometry.cube
+  }
+
+  /**
    * Get materials for each face. Override for multi-textured blocks.
    * Order: +X, -X, +Y, -Y, +Z, -Z
    */
@@ -38,12 +75,14 @@ export abstract class Block implements IBlock {
 
   /**
    * Create a mesh for this block.
+   * Combines getGeometry() and getMaterials().
+   * Override for fully custom mesh creation.
    */
   createMesh(): THREE.Mesh | null {
     if (!this.properties.isSolid && this.properties.id === AIR_BLOCK_ID) {
       return null
     }
-    return new THREE.Mesh(sharedBlockGeometry, this.getMaterials())
+    return new THREE.Mesh(this.getGeometry(), this.getMaterials())
   }
 
   getTextureForFace(_face: BlockFace): number {
