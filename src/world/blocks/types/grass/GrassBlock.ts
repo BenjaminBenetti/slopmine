@@ -4,6 +4,7 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import grassTexUrl from './assets/grass.webp'
 import dirtTexUrl from './assets/dirt.webp'
+import grassDirtTexUrl from './assets/grass-dirt.webp'
 
 const loader = new THREE.TextureLoader()
 
@@ -17,8 +18,14 @@ dirtTexture.magFilter = THREE.NearestFilter
 dirtTexture.minFilter = THREE.NearestFilter
 dirtTexture.colorSpace = THREE.SRGBColorSpace
 
+const grassDirtTexture = loader.load(grassDirtTexUrl)
+grassDirtTexture.magFilter = THREE.NearestFilter
+grassDirtTexture.minFilter = THREE.NearestFilter
+grassDirtTexture.colorSpace = THREE.SRGBColorSpace
+
 const grassMaterial = new THREE.MeshLambertMaterial({ map: grassTexture })
 const dirtMaterial = new THREE.MeshLambertMaterial({ map: dirtTexture })
+const grassDirtMaterial = new THREE.MeshLambertMaterial({ map: grassDirtTexture })
 
 export class GrassBlock extends SolidBlock {
   readonly properties: IBlockProperties = {
@@ -35,12 +42,12 @@ export class GrassBlock extends SolidBlock {
   protected getMaterials(): THREE.Material[] {
     // Order: +X, -X, +Y, -Y, +Z, -Z
     return [
-      dirtMaterial,  // +X (right)
-      dirtMaterial,  // -X (left)
-      grassMaterial, // +Y (top)
-      dirtMaterial,  // -Y (bottom)
-      dirtMaterial,  // +Z (front)
-      dirtMaterial,  // -Z (back)
+      grassDirtMaterial, // +X (right)
+      grassDirtMaterial, // -X (left)
+      grassMaterial,     // +Y (top)
+      dirtMaterial,      // -Y (bottom)
+      grassDirtMaterial, // +Z (front)
+      grassDirtMaterial, // -Z (back)
     ]
   }
 }

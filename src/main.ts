@@ -1,6 +1,6 @@
-import * as THREE from 'three'
 import { GameLoop } from './core/GameLoop.ts'
 import { Renderer } from './renderer/Renderer.ts'
+import { WorldLighting } from './renderer/WorldLighting.ts'
 import {
 	  FirstPersonCameraControls,
 	} from './player/FirstPersonCameraControls.ts'
@@ -71,13 +71,9 @@ world.setBlock(2n, 0n, 0n, BlockIds.GRASS)
 // Render the world blocks to the scene
 world.render(renderer.scene)
 
-// Add lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.4)
-renderer.scene.add(ambientLight)
-
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
-directionalLight.position.set(5, 10, 5)
-renderer.scene.add(directionalLight)
+// Add world lighting (sun at 10am)
+const lighting = new WorldLighting({ timeOfDay: 10 })
+lighting.addTo(renderer.scene)
 
 const gameLoop = new GameLoop({
   update(deltaTime: number) {
