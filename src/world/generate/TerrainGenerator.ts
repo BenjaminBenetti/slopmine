@@ -18,24 +18,9 @@ export abstract class TerrainGenerator {
 
   /**
    * Get terrain height at world coordinates.
-   * Override in subclasses for biome-specific height variations.
+   * Must be implemented by subclasses for biome-specific height variations.
    */
-  getHeightAt(worldX: number, worldZ: number): number {
-    const noiseValue = this.noise.fractalNoise2D(
-      worldX,
-      worldZ,
-      4,
-      0.5,
-      0.008
-    )
-
-    const { minHeight, maxHeight } = this.config
-    const height = Math.floor(
-      ((noiseValue + 1) / 2) * (maxHeight - minHeight) + minHeight
-    )
-
-    return height
-  }
+  abstract getHeightAt(worldX: number, worldZ: number): number
 
   /**
    * Fill a column with layered blocks (stone -> subsurface -> surface).

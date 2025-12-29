@@ -9,6 +9,11 @@ export class Renderer {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.renderer.setPixelRatio(window.devicePixelRatio)
+
+    // Enable shadow mapping
+    this.renderer.shadowMap.enabled = true
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
     document.body.appendChild(this.renderer.domElement)
 
     this.scene = new THREE.Scene()

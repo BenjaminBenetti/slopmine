@@ -14,6 +14,7 @@ export interface BiomeProperties {
   readonly baseBlock: BlockId
   readonly heightAmplitude: number
   readonly heightOffset: number
+  readonly treeDensity: number
 }
 
 /**

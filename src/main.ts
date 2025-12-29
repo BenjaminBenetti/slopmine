@@ -147,6 +147,12 @@ const gameLoop = new GameLoop({
       renderer.camera.position.x,
       renderer.camera.position.z
     )
+
+    // Update shadow camera to follow player
+    lighting.updateShadowTarget(renderer.camera.position)
+
+    // Keep skybox centered on camera so player can never leave it
+    skybox.update(renderer.camera)
   },
   render() {
     renderer.render()

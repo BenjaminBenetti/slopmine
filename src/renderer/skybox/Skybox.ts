@@ -15,6 +15,8 @@ export class Skybox {
   readonly sunMesh: THREE.Mesh
   readonly cloudGroup: THREE.Group
   private readonly skyRadius: number
+  /** Local sun direction (before applying camera offset) */
+  private sunDirection = new THREE.Vector3(0, 1, 0)
 
   constructor(options: SkyboxOptions = {}) {
     const {
@@ -36,6 +38,16 @@ export class Skybox {
 
     // Create cloud group
     this.cloudGroup = this.createClouds(cloudCount, skyRadius * 0.8)
+
+    // Set negative renderOrder so skybox renders first (behind everything)
+    // and disable depth test so it never occludes world geometry
+    const skyRenderOrder = -1000
+    this.skyMesh.renderOrder = skyRenderOrder
+    this.sunMesh.renderOrder = skyRenderOrder + 1
+    this.cloudGroup.renderOrder = skyRenderOrder + 2
+    this.cloudGroup.children.forEach((child) => {
+      child.renderOrder = skyRenderOrder + 2
+    })
   }
 
   private createSkyDome(
@@ -144,13 +156,27 @@ export class Skybox {
     return group
   }
 
-  /** Update sun position to match directional light */
+  /** Update sun direction (normalized) to match directional light */
   setSunPosition(position: THREE.Vector3): void {
-    // Place sun at normalized direction from origin, scaled to sky radius
-    const dir = position.clone().normalize()
-    this.sunMesh.position.copy(dir.multiplyScalar(this.skyRadius * 0.95))
-    // Make sun face the camera (origin)
-    this.sunMesh.lookAt(0, 0, 0)
+    this.sunDirection.copy(position).normalize()
+  }
+
+  /** Call each frame to keep skybox centered on the camera */
+  update(camera: THREE.Camera): void {
+    const cameraPos = camera.position
+
+    // Move all skybox elements to follow the camera
+    this.skyMesh.position.copy(cameraPos)
+    this.cloudGroup.position.copy(cameraPos)
+
+    // Position sun relative to camera
+    const sunPos = this.sunDirection
+      .clone()
+      .multiplyScalar(this.skyRadius * 0.95)
+      .add(cameraPos)
+    this.sunMesh.position.copy(sunPos)
+    // Make sun face the camera
+    this.sunMesh.lookAt(cameraPos)
   }
 
   addTo(scene: THREE.Scene): void {

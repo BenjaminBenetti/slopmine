@@ -18,6 +18,7 @@ export class PlainsGenerator extends BiomeGenerator {
     baseBlock: BlockIds.STONE,
     heightAmplitude: 8,
     heightOffset: 0,
+    treeDensity: 3.0,
   }
 
   // Tree placement grid size
@@ -39,7 +40,7 @@ export class PlainsGenerator extends BiomeGenerator {
     world: WorldManager
   ): Promise<void> {
     const coord = chunk.coordinate
-    const treeDensity = this.config.treeDensity
+    const treeDensity = this.properties.treeDensity
     const gridSize = this.TREE_GRID_SIZE
 
     // Check each cell in a grid pattern for potential tree positions

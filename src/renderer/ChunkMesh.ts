@@ -47,6 +47,8 @@ export class ChunkMesh {
       // Create InstancedMesh with exact count needed
       const instancedMesh = new THREE.InstancedMesh(geometry, material, positions.length)
       instancedMesh.frustumCulled = true
+      instancedMesh.castShadow = true
+      instancedMesh.receiveShadow = true
 
       // Set position for each instance
       // Offset by 0.5 because geometry is centered at origin (-0.5 to 0.5)

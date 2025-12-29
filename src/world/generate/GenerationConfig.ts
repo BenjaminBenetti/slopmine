@@ -4,18 +4,12 @@ export interface IGenerationConfig {
   seed: number
   chunkDistance: number
   seaLevel: number
-  minHeight: number
-  maxHeight: number
-  treeDensity: number
 }
 
 const DEFAULT_CONFIG: IGenerationConfig = {
   seed: Date.now(),
   chunkDistance: 8,
   seaLevel: 64,
-  minHeight: 50,
-  maxHeight: 128,
-  treeDensity: 3.0,
 }
 
 export class GenerationConfig {
@@ -56,18 +50,6 @@ export class GenerationConfig {
 
   get seaLevel(): number {
     return this.config.seaLevel
-  }
-
-  get minHeight(): number {
-    return this.config.minHeight
-  }
-
-  get maxHeight(): number {
-    return this.config.maxHeight
-  }
-
-  get treeDensity(): number {
-    return this.config.treeDensity
   }
 
   set chunkDistance(value: number) {
