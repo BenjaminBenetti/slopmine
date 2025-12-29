@@ -15,6 +15,9 @@ export interface BiomeProperties {
   readonly heightAmplitude: number
   readonly heightOffset: number
   readonly treeDensity: number
+  readonly cliffFrequency: number
+  readonly cliffThreshold: number
+  readonly cliffMaxHeight: number
 }
 
 /**
@@ -31,9 +34,23 @@ export abstract class BiomeGenerator extends TerrainGenerator {
     const baseNoise = this.noise.fractalNoise2D(worldX, worldZ, 4, 0.5, 0.01)
 
     const { seaLevel } = this.config
-    const { heightAmplitude, heightOffset } = this.properties
+    const { heightAmplitude, heightOffset, cliffFrequency, cliffThreshold, cliffMaxHeight } =
+      this.properties
 
-    return Math.floor(seaLevel + heightOffset + baseNoise * heightAmplitude)
+    let height = seaLevel + heightOffset + baseNoise * heightAmplitude
+
+    // Cliff noise - creates zones with sudden height jumps
+    const cliffNoise = this.noise.noise2D(
+      worldX * cliffFrequency,
+      worldZ * cliffFrequency
+    )
+    if (cliffNoise > cliffThreshold) {
+      const cliffIntensity = (cliffNoise - cliffThreshold) / (1 - cliffThreshold)
+      const cliffStep = Math.floor(cliffIntensity * cliffMaxHeight)
+      height += cliffStep
+    }
+
+    return Math.floor(height)
   }
 
   /**
@@ -55,7 +72,18 @@ export abstract class BiomeGenerator extends TerrainGenerator {
 
         const height = this.getHeightAt(worldX, worldZ)
 
-        this.fillColumn(
+        // Check neighbor heights for cliff detection
+        const minNeighborHeight = Math.min(
+          this.getHeightAt(worldX - 1, worldZ),
+          this.getHeightAt(worldX + 1, worldZ),
+          this.getHeightAt(worldX, worldZ - 1),
+          this.getHeightAt(worldX, worldZ + 1)
+        )
+
+        // If we're 2+ blocks higher than lowest neighbor, we have a cliff face
+        const cliffExposure = height - minNeighborHeight
+
+        this.fillColumnWithCliff(
           chunk,
           localX,
           localZ,
@@ -63,7 +91,8 @@ export abstract class BiomeGenerator extends TerrainGenerator {
           surfaceBlock,
           subsurfaceBlock,
           subsurfaceDepth,
-          baseBlock
+          baseBlock,
+          cliffExposure
         )
       }
       // Yield when frame budget is exhausted

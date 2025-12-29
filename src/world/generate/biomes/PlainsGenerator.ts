@@ -19,6 +19,9 @@ export class PlainsGenerator extends BiomeGenerator {
     heightAmplitude: 8,
     heightOffset: 0,
     treeDensity: 3.0,
+    cliffFrequency: 0.03,
+    cliffThreshold: 0.6,
+    cliffMaxHeight: 2,
   }
 
   // Tree placement grid size

@@ -19,6 +19,9 @@ export class GrassyHillsGenerator extends BiomeGenerator {
     heightAmplitude: 20,
     heightOffset: 10,
     treeDensity: 1.5,
+    cliffFrequency: 0.03,
+    cliffThreshold: 0.3,
+    cliffMaxHeight: 4,
   }
 
   private readonly TREE_GRID_SIZE = 8
