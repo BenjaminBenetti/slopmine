@@ -16,7 +16,7 @@ export class GrassyHillsGenerator extends BiomeGenerator {
     subsurfaceBlock: BlockIds.DIRT,
     subsurfaceDepth: 4,
     baseBlock: BlockIds.STONE,
-    heightAmplitude: 20,
+    heightAmplitude: 13,
     heightOffset: 10,
     treeDensity: 1.5,
     cliffFrequency: 0.03,
