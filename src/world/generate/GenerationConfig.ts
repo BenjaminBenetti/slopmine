@@ -14,8 +14,8 @@ const DEFAULT_CONFIG: IGenerationConfig = {
   chunkDistance: 8,
   seaLevel: 64,
   minHeight: 50,
-  maxHeight: 80,
-  treeDensity: 0.8,
+  maxHeight: 128,
+  treeDensity: 3.0,
 }
 
 export class GenerationConfig {
