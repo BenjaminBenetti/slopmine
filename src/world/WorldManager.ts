@@ -8,6 +8,7 @@ import { BlockRegistry, getBlock } from './blocks/BlockRegistry.ts'
 import { Chunk } from './chunks/Chunk.ts'
 import { BlockIds } from './blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState } from './interfaces/IChunk.ts'
+import { ChunkMesh } from '../renderer/ChunkMesh.ts'
 
 /**
  * Main world coordinator.
@@ -17,7 +18,7 @@ export class WorldManager {
   private readonly chunkManager: ChunkManager
   private readonly blockRegistry: BlockRegistry
   private scene: THREE.Scene | null = null
-  private readonly chunkMeshes: Map<ChunkKey, THREE.Mesh[]> = new Map()
+  private readonly chunkMeshes: Map<ChunkKey, ChunkMesh> = new Map()
   private readonly generationCallbacks: Array<(chunk: Chunk) => void> = []
 
   constructor(config?: Partial<ChunkManagerConfig>) {
@@ -351,17 +352,10 @@ export class WorldManager {
    * Remove all meshes for a specific chunk.
    */
   removeChunkMeshes(chunkKey: ChunkKey): void {
-    const meshes = this.chunkMeshes.get(chunkKey)
-    if (meshes && this.scene) {
-      for (const mesh of meshes) {
-        this.scene.remove(mesh)
-        mesh.geometry.dispose()
-        if (Array.isArray(mesh.material)) {
-          mesh.material.forEach(m => m.dispose())
-        } else {
-          mesh.material.dispose()
-        }
-      }
+    const chunkMesh = this.chunkMeshes.get(chunkKey)
+    if (chunkMesh && this.scene) {
+      chunkMesh.removeFromScene(this.scene)
+      chunkMesh.dispose()
     }
     this.chunkMeshes.delete(chunkKey)
   }
@@ -372,16 +366,9 @@ export class WorldManager {
   private clearAllMeshes(): void {
     if (!this.scene) return
 
-    for (const [chunkKey, meshes] of this.chunkMeshes) {
-      for (const mesh of meshes) {
-        this.scene.remove(mesh)
-        mesh.geometry.dispose()
-        if (Array.isArray(mesh.material)) {
-          mesh.material.forEach(m => m.dispose())
-        } else {
-          mesh.material.dispose()
-        }
-      }
+    for (const chunkMesh of this.chunkMeshes.values()) {
+      chunkMesh.removeFromScene(this.scene)
+      chunkMesh.dispose()
     }
     this.chunkMeshes.clear()
   }
@@ -413,15 +400,16 @@ export class WorldManager {
   }
 
   /**
-   * Render a single chunk's blocks (internal).
+   * Render a single chunk's blocks using InstancedMesh for performance.
    */
   private renderChunk(chunk: Chunk): void {
     if (!this.scene) return
 
     const chunkCoord = chunk.coordinate
     const chunkKey = createChunkKey(chunkCoord.x, chunkCoord.z)
-    const meshes: THREE.Mesh[] = []
+    const chunkMesh = new ChunkMesh(chunkCoord)
 
+    // Collect all exposed blocks by type
     for (let localY = 0; localY < CHUNK_HEIGHT; localY++) {
       for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
         for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
@@ -435,24 +423,21 @@ export class WorldManager {
             continue
           }
 
-          const block = getBlock(blockId)
-          const mesh = block.createMesh()
-
-          if (mesh) {
-            mesh.position.set(
-              Number(worldCoord.x),
-              Number(worldCoord.y),
-              Number(worldCoord.z)
-            )
-
-            meshes.push(mesh)
-            this.scene.add(mesh)
-          }
+          // Add block to instanced mesh
+          chunkMesh.addBlock(
+            blockId,
+            Number(worldCoord.x),
+            Number(worldCoord.y),
+            Number(worldCoord.z)
+          )
         }
       }
     }
 
-    this.chunkMeshes.set(chunkKey, meshes)
+    // Build all InstancedMesh objects and add to scene
+    chunkMesh.build()
+    chunkMesh.addToScene(this.scene)
+    this.chunkMeshes.set(chunkKey, chunkMesh)
   }
 
   /**

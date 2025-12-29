@@ -6,6 +6,7 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import stoneTexUrl from './assets/stone.webp'
 
 const stoneTexture = loadBlockTexture(stoneTexUrl)
+const stoneMaterial = new THREE.MeshLambertMaterial({ map: stoneTexture })
 
 export class StoneBlock extends SolidBlock {
   readonly properties: IBlockProperties = {
@@ -20,6 +21,6 @@ export class StoneBlock extends SolidBlock {
   }
 
   protected getMaterials(): THREE.Material {
-    return new THREE.MeshLambertMaterial({ map: stoneTexture })
+    return stoneMaterial
   }
 }

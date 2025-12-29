@@ -107,6 +107,22 @@ export abstract class Block implements IBlock {
     )
   }
 
+  /**
+   * Get material(s) for instanced rendering.
+   * By default, returns the same as getMaterials().
+   */
+  getInstanceMaterial(): THREE.Material | THREE.Material[] {
+    return this.getMaterials()
+  }
+
+  /**
+   * Get geometry for instanced rendering.
+   * By default, returns the same as getGeometry().
+   */
+  getInstanceGeometry(): THREE.BufferGeometry {
+    return this.getGeometry()
+  }
+
   onPlace?(_world: IWorld, _x: bigint, _y: bigint, _z: bigint): void
   onBreak?(_world: IWorld, _x: bigint, _y: bigint, _z: bigint): void
   onNeighborChange?(_world: IWorld, _x: bigint, _y: bigint, _z: bigint, _face: BlockFace): void

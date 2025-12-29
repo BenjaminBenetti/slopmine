@@ -74,6 +74,18 @@ export interface IBlock {
    * Returns null for blocks that shouldn't be rendered (like air).
    */
   createMesh(): THREE.Mesh | null
+
+  /**
+   * Get the material(s) for instanced rendering.
+   * Returns shared material(s) that can be reused across all instances.
+   */
+  getInstanceMaterial(): THREE.Material | THREE.Material[]
+
+  /**
+   * Get the geometry for this block type.
+   * Returns shared geometry that can be reused across all instances.
+   */
+  getInstanceGeometry(): THREE.BufferGeometry
 }
 
 /**

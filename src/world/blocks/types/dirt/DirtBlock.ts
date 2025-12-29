@@ -6,6 +6,7 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import dirtTexUrl from './assets/dirt.webp'
 
 const dirtTexture = loadBlockTexture(dirtTexUrl)
+const dirtMaterial = new THREE.MeshLambertMaterial({ map: dirtTexture })
 
 export class DirtBlock extends SolidBlock {
   readonly properties: IBlockProperties = {
@@ -20,6 +21,6 @@ export class DirtBlock extends SolidBlock {
   }
 
   protected getMaterials(): THREE.Material {
-    return new THREE.MeshLambertMaterial({ map: dirtTexture })
+    return dirtMaterial
   }
 }
