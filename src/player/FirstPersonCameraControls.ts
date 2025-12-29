@@ -210,6 +210,7 @@ export class FirstPersonCameraControls implements CameraControls {
     }
 
     // Sync camera position with physics body (add eye height)
+    // Offset camera forward (-Z) to align view with hitbox center
     this.camera.position.set(
       this.physicsBody.position.x,
       this.physicsBody.position.y + EYE_HEIGHT,

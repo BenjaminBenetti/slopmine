@@ -34,4 +34,25 @@ export class PhysicsBody implements IPhysicsBody {
       this.hitboxSize.z
     )
   }
+
+  /**
+   * Get compound hitbox as multiple AABBs forming a cross/plus shape.
+   * This approximates a rounded collision shape without sharp corners.
+   */
+  getAABBs(): AABB[] {
+    const pos = this.position
+    const w = this.hitboxSize.x
+    const h = this.hitboxSize.y
+    const d = this.hitboxSize.z
+
+    // Shrink amount for corners (removes ~25% from each corner)
+    const shrink = Math.min(w, d) * 0.25
+
+    return [
+      // X-aligned box: full width, reduced depth
+      AABB.fromCenterBottom(pos, w, h, d - shrink * 2),
+      // Z-aligned box: reduced width, full depth
+      AABB.fromCenterBottom(pos, w - shrink * 2, h, d),
+    ]
+  }
 }

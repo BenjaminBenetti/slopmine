@@ -63,9 +63,9 @@ export class PhysicsEngine {
       body.velocity.y = this.terminalVelocity
     }
 
-    // Resolve collisions and get new position
-    const result = this.collisionDetector.resolveMovement(
-      body.getAABB(),
+    // Resolve collisions and get new position (using compound hitbox)
+    const result = this.collisionDetector.resolveMovementMulti(
+      body.getAABBs(),
       body.velocity,
       deltaTime
     )

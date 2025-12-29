@@ -49,9 +49,11 @@ export class ChunkMesh {
       instancedMesh.frustumCulled = true
 
       // Set position for each instance
+      // Offset by 0.5 because geometry is centered at origin (-0.5 to 0.5)
+      // but block coordinates represent the min corner (block occupies x to x+1)
       for (let i = 0; i < positions.length; i++) {
         const pos = positions[i]
-        matrix.setPosition(pos.x, pos.y, pos.z)
+        matrix.setPosition(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
         instancedMesh.setMatrixAt(i, matrix)
       }
 

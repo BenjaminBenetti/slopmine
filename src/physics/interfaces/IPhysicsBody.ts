@@ -23,4 +23,7 @@ export interface IPhysicsBody {
 
   /** Get the AABB for this body at current position */
   getAABB(): AABB
+
+  /** Get all AABBs for this body (compound hitbox for rounded collision) */
+  getAABBs(): AABB[]
 }
