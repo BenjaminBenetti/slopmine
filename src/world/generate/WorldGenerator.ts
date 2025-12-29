@@ -25,7 +25,7 @@ export class WorldGenerator {
   private readonly generatingChunks: Set<ChunkKey> = new Set()
   private readonly generatedChunks: Set<ChunkKey> = new Set()
 
-  private readonly chunksPerFrame: number = 2
+  private readonly chunksPerFrame: number = 1
   private playerChunkX: bigint = 0n
   private playerChunkZ: bigint = 0n
   private initialized: boolean = false

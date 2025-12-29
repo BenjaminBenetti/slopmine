@@ -11,7 +11,7 @@ export interface IGenerationConfig {
 
 const DEFAULT_CONFIG: IGenerationConfig = {
   seed: Date.now(),
-  chunkDistance: 2,
+  chunkDistance: 8,
   seaLevel: 64,
   minHeight: 50,
   maxHeight: 80,

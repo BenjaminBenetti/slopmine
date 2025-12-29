@@ -4,6 +4,7 @@ import type { WorldManager } from '../WorldManager.ts'
 import type { BlockId } from '../interfaces/IBlock.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
 import { localToWorld } from '../coordinates/CoordinateUtils.ts'
+import { FrameBudget } from '../../core/FrameBudget.ts'
 
 export interface BiomeProperties {
   readonly name: string
@@ -20,6 +21,7 @@ export interface BiomeProperties {
  */
 export abstract class BiomeGenerator extends TerrainGenerator {
   protected abstract readonly properties: BiomeProperties
+  protected readonly frameBudget = new FrameBudget()
 
   /**
    * Get biome-adjusted height at world coordinates.
@@ -35,11 +37,14 @@ export abstract class BiomeGenerator extends TerrainGenerator {
 
   /**
    * Generate the base terrain (stone/dirt/grass layers).
+   * Yields based on time budget to prevent blocking the main thread.
    */
   protected async generateTerrain(chunk: Chunk): Promise<void> {
     const { surfaceBlock, subsurfaceBlock, subsurfaceDepth, baseBlock } =
       this.properties
     const coord = chunk.coordinate
+
+    this.frameBudget.startFrame()
 
     for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
       for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
@@ -60,6 +65,8 @@ export abstract class BiomeGenerator extends TerrainGenerator {
           baseBlock
         )
       }
+      // Yield when frame budget is exhausted
+      await this.frameBudget.yieldIfNeeded()
     }
   }
 
@@ -83,8 +90,9 @@ export abstract class BiomeGenerator extends TerrainGenerator {
 
   /**
    * Yield to the event loop to prevent blocking.
+   * Uses requestAnimationFrame for smooth frame alignment.
    */
   protected yieldToEventLoop(): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, 0))
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()))
   }
 }

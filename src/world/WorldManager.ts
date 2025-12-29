@@ -9,6 +9,8 @@ import { Chunk } from './chunks/Chunk.ts'
 import { BlockIds } from './blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState } from './interfaces/IChunk.ts'
 import { ChunkMesh } from '../renderer/ChunkMesh.ts'
+import ChunkMeshWorker from '../workers/ChunkMeshWorker.ts?worker'
+import type { ChunkMeshRequest, ChunkMeshResponse } from '../workers/ChunkMeshWorker.ts'
 
 /**
  * Main world coordinator.
@@ -21,9 +23,129 @@ export class WorldManager {
   private readonly chunkMeshes: Map<ChunkKey, ChunkMesh> = new Map()
   private readonly generationCallbacks: Array<(chunk: Chunk) => void> = []
 
+  // Web Worker pool for mesh building
+  private readonly meshWorkers: Worker[] = []
+  private readonly workerQueue: Chunk[] = []
+  private readonly pendingChunks: Map<string, Chunk> = new Map()
+  private readonly WORKER_COUNT = Math.min(navigator.hardwareConcurrency || 4, 4)
+
   constructor(config?: Partial<ChunkManagerConfig>) {
     this.chunkManager = new ChunkManager(config)
     this.blockRegistry = BlockRegistry.getInstance()
+    this.initWorkers()
+  }
+
+  /**
+   * Initialize the Web Worker pool for mesh building.
+   */
+  private initWorkers(): void {
+    for (let i = 0; i < this.WORKER_COUNT; i++) {
+      const worker = new ChunkMeshWorker()
+      worker.onmessage = (event: MessageEvent<ChunkMeshResponse>) => {
+        this.handleWorkerResult(event.data)
+      }
+      this.meshWorkers.push(worker)
+    }
+  }
+
+  /**
+   * Handle mesh result from worker.
+   */
+  private handleWorkerResult(result: ChunkMeshResponse): void {
+    if (!this.scene) return
+
+    const chunkKey = createChunkKey(BigInt(result.chunkX), BigInt(result.chunkZ))
+    const chunk = this.pendingChunks.get(chunkKey)
+    this.pendingChunks.delete(chunkKey)
+
+    if (!chunk) return
+
+    // Remove existing meshes
+    this.removeChunkMeshes(chunkKey)
+
+    // Build mesh from worker result (array of [blockId, positions] pairs)
+    const chunkMesh = new ChunkMesh(chunk.coordinate)
+
+    for (const [blockId, positions] of result.visibleBlocks) {
+      for (let i = 0; i < positions.length; i += 3) {
+        chunkMesh.addBlock(blockId, positions[i], positions[i + 1], positions[i + 2])
+      }
+    }
+
+    chunkMesh.build()
+    chunkMesh.addToScene(this.scene)
+    this.chunkMeshes.set(chunkKey, chunkMesh)
+
+    // Process next chunk in queue
+    this.processWorkerQueue()
+  }
+
+  /**
+   * Get an idle worker (simple round-robin for now).
+   */
+  private getIdleWorker(): Worker | null {
+    // Find worker with least pending work
+    if (this.pendingChunks.size < this.WORKER_COUNT) {
+      return this.meshWorkers[this.pendingChunks.size % this.WORKER_COUNT]
+    }
+    return null
+  }
+
+  /**
+   * Process the worker queue - send chunks to available workers.
+   */
+  private processWorkerQueue(): void {
+    while (this.workerQueue.length > 0) {
+      const worker = this.getIdleWorker()
+      if (!worker) break
+
+      const chunk = this.workerQueue.shift()!
+      this.sendChunkToWorker(chunk, worker)
+    }
+  }
+
+  /**
+   * Send a chunk to a worker for mesh calculation.
+   */
+  private sendChunkToWorker(chunk: Chunk, worker: Worker): void {
+    const coord = chunk.coordinate
+    const chunkKey = createChunkKey(coord.x, coord.z)
+
+    // Get neighbor chunk data for edge visibility checks
+    const neighbors = {
+      posX: this.getNeighborBlockData(coord, 1, 0),
+      negX: this.getNeighborBlockData(coord, -1, 0),
+      posZ: this.getNeighborBlockData(coord, 0, 1),
+      negZ: this.getNeighborBlockData(coord, 0, -1),
+    }
+
+    // Copy block data since we can't transfer it (chunk still needs it)
+    const blocksCopy = new Uint16Array(chunk.getBlockData())
+
+    const request: ChunkMeshRequest = {
+      type: 'mesh',
+      chunkX: Number(coord.x),
+      chunkZ: Number(coord.z),
+      blocks: blocksCopy,
+      neighbors,
+    }
+
+    this.pendingChunks.set(chunkKey, chunk)
+
+    // Transfer the copied block data to worker
+    worker.postMessage(request, [blocksCopy.buffer])
+  }
+
+  /**
+   * Get block data from a neighbor chunk, or null if not loaded.
+   */
+  private getNeighborBlockData(coord: IChunkCoordinate, dx: number, dz: number): Uint16Array | null {
+    const neighborCoord: IChunkCoordinate = {
+      x: coord.x + BigInt(dx),
+      z: coord.z + BigInt(dz),
+    }
+    const neighbor = this.chunkManager.getChunk(neighborCoord)
+    return neighbor ? neighbor.getBlockData() : null
   }
 
   /**
@@ -335,6 +457,7 @@ export class WorldManager {
 
   /**
    * Render a single chunk. Use this for incremental updates.
+   * Note: Consider using queueChunkForMeshing for better performance.
    */
   renderSingleChunk(chunk: Chunk): void {
     if (!this.scene) return
@@ -346,6 +469,21 @@ export class WorldManager {
 
     // Render the chunk
     this.renderChunk(chunk)
+  }
+
+  /**
+   * Queue a chunk for background meshing via Web Worker.
+   * Chunks are processed in parallel by the worker pool.
+   */
+  queueChunkForMeshing(chunk: Chunk): void {
+    const chunkKey = createChunkKey(chunk.coordinate.x, chunk.coordinate.z)
+
+    // Don't queue if already pending or in queue
+    if (this.pendingChunks.has(chunkKey)) return
+    if (this.workerQueue.includes(chunk)) return
+
+    this.workerQueue.push(chunk)
+    this.processWorkerQueue()
   }
 
   /**
@@ -446,5 +584,11 @@ export class WorldManager {
   dispose(): void {
     this.clearAllMeshes()
     this.chunkManager.dispose()
+
+    // Terminate workers
+    for (const worker of this.meshWorkers) {
+      worker.terminate()
+    }
+    this.meshWorkers.length = 0
   }
 }

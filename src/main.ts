@@ -118,10 +118,9 @@ renderer.camera.position.set(
 // Set the scene for rendering
 world.setScene(renderer.scene)
 
-// Render only the new chunk when generation completes
+// Queue chunk for background meshing when generation completes
 world.onChunkGenerated((chunk) => {
-  console.log('Chunk generated:', chunk.coordinate)
-  world.renderSingleChunk(chunk)
+  world.queueChunkForMeshing(chunk)
 })
 
 // Add world lighting (sun at 10am)
