@@ -15,8 +15,8 @@ import { createFpsCounterUI } from './ui/FpsCounter.ts'
 import {
   WorldManager,
   registerDefaultBlocks,
-  BlockIds,
 } from './world/index.ts'
+import { WorldGenerator } from './world/generate/index.ts'
 import * as THREE from 'three'
 import {
   PhysicsEngine,
@@ -88,24 +88,17 @@ const inventoryInput = new InventoryInputHandler(
   cameraControls,
 )
 
-// Create world and load a 3x3 grid of chunks
+// Create world with terrain generation
 const world = new WorldManager()
-for (let cx = -1n; cx <= 1n; cx++) {
-  for (let cz = -1n; cz <= 1n; cz++) {
-    world.loadChunk({ x: cx, z: cz })
-  }
-}
-
-// Create a grass testing plane centered roughly on player
-// Plane is 64x64 blocks, from -32 to 31 on x and z, at y=0
-world.fillRegion(-32n, 0n, -32n, 31n, 0n, 31n, BlockIds.GRASS)
+const worldGenerator = new WorldGenerator(world)
+const seaLevel = worldGenerator.getConfig().seaLevel
 
 // Create physics system
 const physicsWorld = new WorldPhysicsAdapter(world)
 const physicsEngine = new PhysicsEngine(physicsWorld)
 
-// Create player physics body at spawn position (above the grass plane)
-const spawnPosition = new THREE.Vector3(0, 5, 0)
+// Create player physics body at spawn position (above generated terrain)
+const spawnPosition = new THREE.Vector3(0, seaLevel + 20, 0)
 const playerBody = new PhysicsBody(
   spawnPosition,
   new THREE.Vector3(PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_DEPTH)
@@ -122,8 +115,14 @@ renderer.camera.position.set(
   spawnPosition.z
 )
 
-// Render the world blocks to the scene
-world.render(renderer.scene)
+// Set the scene for rendering
+world.setScene(renderer.scene)
+
+// Render only the new chunk when generation completes
+world.onChunkGenerated((chunk) => {
+  console.log('Chunk generated:', chunk.coordinate)
+  world.renderSingleChunk(chunk)
+})
 
 // Add world lighting (sun at 10am)
 const lighting = new WorldLighting({ timeOfDay: 10 })
@@ -143,6 +142,12 @@ const gameLoop = new GameLoop({
     frameDeltaTime = deltaTime
     cameraControls.update(deltaTime)
     physicsEngine.update(deltaTime)
+
+    // Update world generation based on camera position
+    worldGenerator.update(
+      renderer.camera.position.x,
+      renderer.camera.position.z
+    )
   },
   render() {
     renderer.render()

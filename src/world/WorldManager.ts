@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { BlockId, IBlock } from './interfaces/IBlock.ts'
 import type { IChunkCoordinate, IWorldCoordinate } from './interfaces/ICoordinates.ts'
+import { createChunkKey, type ChunkKey } from './interfaces/ICoordinates.ts'
 import { worldToChunk, worldToLocal, localToWorld } from './coordinates/CoordinateUtils.ts'
 import { ChunkManager, type ChunkManagerConfig } from './chunks/ChunkManager.ts'
 import { BlockRegistry, getBlock } from './blocks/BlockRegistry.ts'
@@ -16,19 +17,12 @@ export class WorldManager {
   private readonly chunkManager: ChunkManager
   private readonly blockRegistry: BlockRegistry
   private scene: THREE.Scene | null = null
-  private readonly blockMeshes: Map<string, THREE.Mesh> = new Map()
+  private readonly chunkMeshes: Map<ChunkKey, THREE.Mesh[]> = new Map()
   private readonly generationCallbacks: Array<(chunk: Chunk) => void> = []
 
   constructor(config?: Partial<ChunkManagerConfig>) {
     this.chunkManager = new ChunkManager(config)
     this.blockRegistry = BlockRegistry.getInstance()
-  }
-
-  /**
-   * Create a unique key for a block position.
-   */
-  private getBlockKey(x: bigint, y: bigint, z: bigint): string {
-    return `${x},${y},${z}`
   }
 
   /**
@@ -224,9 +218,14 @@ export class WorldManager {
   }
 
   /**
-   * Unload a chunk.
+   * Unload a chunk and remove its meshes.
    */
   unloadChunk(coordinate: IChunkCoordinate): void {
+    // Remove meshes first
+    const chunkKey = createChunkKey(coordinate.x, coordinate.z)
+    this.removeChunkMeshes(chunkKey)
+
+    // Then unload the chunk data
     this.chunkManager.unloadChunk(coordinate)
   }
 
@@ -311,75 +310,156 @@ export class WorldManager {
   }
 
   /**
+   * Set the scene for rendering. Call this once before any chunk rendering.
+   */
+  setScene(scene: THREE.Scene): void {
+    this.scene = scene
+  }
+
+  /**
    * Render all blocks in loaded chunks to the scene.
-   * Call this after making changes to rebuild the visual representation.
+   * Call this to do a full re-render of all chunks.
    */
   render(scene: THREE.Scene): void {
     this.scene = scene
 
-    // Clear existing meshes
-    for (const mesh of this.blockMeshes.values()) {
-      scene.remove(mesh)
-    }
-    this.blockMeshes.clear()
+    // Clear all existing chunk meshes
+    this.clearAllMeshes()
 
-    // Iterate through all loaded chunks
+    // Render all loaded chunks
     for (const chunk of this.chunkManager.getLoadedChunks()) {
       this.renderChunk(chunk)
     }
   }
 
   /**
-   * Render a single chunk's blocks.
+   * Render a single chunk. Use this for incremental updates.
+   */
+  renderSingleChunk(chunk: Chunk): void {
+    if (!this.scene) return
+
+    const chunkKey = createChunkKey(chunk.coordinate.x, chunk.coordinate.z)
+
+    // Remove existing meshes for this chunk
+    this.removeChunkMeshes(chunkKey)
+
+    // Render the chunk
+    this.renderChunk(chunk)
+  }
+
+  /**
+   * Remove all meshes for a specific chunk.
+   */
+  removeChunkMeshes(chunkKey: ChunkKey): void {
+    const meshes = this.chunkMeshes.get(chunkKey)
+    if (meshes && this.scene) {
+      for (const mesh of meshes) {
+        this.scene.remove(mesh)
+        mesh.geometry.dispose()
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach(m => m.dispose())
+        } else {
+          mesh.material.dispose()
+        }
+      }
+    }
+    this.chunkMeshes.delete(chunkKey)
+  }
+
+  /**
+   * Clear all meshes from the scene.
+   */
+  private clearAllMeshes(): void {
+    if (!this.scene) return
+
+    for (const [chunkKey, meshes] of this.chunkMeshes) {
+      for (const mesh of meshes) {
+        this.scene.remove(mesh)
+        mesh.geometry.dispose()
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach(m => m.dispose())
+        } else {
+          mesh.material.dispose()
+        }
+      }
+    }
+    this.chunkMeshes.clear()
+  }
+
+  /**
+   * Check if a block has any exposed faces (not fully surrounded by opaque blocks).
+   */
+  private hasExposedFace(x: bigint, y: bigint, z: bigint): boolean {
+    const neighbors = [
+      [x + 1n, y, z], [x - 1n, y, z],
+      [x, y + 1n, z], [x, y - 1n, z],
+      [x, y, z + 1n], [x, y, z - 1n],
+    ] as const
+
+    for (const [nx, ny, nz] of neighbors) {
+      if (ny < 0n || ny >= BigInt(CHUNK_HEIGHT)) {
+        return true
+      }
+
+      const neighborId = this.getBlockId(nx, ny, nz)
+      const neighbor = getBlock(neighborId)
+
+      if (!neighbor.properties.isOpaque) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * Render a single chunk's blocks (internal).
    */
   private renderChunk(chunk: Chunk): void {
     if (!this.scene) return
 
     const chunkCoord = chunk.coordinate
+    const chunkKey = createChunkKey(chunkCoord.x, chunkCoord.z)
+    const meshes: THREE.Mesh[] = []
 
-    // Iterate through all blocks in the chunk
     for (let localY = 0; localY < CHUNK_HEIGHT; localY++) {
       for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
         for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
           const blockId = chunk.getBlockId(localX, localY, localZ)
 
-          // Skip air blocks
           if (blockId === BlockIds.AIR) continue
 
-          // Get the block type and create its mesh
+          const worldCoord = localToWorld(chunkCoord, { x: localX, y: localY, z: localZ })
+
+          if (!this.hasExposedFace(worldCoord.x, worldCoord.y, worldCoord.z)) {
+            continue
+          }
+
           const block = getBlock(blockId)
           const mesh = block.createMesh()
 
           if (mesh) {
-            // Convert local coords to world coords for positioning
-            const worldCoord = localToWorld(chunkCoord, { x: localX, y: localY, z: localZ })
             mesh.position.set(
               Number(worldCoord.x),
               Number(worldCoord.y),
               Number(worldCoord.z)
             )
 
-            // Track and add to scene
-            const key = this.getBlockKey(worldCoord.x, worldCoord.y, worldCoord.z)
-            this.blockMeshes.set(key, mesh)
+            meshes.push(mesh)
             this.scene.add(mesh)
           }
         }
       }
     }
+
+    this.chunkMeshes.set(chunkKey, meshes)
   }
 
   /**
    * Dispose all resources.
    */
   dispose(): void {
-    // Remove all meshes from scene
-    if (this.scene) {
-      for (const mesh of this.blockMeshes.values()) {
-        this.scene.remove(mesh)
-      }
-    }
-    this.blockMeshes.clear()
+    this.clearAllMeshes()
     this.chunkManager.dispose()
   }
 }
