@@ -1,0 +1,101 @@
+import type { Item } from '../items/Item.ts'
+
+export interface IToolbarState {
+  readonly size: number
+  readonly slots: ReadonlyArray<Item | null>
+  readonly selectedIndex: number
+
+  getItem(index: number): Item | null
+  selectSlot(index: number): void
+  setItem(index: number, item: Item | null): void
+  clearSlot(index: number): void
+  moveItem(fromIndex: number, toIndex: number): void
+}
+
+/**
+ * Simple toolbar implementation for a fixed number of slots.
+ * Handles add/remove/move operations and a currently selected slot.
+ */
+export class ToolbarState implements IToolbarState {
+  private readonly sizeInternal: number
+  private readonly slotsInternal: (Item | null)[]
+  private selectedIndexInternal = 0
+
+  constructor(size = 10) {
+    if (size <= 0) {
+      throw new Error('Toolbar size must be positive')
+    }
+    this.sizeInternal = size
+    this.slotsInternal = new Array<Item | null>(size).fill(null)
+  }
+
+  get size(): number {
+    return this.sizeInternal
+  }
+
+  get slots(): ReadonlyArray<Item | null> {
+    return this.slotsInternal
+  }
+
+  get selectedIndex(): number {
+    return this.selectedIndexInternal
+  }
+
+  private assertIndex(index: number): void {
+    if (!Number.isInteger(index) || index < 0 || index >= this.sizeInternal) {
+      throw new Error(`Toolbar index out of range: ${index}`)
+    }
+  }
+
+  getItem(index: number): Item | null {
+    this.assertIndex(index)
+    return this.slotsInternal[index]
+  }
+
+  selectSlot(index: number): void {
+    this.assertIndex(index)
+    this.selectedIndexInternal = index
+  }
+
+  setItem(index: number, item: Item | null): void {
+    this.assertIndex(index)
+    this.slotsInternal[index] = item
+  }
+
+  clearSlot(index: number): void {
+    this.setItem(index, null)
+  }
+
+  moveItem(fromIndex: number, toIndex: number): void {
+    this.assertIndex(fromIndex)
+    this.assertIndex(toIndex)
+    if (fromIndex === toIndex) return
+
+    const fromItem = this.slotsInternal[fromIndex]
+    const toItem = this.slotsInternal[toIndex]
+    this.slotsInternal[toIndex] = fromItem
+    this.slotsInternal[fromIndex] = toItem
+  }
+}
+
+export interface PlayerInventoryState {
+  toolbar: IToolbarState
+}
+
+export interface IPlayerState {
+  readonly inventory: PlayerInventoryState
+}
+
+/**
+ * Basic player state container. Extend with health, position, etc. as needed.
+ */
+export class PlayerState implements IPlayerState {
+  readonly inventory: PlayerInventoryState
+
+  constructor(toolbarSize = 10) {
+    this.inventory = {
+      toolbar: new ToolbarState(toolbarSize),
+    }
+  }
+}
+
