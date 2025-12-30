@@ -112,10 +112,33 @@ function addFaceGeometry(
   const u0 = 0, u1 = 1
   const v0 = 0, v1 = 1
   
-  // Generate color based on block ID (simple hashing for variety)
-  const r = ((blockId * 73) % 256) / 255
-  const g = ((blockId * 151) % 256) / 255
-  const b = ((blockId * 233) % 256) / 255
+  // Generate color based on block ID
+  // Using recognizable colors for common blocks:
+  // AIR=0, STONE=1, DIRT=2, GRASS=3, OAK_LOG=4, OAK_LEAVES=5
+  let r = 0.8, g = 0.8, b = 0.8 // default gray
+  
+  switch (blockId) {
+    case 1: // STONE
+      r = 0.5; g = 0.5; b = 0.5
+      break
+    case 2: // DIRT
+      r = 0.6; g = 0.4; b = 0.2
+      break
+    case 3: // GRASS
+      r = 0.4; g = 0.8; b = 0.3
+      break
+    case 4: // OAK_LOG
+      r = 0.4; g = 0.3; b = 0.2
+      break
+    case 5: // OAK_LEAVES
+      r = 0.2; g = 0.6; b = 0.2
+      break
+    default:
+      // For any other blocks, generate based on ID
+      r = ((blockId * 73) % 256) / 255
+      g = ((blockId * 151) % 256) / 255
+      b = ((blockId * 233) % 256) / 255
+  }
   
   switch (face) {
     case Face.TOP: // +Y
