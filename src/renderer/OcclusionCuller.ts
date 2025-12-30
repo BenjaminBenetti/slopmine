@@ -56,6 +56,7 @@ export class OcclusionCuller {
     // We skip the closest chunks as they can't be occluded
     const occlusionCheckStart = Math.min(OcclusionCuller.MIN_CHUNKS_TO_SKIP, chunksWithDistance.length)
     
+    let occludedCount = 0
     for (let i = occlusionCheckStart; i < chunksWithDistance.length; i++) {
       const target = chunksWithDistance[i]
       
@@ -85,9 +86,23 @@ export class OcclusionCuller {
       // Update visibility - if occluded, hide the chunk
       if (isOccluded) {
         target.chunk.getGroup().visible = false
+        occludedCount++
+      }
+    }
+    
+    // Debug logging every 60 frames (roughly once per second at 60fps)
+    if (this.frameCount++ % 60 === 0) {
+      console.log(`[OcclusionCuller] Visible: ${visibleChunks.length}, Testing: ${chunksWithDistance.length - occlusionCheckStart}, Occluded: ${occludedCount}`)
+      // Log a sample bounding box to verify they're being calculated correctly
+      if (chunksWithDistance.length > 0) {
+        const sampleBox = this.getOrCreateChunkBox(chunksWithDistance[0].chunk)
+        const height = sampleBox.max.y - sampleBox.min.y
+        console.log(`[OcclusionCuller] Sample chunk box height: ${height.toFixed(1)} (should be much less than ${CHUNK_HEIGHT} if mostly air)`)
       }
     }
   }
+  
+  private frameCount = 0
 
   /**
    * Quick check if a chunk is near the ray path to the target.
