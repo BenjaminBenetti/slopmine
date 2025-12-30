@@ -16,9 +16,10 @@ export class OcclusionCuller {
 
   // Configuration constants
   private static readonly MIN_CHUNKS_TO_SKIP = 5 // Closest chunks can't be occluded
-  private static readonly CHUNK_PROXIMITY_MULTIPLIER = 1.5 // Ray proximity threshold multiplier
-  private static readonly MIN_OCCLUSION_ANGLE_RADIANS = 0.35 // ~20 degrees - minimum angular size to occlude
+  private static readonly CHUNK_PROXIMITY_MULTIPLIER = 2.0 // Ray proximity threshold multiplier (increased for safety)
+  private static readonly MIN_OCCLUSION_ANGLE_RADIANS = 0.8 // ~45 degrees - minimum angular size to occlude (much more conservative)
   private static readonly CHUNK_HEIGHT_SCALE = 4 // Scale down height for angular size calculation (chunks are wider than tall)
+  private static readonly MAX_OCCLUSION_DISTANCE_RATIO = 0.9 // Occluder must be at least 90% closer to occlude
 
   /**
    * Update chunk visibility based on occlusion from the camera.
@@ -143,20 +144,61 @@ export class OcclusionCuller {
     
     if (intersectionDist >= targetDist) return false
     
-    // For a chunk to fully occlude another, it should significantly block the view
-    // We use a simple heuristic: if the occluder's box is large enough relative to the view angle
+    // Occluder must be significantly closer (at least 90% of the distance)
+    // This prevents chunks at similar distances from occluding each other
+    if (intersectionDist > targetDist * OcclusionCuller.MAX_OCCLUSION_DISTANCE_RATIO) {
+      return false
+    }
+    
+    // For a chunk to fully occlude another, it must appear very large
+    // We use a conservative heuristic: if the occluder's box is large enough relative to the view angle
     // and the target is directly behind it, consider it occluded
     
     // Calculate angular size of occluder from camera
     const occluderCenter = this.getOrCreateChunkCenter(occluder)
     const distToOccluder = Math.sqrt(cameraPos.distanceToSquared(occluderCenter))
-    // Use horizontal dimensions for angular size (chunks are wider than tall)
+    
+    // Use the full chunk dimensions for a more conservative estimate
+    // A chunk needs to appear very large to fully occlude another chunk
     const occluderSize = Math.max(CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT / OcclusionCuller.CHUNK_HEIGHT_SCALE)
     const angularSize = Math.atan(occluderSize / distToOccluder)
     
-    // If occluder appears large enough, it can occlude
-    // This prevents distant tiny chunks from occluding large areas
-    return angularSize > OcclusionCuller.MIN_OCCLUSION_ANGLE_RADIANS
+    // Only occlude if the occluder appears very large (> ~45 degrees)
+    // This is very conservative and prevents false positives
+    if (angularSize <= OcclusionCuller.MIN_OCCLUSION_ANGLE_RADIANS) {
+      return false
+    }
+    
+    // Additional check: Test multiple points on the target chunk, not just the center
+    // A chunk should only be occluded if most of it is blocked
+    const targetCenter = this.getOrCreateChunkCenter(target)
+    const testPoints = [
+      targetCenter, // Center
+      // Test corners at different heights
+      new THREE.Vector3(targetBox.min.x, targetCenter.y, targetBox.min.z),
+      new THREE.Vector3(targetBox.max.x, targetCenter.y, targetBox.min.z),
+      new THREE.Vector3(targetBox.min.x, targetCenter.y, targetBox.max.z),
+      new THREE.Vector3(targetBox.max.x, targetCenter.y, targetBox.max.z),
+    ]
+    
+    let blockedPoints = 0
+    for (const point of testPoints) {
+      const dir = point.clone().sub(cameraPos).normalize()
+      this.raycaster.set(cameraPos, dir)
+      const hit = this.raycaster.ray.intersectBox(occluderBox, new THREE.Vector3())
+      
+      if (hit) {
+        const hitDist = cameraPos.distanceToSquared(hit)
+        const pointDist = cameraPos.distanceToSquared(point)
+        
+        if (hitDist < pointDist * OcclusionCuller.MAX_OCCLUSION_DISTANCE_RATIO) {
+          blockedPoints++
+        }
+      }
+    }
+    
+    // Only consider occluded if at least 80% of test points are blocked
+    return blockedPoints >= testPoints.length * 0.8
   }
 
   /**
