@@ -81,6 +81,16 @@ export class WorldGenerator {
   }
 
   /**
+   * Force a refresh of chunk loading based on current config.
+   * Call this after changing chunkDistance to apply changes immediately.
+   */
+  refreshChunks(): void {
+    if (!this.initialized) return
+    this.updateQueue()
+    this.unloadDistantChunks()
+  }
+
+  /**
    * Rebuild the chunk queue based on current player position.
    * Uses spiral ordering for efficient nearby-first generation.
    */

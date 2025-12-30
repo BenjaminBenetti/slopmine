@@ -8,10 +8,12 @@ import {
 import { PlayerState } from './player/PlayerState.ts'
 import { ToolbarInputHandler } from './player/ToolbarInput.ts'
 import { InventoryInputHandler } from './player/InventoryInput.ts'
+import { SettingsInputHandler } from './player/SettingsInput.ts'
 import { BlockInteraction } from './player/BlockInteraction.ts'
 import { createCrosshairUI } from './ui/Crosshair.ts'
 import { createToolbarUI } from './ui/Toolbar.ts'
 import { createInventoryUI } from './ui/Inventory.ts'
+import { createSettingsMenuUI } from './ui/SettingsMenu.ts'
 import { createFpsCounterUI } from './ui/FpsCounter.ts'
 import {
   WorldManager,
@@ -92,6 +94,20 @@ const inventoryInput = new InventoryInputHandler(
 // Create world with terrain generation
 const world = new WorldManager()
 const worldGenerator = new WorldGenerator(world)
+
+// Settings menu UI (settingsInput is created later after gameLoop)
+const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), document.body, {
+  onResume: () => {
+    // Request pointer lock to resume game - this triggers the pointerLockChange
+    // handler which will close the settings menu
+    renderer.renderer.domElement.requestPointerLock()
+  },
+  onChunkDistanceChange: () => {
+    // Apply new render distance immediately
+    worldGenerator.refreshChunks()
+  },
+})
+
 const seaLevel = worldGenerator.getConfig().seaLevel
 
 // Create physics system
@@ -143,12 +159,12 @@ const blockInteraction = new BlockInteraction(
 )
 
 let frameCpuStart = 0
-let frameDeltaTime = 0
+let lastTickCount = 0
+let lastFrameTime = 0
 
 const gameLoop = new GameLoop({
   update(deltaTime: number) {
     frameCpuStart = performance.now()
-    frameDeltaTime = deltaTime
     cameraControls.update(deltaTime)
     physicsEngine.update(deltaTime)
     blockInteraction.update(deltaTime)
@@ -169,8 +185,26 @@ const gameLoop = new GameLoop({
     renderer.render()
     // Measure total CPU time for update + render
     const cpuTime = performance.now() - frameCpuStart
-    fpsCounter.update({ deltaTime: frameDeltaTime, cpuTime })
+    fpsCounter.update({
+      deltaTime: lastFrameTime / 1000,
+      cpuTime,
+      tickCount: lastTickCount,
+    })
   },
+}, (metrics) => {
+  lastTickCount = metrics.tickCount
+  lastFrameTime = metrics.frameTime
+})
+
+// Settings input handler - shows/hides settings based on pointer lock state
+// Created after gameLoop so we can control pause state
+const settingsInput = new SettingsInputHandler({
+  domElement: renderer.renderer.domElement,
+  cameraControls,
+  isInventoryOpen: () => inventoryUI.isOpen,
+  openSettingsUI: () => settingsUI.open(),
+  closeSettingsUI: () => settingsUI.close(),
+  setGamePaused: (paused) => { gameLoop.paused = paused },
 })
 
 gameLoop.start()

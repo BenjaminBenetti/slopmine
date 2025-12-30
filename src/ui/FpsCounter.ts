@@ -7,6 +7,7 @@ export interface FpsCounterOptions {
 export interface FrameMetrics {
   deltaTime: number
   cpuTime: number
+  tickCount: number
 }
 
 export interface FpsCounterUI {
@@ -45,7 +46,7 @@ export function createFpsCounterUI(
   el.style.userSelect = 'none'
   el.style.textAlign = 'right'
   el.style.lineHeight = '1.4'
-  el.innerHTML = 'FPS: --<br>Frame: --<br>CPU: --'
+  el.innerHTML = 'FPS: --<br>UPS: --<br>Frame: --<br>CPU: --'
 
   parent.appendChild(el)
 
@@ -54,6 +55,7 @@ export function createFpsCounterUI(
   let frameCount = 0
   let elapsedTime = 0
   let totalCpuTime = 0
+  let totalTickCount = 0
 
   // Target frame budget for 60 FPS
   const frameBudgetMs = 16.67
@@ -66,9 +68,11 @@ export function createFpsCounterUI(
       const deltaMs = metrics.deltaTime * 1000
       elapsedTime += deltaMs
       totalCpuTime += metrics.cpuTime
+      totalTickCount += metrics.tickCount
 
       if (elapsedTime >= updateInterval) {
         const fps = Math.round((frameCount / elapsedTime) * 1000)
+        const ups = Math.round((totalTickCount / elapsedTime) * 1000)
         const avgFrameTime = elapsedTime / frameCount
         const avgCpuTime = totalCpuTime / frameCount
         const headroom = Math.max(0, frameBudgetMs - avgCpuTime)
@@ -76,6 +80,7 @@ export function createFpsCounterUI(
 
         el.innerHTML = [
           `FPS: ${fps}`,
+          `UPS: ${ups}`,
           `Frame: ${avgFrameTime.toFixed(1)}ms`,
           `CPU: ${avgCpuTime.toFixed(2)}ms (${cpuPercent.toFixed(0)}%)`,
           `Headroom: ${headroom.toFixed(1)}ms`,
@@ -84,6 +89,7 @@ export function createFpsCounterUI(
         frameCount = 0
         elapsedTime = 0
         totalCpuTime = 0
+        totalTickCount = 0
       }
     },
 
