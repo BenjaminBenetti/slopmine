@@ -202,39 +202,47 @@ export class OcclusionCuller {
   }
 
   /**
-   * Get or calculate the center point of a chunk.
+   * Get or calculate the center point of a chunk based on its actual geometry.
    */
   private getOrCreateChunkCenter(chunk: ChunkMesh): THREE.Vector3 {
     let center = this.chunkCenters.get(chunk)
     if (!center) {
-      const coord = chunk.chunkCoordinate
-      const worldX = Number(coord.x) * CHUNK_SIZE_X
-      const worldZ = Number(coord.z) * CHUNK_SIZE_Z
-      
-      center = new THREE.Vector3(
-        worldX + CHUNK_SIZE_X / 2,
-        CHUNK_HEIGHT / 2,
-        worldZ + CHUNK_SIZE_Z / 2
-      )
+      const box = this.getOrCreateChunkBox(chunk)
+      center = new THREE.Vector3()
+      box.getCenter(center)
       this.chunkCenters.set(chunk, center)
     }
     return center
   }
 
   /**
-   * Get or calculate the bounding box of a chunk.
+   * Get or calculate the bounding box of a chunk based on its actual mesh geometry.
+   * This is much more accurate than assuming full chunk height.
    */
   private getOrCreateChunkBox(chunk: ChunkMesh): THREE.Box3 {
     let box = this.chunkBoxes.get(chunk)
     if (!box) {
-      const coord = chunk.chunkCoordinate
-      const worldX = Number(coord.x) * CHUNK_SIZE_X
-      const worldZ = Number(coord.z) * CHUNK_SIZE_Z
+      const group = chunk.getGroup()
       
-      box = new THREE.Box3(
-        new THREE.Vector3(worldX, 0, worldZ),
-        new THREE.Vector3(worldX + CHUNK_SIZE_X, CHUNK_HEIGHT, worldZ + CHUNK_SIZE_Z)
-      )
+      // Compute bounding box from actual geometry
+      box = new THREE.Box3()
+      
+      // Update world matrices to ensure accurate bounds
+      group.updateMatrixWorld(true)
+      
+      // Compute box from all children in the group
+      if (group.children.length > 0) {
+        box.setFromObject(group)
+      } else {
+        // Fallback if no children - use chunk coordinate bounds
+        const coord = chunk.chunkCoordinate
+        const worldX = Number(coord.x) * CHUNK_SIZE_X
+        const worldZ = Number(coord.z) * CHUNK_SIZE_Z
+        
+        box.min.set(worldX, 0, worldZ)
+        box.max.set(worldX + CHUNK_SIZE_X, CHUNK_HEIGHT, worldZ + CHUNK_SIZE_Z)
+      }
+      
       this.chunkBoxes.set(chunk, box)
     }
     return box
