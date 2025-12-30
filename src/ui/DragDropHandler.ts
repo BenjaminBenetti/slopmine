@@ -1,6 +1,6 @@
 import type { IItem } from '../items/Item.ts'
-import type { IToolbarState, IInventoryGridState } from '../player/PlayerState.ts'
-import { renderItemInSlot } from './SlotRenderer.ts'
+import type { IItemStack, IToolbarState, IInventoryGridState } from '../player/PlayerState.ts'
+import { renderStackInSlot } from './SlotRenderer.ts'
 
 export interface DragDropSlotInfo {
   element: HTMLDivElement
@@ -59,22 +59,22 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     })
   }
 
-  function getItemFromSlot(info: DragDropSlotInfo): IItem | null {
+  function getStackFromSlot(info: DragDropSlotInfo): IItemStack | null {
     if (info.container === 'toolbar') {
-      return toolbarState.getItem(info.index)
+      return toolbarState.getStack(info.index)
     }
-    return inventoryState.getItem(info.index)
+    return inventoryState.getStack(info.index)
   }
 
-  function setItemInSlot(info: DragDropSlotInfo, item: IItem | null): void {
+  function setStackInSlot(info: DragDropSlotInfo, stack: IItemStack | null): void {
     if (info.container === 'toolbar') {
-      toolbarState.setItem(info.index, item)
+      toolbarState.setStack(info.index, stack)
     } else {
-      inventoryState.setItem(info.index, item)
+      inventoryState.setStack(info.index, stack)
     }
   }
 
-  function createGhostElement(item: IItem): HTMLDivElement {
+  function createGhostElement(stack: IItemStack): HTMLDivElement {
     const ghost = document.createElement('div')
     ghost.style.position = 'fixed'
     ghost.style.width = '44px'
@@ -84,15 +84,31 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     ghost.style.opacity = '0.8'
     ghost.style.transform = 'translate(-50%, -50%)'
 
-    if (item.iconUrl) {
+    if (stack.item.iconUrl) {
       const img = document.createElement('img')
-      img.src = item.iconUrl
+      img.src = stack.item.iconUrl
       img.style.width = '100%'
       img.style.height = '100%'
       img.style.objectFit = 'contain'
       img.style.imageRendering = 'pixelated'
       img.draggable = false
       ghost.appendChild(img)
+    }
+
+    // Show count if more than 1
+    if (stack.count > 1) {
+      const countLabel = document.createElement('div')
+      countLabel.textContent = String(stack.count)
+      countLabel.style.position = 'absolute'
+      countLabel.style.bottom = '2px'
+      countLabel.style.right = '4px'
+      countLabel.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
+      countLabel.style.fontSize = '0.7rem'
+      countLabel.style.fontWeight = 'bold'
+      countLabel.style.color = 'white'
+      countLabel.style.textShadow = '1px 1px 1px rgba(0, 0, 0, 0.8), -1px -1px 1px rgba(0, 0, 0, 0.8)'
+      countLabel.style.pointerEvents = 'none'
+      ghost.appendChild(countLabel)
     }
 
     document.body.appendChild(ghost)
@@ -224,15 +240,15 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     source: DragDropSlotInfo,
     target: DragDropSlotInfo
   ): void {
-    const sourceItem = getItemFromSlot(source)
-    const targetItem = getItemFromSlot(target)
+    const sourceStack = getStackFromSlot(source)
+    const targetStack = getStackFromSlot(target)
 
-    setItemInSlot(source, targetItem)
-    setItemInSlot(target, sourceItem)
+    setStackInSlot(source, targetStack)
+    setStackInSlot(target, sourceStack)
 
     // Update UI for both slots
-    renderItemInSlot(source.element, targetItem)
-    renderItemInSlot(target.element, sourceItem)
+    renderStackInSlot(source.element, targetStack)
+    renderStackInSlot(target.element, sourceStack)
 
     onStateChanged?.()
   }
@@ -254,8 +270,8 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     const slot = findSlotUnderPoint(event.clientX, event.clientY)
     if (!slot) return
 
-    const item = getItemFromSlot(slot)
-    if (!item) return
+    const stack = getStackFromSlot(slot)
+    if (!stack) return
 
     event.preventDefault()
 
@@ -266,7 +282,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     dragSource = slot
 
     // Create ghost
-    ghostElement = createGhostElement(item)
+    ghostElement = createGhostElement(stack)
     updateGhostPosition(event.clientX, event.clientY)
 
     // Dim source slot
@@ -283,10 +299,10 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     // Handle tooltip on hover
     const slot = findSlotUnderPoint(event.clientX, event.clientY)
     if (slot) {
-      const item = getItemFromSlot(slot)
-      if (item) {
+      const stack = getStackFromSlot(slot)
+      if (stack) {
         hoveredSlot = slot
-        showTooltip(item, event.clientX, event.clientY)
+        showTooltip(stack.item, event.clientX, event.clientY)
         return
       }
     }

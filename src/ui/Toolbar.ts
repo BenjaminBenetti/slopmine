@@ -1,4 +1,4 @@
-import type { IItem } from '../items/Item.ts'
+import type { IItemStack } from '../player/PlayerState.ts'
 import { syncSlotsFromState } from './SlotRenderer.ts'
 
 export interface ToolbarUIOptions {
@@ -11,7 +11,7 @@ export interface ToolbarUI {
   readonly slots: HTMLDivElement[]
   updateSelectedSlot(index: number): void
   destroy(): void
-  syncFromState(stateSlots: ReadonlyArray<IItem | null>): void
+  syncFromState(stateSlots: ReadonlyArray<IItemStack | null>): void
 }
 
 /**
@@ -110,7 +110,7 @@ export function createToolbarUI(
         parent.removeChild(root)
       }
     },
-    syncFromState(stateSlots: ReadonlyArray<IItem | null>): void {
+    syncFromState(stateSlots: ReadonlyArray<IItemStack | null>): void {
       syncSlotsFromState(slots, stateSlots)
     },
   }

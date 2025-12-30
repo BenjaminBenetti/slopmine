@@ -1,15 +1,27 @@
 import type { IItem } from '../items/Item.ts'
 
+/**
+ * Represents a stack of items in an inventory slot.
+ */
+export interface IItemStack {
+  readonly item: IItem
+  count: number
+}
+
 export interface IToolbarState {
   readonly size: number
-  readonly slots: ReadonlyArray<IItem | null>
+  readonly slots: ReadonlyArray<IItemStack | null>
   readonly selectedIndex: number
 
+  getStack(index: number): IItemStack | null
   getItem(index: number): IItem | null
+  getCount(index: number): number
   selectSlot(index: number): void
-  setItem(index: number, item: IItem | null): void
+  setStack(index: number, stack: IItemStack | null): void
   clearSlot(index: number): void
   moveItem(fromIndex: number, toIndex: number): void
+  /** Try to add item to existing stack at index. Returns amount actually added. */
+  addToStack(index: number, item: IItem, amount?: number): number
 }
 
 /**
@@ -18,7 +30,7 @@ export interface IToolbarState {
  */
 export class ToolbarState implements IToolbarState {
   private readonly sizeInternal: number
-  private readonly slotsInternal: (IItem | null)[]
+  private readonly slotsInternal: (IItemStack | null)[]
   private selectedIndexInternal = 0
 
   constructor(size = 10) {
@@ -26,14 +38,14 @@ export class ToolbarState implements IToolbarState {
       throw new Error('Toolbar size must be positive')
     }
     this.sizeInternal = size
-    this.slotsInternal = new Array<IItem | null>(size).fill(null)
+    this.slotsInternal = new Array<IItemStack | null>(size).fill(null)
   }
 
   get size(): number {
     return this.sizeInternal
   }
 
-  get slots(): ReadonlyArray<IItem | null> {
+  get slots(): ReadonlyArray<IItemStack | null> {
     return this.slotsInternal
   }
 
@@ -47,9 +59,19 @@ export class ToolbarState implements IToolbarState {
     }
   }
 
-  getItem(index: number): IItem | null {
+  getStack(index: number): IItemStack | null {
     this.assertIndex(index)
     return this.slotsInternal[index]
+  }
+
+  getItem(index: number): IItem | null {
+    this.assertIndex(index)
+    return this.slotsInternal[index]?.item ?? null
+  }
+
+  getCount(index: number): number {
+    this.assertIndex(index)
+    return this.slotsInternal[index]?.count ?? 0
   }
 
   selectSlot(index: number): void {
@@ -57,13 +79,36 @@ export class ToolbarState implements IToolbarState {
     this.selectedIndexInternal = index
   }
 
-  setItem(index: number, item: IItem | null): void {
+  setStack(index: number, stack: IItemStack | null): void {
     this.assertIndex(index)
-    this.slotsInternal[index] = item
+    this.slotsInternal[index] = stack
   }
 
   clearSlot(index: number): void {
-    this.setItem(index, null)
+    this.setStack(index, null)
+  }
+
+  addToStack(index: number, item: IItem, amount = 1): number {
+    this.assertIndex(index)
+    const stack = this.slotsInternal[index]
+
+    if (!stack) {
+      // Empty slot - create new stack
+      const toAdd = Math.min(amount, item.maxStackSize)
+      this.slotsInternal[index] = { item, count: toAdd }
+      return toAdd
+    }
+
+    // Check if items can stack
+    if (stack.item.id !== item.id) {
+      return 0
+    }
+
+    // Add to existing stack
+    const spaceLeft = stack.item.maxStackSize - stack.count
+    const toAdd = Math.min(amount, spaceLeft)
+    stack.count += toAdd
+    return toAdd
   }
 
   moveItem(fromIndex: number, toIndex: number): void {
@@ -71,28 +116,32 @@ export class ToolbarState implements IToolbarState {
     this.assertIndex(toIndex)
     if (fromIndex === toIndex) return
 
-    const fromItem = this.slotsInternal[fromIndex]
-    const toItem = this.slotsInternal[toIndex]
-    this.slotsInternal[toIndex] = fromItem
-    this.slotsInternal[fromIndex] = toItem
+    const fromStack = this.slotsInternal[fromIndex]
+    const toStack = this.slotsInternal[toIndex]
+    this.slotsInternal[toIndex] = fromStack
+    this.slotsInternal[fromIndex] = toStack
   }
 }
 
 export interface IInventoryGridState {
   readonly width: number
   readonly height: number
-  readonly slots: ReadonlyArray<IItem | null>
+  readonly slots: ReadonlyArray<IItemStack | null>
 
+  getStack(index: number): IItemStack | null
   getItem(index: number): IItem | null
-  setItem(index: number, item: IItem | null): void
+  getCount(index: number): number
+  setStack(index: number, stack: IItemStack | null): void
   clearSlot(index: number): void
   moveItem(fromIndex: number, toIndex: number): void
+  /** Try to add item to existing stack at index. Returns amount actually added. */
+  addToStack(index: number, item: IItem, amount?: number): number
 }
 
 export class InventoryGridState implements IInventoryGridState {
   private readonly widthInternal: number
   private readonly heightInternal: number
-  private readonly slotsInternal: (IItem | null)[]
+  private readonly slotsInternal: (IItemStack | null)[]
 
   constructor(width: number, height: number) {
     if (width <= 0 || height <= 0) {
@@ -100,7 +149,7 @@ export class InventoryGridState implements IInventoryGridState {
     }
     this.widthInternal = width
     this.heightInternal = height
-    this.slotsInternal = new Array<IItem | null>(width * height).fill(null)
+    this.slotsInternal = new Array<IItemStack | null>(width * height).fill(null)
   }
 
   get width(): number {
@@ -111,7 +160,7 @@ export class InventoryGridState implements IInventoryGridState {
     return this.heightInternal
   }
 
-  get slots(): ReadonlyArray<IItem | null> {
+  get slots(): ReadonlyArray<IItemStack | null> {
     return this.slotsInternal
   }
 
@@ -121,18 +170,51 @@ export class InventoryGridState implements IInventoryGridState {
     }
   }
 
-  getItem(index: number): IItem | null {
+  getStack(index: number): IItemStack | null {
     this.assertIndex(index)
     return this.slotsInternal[index]
   }
 
-  setItem(index: number, item: IItem | null): void {
+  getItem(index: number): IItem | null {
     this.assertIndex(index)
-    this.slotsInternal[index] = item
+    return this.slotsInternal[index]?.item ?? null
+  }
+
+  getCount(index: number): number {
+    this.assertIndex(index)
+    return this.slotsInternal[index]?.count ?? 0
+  }
+
+  setStack(index: number, stack: IItemStack | null): void {
+    this.assertIndex(index)
+    this.slotsInternal[index] = stack
   }
 
   clearSlot(index: number): void {
-    this.setItem(index, null)
+    this.setStack(index, null)
+  }
+
+  addToStack(index: number, item: IItem, amount = 1): number {
+    this.assertIndex(index)
+    const stack = this.slotsInternal[index]
+
+    if (!stack) {
+      // Empty slot - create new stack
+      const toAdd = Math.min(amount, item.maxStackSize)
+      this.slotsInternal[index] = { item, count: toAdd }
+      return toAdd
+    }
+
+    // Check if items can stack
+    if (stack.item.id !== item.id) {
+      return 0
+    }
+
+    // Add to existing stack
+    const spaceLeft = stack.item.maxStackSize - stack.count
+    const toAdd = Math.min(amount, spaceLeft)
+    stack.count += toAdd
+    return toAdd
   }
 
   moveItem(fromIndex: number, toIndex: number): void {
@@ -140,10 +222,10 @@ export class InventoryGridState implements IInventoryGridState {
     this.assertIndex(toIndex)
     if (fromIndex === toIndex) return
 
-    const fromItem = this.slotsInternal[fromIndex]
-    const toItem = this.slotsInternal[toIndex]
-    this.slotsInternal[toIndex] = fromItem
-    this.slotsInternal[fromIndex] = toItem
+    const fromStack = this.slotsInternal[fromIndex]
+    const toStack = this.slotsInternal[toIndex]
+    this.slotsInternal[toIndex] = fromStack
+    this.slotsInternal[fromIndex] = toStack
   }
 }
 
@@ -178,28 +260,49 @@ export class PlayerState implements IPlayerState {
 
   /**
    * Try to add an item to the player's inventory.
+   * First tries to stack with existing items, then uses empty slots.
    * Tries toolbar first, then main inventory.
    * @returns true if item was added, false if inventory is full
    */
-  addItem(item: IItem): boolean {
-    // Try toolbar first
-    for (let i = 0; i < this.inventory.toolbar.size; i++) {
-      if (this.inventory.toolbar.getItem(i) === null) {
-        this.inventory.toolbar.setItem(i, item)
-        return true
+  addItem(item: IItem, amount = 1): boolean {
+    let remaining = amount
+
+    // First pass: try to stack with existing items in toolbar
+    for (let i = 0; i < this.inventory.toolbar.size && remaining > 0; i++) {
+      const stack = this.inventory.toolbar.getStack(i)
+      if (stack && stack.item.id === item.id && stack.count < stack.item.maxStackSize) {
+        const added = this.inventory.toolbar.addToStack(i, item, remaining)
+        remaining -= added
       }
     }
 
-    // Try main inventory
+    // Second pass: try to stack with existing items in main inventory
     const invSize = this.inventory.inventory.slots.length
-    for (let i = 0; i < invSize; i++) {
-      if (this.inventory.inventory.getItem(i) === null) {
-        this.inventory.inventory.setItem(i, item)
-        return true
+    for (let i = 0; i < invSize && remaining > 0; i++) {
+      const stack = this.inventory.inventory.getStack(i)
+      if (stack && stack.item.id === item.id && stack.count < stack.item.maxStackSize) {
+        const added = this.inventory.inventory.addToStack(i, item, remaining)
+        remaining -= added
       }
     }
 
-    return false
+    // Third pass: find empty slots in toolbar
+    for (let i = 0; i < this.inventory.toolbar.size && remaining > 0; i++) {
+      if (this.inventory.toolbar.getStack(i) === null) {
+        const added = this.inventory.toolbar.addToStack(i, item, remaining)
+        remaining -= added
+      }
+    }
+
+    // Fourth pass: find empty slots in main inventory
+    for (let i = 0; i < invSize && remaining > 0; i++) {
+      if (this.inventory.inventory.getStack(i) === null) {
+        const added = this.inventory.inventory.addToStack(i, item, remaining)
+        remaining -= added
+      }
+    }
+
+    return remaining === 0
   }
 }
 

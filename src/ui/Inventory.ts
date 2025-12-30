@@ -1,4 +1,4 @@
-import type { IItem } from '../items/Item.ts'
+import type { IItemStack } from '../player/PlayerState.ts'
 import { syncSlotsFromState } from './SlotRenderer.ts'
 
 export interface InventoryUIOptions {
@@ -16,7 +16,7 @@ export interface InventoryUI {
   close(): void
   toggle(): void
   destroy(): void
-  syncFromState(stateSlots: ReadonlyArray<IItem | null>): void
+  syncFromState(stateSlots: ReadonlyArray<IItemStack | null>): void
 }
 
 /**
@@ -106,7 +106,7 @@ export function createInventoryUI(
         parent.removeChild(overlay)
       }
     },
-    syncFromState(stateSlots: ReadonlyArray<IItem | null>): void {
+    syncFromState(stateSlots: ReadonlyArray<IItemStack | null>): void {
       syncSlotsFromState(slots, stateSlots)
     },
   }
