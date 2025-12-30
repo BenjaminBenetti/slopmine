@@ -17,9 +17,10 @@ export class OcclusionCuller {
   // Configuration constants
   private static readonly MIN_CHUNKS_TO_SKIP = 5 // Closest chunks can't be occluded
   private static readonly CHUNK_PROXIMITY_MULTIPLIER = 2.0 // Ray proximity threshold multiplier (increased for safety)
-  private static readonly MIN_OCCLUSION_ANGLE_RADIANS = 0.8 // ~45 degrees - minimum angular size to occlude (much more conservative)
+  private static readonly MIN_OCCLUSION_ANGLE_RADIANS = 1.2 // ~70 degrees - minimum angular size to occlude (very conservative)
   private static readonly CHUNK_HEIGHT_SCALE = 4 // Scale down height for angular size calculation (chunks are wider than tall)
-  private static readonly MAX_OCCLUSION_DISTANCE_RATIO = 0.9 // Occluder must be at least 90% closer to occlude
+  private static readonly MAX_OCCLUSION_DISTANCE_RATIO = 0.7 // Occluder must be at least 70% closer to occlude (was 90%, now more strict)
+  private static readonly MAX_OCCLUSION_TEST_DISTANCE = 100 // Only test occlusion for chunks within this distance squared
 
   /**
    * Update chunk visibility based on occlusion from the camera.
@@ -59,6 +60,11 @@ export class OcclusionCuller {
     let occludedCount = 0
     for (let i = occlusionCheckStart; i < chunksWithDistance.length; i++) {
       const target = chunksWithDistance[i]
+      
+      // Don't test occlusion for very distant chunks - too error prone
+      if (target.distance > OcclusionCuller.MAX_OCCLUSION_TEST_DISTANCE * OcclusionCuller.MAX_OCCLUSION_TEST_DISTANCE) {
+        continue
+      }
       
       // Check if this chunk is occluded by any closer chunk
       let isOccluded = false

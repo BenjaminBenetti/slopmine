@@ -10,7 +10,7 @@ export class Renderer {
   private readonly frustumCuller = new FrustumCuller()
   private readonly occlusionCuller = new OcclusionCuller()
   private chunkMeshSource: (() => Iterable<ChunkMesh>) | null = null
-  private occlusionCullingEnabled = true // Enabled by default to test performance
+  private occlusionCullingEnabled = false // Disabled by default - too aggressive, causes false positives
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
