@@ -171,7 +171,7 @@ export class ChunkMesh {
 
 /**
  * Merge multiple BufferGeometry objects into one.
- * Simplified implementation based on THREE.BufferGeometryUtils.mergeGeometries
+ * Custom implementation for merging geometries with proper material index handling.
  */
 function mergeBufferGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeometry | null {
   if (geometries.length === 0) return null
@@ -201,11 +201,8 @@ function mergeBufferGeometries(geometries: THREE.BufferGeometry[]): THREE.Buffer
         itemSize = attribute.itemSize
         const array = attribute.array as Float32Array
         arrays.push(array)
-      } else {
-        // If geometry doesn't have this attribute, skip it or fill with zeros
-        // For simplicity, we'll skip merging if not all geometries have the attribute
-        continue
       }
+      // Note: If a geometry is missing this attribute, it's skipped from merging
     }
 
     if (arrays.length === geometries.length) {

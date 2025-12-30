@@ -560,7 +560,7 @@ export class WorldManager {
   }
 
   /**
-   * Render a single chunk's blocks using InstancedMesh for performance.
+   * Render a single chunk's blocks using merged geometry for performance.
    */
   private renderChunk(chunk: Chunk): void {
     if (!this.scene) return
@@ -583,7 +583,7 @@ export class WorldManager {
             continue
           }
 
-          // Add block to instanced mesh
+          // Add block to merged mesh
           chunkMesh.addBlock(
             blockId,
             Number(worldCoord.x),
@@ -594,7 +594,7 @@ export class WorldManager {
       }
     }
 
-    // Build all InstancedMesh objects and add to scene
+    // Build merged mesh and add to scene
     chunkMesh.build()
     chunkMesh.addToScene(this.scene)
     this.chunkMeshes.set(chunkKey, chunkMesh)
