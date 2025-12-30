@@ -140,6 +140,9 @@ renderer.camera.position.set(
 // Set the scene for rendering
 world.setScene(renderer.scene)
 
+// Connect chunk meshes to renderer for frustum culling
+renderer.setChunkMeshSource(() => world.getChunkMeshes())
+
 // Queue chunk for background meshing when generation completes
 world.onChunkGenerated((chunk) => {
   world.queueChunkForMeshing(chunk)

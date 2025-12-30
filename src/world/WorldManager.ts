@@ -222,6 +222,13 @@ export class WorldManager {
   }
 
   /**
+   * Get all chunk meshes for frustum culling.
+   */
+  getChunkMeshes(): IterableIterator<ChunkMesh> {
+    return this.chunkMeshes.values()
+  }
+
+  /**
    * Get chunk containing the given world coordinates.
    */
   getChunkAt(x: bigint, y: bigint, z: bigint): Chunk | undefined {

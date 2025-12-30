@@ -1,17 +1,6 @@
 import { ToolItem } from '../ToolItem.ts'
 
 /**
- * Axe tool item for player inventory.
+ * Base class for all axe variants.
  */
-export class AxeItem extends ToolItem {
-  readonly id = 'axe'
-  readonly name = 'axe'
-
-  override get displayName(): string {
-    return 'Axe'
-  }
-
-  override get iconUrl(): string {
-    return new URL('./assets/axe-icon.webp', import.meta.url).href
-  }
-}
+export abstract class AxeItem extends ToolItem {}

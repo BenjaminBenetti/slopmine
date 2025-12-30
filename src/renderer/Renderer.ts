@@ -1,9 +1,13 @@
 import * as THREE from 'three'
+import { FrustumCuller } from './FrustumCuller.ts'
+import type { ChunkMesh } from './ChunkMesh.ts'
 
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer
   readonly scene: THREE.Scene
   readonly camera: THREE.PerspectiveCamera
+  private readonly frustumCuller = new FrustumCuller()
+  private chunkMeshSource: (() => Iterable<ChunkMesh>) | null = null
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -36,7 +40,17 @@ export class Renderer {
     this.renderer.setSize(window.innerWidth, window.innerHeight)
   }
 
+  /**
+   * Set the chunk mesh source for frustum culling.
+   */
+  setChunkMeshSource(source: () => Iterable<ChunkMesh>): void {
+    this.chunkMeshSource = source
+  }
+
   render(): void {
+    if (this.chunkMeshSource) {
+      this.frustumCuller.updateVisibility(this.camera, this.chunkMeshSource())
+    }
     this.renderer.render(this.scene, this.camera)
   }
 
