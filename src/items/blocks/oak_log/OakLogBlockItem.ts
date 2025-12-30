@@ -10,4 +10,8 @@ export class OakLogBlockItem extends Item {
   override get displayName(): string {
     return 'Oak Log'
   }
+
+  override get iconUrl(): string {
+    return new URL('./assets/oak-log-block-icon.webp', import.meta.url).href
+  }
 }

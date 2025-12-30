@@ -1,5 +1,6 @@
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { OakTree, type TreeParams } from '../structures/OakTree.ts'
+import { CliffFeature } from '../features/CliffFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { WorldManager } from '../../WorldManager.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
@@ -19,9 +20,14 @@ export class GrassyHillsGenerator extends BiomeGenerator {
     heightAmplitude: 13,
     heightOffset: 10,
     treeDensity: 1.5,
-    cliffFrequency: 0.03,
-    cliffThreshold: 0.3,
-    cliffMaxHeight: 4,
+    features: [
+      new CliffFeature({
+        frequency: 0.03,
+        threshold: 0.3,
+        maxHeight: 4,
+        block: BlockIds.STONE,
+      }),
+    ],
   }
 
   private readonly TREE_GRID_SIZE = 8

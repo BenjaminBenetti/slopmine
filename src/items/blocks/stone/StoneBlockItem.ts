@@ -10,5 +10,9 @@ export class StoneBlockItem extends Item {
   override get displayName(): string {
     return 'Stone Block'
   }
+
+  override get iconUrl(): string {
+    return new URL('./assets/stone-block-icon.webp', import.meta.url).href
+  }
 }
 

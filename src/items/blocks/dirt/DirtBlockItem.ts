@@ -10,5 +10,9 @@ export class DirtBlockItem extends Item {
   override get displayName(): string {
     return 'Dirt Block'
   }
+
+  override get iconUrl(): string {
+    return new URL('./assets/dirt-block-icon.webp', import.meta.url).href
+  }
 }
 

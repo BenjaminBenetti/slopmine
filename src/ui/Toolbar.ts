@@ -1,3 +1,6 @@
+import type { IItem } from '../items/Item.ts'
+import { syncSlotsFromState } from './SlotRenderer.ts'
+
 export interface ToolbarUIOptions {
   slotCount?: number
   slotSizePx?: number
@@ -8,6 +11,7 @@ export interface ToolbarUI {
   readonly slots: HTMLDivElement[]
   updateSelectedSlot(index: number): void
   destroy(): void
+  syncFromState(stateSlots: ReadonlyArray<IItem | null>): void
 }
 
 /**
@@ -55,7 +59,6 @@ export function createToolbarUI(
     slot.style.alignItems = 'center'
     slot.style.justifyContent = 'center'
     slot.style.position = 'relative'
-    slot.style.pointerEvents = 'none'
 
     const label = document.createElement('div')
     label.textContent = String((i + 1) % 10)
@@ -106,6 +109,9 @@ export function createToolbarUI(
       if (root.parentElement === parent) {
         parent.removeChild(root)
       }
+    },
+    syncFromState(stateSlots: ReadonlyArray<IItem | null>): void {
+      syncSlotsFromState(slots, stateSlots)
     },
   }
 }

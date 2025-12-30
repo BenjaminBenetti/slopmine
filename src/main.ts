@@ -88,8 +88,13 @@ const inventoryInput = new InventoryInputHandler(
   renderer.renderer.domElement,
   inventoryUI,
   playerState.inventory.inventory,
+  toolbarUI,
+  playerState.inventory.toolbar,
   cameraControls,
 )
+
+// Initial toolbar sync to render any items that exist at startup
+toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
 
 // Create world with terrain generation
 const world = new WorldManager()
@@ -155,7 +160,12 @@ const blockInteraction = new BlockInteraction(
   world,
   playerState,
   renderer.scene,
-  renderer.renderer.domElement
+  renderer.renderer.domElement,
+  {
+    onItemsCollected: () => {
+      toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
+    },
+  }
 )
 
 let frameCpuStart = 0

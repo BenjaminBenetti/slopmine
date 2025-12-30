@@ -5,6 +5,7 @@ import type { BlockId } from '../interfaces/IBlock.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
 import { localToWorld } from '../coordinates/CoordinateUtils.ts'
 import { FrameBudget } from '../../core/FrameBudget.ts'
+import { Feature, type FeatureContext } from './features/Feature.ts'
 
 export interface BiomeProperties {
   readonly name: string
@@ -15,9 +16,7 @@ export interface BiomeProperties {
   readonly heightAmplitude: number
   readonly heightOffset: number
   readonly treeDensity: number
-  readonly cliffFrequency: number
-  readonly cliffThreshold: number
-  readonly cliffMaxHeight: number
+  readonly features: Feature[]
 }
 
 /**
@@ -28,27 +27,15 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   protected readonly frameBudget = new FrameBudget()
 
   /**
-   * Get biome-adjusted height at world coordinates.
+   * Get base terrain height at world coordinates (before features).
    */
   override getHeightAt(worldX: number, worldZ: number): number {
     const baseNoise = this.noise.fractalNoise2D(worldX, worldZ, 4, 0.5, 0.01)
 
     const { seaLevel } = this.config
-    const { heightAmplitude, heightOffset, cliffFrequency, cliffThreshold, cliffMaxHeight } =
-      this.properties
+    const { heightAmplitude, heightOffset } = this.properties
 
-    let height = seaLevel + heightOffset + baseNoise * heightAmplitude
-
-    // Cliff noise - creates zones with sudden height jumps
-    const cliffNoise = this.noise.noise2D(
-      worldX * cliffFrequency,
-      worldZ * cliffFrequency
-    )
-    if (cliffNoise > cliffThreshold) {
-      const cliffIntensity = (cliffNoise - cliffThreshold) / (1 - cliffThreshold)
-      const cliffStep = Math.floor(cliffIntensity * cliffMaxHeight)
-      height += cliffStep
-    }
+    const height = seaLevel + heightOffset + baseNoise * heightAmplitude
 
     return Math.floor(height)
   }
@@ -72,18 +59,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
 
         const height = this.getHeightAt(worldX, worldZ)
 
-        // Check neighbor heights for cliff detection
-        const minNeighborHeight = Math.min(
-          this.getHeightAt(worldX - 1, worldZ),
-          this.getHeightAt(worldX + 1, worldZ),
-          this.getHeightAt(worldX, worldZ - 1),
-          this.getHeightAt(worldX, worldZ + 1)
-        )
-
-        // If we're 2+ blocks higher than lowest neighbor, we have a cliff face
-        const cliffExposure = height - minNeighborHeight
-
-        this.fillColumnWithCliff(
+        this.fillColumn(
           chunk,
           localX,
           localZ,
@@ -91,12 +67,30 @@ export abstract class BiomeGenerator extends TerrainGenerator {
           surfaceBlock,
           subsurfaceBlock,
           subsurfaceDepth,
-          baseBlock,
-          cliffExposure
+          baseBlock
         )
       }
       // Yield when frame budget is exhausted
       await this.frameBudget.yieldIfNeeded()
+    }
+  }
+
+  /**
+   * Apply all features from the biome's feature list.
+   */
+  protected async generateFeatures(chunk: Chunk, world: WorldManager): Promise<void> {
+    const context: FeatureContext = {
+      chunk,
+      world,
+      noise: this.noise,
+      config: this.config,
+      biomeProperties: this.properties,
+      getBaseHeightAt: (worldX, worldZ) => this.getHeightAt(worldX, worldZ),
+      frameBudget: this.frameBudget,
+    }
+
+    for (const feature of this.properties.features) {
+      await feature.scan(context)
     }
   }
 
@@ -115,6 +109,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
    */
   async generate(chunk: Chunk, world: WorldManager): Promise<void> {
     await this.generateTerrain(chunk)
+    await this.generateFeatures(chunk, world)
     await this.generateDecorations(chunk, world)
   }
 

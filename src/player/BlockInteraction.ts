@@ -30,6 +30,8 @@ interface IMiningProgress {
 export interface IBlockInteractionConfig {
   maxReachDistance?: number
   miningSpeedMultiplier?: number
+  /** Called after items are collected from a broken block */
+  onItemsCollected?: () => void
 }
 
 /**
@@ -46,6 +48,7 @@ export class BlockInteraction {
 
   private readonly maxReachDistance: number
   private readonly miningSpeedMultiplier: number
+  private readonly onItemsCollected?: () => void
 
   private isMouseDown = false
   private currentMining: IMiningProgress | null = null
@@ -65,6 +68,7 @@ export class BlockInteraction {
 
     this.maxReachDistance = config.maxReachDistance ?? MAX_REACH_DISTANCE
     this.miningSpeedMultiplier = config.miningSpeedMultiplier ?? 1.0
+    this.onItemsCollected = config.onItemsCollected
 
     this.raycaster = new BlockRaycaster(worldManager)
     this.miningOverlay = new MiningOverlay(scene)
@@ -215,6 +219,11 @@ export class BlockInteraction {
     const drops = block.getDrops?.() ?? []
     for (const item of drops) {
       this.playerState.addItem(item)
+    }
+
+    // Notify listeners that items were collected
+    if (drops.length > 0) {
+      this.onItemsCollected?.()
     }
 
     // Set block to air

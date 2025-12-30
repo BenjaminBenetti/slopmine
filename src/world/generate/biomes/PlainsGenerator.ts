@@ -1,5 +1,6 @@
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { OakTree, type TreeParams } from '../structures/OakTree.ts'
+import { CliffFeature } from '../features/CliffFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { WorldManager } from '../../WorldManager.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
@@ -19,9 +20,14 @@ export class PlainsGenerator extends BiomeGenerator {
     heightAmplitude: 8,
     heightOffset: 0,
     treeDensity: 3.0,
-    cliffFrequency: 0.03,
-    cliffThreshold: 0.6,
-    cliffMaxHeight: 2,
+    features: [
+      new CliffFeature({
+        frequency: 0.03,
+        threshold: 0.6,
+        maxHeight: 2,
+        block: BlockIds.STONE,
+      }),
+    ],
   }
 
   // Tree placement grid size

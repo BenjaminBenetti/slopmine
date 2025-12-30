@@ -10,5 +10,9 @@ export class GrassBlockItem extends Item {
   override get displayName(): string {
     return 'Grass Block'
   }
+
+  override get iconUrl(): string {
+    return new URL('./assets/grass-block-icon.webp', import.meta.url).href
+  }
 }
 

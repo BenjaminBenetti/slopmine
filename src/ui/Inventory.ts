@@ -1,3 +1,6 @@
+import type { IItem } from '../items/Item.ts'
+import { syncSlotsFromState } from './SlotRenderer.ts'
+
 export interface InventoryUIOptions {
   columns?: number
   rows?: number
@@ -6,12 +9,14 @@ export interface InventoryUIOptions {
 
 export interface InventoryUI {
   readonly root: HTMLDivElement
+  readonly panel: HTMLDivElement
   readonly slots: HTMLDivElement[]
   readonly isOpen: boolean
   open(): void
   close(): void
   toggle(): void
   destroy(): void
+  syncFromState(stateSlots: ReadonlyArray<IItem | null>): void
 }
 
 /**
@@ -62,7 +67,6 @@ export function createInventoryUI(
     slot.style.alignItems = 'center'
     slot.style.justifyContent = 'center'
     slot.style.position = 'relative'
-    slot.style.pointerEvents = 'none'
 
     slots.push(slot)
     grid.appendChild(slot)
@@ -80,6 +84,7 @@ export function createInventoryUI(
 
   const api: InventoryUI = {
     root: overlay,
+    panel,
     slots,
     get isOpen() {
       return open
@@ -100,6 +105,9 @@ export function createInventoryUI(
       if (overlay.parentElement === parent) {
         parent.removeChild(overlay)
       }
+    },
+    syncFromState(stateSlots: ReadonlyArray<IItem | null>): void {
+      syncSlotsFromState(slots, stateSlots)
     },
   }
 

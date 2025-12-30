@@ -1,6 +1,8 @@
 import type { InventoryUI } from '../ui/Inventory.ts'
-import type { IInventoryGridState } from './PlayerState.ts'
+import type { ToolbarUI } from '../ui/Toolbar.ts'
+import type { IInventoryGridState, IToolbarState } from './PlayerState.ts'
 import type { CameraControls } from './FirstPersonCameraControls.ts'
+import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandler.ts'
 
 export interface InventoryInput {
   dispose(): void
@@ -19,7 +21,10 @@ export class InventoryInputHandler implements InventoryInput {
   private readonly domElement: HTMLElement
   private readonly inventoryUI: InventoryUI
   private readonly inventoryState: IInventoryGridState
+  private readonly toolbarUI: ToolbarUI
+  private readonly toolbarState: IToolbarState
   private readonly cameraControls: CameraControls
+  private readonly dragDrop: DragDropHandler
 
   private pointerLocked = false
 
@@ -27,15 +32,34 @@ export class InventoryInputHandler implements InventoryInput {
     domElement: HTMLElement,
     inventoryUI: InventoryUI,
     inventoryState: IInventoryGridState,
+    toolbarUI: ToolbarUI,
+    toolbarState: IToolbarState,
     cameraControls: CameraControls,
   ) {
     this.domElement = domElement
     this.inventoryUI = inventoryUI
     this.inventoryState = inventoryState
+    this.toolbarUI = toolbarUI
+    this.toolbarState = toolbarState
     this.cameraControls = cameraControls
+
+    this.dragDrop = createDragDropHandler({
+      toolbarState,
+      inventoryState,
+      toolbarRoot: toolbarUI.root,
+      toolbarSlots: toolbarUI.slots,
+      inventoryRoot: inventoryUI.panel,
+      inventorySlots: inventoryUI.slots,
+      onStateChanged: () => this.syncUI(),
+    })
 
     document.addEventListener('pointerlockchange', this.onPointerLockChange)
     window.addEventListener('keydown', this.onKeyDown)
+  }
+
+  private syncUI(): void {
+    this.inventoryUI.syncFromState(this.inventoryState.slots)
+    this.toolbarUI.syncFromState(this.toolbarState.slots)
   }
 
   private onPointerLockChange = (): void => {
@@ -71,27 +95,33 @@ export class InventoryInputHandler implements InventoryInput {
   private openInventory(): void {
     this.inventoryUI.open()
     this.cameraControls.setInputEnabled(false)
-	
-	    // Release pointer lock so the mouse becomes visible while
-	    // the inventory is open.
-	    if (document.pointerLockElement === this.domElement) {
-	      document.exitPointerLock()
-	    }
+
+    // Sync UI state and enable drag-drop
+    this.syncUI()
+    this.dragDrop.enable()
+
+    // Release pointer lock so the mouse becomes visible while
+    // the inventory is open.
+    if (document.pointerLockElement === this.domElement) {
+      document.exitPointerLock()
+    }
   }
 
   private closeInventory(): void {
+    this.dragDrop.disable()
     this.inventoryUI.close()
     this.cameraControls.setInputEnabled(true)
-	
-	    // Re-acquire pointer lock so the mouse returns to controlling
-	    // the camera once the inventory is closed. This must be called
-	    // from an input event handler, which onKeyDown satisfies.
-	    if (document.pointerLockElement !== this.domElement) {
-	      this.domElement.requestPointerLock()
-	    }
+
+    // Re-acquire pointer lock so the mouse returns to controlling
+    // the camera once the inventory is closed. This must be called
+    // from an input event handler, which onKeyDown satisfies.
+    if (document.pointerLockElement !== this.domElement) {
+      this.domElement.requestPointerLock()
+    }
   }
 
   dispose(): void {
+    this.dragDrop.dispose()
     document.removeEventListener('pointerlockchange', this.onPointerLockChange)
     window.removeEventListener('keydown', this.onKeyDown)
   }

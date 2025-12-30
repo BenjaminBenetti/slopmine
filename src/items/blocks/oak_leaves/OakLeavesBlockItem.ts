@@ -10,4 +10,8 @@ export class OakLeavesBlockItem extends Item {
   override get displayName(): string {
     return 'Oak Leaves'
   }
+
+  override get iconUrl(): string {
+    return new URL('./assets/oak-leaves-block-icon.webp', import.meta.url).href
+  }
 }

@@ -51,43 +51,6 @@ export abstract class TerrainGenerator {
   }
 
   /**
-   * Fill a column with cliff-aware layering.
-   * Exposes stone on cliff faces where neighbors are significantly lower.
-   */
-  protected fillColumnWithCliff(
-    chunk: Chunk,
-    localX: number,
-    localZ: number,
-    height: number,
-    surfaceBlock: BlockId,
-    subsurfaceBlock: BlockId,
-    subsurfaceDepth: number,
-    baseBlock: BlockId,
-    cliffExposure: number
-  ): void {
-    // Depth at which cliff face starts (exposed stone)
-    const cliffStartDepth = Math.max(0, cliffExposure - 1)
-
-    for (let y = 0; y <= height; y++) {
-      let blockId: BlockId
-      const depthFromSurface = height - y
-
-      if (y === height) {
-        blockId = surfaceBlock
-      } else if (depthFromSurface <= cliffStartDepth && depthFromSurface < subsurfaceDepth) {
-        // Exposed cliff face - use stone instead of dirt
-        blockId = baseBlock
-      } else if (depthFromSurface < subsurfaceDepth) {
-        blockId = subsurfaceBlock
-      } else {
-        blockId = baseBlock
-      }
-
-      chunk.setBlockId(localX, y, localZ, blockId)
-    }
-  }
-
-  /**
    * Deterministic random based on position.
    * Returns a value in [0, 1) that's consistent for the same inputs.
    */
