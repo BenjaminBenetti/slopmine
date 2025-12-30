@@ -22,6 +22,7 @@ export class ChunkMesh {
     positions: Float32Array,
     normals: Float32Array,
     uvs: Float32Array,
+    colors: Float32Array,
     indices: Uint32Array
   ): void {
     // Early exit if no geometry
@@ -34,11 +35,12 @@ export class ChunkMesh {
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
     geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     geometry.setIndex(new THREE.BufferAttribute(indices, 1))
 
-    // Create material (simple white for now, can be textured later)
+    // Create material with vertex colors enabled
     const material = new THREE.MeshLambertMaterial({ 
-      color: 0xffffff,
+      vertexColors: true,
       // Enable flat shading for blocky look
       flatShading: false,
     })

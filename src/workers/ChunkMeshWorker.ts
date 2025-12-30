@@ -93,6 +93,7 @@ function addFaceGeometry(
   positions: number[],
   normals: number[],
   uvs: number[],
+  colors: number[],
   indices: number[],
   x: number,
   y: number,
@@ -108,9 +109,13 @@ function addFaceGeometry(
   const z0 = z, z1 = z + 1
   
   // Simple UV coordinates (0-1 range)
-  // In a real implementation, you'd index into a texture atlas based on blockId
   const u0 = 0, u1 = 1
   const v0 = 0, v1 = 1
+  
+  // Generate color based on block ID (simple hashing for variety)
+  const r = ((blockId * 73) % 256) / 255
+  const g = ((blockId * 151) % 256) / 255
+  const b = ((blockId * 233) % 256) / 255
   
   switch (face) {
     case Face.TOP: // +Y
@@ -122,6 +127,9 @@ function addFaceGeometry(
       )
       uvs.push(
         u0, v0,  u1, v0,  u1, v1,  u0, v1
+      )
+      colors.push(
+        r, g, b,  r, g, b,  r, g, b,  r, g, b
       )
       break
     
@@ -135,6 +143,9 @@ function addFaceGeometry(
       uvs.push(
         u0, v0,  u1, v0,  u1, v1,  u0, v1
       )
+      colors.push(
+        r*0.5, g*0.5, b*0.5,  r*0.5, g*0.5, b*0.5,  r*0.5, g*0.5, b*0.5,  r*0.5, g*0.5, b*0.5
+      )
       break
     
     case Face.EAST: // +X
@@ -146,6 +157,9 @@ function addFaceGeometry(
       )
       uvs.push(
         u0, v0,  u0, v1,  u1, v1,  u1, v0
+      )
+      colors.push(
+        r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9
       )
       break
     
@@ -159,6 +173,9 @@ function addFaceGeometry(
       uvs.push(
         u0, v0,  u0, v1,  u1, v1,  u1, v0
       )
+      colors.push(
+        r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9
+      )
       break
     
     case Face.SOUTH: // +Z
@@ -171,6 +188,9 @@ function addFaceGeometry(
       uvs.push(
         u0, v0,  u1, v0,  u1, v1,  u0, v1
       )
+      colors.push(
+        r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8
+      )
       break
     
     case Face.NORTH: // -Z
@@ -182,6 +202,9 @@ function addFaceGeometry(
       )
       uvs.push(
         u0, v0,  u1, v0,  u1, v1,  u0, v1
+      )
+      colors.push(
+        r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8
       )
       break
   }
@@ -218,6 +241,7 @@ export interface ChunkMeshResponse {
   positions: Float32Array
   normals: Float32Array
   uvs: Float32Array
+  colors: Float32Array
   indices: Uint32Array
 }
 
@@ -234,6 +258,7 @@ function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
   const positions: number[] = []
   const normals: number[] = []
   const uvs: number[] = []
+  const colors: number[] = []
   const indices: number[] = []
 
   // World offset for this chunk
@@ -255,7 +280,7 @@ function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
         // Check each face and add geometry if visible
         for (let face = 0; face < 6; face++) {
           if (shouldRenderFace(blocks, x, y, z, face, neighbors, opaqueSet)) {
-            addFaceGeometry(positions, normals, uvs, indices, wx, y, wz, face, blockId)
+            addFaceGeometry(positions, normals, uvs, colors, indices, wx, y, wz, face, blockId)
           }
         }
       }
@@ -269,6 +294,7 @@ function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
     positions: new Float32Array(positions),
     normals: new Float32Array(normals),
     uvs: new Float32Array(uvs),
+    colors: new Float32Array(colors),
     indices: new Uint32Array(indices),
   }
 }
@@ -283,6 +309,7 @@ self.onmessage = (event: MessageEvent<ChunkMeshRequest>) => {
       result.positions.buffer,
       result.normals.buffer,
       result.uvs.buffer,
+      result.colors.buffer,
       result.indices.buffer,
     ]
   })

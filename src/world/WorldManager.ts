@@ -83,6 +83,7 @@ export class WorldManager {
       result.positions,
       result.normals,
       result.uvs,
+      result.colors,
       result.indices
     )
 
