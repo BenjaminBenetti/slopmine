@@ -1,15 +1,12 @@
 import * as THREE from 'three'
-import type { BlockId } from '../world/interfaces/IBlock.ts'
 import type { IChunkCoordinate } from '../world/interfaces/ICoordinates.ts'
-import { getBlock } from '../world/blocks/BlockRegistry.ts'
 
 /**
- * Manages InstancedMesh objects for a single chunk.
- * One InstancedMesh per block type for efficient batched rendering.
+ * Manages a single merged mesh for all blocks in a chunk.
+ * Combines all visible block faces into one mesh for efficient rendering.
  */
 export class ChunkMesh {
-  private readonly instancedMeshes: Map<BlockId, THREE.InstancedMesh> = new Map()
-  private readonly blockPositions: Map<BlockId, number[]> = new Map()
+  private mesh: THREE.Mesh | null = null
   private readonly group: THREE.Group = new THREE.Group()
 
   readonly chunkCoordinate: IChunkCoordinate
@@ -19,59 +16,44 @@ export class ChunkMesh {
   }
 
   /**
-   * Add a block instance at the given world position.
+   * Build the merged mesh from geometry data.
    */
-  addBlock(blockId: BlockId, x: number, y: number, z: number): void {
-    let positions = this.blockPositions.get(blockId)
-    if (!positions) {
-      positions = []
-      this.blockPositions.set(blockId, positions)
+  buildFromGeometry(
+    positions: Float32Array,
+    normals: Float32Array,
+    uvs: Float32Array,
+    indices: Uint32Array
+  ): void {
+    // Early exit if no geometry
+    if (positions.length === 0 || indices.length === 0) {
+      return
     }
-    positions.push(x, y, z)
+
+    // Create BufferGeometry
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+
+    // Create material (simple white for now, can be textured later)
+    const material = new THREE.MeshLambertMaterial({ 
+      color: 0xffffff,
+      // Enable flat shading for blocky look
+      flatShading: false,
+    })
+
+    // Create mesh
+    this.mesh = new THREE.Mesh(geometry, material)
+    this.mesh.frustumCulled = true
+    this.mesh.castShadow = true
+    this.mesh.receiveShadow = true
+
+    this.group.add(this.mesh)
   }
 
   /**
-   * Build all InstancedMesh objects from collected block positions.
-   * Call this after all addBlock() calls are complete.
-   */
-  build(): void {
-    const matrix = new THREE.Matrix4()
-
-    for (const [blockId, positions] of this.blockPositions) {
-      const count = positions.length / 3
-      if (count === 0) continue
-
-      const block = getBlock(blockId)
-      const material = block.getInstanceMaterial()
-      const geometry = block.getInstanceGeometry()
-
-      // Create InstancedMesh with exact count needed
-      const instancedMesh = new THREE.InstancedMesh(geometry, material, count)
-      instancedMesh.frustumCulled = true
-      instancedMesh.castShadow = true
-      instancedMesh.receiveShadow = true
-
-      // Set position for each instance
-      // Offset by 0.5 because geometry is centered at origin (-0.5 to 0.5)
-      // but block coordinates represent the min corner (block occupies x to x+1)
-      for (let i = 0; i < count; i++) {
-        const idx = i * 3
-        matrix.setPosition(
-          positions[idx] + 0.5,
-          positions[idx + 1] + 0.5,
-          positions[idx + 2] + 0.5
-        )
-        instancedMesh.setMatrixAt(i, matrix)
-      }
-
-      instancedMesh.instanceMatrix.needsUpdate = true
-      this.instancedMeshes.set(blockId, instancedMesh)
-      this.group.add(instancedMesh)
-    }
-  }
-
-  /**
-   * Get the THREE.Group containing all instanced meshes.
+   * Get the THREE.Group containing the mesh.
    */
   getGroup(): THREE.Group {
     return this.group
@@ -95,29 +77,25 @@ export class ChunkMesh {
    * Dispose of all GPU resources.
    */
   dispose(): void {
-    for (const instancedMesh of this.instancedMeshes.values()) {
-      instancedMesh.dispose()
-      // Note: We don't dispose geometry (SharedGeometry) or materials (shared across blocks)
+    if (this.mesh) {
+      this.mesh.geometry.dispose()
+      if (Array.isArray(this.mesh.material)) {
+        this.mesh.material.forEach(m => m.dispose())
+      } else {
+        this.mesh.material.dispose()
+      }
+      this.group.remove(this.mesh)
+      this.mesh = null
     }
-    this.instancedMeshes.clear()
-    this.blockPositions.clear()
   }
 
   /**
-   * Get the number of block types in this chunk mesh.
+   * Get the number of triangles in this chunk mesh.
    */
-  getBlockTypeCount(): number {
-    return this.instancedMeshes.size
-  }
-
-  /**
-   * Get the total number of block instances across all types.
-   */
-  getTotalInstanceCount(): number {
-    let total = 0
-    for (const positions of this.blockPositions.values()) {
-      total += positions.length / 3
+  getTriangleCount(): number {
+    if (!this.mesh || !this.mesh.geometry.index) {
+      return 0
     }
-    return total
+    return this.mesh.geometry.index.count / 3
   }
 }

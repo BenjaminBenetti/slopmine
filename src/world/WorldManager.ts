@@ -77,16 +77,15 @@ export class WorldManager {
     // Remove existing meshes
     this.removeChunkMeshes(chunkKey)
 
-    // Build mesh from worker result (array of [blockId, positions] pairs)
+    // Build mesh from worker result (merged geometry)
     const chunkMesh = new ChunkMesh(chunk.coordinate)
+    chunkMesh.buildFromGeometry(
+      result.positions,
+      result.normals,
+      result.uvs,
+      result.indices
+    )
 
-    for (const [blockId, positions] of result.visibleBlocks) {
-      for (let i = 0; i < positions.length; i += 3) {
-        chunkMesh.addBlock(blockId, positions[i], positions[i + 1], positions[i + 2])
-      }
-    }
-
-    chunkMesh.build()
     chunkMesh.addToScene(this.scene)
     this.chunkMeshes.set(chunkKey, chunkMesh)
 
@@ -534,70 +533,13 @@ export class WorldManager {
   }
 
   /**
-   * Check if a block has any exposed faces (not fully surrounded by opaque blocks).
-   */
-  private hasExposedFace(x: bigint, y: bigint, z: bigint): boolean {
-    const neighbors = [
-      [x + 1n, y, z], [x - 1n, y, z],
-      [x, y + 1n, z], [x, y - 1n, z],
-      [x, y, z + 1n], [x, y, z - 1n],
-    ] as const
-
-    for (const [nx, ny, nz] of neighbors) {
-      if (ny < 0n || ny >= BigInt(CHUNK_HEIGHT)) {
-        return true
-      }
-
-      const neighborId = this.getBlockId(nx, ny, nz)
-      const neighbor = getBlock(neighborId)
-
-      if (!neighbor.properties.isOpaque) {
-        return true
-      }
-    }
-
-    return false
-  }
-
-  /**
-   * Render a single chunk's blocks using InstancedMesh for performance.
+   * Render a single chunk's blocks using the worker-based meshing.
    */
   private renderChunk(chunk: Chunk): void {
     if (!this.scene) return
-
-    const chunkCoord = chunk.coordinate
-    const chunkKey = createChunkKey(chunkCoord.x, chunkCoord.z)
-    const chunkMesh = new ChunkMesh(chunkCoord)
-
-    // Collect all exposed blocks by type
-    for (let localY = 0; localY < CHUNK_HEIGHT; localY++) {
-      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-        for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
-          const blockId = chunk.getBlockId(localX, localY, localZ)
-
-          if (blockId === BlockIds.AIR) continue
-
-          const worldCoord = localToWorld(chunkCoord, { x: localX, y: localY, z: localZ })
-
-          if (!this.hasExposedFace(worldCoord.x, worldCoord.y, worldCoord.z)) {
-            continue
-          }
-
-          // Add block to instanced mesh
-          chunkMesh.addBlock(
-            blockId,
-            Number(worldCoord.x),
-            Number(worldCoord.y),
-            Number(worldCoord.z)
-          )
-        }
-      }
-    }
-
-    // Build all InstancedMesh objects and add to scene
-    chunkMesh.build()
-    chunkMesh.addToScene(this.scene)
-    this.chunkMeshes.set(chunkKey, chunkMesh)
+    
+    // Use worker-based meshing for consistency
+    this.queueChunkForMeshing(chunk)
   }
 
   /**
