@@ -9,7 +9,7 @@ import { getBlock } from '../world/blocks/BlockRegistry.ts'
  */
 export class ChunkMesh {
   private readonly instancedMeshes: Map<BlockId, THREE.InstancedMesh> = new Map()
-  private readonly blockPositions: Map<BlockId, Array<{ x: number; y: number; z: number }>> = new Map()
+  private readonly blockPositions: Map<BlockId, number[]> = new Map()
   private readonly group: THREE.Group = new THREE.Group()
 
   readonly chunkCoordinate: IChunkCoordinate
@@ -27,7 +27,7 @@ export class ChunkMesh {
       positions = []
       this.blockPositions.set(blockId, positions)
     }
-    positions.push({ x, y, z })
+    positions.push(x, y, z)
   }
 
   /**
@@ -38,14 +38,15 @@ export class ChunkMesh {
     const matrix = new THREE.Matrix4()
 
     for (const [blockId, positions] of this.blockPositions) {
-      if (positions.length === 0) continue
+      const count = positions.length / 3
+      if (count === 0) continue
 
       const block = getBlock(blockId)
       const material = block.getInstanceMaterial()
       const geometry = block.getInstanceGeometry()
 
       // Create InstancedMesh with exact count needed
-      const instancedMesh = new THREE.InstancedMesh(geometry, material, positions.length)
+      const instancedMesh = new THREE.InstancedMesh(geometry, material, count)
       instancedMesh.frustumCulled = true
       instancedMesh.castShadow = true
       instancedMesh.receiveShadow = true
@@ -53,9 +54,13 @@ export class ChunkMesh {
       // Set position for each instance
       // Offset by 0.5 because geometry is centered at origin (-0.5 to 0.5)
       // but block coordinates represent the min corner (block occupies x to x+1)
-      for (let i = 0; i < positions.length; i++) {
-        const pos = positions[i]
-        matrix.setPosition(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
+      for (let i = 0; i < count; i++) {
+        const idx = i * 3
+        matrix.setPosition(
+          positions[idx] + 0.5,
+          positions[idx + 1] + 0.5,
+          positions[idx + 2] + 0.5
+        )
         instancedMesh.setMatrixAt(i, matrix)
       }
 
@@ -111,7 +116,7 @@ export class ChunkMesh {
   getTotalInstanceCount(): number {
     let total = 0
     for (const positions of this.blockPositions.values()) {
-      total += positions.length
+      total += positions.length / 3
     }
     return total
   }

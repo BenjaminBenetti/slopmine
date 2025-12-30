@@ -23,7 +23,7 @@ export class ChunkManager {
   private readonly chunks: Map<ChunkKey, Chunk> = new Map()
   private readonly config: ChunkManagerConfig
 
-  private readonly accessOrder: ChunkKey[] = []
+  private readonly accessOrder: Map<ChunkKey, true> = new Map()
 
   constructor(config: Partial<ChunkManagerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -67,7 +67,7 @@ export class ChunkManager {
     chunk.setState(ChunkState.LOADING)
 
     this.chunks.set(key, chunk)
-    this.accessOrder.push(key)
+    this.accessOrder.set(key, true)
 
     this.enforceLimit()
 
@@ -85,10 +85,7 @@ export class ChunkManager {
       chunk.dispose()
       this.chunks.delete(key)
 
-      const accessIndex = this.accessOrder.indexOf(key)
-      if (accessIndex !== -1) {
-        this.accessOrder.splice(accessIndex, 1)
-      }
+      this.accessOrder.delete(key)
     }
   }
 
@@ -139,13 +136,11 @@ export class ChunkManager {
 
   /**
    * Update LRU access order for a chunk.
+   * Deleting and re-setting moves the key to the end of Map iteration order.
    */
   private touchChunk(key: ChunkKey): void {
-    const index = this.accessOrder.indexOf(key)
-    if (index !== -1) {
-      this.accessOrder.splice(index, 1)
-    }
-    this.accessOrder.push(key)
+    this.accessOrder.delete(key)
+    this.accessOrder.set(key, true)
   }
 
   /**
@@ -153,10 +148,14 @@ export class ChunkManager {
    */
   private enforceLimit(): void {
     while (this.chunks.size > this.config.maxLoadedChunks) {
-      const oldestKey = this.accessOrder.shift()
+      const oldestKey = this.accessOrder.keys().next().value
       if (oldestKey) {
-        const coord = parseChunkKey(oldestKey)
-        this.unloadChunk(coord)
+        this.accessOrder.delete(oldestKey)
+        const chunk = this.chunks.get(oldestKey)
+        if (chunk) {
+          chunk.dispose()
+          this.chunks.delete(oldestKey)
+        }
       }
     }
   }
@@ -169,6 +168,6 @@ export class ChunkManager {
       chunk.dispose()
     }
     this.chunks.clear()
-    this.accessOrder.length = 0
+    this.accessOrder.clear()
   }
 }
