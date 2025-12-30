@@ -74,6 +74,12 @@ export class GenerationConfig {
     this.save()
   }
 
+  /** Regenerate the world seed while preserving other settings */
+  regenerateSeed(): void {
+    this.config.seed = Date.now()
+    this.save()
+  }
+
   getConfig(): IGenerationConfig {
     return { ...this.config }
   }

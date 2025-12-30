@@ -136,7 +136,7 @@ export function createSettingsMenuUI(
     panel.appendChild(warning)
 
     const confirmBtn = createButton('Start New World', () => {
-      config.reset()
+      config.regenerateSeed()
       window.location.reload()
     })
     confirmBtn.style.background = 'rgba(120, 40, 40, 0.9)'
