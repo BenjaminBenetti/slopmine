@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { FrustumCuller } from './FrustumCuller.ts'
+import { OcclusionCuller } from './OcclusionCuller.ts'
 import type { ChunkMesh } from './ChunkMesh.ts'
 
 export class Renderer {
@@ -7,7 +8,9 @@ export class Renderer {
   readonly scene: THREE.Scene
   readonly camera: THREE.PerspectiveCamera
   private readonly frustumCuller = new FrustumCuller()
+  private readonly occlusionCuller = new OcclusionCuller()
   private chunkMeshSource: (() => Iterable<ChunkMesh>) | null = null
+  private occlusionCullingEnabled = true
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -47,9 +50,27 @@ export class Renderer {
     this.chunkMeshSource = source
   }
 
+  /**
+   * Enable or disable occlusion culling.
+   * Occlusion culling uses raycasting to hide chunks blocked by other chunks.
+   */
+  setOcclusionCullingEnabled(enabled: boolean): void {
+    this.occlusionCullingEnabled = enabled
+    if (!enabled) {
+      // Clear cached data when disabling
+      this.occlusionCuller.clearAllCaches()
+    }
+  }
+
   render(): void {
     if (this.chunkMeshSource) {
+      // First apply frustum culling (fast, eliminates off-screen chunks)
       this.frustumCuller.updateVisibility(this.camera, this.chunkMeshSource())
+      
+      // Then apply occlusion culling (more expensive, but only on visible chunks)
+      if (this.occlusionCullingEnabled) {
+        this.occlusionCuller.updateVisibility(this.camera, this.chunkMeshSource())
+      }
     }
     this.renderer.render(this.scene, this.camera)
   }
