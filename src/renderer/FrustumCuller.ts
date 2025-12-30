@@ -58,7 +58,8 @@ export class FrustumCuller {
       this.chunkBoxCache.set(chunkMesh, box)
     }
     
-    return box
+    // Return a clone to prevent external mutations from affecting the cache
+    return box.clone()
   }
 
   /**

@@ -212,7 +212,8 @@ export class OcclusionCuller {
       box.getCenter(center)
       this.chunkCenters.set(chunk, center)
     }
-    return center
+    // Return a clone to prevent external mutations
+    return center.clone()
   }
 
   /**
@@ -245,7 +246,8 @@ export class OcclusionCuller {
       
       this.chunkBoxes.set(chunk, box)
     }
-    return box
+    // Return a clone to prevent external mutations from affecting the cache
+    return box.clone()
   }
 
   /**
