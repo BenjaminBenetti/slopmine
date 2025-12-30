@@ -14,6 +14,12 @@ export class OcclusionCuller {
   private readonly chunkCenters = new Map<ChunkMesh, THREE.Vector3>()
   private readonly chunkBoxes = new Map<ChunkMesh, THREE.Box3>()
 
+  // Configuration constants
+  private static readonly MIN_CHUNKS_TO_SKIP = 5 // Closest chunks can't be occluded
+  private static readonly CHUNK_PROXIMITY_MULTIPLIER = 1.5 // Ray proximity threshold multiplier
+  private static readonly MIN_OCCLUSION_ANGLE_RADIANS = 0.35 // ~20 degrees - minimum angular size to occlude
+  private static readonly CHUNK_HEIGHT_SCALE = 4 // Scale down height for angular size calculation (chunks are wider than tall)
+
   /**
    * Update chunk visibility based on occlusion from the camera.
    * Only call this for chunks that passed frustum culling.
@@ -47,7 +53,7 @@ export class OcclusionCuller {
 
     // Check each chunk for occlusion
     // We skip the closest chunks as they can't be occluded
-    const occlusionCheckStart = Math.min(5, chunksWithDistance.length)
+    const occlusionCheckStart = Math.min(OcclusionCuller.MIN_CHUNKS_TO_SKIP, chunksWithDistance.length)
     
     for (let i = occlusionCheckStart; i < chunksWithDistance.length; i++) {
       const target = chunksWithDistance[i]
@@ -109,7 +115,7 @@ export class OcclusionCuller {
     const perpDistance = closestPoint.distanceTo(center)
     
     // Use chunk diagonal as threshold (chunks are roughly CHUNK_SIZE across)
-    const threshold = Math.sqrt(CHUNK_SIZE_X * CHUNK_SIZE_X + CHUNK_SIZE_Z * CHUNK_SIZE_Z) * 1.5
+    const threshold = Math.sqrt(CHUNK_SIZE_X * CHUNK_SIZE_X + CHUNK_SIZE_Z * CHUNK_SIZE_Z) * OcclusionCuller.CHUNK_PROXIMITY_MULTIPLIER
     
     return perpDistance < threshold
   }
@@ -144,12 +150,13 @@ export class OcclusionCuller {
     // Calculate angular size of occluder from camera
     const occluderCenter = this.getOrCreateChunkCenter(occluder)
     const distToOccluder = Math.sqrt(cameraPos.distanceToSquared(occluderCenter))
-    const occluderSize = Math.max(CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT / 4)
+    // Use horizontal dimensions for angular size (chunks are wider than tall)
+    const occluderSize = Math.max(CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT / OcclusionCuller.CHUNK_HEIGHT_SCALE)
     const angularSize = Math.atan(occluderSize / distToOccluder)
     
-    // If occluder appears large enough (> ~20 degrees), it can occlude
+    // If occluder appears large enough, it can occlude
     // This prevents distant tiny chunks from occluding large areas
-    return angularSize > 0.35 // ~20 degrees in radians
+    return angularSize > OcclusionCuller.MIN_OCCLUSION_ANGLE_RADIANS
   }
 
   /**
