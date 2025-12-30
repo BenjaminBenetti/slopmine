@@ -41,7 +41,7 @@ export class ChunkMesh {
     // Create material with vertex colors enabled
     const material = new THREE.MeshLambertMaterial({ 
       vertexColors: true,
-      // Enable flat shading for blocky look
+      // Smooth shading for better lighting
       flatShading: false,
     })
 
@@ -98,6 +98,6 @@ export class ChunkMesh {
     if (!this.mesh || !this.mesh.geometry.index) {
       return 0
     }
-    return this.mesh.geometry.index.count / 3
+    return Math.floor(this.mesh.geometry.index.count / 3)
   }
 }

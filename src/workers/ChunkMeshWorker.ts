@@ -87,7 +87,7 @@ function shouldRenderFace(
 
 /**
  * Add face vertices to the geometry arrays.
- * Each face is 2 triangles = 6 vertices.
+ * Each face is 1 quad = 4 vertices, indexed as 2 triangles.
  */
 function addFaceGeometry(
   positions: number[],
@@ -134,11 +134,18 @@ function addFaceGeometry(
       r = 0.2; g = 0.6; b = 0.2
       break
     default:
-      // For any other blocks, generate based on ID
+      // For any other blocks, generate color using prime number hashing
+      // Prime numbers (73, 151, 233) ensure good color distribution
       r = ((blockId * 73) % 256) / 255
       g = ((blockId * 151) % 256) / 255
       b = ((blockId * 233) % 256) / 255
   }
+  
+  // Face shading multipliers for depth perception
+  const TOP_FACE_SHADE = 1.0
+  const BOTTOM_FACE_SHADE = 0.5
+  const SIDE_FACE_SHADE_A = 0.9  // East/West
+  const SIDE_FACE_SHADE_B = 0.8  // North/South
   
   switch (face) {
     case Face.TOP: // +Y
@@ -152,7 +159,10 @@ function addFaceGeometry(
         u0, v0,  u1, v0,  u1, v1,  u0, v1
       )
       colors.push(
-        r, g, b,  r, g, b,  r, g, b,  r, g, b
+        r * TOP_FACE_SHADE, g * TOP_FACE_SHADE, b * TOP_FACE_SHADE,
+        r * TOP_FACE_SHADE, g * TOP_FACE_SHADE, b * TOP_FACE_SHADE,
+        r * TOP_FACE_SHADE, g * TOP_FACE_SHADE, b * TOP_FACE_SHADE,
+        r * TOP_FACE_SHADE, g * TOP_FACE_SHADE, b * TOP_FACE_SHADE
       )
       break
     
@@ -167,7 +177,10 @@ function addFaceGeometry(
         u0, v0,  u1, v0,  u1, v1,  u0, v1
       )
       colors.push(
-        r*0.5, g*0.5, b*0.5,  r*0.5, g*0.5, b*0.5,  r*0.5, g*0.5, b*0.5,  r*0.5, g*0.5, b*0.5
+        r * BOTTOM_FACE_SHADE, g * BOTTOM_FACE_SHADE, b * BOTTOM_FACE_SHADE,
+        r * BOTTOM_FACE_SHADE, g * BOTTOM_FACE_SHADE, b * BOTTOM_FACE_SHADE,
+        r * BOTTOM_FACE_SHADE, g * BOTTOM_FACE_SHADE, b * BOTTOM_FACE_SHADE,
+        r * BOTTOM_FACE_SHADE, g * BOTTOM_FACE_SHADE, b * BOTTOM_FACE_SHADE
       )
       break
     
@@ -182,7 +195,10 @@ function addFaceGeometry(
         u0, v0,  u0, v1,  u1, v1,  u1, v0
       )
       colors.push(
-        r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9
+        r * SIDE_FACE_SHADE_A, g * SIDE_FACE_SHADE_A, b * SIDE_FACE_SHADE_A,
+        r * SIDE_FACE_SHADE_A, g * SIDE_FACE_SHADE_A, b * SIDE_FACE_SHADE_A,
+        r * SIDE_FACE_SHADE_A, g * SIDE_FACE_SHADE_A, b * SIDE_FACE_SHADE_A,
+        r * SIDE_FACE_SHADE_A, g * SIDE_FACE_SHADE_A, b * SIDE_FACE_SHADE_A
       )
       break
     
@@ -197,7 +213,10 @@ function addFaceGeometry(
         u0, v0,  u0, v1,  u1, v1,  u1, v0
       )
       colors.push(
-        r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9,  r*0.9, g*0.9, b*0.9
+        r * SIDE_FACE_SHADE_A, g * SIDE_FACE_SHADE_A, b * SIDE_FACE_SHADE_A,
+        r * SIDE_FACE_SHADE_A, g * SIDE_FACE_SHADE_A, b * SIDE_FACE_SHADE_A,
+        r * SIDE_FACE_SHADE_A, g * SIDE_FACE_SHADE_A, b * SIDE_FACE_SHADE_A,
+        r * SIDE_FACE_SHADE_A, g * SIDE_FACE_SHADE_A, b * SIDE_FACE_SHADE_A
       )
       break
     
@@ -212,7 +231,10 @@ function addFaceGeometry(
         u0, v0,  u1, v0,  u1, v1,  u0, v1
       )
       colors.push(
-        r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8
+        r * SIDE_FACE_SHADE_B, g * SIDE_FACE_SHADE_B, b * SIDE_FACE_SHADE_B,
+        r * SIDE_FACE_SHADE_B, g * SIDE_FACE_SHADE_B, b * SIDE_FACE_SHADE_B,
+        r * SIDE_FACE_SHADE_B, g * SIDE_FACE_SHADE_B, b * SIDE_FACE_SHADE_B,
+        r * SIDE_FACE_SHADE_B, g * SIDE_FACE_SHADE_B, b * SIDE_FACE_SHADE_B
       )
       break
     
@@ -227,7 +249,10 @@ function addFaceGeometry(
         u0, v0,  u1, v0,  u1, v1,  u0, v1
       )
       colors.push(
-        r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8,  r*0.8, g*0.8, b*0.8
+        r * SIDE_FACE_SHADE_B, g * SIDE_FACE_SHADE_B, b * SIDE_FACE_SHADE_B,
+        r * SIDE_FACE_SHADE_B, g * SIDE_FACE_SHADE_B, b * SIDE_FACE_SHADE_B,
+        r * SIDE_FACE_SHADE_B, g * SIDE_FACE_SHADE_B, b * SIDE_FACE_SHADE_B,
+        r * SIDE_FACE_SHADE_B, g * SIDE_FACE_SHADE_B, b * SIDE_FACE_SHADE_B
       )
       break
   }
