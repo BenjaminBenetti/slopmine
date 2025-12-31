@@ -3,7 +3,7 @@ import type { BlockId, IBlock } from './interfaces/IBlock.ts'
 import type { IChunkCoordinate, IWorldCoordinate } from './interfaces/ICoordinates.ts'
 import { createChunkKey, type ChunkKey } from './interfaces/ICoordinates.ts'
 import { worldToChunk, worldToLocal, localToWorld } from './coordinates/CoordinateUtils.ts'
-import { ChunkManager, type ChunkManagerConfig } from './chunks/ChunkManager.ts'
+import { ChunkManager } from './chunks/ChunkManager.ts'
 import { BlockRegistry, getBlock } from './blocks/BlockRegistry.ts'
 import { Chunk } from './chunks/Chunk.ts'
 import { BlockIds } from './blocks/BlockIds.ts'
@@ -36,8 +36,8 @@ export class WorldManager {
   // Heightmap cache for horizon culling
   private heightmapCache: HeightmapCache | null = null
 
-  constructor(config?: Partial<ChunkManagerConfig>) {
-    this.chunkManager = new ChunkManager(config)
+  constructor() {
+    this.chunkManager = new ChunkManager()
     this.blockRegistry = BlockRegistry.getInstance()
     this.initWorkers()
     this.updateOpaqueBlockIds()

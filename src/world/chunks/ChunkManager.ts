@@ -4,30 +4,11 @@ import { Chunk } from './Chunk.ts'
 import { ChunkState } from '../interfaces/IChunk.ts'
 
 /**
- * Configuration for chunk management.
- */
-export interface ChunkManagerConfig {
-  maxLoadedChunks: number
-  chunksPerFrame: number
-}
-
-const DEFAULT_CONFIG: ChunkManagerConfig = {
-  maxLoadedChunks: 1024,
-  chunksPerFrame: 4,
-}
-
-/**
  * Manages chunk lifecycle: loading, unloading, caching.
  */
 export class ChunkManager {
   private readonly chunks: Map<ChunkKey, Chunk> = new Map()
-  private readonly config: ChunkManagerConfig
-
   private readonly accessOrder: Map<ChunkKey, true> = new Map()
-
-  constructor(config: Partial<ChunkManagerConfig> = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config }
-  }
 
   /**
    * Get a chunk, returning undefined if not loaded.
@@ -68,8 +49,6 @@ export class ChunkManager {
 
     this.chunks.set(key, chunk)
     this.accessOrder.set(key, true)
-
-    this.enforceLimit()
 
     return chunk
   }
@@ -141,23 +120,6 @@ export class ChunkManager {
   private touchChunk(key: ChunkKey): void {
     this.accessOrder.delete(key)
     this.accessOrder.set(key, true)
-  }
-
-  /**
-   * Unload oldest chunks if over the limit.
-   */
-  private enforceLimit(): void {
-    while (this.chunks.size > this.config.maxLoadedChunks) {
-      const oldestKey = this.accessOrder.keys().next().value
-      if (oldestKey) {
-        this.accessOrder.delete(oldestKey)
-        const chunk = this.chunks.get(oldestKey)
-        if (chunk) {
-          chunk.dispose()
-          this.chunks.delete(oldestKey)
-        }
-      }
-    }
   }
 
   /**

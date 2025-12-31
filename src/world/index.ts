@@ -25,7 +25,7 @@ export { createChunkKey, parseChunkKey } from './interfaces/ICoordinates.ts'
 export { Block, AirBlock, SolidBlock, TransparentBlock, SharedGeometry } from './blocks/Block.ts'
 export { BlockRegistry, registerBlock, getBlock } from './blocks/BlockRegistry.ts'
 export { Chunk } from './chunks/Chunk.ts'
-export { ChunkManager, type ChunkManagerConfig } from './chunks/ChunkManager.ts'
+export { ChunkManager } from './chunks/ChunkManager.ts'
 export { WorldManager } from './WorldManager.ts'
 
 // Block types
