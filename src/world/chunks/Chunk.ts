@@ -129,22 +129,25 @@ export class Chunk implements IChunk {
       return null
     }
 
+    // Check if there's a block at the bottom (y=0) - if not, no grounded blocks exist
+    if (this.blocks[localToIndex(x, 0, z)] === BlockIds.AIR) {
+      return null
+    }
+
     // Scan upward from y=0 to find the highest grounded block
     // Stop at the first air gap - anything above is not grounded
-    let highestGrounded: number | null = null
+    let highestGrounded = 0
 
-    for (let y = 0; y < CHUNK_HEIGHT; y++) {
+    for (let y = 1; y < CHUNK_HEIGHT; y++) {
       const blockId = this.blocks[localToIndex(x, y, z)]
       if (blockId !== BlockIds.AIR) {
         // Found a solid block, update highest grounded
         highestGrounded = y
-      } else if (highestGrounded !== null) {
+      } else {
         // Hit an air gap after finding grounded blocks - stop here
         // Anything above this air gap is floating and should be ignored
         break
       }
-      // If highestGrounded is null and blockId is AIR, we're still looking
-      // for the first grounded block from the bottom
     }
 
     return highestGrounded
