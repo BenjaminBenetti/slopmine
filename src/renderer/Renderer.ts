@@ -3,6 +3,7 @@ import { FrustumCuller } from './FrustumCuller.ts'
 import { HorizonCuller } from './HorizonCuller.ts'
 import type { ChunkMesh } from './ChunkMesh.ts'
 import type { HeightmapCache } from './HeightmapCache.ts'
+import type { GraphicsSettings } from '../settings/index.ts'
 
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer
@@ -12,6 +13,7 @@ export class Renderer {
   private readonly horizonCuller = new HorizonCuller()
   private chunkMeshSource: (() => Iterable<ChunkMesh>) | null = null
   private heightmapCache: HeightmapCache | null = null
+  private graphicsSettings: GraphicsSettings | null = null
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -58,14 +60,29 @@ export class Renderer {
     this.heightmapCache = cache
   }
 
+  /**
+   * Set graphics settings for configurable rendering options.
+   */
+  setGraphicsSettings(settings: GraphicsSettings): void {
+    this.graphicsSettings = settings
+  }
+
   render(): void {
     if (this.chunkMeshSource) {
-      // Step 1: Frustum culling
-      this.frustumCuller.updateVisibility(this.camera, this.chunkMeshSource())
+      const doCulling = !this.graphicsSettings || this.graphicsSettings.cullingEnabled
+      if (doCulling) {
+        // Step 1: Frustum culling
+        this.frustumCuller.updateVisibility(this.camera, this.chunkMeshSource())
 
-      // Step 2: Horizon culling (only chunks that passed frustum culling)
-      if (this.heightmapCache) {
-        this.horizonCuller.updateVisibility(this.camera, this.chunkMeshSource(), this.heightmapCache)
+        // Step 2: Horizon culling (only chunks that passed frustum culling)
+        if (this.heightmapCache) {
+          this.horizonCuller.updateVisibility(this.camera, this.chunkMeshSource(), this.heightmapCache)
+        }
+      } else {
+        // Culling disabled - make all chunks visible
+        for (const chunkMesh of this.chunkMeshSource()) {
+          chunkMesh.getGroup().visible = true
+        }
       }
     }
     this.renderer.render(this.scene, this.camera)

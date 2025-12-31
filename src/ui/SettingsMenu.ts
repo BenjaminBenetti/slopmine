@@ -1,4 +1,5 @@
 import type { GenerationConfig } from '../world/generate/GenerationConfig.ts'
+import type { GraphicsSettings } from '../settings/index.ts'
 
 export type SettingsPage = 'main' | 'config'
 
@@ -24,6 +25,7 @@ export interface SettingsMenuUI {
  */
 export function createSettingsMenuUI(
   config: GenerationConfig,
+  graphicsSettings: GraphicsSettings,
   parent: HTMLElement = document.body,
   options: SettingsMenuUIOptions = {},
 ): SettingsMenuUI {
@@ -207,6 +209,37 @@ export function createSettingsMenuUI(
     sliderContainer.appendChild(sliderLabel)
     sliderContainer.appendChild(slider)
     panel.appendChild(sliderContainer)
+
+    // Culling toggle
+    const cullingContainer = document.createElement('div')
+    cullingContainer.style.marginBottom = '1.5rem'
+    cullingContainer.style.display = 'flex'
+    cullingContainer.style.alignItems = 'center'
+    cullingContainer.style.justifyContent = 'space-between'
+
+    const cullingLabel = document.createElement('label')
+    cullingLabel.textContent = 'Culling Enabled'
+    cullingLabel.style.fontSize = '0.9rem'
+    cullingLabel.style.cursor = 'pointer'
+
+    const cullingToggle = document.createElement('input')
+    cullingToggle.type = 'checkbox'
+    cullingToggle.checked = graphicsSettings.cullingEnabled
+    cullingToggle.style.width = '18px'
+    cullingToggle.style.height = '18px'
+    cullingToggle.style.cursor = 'pointer'
+    cullingToggle.style.accentColor = 'rgba(100, 180, 255, 0.9)'
+
+    cullingLabel.htmlFor = 'culling-toggle'
+    cullingToggle.id = 'culling-toggle'
+
+    cullingToggle.addEventListener('change', () => {
+      graphicsSettings.cullingEnabled = cullingToggle.checked
+    })
+
+    cullingContainer.appendChild(cullingLabel)
+    cullingContainer.appendChild(cullingToggle)
+    panel.appendChild(cullingContainer)
 
     const backBtn = createButton('Back', () => {
       renderMainMenu()

@@ -16,11 +16,14 @@ import { createToolbarUI } from './ui/Toolbar.ts'
 import { createInventoryUI } from './ui/Inventory.ts'
 import { createSettingsMenuUI } from './ui/SettingsMenu.ts'
 import { createFpsCounterUI } from './ui/FpsCounter.ts'
+import { ChunkWireframeManager } from './renderer/ChunkWireframeManager.ts'
+import { DebugManager } from './ui/DebugManager.ts'
 import {
   WorldManager,
   registerDefaultBlocks,
 } from './world/index.ts'
 import { WorldGenerator } from './world/generate/index.ts'
+import { GraphicsSettings } from './settings/index.ts'
 import * as THREE from 'three'
 import {
   PhysicsEngine,
@@ -37,6 +40,10 @@ registerDefaultBlocks()
 
 const renderer = new Renderer()
 
+// Graphics settings (persisted to localStorage)
+const graphicsSettings = new GraphicsSettings()
+renderer.setGraphicsSettings(graphicsSettings)
+
 // Player state (including toolbar/inventory)
 const playerState = new PlayerState(10)
 
@@ -44,21 +51,6 @@ const playerState = new PlayerState(10)
 createCrosshairUI()
 const fpsCounter = createFpsCounterUI()
 
-// Restore FPS counter visibility from localStorage
-const FPS_COUNTER_STORAGE_KEY = 'slopmine:fpsCounterVisible'
-const storedVisibility = localStorage.getItem(FPS_COUNTER_STORAGE_KEY)
-if (storedVisibility === 'false') {
-  fpsCounter.hide()
-}
-
-// Toggle FPS counter with Ctrl+Shift+P
-window.addEventListener('keydown', (event) => {
-  if (event.ctrlKey && event.shiftKey && event.code === 'KeyP') {
-    event.preventDefault()
-    fpsCounter.toggle()
-    localStorage.setItem(FPS_COUNTER_STORAGE_KEY, String(fpsCounter.visible))
-  }
-})
 const toolbarUI = createToolbarUI(undefined, {
 	  slotCount: playerState.inventory.toolbar.size,
 })
@@ -102,7 +94,7 @@ const world = new WorldManager()
 const worldGenerator = new WorldGenerator(world)
 
 // Settings menu UI (settingsInput is created later after gameLoop)
-const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), document.body, {
+const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSettings, document.body, {
   onResume: () => {
     // Request pointer lock to resume game - this triggers the pointerLockChange
     // handler which will close the settings menu
@@ -140,6 +132,30 @@ renderer.camera.position.set(
 
 // Set the scene for rendering
 world.setScene(renderer.scene)
+
+// Debug visualization system (FPS counter + chunk wireframes)
+const wireframeManager = new ChunkWireframeManager(renderer.scene)
+const debugManager = new DebugManager({
+  fpsCounter,
+  wireframeManager,
+})
+debugManager.restoreFromStorage()
+
+// Sync wireframes with chunk mesh lifecycle
+world.onChunkMeshAdded((coord) => {
+  wireframeManager.addChunk(coord)
+})
+world.onChunkMeshRemoved((coord) => {
+  wireframeManager.removeChunk(coord)
+})
+
+// Cycle debug mode with Ctrl+Shift+P
+window.addEventListener('keydown', (event) => {
+  if (event.ctrlKey && event.shiftKey && event.code === 'KeyP') {
+    event.preventDefault()
+    debugManager.cycleMode()
+  }
+})
 
 // Create heightmap cache for horizon culling
 const heightmapCache = new HeightmapCache()
@@ -202,6 +218,8 @@ const gameLoop = new GameLoop({
   },
   render() {
     renderer.render()
+    // Update wireframe colors based on culling (after culling runs in render)
+    wireframeManager.updateColors(world.getChunkMeshes())
     // Measure total CPU time for update + render
     const cpuTime = performance.now() - frameCpuStart
     fpsCounter.update({

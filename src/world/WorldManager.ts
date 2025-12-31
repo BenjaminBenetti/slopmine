@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { BlockId, IBlock } from './interfaces/IBlock.ts'
 import type { IChunkCoordinate, IWorldCoordinate } from './interfaces/ICoordinates.ts'
-import { createChunkKey, type ChunkKey } from './interfaces/ICoordinates.ts'
+import { createChunkKey, parseChunkKey, type ChunkKey } from './interfaces/ICoordinates.ts'
 import { worldToChunk, worldToLocal, localToWorld } from './coordinates/CoordinateUtils.ts'
 import { ChunkManager } from './chunks/ChunkManager.ts'
 import { BlockRegistry, getBlock } from './blocks/BlockRegistry.ts'
@@ -23,6 +23,8 @@ export class WorldManager {
   private scene: THREE.Scene | null = null
   private readonly chunkMeshes: Map<ChunkKey, ChunkMesh> = new Map()
   private readonly generationCallbacks: Array<(chunk: Chunk) => void> = []
+  private readonly chunkMeshAddedCallbacks: Array<(coord: IChunkCoordinate) => void> = []
+  private readonly chunkMeshRemovedCallbacks: Array<(coord: IChunkCoordinate) => void> = []
 
   // Web Worker pool for mesh building
   private readonly meshWorkers: Worker[] = []
@@ -100,6 +102,11 @@ export class WorldManager {
     chunkMesh.build()
     chunkMesh.addToScene(this.scene)
     this.chunkMeshes.set(chunkKey, chunkMesh)
+
+    // Notify listeners that chunk mesh was added
+    for (const callback of this.chunkMeshAddedCallbacks) {
+      callback(chunk.coordinate)
+    }
 
     // Update heightmap cache for horizon culling
     if (this.heightmapCache) {
@@ -439,6 +446,45 @@ export class WorldManager {
   }
 
   /**
+   * Register a callback for when a chunk mesh is added to the scene.
+   * Returns an unsubscribe function.
+   */
+  onChunkMeshAdded(callback: (coord: IChunkCoordinate) => void): () => void {
+    this.chunkMeshAddedCallbacks.push(callback)
+    return () => {
+      const index = this.chunkMeshAddedCallbacks.indexOf(callback)
+      if (index !== -1) {
+        this.chunkMeshAddedCallbacks.splice(index, 1)
+      }
+    }
+  }
+
+  /**
+   * Register a callback for when a chunk mesh is removed from the scene.
+   * Returns an unsubscribe function.
+   */
+  onChunkMeshRemoved(callback: (coord: IChunkCoordinate) => void): () => void {
+    this.chunkMeshRemovedCallbacks.push(callback)
+    return () => {
+      const index = this.chunkMeshRemovedCallbacks.indexOf(callback)
+      if (index !== -1) {
+        this.chunkMeshRemovedCallbacks.splice(index, 1)
+      }
+    }
+  }
+
+  /**
+   * Get all chunk mesh coordinates for initial sync.
+   */
+  getChunkMeshCoordinates(): IChunkCoordinate[] {
+    const coords: IChunkCoordinate[] = []
+    for (const chunkMesh of this.chunkMeshes.values()) {
+      coords.push(chunkMesh.chunkCoordinate)
+    }
+    return coords
+  }
+
+  /**
    * Mark neighbor chunks dirty if a block change is on the chunk edge.
    */
   private markNeighborsDirtyIfEdge(
@@ -535,6 +581,12 @@ export class WorldManager {
   removeChunkMeshes(chunkKey: ChunkKey): void {
     const chunkMesh = this.chunkMeshes.get(chunkKey)
     if (chunkMesh && this.scene) {
+      // Notify listeners before removal
+      const coord = parseChunkKey(chunkKey)
+      for (const callback of this.chunkMeshRemovedCallbacks) {
+        callback(coord)
+      }
+
       chunkMesh.removeFromScene(this.scene)
       chunkMesh.dispose()
     }
