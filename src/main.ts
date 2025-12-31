@@ -1,5 +1,6 @@
 import { GameLoop } from './core/GameLoop.ts'
 import { Renderer } from './renderer/Renderer.ts'
+import { HeightmapCache } from './renderer/HeightmapCache.ts'
 import { WorldLighting } from './renderer/WorldLighting.ts'
 import { Skybox } from './renderer/skybox/Skybox.ts'
 import {
@@ -139,6 +140,11 @@ renderer.camera.position.set(
 
 // Set the scene for rendering
 world.setScene(renderer.scene)
+
+// Create heightmap cache for horizon culling
+const heightmapCache = new HeightmapCache()
+world.setHeightmapCache(heightmapCache)
+renderer.setHeightmapCache(heightmapCache)
 
 // Connect chunk meshes to renderer for frustum culling
 renderer.setChunkMeshSource(() => world.getChunkMeshes())

@@ -9,6 +9,7 @@ import { Chunk } from './chunks/Chunk.ts'
 import { BlockIds } from './blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState } from './interfaces/IChunk.ts'
 import { ChunkMesh } from '../renderer/ChunkMesh.ts'
+import type { HeightmapCache } from '../renderer/HeightmapCache.ts'
 import ChunkMeshWorker from '../workers/ChunkMeshWorker.ts?worker'
 import type { ChunkMeshRequest, ChunkMeshResponse } from '../workers/ChunkMeshWorker.ts'
 
@@ -32,6 +33,9 @@ export class WorldManager {
   // Cache of opaque block IDs for worker visibility checks
   private opaqueBlockIds: number[] = []
 
+  // Heightmap cache for horizon culling
+  private heightmapCache: HeightmapCache | null = null
+
   constructor(config?: Partial<ChunkManagerConfig>) {
     this.chunkManager = new ChunkManager(config)
     this.blockRegistry = BlockRegistry.getInstance()
@@ -47,6 +51,13 @@ export class WorldManager {
     this.opaqueBlockIds = this.blockRegistry
       .getAllBlockIds()
       .filter((id) => getBlock(id).properties.isOpaque)
+  }
+
+  /**
+   * Set the heightmap cache for horizon culling updates.
+   */
+  setHeightmapCache(cache: HeightmapCache): void {
+    this.heightmapCache = cache
   }
 
   /**
@@ -89,6 +100,11 @@ export class WorldManager {
     chunkMesh.build()
     chunkMesh.addToScene(this.scene)
     this.chunkMeshes.set(chunkKey, chunkMesh)
+
+    // Update heightmap cache for horizon culling
+    if (this.heightmapCache) {
+      this.heightmapCache.updateChunk(chunk)
+    }
 
     // Process next chunk in queue
     this.processWorkerQueue()
@@ -369,6 +385,11 @@ export class WorldManager {
     // Remove meshes first
     const chunkKey = createChunkKey(coordinate.x, coordinate.z)
     this.removeChunkMeshes(chunkKey)
+
+    // Remove from heightmap cache
+    if (this.heightmapCache) {
+      this.heightmapCache.removeChunk(chunkKey)
+    }
 
     // Then unload the chunk data
     this.chunkManager.unloadChunk(coordinate)
