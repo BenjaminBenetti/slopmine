@@ -119,21 +119,38 @@ export class Chunk implements IChunk {
   }
 
   /**
-   * Get highest non-air block Y at local x,z position.
-   * Returns null if no solid blocks exist at this column.
+   * Get highest non-air block Y at local x,z position that is continuously
+   * connected to the bottom of the chunk (y=0).
+   * Floating blocks that are not connected to the ground are ignored.
+   * Returns null if no grounded blocks exist at this column.
    */
   getHighestBlockAt(x: number, z: number): number | null {
     if (x < 0 || x >= CHUNK_SIZE_X || z < 0 || z >= CHUNK_SIZE_Z) {
       return null
     }
 
-    for (let y = CHUNK_HEIGHT - 1; y >= 0; y--) {
+    // Check if there's a block at the bottom (y=0) - if not, no grounded blocks exist
+    if (this.blocks[localToIndex(x, 0, z)] === BlockIds.AIR) {
+      return null
+    }
+
+    // Scan upward from y=0 to find the highest grounded block
+    // Stop at the first air gap - anything above is not grounded
+    let highestGrounded = 0
+
+    for (let y = 1; y < CHUNK_HEIGHT; y++) {
       const blockId = this.blocks[localToIndex(x, y, z)]
       if (blockId !== BlockIds.AIR) {
-        return y
+        // Found a solid block, update highest grounded
+        highestGrounded = y
+      } else {
+        // Hit an air gap after finding grounded blocks - stop here
+        // Anything above this air gap is floating and should be ignored
+        break
       }
     }
-    return null
+
+    return highestGrounded
   }
 
   dispose(): void {
