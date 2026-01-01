@@ -22,9 +22,17 @@ export class Chunk implements IChunk {
    */
   private readonly blocks: Uint16Array
 
+  /**
+   * Light data stored as flat Uint8Array.
+   * Each byte: high nibble = skylight (0-15), low nibble = blocklight (0-15)
+   * Size: 32 * 32 * 1024 = 1,048,576 bytes = 1 MB per chunk
+   */
+  private readonly lightData: Uint8Array
+
   constructor(coordinate: IChunkCoordinate) {
     this.coordinate = coordinate
     this.blocks = new Uint16Array(CHUNK_VOLUME)
+    this.lightData = new Uint8Array(CHUNK_VOLUME)
   }
 
   get state(): ChunkState {
@@ -77,6 +85,66 @@ export class Chunk implements IChunk {
 
   getBlockData(): Uint16Array {
     return this.blocks
+  }
+
+  /**
+   * Get the raw light data array.
+   */
+  getLightData(): Uint8Array {
+    return this.lightData
+  }
+
+  /**
+   * Get skylight level at local coordinates (0-15).
+   * Returns 15 for out-of-bounds (full sky exposure).
+   */
+  getSkylight(x: number, y: number, z: number): number {
+    if (!isValidLocal(x, y, z)) {
+      return 15
+    }
+    return (this.lightData[localToIndex(x, y, z)] >> 4) & 0xf
+  }
+
+  /**
+   * Set skylight level at local coordinates (0-15).
+   */
+  setSkylight(x: number, y: number, z: number, level: number): void {
+    if (!isValidLocal(x, y, z)) return
+    const idx = localToIndex(x, y, z)
+    this.lightData[idx] = (this.lightData[idx] & 0x0f) | ((level & 0xf) << 4)
+  }
+
+  /**
+   * Get blocklight level at local coordinates (0-15).
+   * Returns 0 for out-of-bounds (no artificial light).
+   */
+  getBlocklight(x: number, y: number, z: number): number {
+    if (!isValidLocal(x, y, z)) {
+      return 0
+    }
+    return this.lightData[localToIndex(x, y, z)] & 0xf
+  }
+
+  /**
+   * Set blocklight level at local coordinates (0-15).
+   */
+  setBlocklight(x: number, y: number, z: number, level: number): void {
+    if (!isValidLocal(x, y, z)) return
+    const idx = localToIndex(x, y, z)
+    this.lightData[idx] = (this.lightData[idx] & 0xf0) | (level & 0xf)
+  }
+
+  /**
+   * Get combined light level at local coordinates (max of skylight and blocklight).
+   */
+  getLightLevel(x: number, y: number, z: number): number {
+    if (!isValidLocal(x, y, z)) {
+      return 15
+    }
+    const data = this.lightData[localToIndex(x, y, z)]
+    const sky = (data >> 4) & 0xf
+    const block = data & 0xf
+    return Math.max(sky, block)
   }
 
   /**

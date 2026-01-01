@@ -97,6 +97,7 @@ export interface ChunkMeshRequest {
   chunkX: number
   chunkZ: number
   blocks: Uint16Array
+  lightData: Uint8Array
   neighbors: NeighborData
   // Set of block IDs that are opaque (blocks visibility)
   opaqueBlockIds: number[]
@@ -108,19 +109,81 @@ export interface ChunkMeshResponse {
   chunkZ: number
   // Array of [blockId, positions] pairs (Maps don't serialize via postMessage)
   visibleBlocks: Array<[number, Float32Array]>
+  // Array of [blockId, lightLevels] pairs matching visibleBlocks
+  lightLevels: Array<[number, Uint8Array]>
+}
+
+/**
+ * Get combined light level from light data (max of skylight and blocklight).
+ */
+function getLightLevelAt(lightData: Uint8Array, x: number, y: number, z: number): number {
+  if (x < 0 || x >= CHUNK_SIZE_X || z < 0 || z >= CHUNK_SIZE_Z || y < 0 || y >= CHUNK_HEIGHT) {
+    return 15 // Out of bounds = full light
+  }
+  const idx = localToIndex(x, y, z)
+  const data = lightData[idx]
+  const sky = (data >> 4) & 0xf
+  const block = data & 0xf
+  return Math.max(sky, block)
+}
+
+/**
+ * Get the light level for rendering a block by checking adjacent air blocks.
+ * Solid blocks store 0 light internally, so we need to look at neighbors.
+ */
+function getBlockRenderLight(lightData: Uint8Array, x: number, y: number, z: number): number {
+  let maxLight = 0
+
+  // Check all 6 neighbors and use the max light
+  // Only sample from in-bounds neighbors (except +Y which defaults to sky)
+
+  // +X (only if in bounds)
+  if (x + 1 < CHUNK_SIZE_X) {
+    maxLight = Math.max(maxLight, getLightLevelAt(lightData, x + 1, y, z))
+  }
+
+  // -X (only if in bounds)
+  if (x - 1 >= 0) {
+    maxLight = Math.max(maxLight, getLightLevelAt(lightData, x - 1, y, z))
+  }
+
+  // +Y (above chunk height = full sky)
+  if (y + 1 >= CHUNK_HEIGHT) {
+    maxLight = Math.max(maxLight, 15)
+  } else {
+    maxLight = Math.max(maxLight, getLightLevelAt(lightData, x, y + 1, z))
+  }
+
+  // -Y (only if in bounds)
+  if (y - 1 >= 0) {
+    maxLight = Math.max(maxLight, getLightLevelAt(lightData, x, y - 1, z))
+  }
+
+  // +Z (only if in bounds)
+  if (z + 1 < CHUNK_SIZE_Z) {
+    maxLight = Math.max(maxLight, getLightLevelAt(lightData, x, y, z + 1))
+  }
+
+  // -Z (only if in bounds)
+  if (z - 1 >= 0) {
+    maxLight = Math.max(maxLight, getLightLevelAt(lightData, x, y, z - 1))
+  }
+
+  return maxLight
 }
 
 /**
  * Process a chunk and find all visible blocks.
  */
 function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
-  const { chunkX, chunkZ, blocks, neighbors, opaqueBlockIds } = request
+  const { chunkX, chunkZ, blocks, lightData, neighbors, opaqueBlockIds } = request
 
   // Create set of opaque block IDs for fast lookup
   const opaqueSet = new Set(opaqueBlockIds)
 
   // Collect visible blocks by type
   const blockPositions = new Map<number, number[]>()
+  const blockLights = new Map<number, number[]>()
 
   // World offset for this chunk
   const worldOffsetX = chunkX * CHUNK_SIZE_X
@@ -144,6 +207,14 @@ function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
 
         // Store world coordinates
         positions.push(worldOffsetX + x, y, worldOffsetZ + z)
+
+        // Collect light level for this block (use max light from neighboring air)
+        let lights = blockLights.get(blockId)
+        if (!lights) {
+          lights = []
+          blockLights.set(blockId, lights)
+        }
+        lights.push(getBlockRenderLight(lightData, x, y, z))
       }
     }
   }
@@ -151,8 +222,12 @@ function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
   // Convert to Float32Arrays for efficient transfer
   // Use array of pairs since Maps don't serialize via postMessage
   const visibleBlocks: Array<[number, Float32Array]> = []
+  const lightLevels: Array<[number, Uint8Array]> = []
+
   for (const [blockId, positions] of blockPositions) {
     visibleBlocks.push([blockId, new Float32Array(positions)])
+    const lights = blockLights.get(blockId) ?? []
+    lightLevels.push([blockId, new Uint8Array(lights)])
   }
 
   return {
@@ -160,6 +235,7 @@ function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
     chunkX,
     chunkZ,
     visibleBlocks,
+    lightLevels,
   }
 }
 
@@ -171,6 +247,9 @@ self.onmessage = (event: MessageEvent<ChunkMeshRequest>) => {
   const transfer: Transferable[] = []
   for (const [, positions] of result.visibleBlocks) {
     transfer.push(positions.buffer)
+  }
+  for (const [, lights] of result.lightLevels) {
+    transfer.push(lights.buffer)
   }
 
   self.postMessage(result, { transfer })

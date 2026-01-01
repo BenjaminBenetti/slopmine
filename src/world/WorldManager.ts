@@ -12,6 +12,7 @@ import { ChunkMesh } from '../renderer/ChunkMesh.ts'
 import type { HeightmapCache } from '../renderer/HeightmapCache.ts'
 import ChunkMeshWorker from '../workers/ChunkMeshWorker.ts?worker'
 import type { ChunkMeshRequest, ChunkMeshResponse } from '../workers/ChunkMeshWorker.ts'
+import { SkylightPropagator } from './lighting/SkylightPropagator.ts'
 
 /**
  * Main world coordinator.
@@ -37,6 +38,9 @@ export class WorldManager {
 
   // Heightmap cache for horizon culling
   private heightmapCache: HeightmapCache | null = null
+
+  // Skylight propagator for dynamic light updates
+  private readonly skylightPropagator = new SkylightPropagator()
 
   constructor() {
     this.chunkManager = new ChunkManager()
@@ -93,9 +97,13 @@ export class WorldManager {
     // Build mesh from worker result (array of [blockId, positions] pairs)
     const chunkMesh = new ChunkMesh(chunk.coordinate)
 
-    for (const [blockId, positions] of result.visibleBlocks) {
-      for (let i = 0; i < positions.length; i += 3) {
-        chunkMesh.addBlock(blockId, positions[i], positions[i + 1], positions[i + 2])
+    // Match positions with light levels
+    for (let i = 0; i < result.visibleBlocks.length; i++) {
+      const [blockId, positions] = result.visibleBlocks[i]
+      const lights = result.lightLevels[i]?.[1] ?? new Uint8Array(positions.length / 3).fill(15)
+
+      for (let j = 0; j < positions.length; j += 3) {
+        chunkMesh.addBlock(blockId, positions[j], positions[j + 1], positions[j + 2], lights[j / 3])
       }
     }
 
@@ -156,22 +164,24 @@ export class WorldManager {
       negZ: this.getNeighborBlockData(coord, 0, -1),
     }
 
-    // Copy block data since we can't transfer it (chunk still needs it)
+    // Copy block and light data since we can't transfer it (chunk still needs it)
     const blocksCopy = new Uint16Array(chunk.getBlockData())
+    const lightCopy = new Uint8Array(chunk.getLightData())
 
     const request: ChunkMeshRequest = {
       type: 'mesh',
       chunkX: Number(coord.x),
       chunkZ: Number(coord.z),
       blocks: blocksCopy,
+      lightData: lightCopy,
       neighbors,
       opaqueBlockIds: this.opaqueBlockIds,
     }
 
     this.pendingChunks.set(chunkKey, chunk)
 
-    // Transfer the copied block data to worker
-    worker.postMessage(request, [blocksCopy.buffer])
+    // Transfer the copied block and light data to worker
+    worker.postMessage(request, [blocksCopy.buffer, lightCopy.buffer])
   }
 
   /**
@@ -224,6 +234,9 @@ export class WorldManager {
     const changed = chunk.setBlockId(local.x, local.y, local.z, blockId)
 
     if (changed) {
+      // Update lighting around the changed block
+      this.skylightPropagator.updateAt(chunk, local.x, local.y, local.z)
+
       this.markNeighborsDirtyIfEdge(chunkCoord, local.x, local.z)
     }
 

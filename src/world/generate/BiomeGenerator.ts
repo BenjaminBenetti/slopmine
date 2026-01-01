@@ -7,6 +7,7 @@ import { localToWorld } from '../coordinates/CoordinateUtils.ts'
 import { FrameBudget } from '../../core/FrameBudget.ts'
 import { Feature, type FeatureContext } from './features/Feature.ts'
 import { CaveCarver } from './caves/CaveCarver.ts'
+import { SkylightPropagator } from '../lighting/SkylightPropagator.ts'
 
 /**
  * Configuration for cave generation within a biome.
@@ -64,6 +65,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   protected abstract readonly properties: BiomeProperties
   protected readonly frameBudget = new FrameBudget()
   private caveCarver: CaveCarver | null = null
+  private readonly skylightPropagator = new SkylightPropagator()
 
   /**
    * Get base terrain height at world coordinates (before features).
@@ -169,6 +171,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   async generate(chunk: Chunk, world: WorldManager): Promise<void> {
     await this.generateTerrain(chunk)
     await this.generateCaves(chunk)
+    this.skylightPropagator.propagate(chunk)
     await this.generateFeatures(chunk, world)
     await this.generateDecorations(chunk, world)
   }

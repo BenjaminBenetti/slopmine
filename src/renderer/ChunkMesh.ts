@@ -10,6 +10,7 @@ import { getBlock } from '../world/blocks/BlockRegistry.ts'
 export class ChunkMesh {
   private readonly instancedMeshes: Map<BlockId, THREE.InstancedMesh> = new Map()
   private readonly blockPositions: Map<BlockId, number[]> = new Map()
+  private readonly blockLights: Map<BlockId, number[]> = new Map()
   private readonly group: THREE.Group = new THREE.Group()
 
   readonly chunkCoordinate: IChunkCoordinate
@@ -19,15 +20,22 @@ export class ChunkMesh {
   }
 
   /**
-   * Add a block instance at the given world position.
+   * Add a block instance at the given world position with light level.
    */
-  addBlock(blockId: BlockId, x: number, y: number, z: number): void {
+  addBlock(blockId: BlockId, x: number, y: number, z: number, lightLevel: number = 15): void {
     let positions = this.blockPositions.get(blockId)
     if (!positions) {
       positions = []
       this.blockPositions.set(blockId, positions)
     }
     positions.push(x, y, z)
+
+    let lights = this.blockLights.get(blockId)
+    if (!lights) {
+      lights = []
+      this.blockLights.set(blockId, lights)
+    }
+    lights.push(lightLevel)
   }
 
   /**
@@ -51,18 +59,37 @@ export class ChunkMesh {
       instancedMesh.castShadow = true
       instancedMesh.receiveShadow = true
 
-      // Set position for each instance
+      // Get light levels for this block type
+      const lights = this.blockLights.get(blockId) ?? []
+
+      // Create instance colors for lighting
+      const colors = new Float32Array(count * 3)
+
+      // Set position and color for each instance
       // Offset by 0.5 because geometry is centered at origin (-0.5 to 0.5)
       // but block coordinates represent the min corner (block occupies x to x+1)
       for (let i = 0; i < count; i++) {
-        const idx = i * 3
+        const posIdx = i * 3
         matrix.setPosition(
-          positions[idx] + 0.5,
-          positions[idx + 1] + 0.5,
-          positions[idx + 2] + 0.5
+          positions[posIdx] + 0.5,
+          positions[posIdx + 1] + 0.5,
+          positions[posIdx + 2] + 0.5
         )
         instancedMesh.setMatrixAt(i, matrix)
+
+        // Calculate brightness from light level (0-15)
+        // Minimum brightness of 2% to prevent pure black
+        const light = lights[i] ?? 15
+        const minBrightness = 0.02
+        const brightness = minBrightness + (light / 15) * (1 - minBrightness)
+
+        colors[posIdx] = brightness
+        colors[posIdx + 1] = brightness
+        colors[posIdx + 2] = brightness
       }
+
+      // Set instance colors for lighting
+      instancedMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
 
       instancedMesh.instanceMatrix.needsUpdate = true
       this.instancedMeshes.set(blockId, instancedMesh)
@@ -101,6 +128,7 @@ export class ChunkMesh {
     }
     this.instancedMeshes.clear()
     this.blockPositions.clear()
+    this.blockLights.clear()
   }
 
   /**
