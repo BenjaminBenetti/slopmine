@@ -6,6 +6,9 @@ import { GenerationConfig, type IGenerationConfig } from './GenerationConfig.ts'
 import { BiomeGenerator } from './BiomeGenerator.ts'
 import { PlainsGenerator } from './biomes/PlainsGenerator.ts'
 import { GrassyHillsGenerator } from './biomes/GrassyHillsGenerator.ts'
+import { CliffFeature } from './features/CliffFeature.ts'
+import { OakTree } from './structures/OakTree.ts'
+import type { WorkerBiomeConfig, FeatureConfig } from '../../workers/ChunkGenerationWorker.ts'
 
 interface QueuedChunk {
   coordinate: IChunkCoordinate
@@ -16,12 +19,14 @@ interface QueuedChunk {
  * Coordinates world generation:
  * - Maintains chunk generation queue sorted by distance to player
  * - Generates chunks asynchronously in the background
+ * - Uses web workers for heavy terrain/caves/lighting generation
  * - Unloads chunks beyond the unload distance
  */
 export class WorldGenerator {
   private readonly world: WorldManager
   private readonly config: GenerationConfig
   private readonly generator: BiomeGenerator
+  private readonly workerBiomeConfig: WorkerBiomeConfig
 
   private readonly chunkQueue: QueuedChunk[] = []
   private readonly generatingChunks: Set<ChunkKey> = new Set()
@@ -36,6 +41,7 @@ export class WorldGenerator {
     this.world = world
     this.config = new GenerationConfig(config)
     this.generator = this.createGenerator()
+    this.workerBiomeConfig = this.createWorkerBiomeConfig()
   }
 
   private createGenerator(): BiomeGenerator {
@@ -44,6 +50,35 @@ export class WorldGenerator {
         return new PlainsGenerator(this.config)
       case 'grassy-hills':
         return new GrassyHillsGenerator(this.config)
+    }
+  }
+
+  /**
+   * Convert BiomeProperties to a plain object for worker communication.
+   * Extracts feature settings from Feature class instances.
+   */
+  private createWorkerBiomeConfig(): WorkerBiomeConfig {
+    const props = this.generator.getBiomeProperties()
+
+    // Convert Feature instances to serializable configs
+    const features: FeatureConfig[] = props.features.map(feature => {
+      if (feature instanceof CliffFeature) {
+        return { type: 'cliff', settings: feature.settings }
+      }
+      throw new Error(`Unknown feature type: ${feature.constructor.name}`)
+    })
+
+    return {
+      name: props.name,
+      surfaceBlock: props.surfaceBlock,
+      subsurfaceBlock: props.subsurfaceBlock,
+      subsurfaceDepth: props.subsurfaceDepth,
+      baseBlock: props.baseBlock,
+      heightAmplitude: props.heightAmplitude,
+      heightOffset: props.heightOffset,
+      treeDensity: props.treeDensity,
+      features,
+      caves: props.caves,
     }
   }
 
@@ -186,15 +221,39 @@ export class WorldGenerator {
   }
 
   /**
-   * Generate a single chunk asynchronously.
+   * Generate a single chunk using worker for heavy computation.
+   * Two-phase approach:
+   * 1. Worker: terrain, caves, lighting, tree position calculation
+   * 2. Main thread: apply data, place trees (handles cross-chunk)
    */
   private async generateChunk(
     coordinate: IChunkCoordinate,
     key: ChunkKey
   ): Promise<void> {
     try {
+      // Phase 1: Generate terrain/caves/lighting in worker
+      const workerResult = await this.world.generateChunkInWorker(
+        coordinate,
+        this.config.seed,
+        this.config.seaLevel,
+        this.workerBiomeConfig
+      )
+
+      // Phase 2: Apply results and place trees on main thread
       await this.world.generateChunkAsync(coordinate, async (chunk, world) => {
-        await this.generator.generate(chunk, world)
+        // Apply bulk data from worker
+        chunk.applyWorkerData(workerResult.blocks, workerResult.lightData)
+
+        // Place trees on main thread (handles cross-chunk placement)
+        for (const tree of workerResult.treePositions) {
+          OakTree.place(
+            world,
+            BigInt(tree.worldX),
+            BigInt(tree.worldY),
+            BigInt(tree.worldZ),
+            { trunkHeight: tree.trunkHeight, leafRadius: tree.leafRadius }
+          )
+        }
       })
 
       this.generatedChunks.add(key)

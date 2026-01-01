@@ -1,7 +1,7 @@
-import type { Chunk } from '../../chunks/Chunk.ts'
+import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
-import type { GenerationConfig } from '../GenerationConfig.ts'
+import type { IGenerationConfig } from '../GenerationConfig.ts'
 import type { FrameBudget } from '../../../core/FrameBudget.ts'
 import type { BiomeProperties } from '../BiomeGenerator.ts'
 
@@ -10,19 +10,19 @@ import type { BiomeProperties } from '../BiomeGenerator.ts'
  */
 export interface FeatureContext {
   /** The chunk being generated */
-  readonly chunk: Chunk
-  /** World manager for reading adjacent chunks */
-  readonly world: WorldManager
+  readonly chunk: IChunkData
+  /** World manager for reading adjacent chunks (null in worker context) */
+  readonly world: WorldManager | null
   /** Noise generator seeded for this world */
   readonly noise: SimplexNoise
   /** World generation configuration */
-  readonly config: GenerationConfig
+  readonly config: IGenerationConfig
   /** Biome properties for the current biome */
   readonly biomeProperties: BiomeProperties
   /** Get base terrain height at world coordinates (before features) */
   readonly getBaseHeightAt: (worldX: number, worldZ: number) => number
-  /** Frame budget for yielding to prevent blocking */
-  readonly frameBudget: FrameBudget
+  /** Frame budget for yielding to prevent blocking (optional in worker) */
+  readonly frameBudget?: FrameBudget
 }
 
 /**

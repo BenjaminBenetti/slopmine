@@ -1,4 +1,4 @@
-import type { Chunk } from '../../chunks/Chunk.ts'
+import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { CaveSettings } from '../BiomeGenerator.ts'
 import type { FrameBudget } from '../../../core/FrameBudget.ts'
 import { SimplexNoise } from '../SimplexNoise.ts'
@@ -23,15 +23,15 @@ export class CheeseCarver {
    * Carve cheese chambers into the chunk.
    */
   async carve(
-    chunk: Chunk,
+    chunk: IChunkData,
     settings: CaveSettings,
     getHeightAt: HeightGetter,
-    frameBudget: FrameBudget
+    frameBudget?: FrameBudget
   ): Promise<void> {
     const { cheeseFrequency, cheeseThreshold, minY, maxY } = settings
     const coord = chunk.coordinate
 
-    frameBudget.startFrame()
+    frameBudget?.startFrame()
 
     for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
       for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
@@ -68,7 +68,7 @@ export class CheeseCarver {
       }
 
       // Yield less frequently for cheese caves (faster pass)
-      if (localX % 2 === 1) {
+      if (frameBudget && localX % 2 === 1) {
         await frameBudget.yieldIfNeeded()
       }
     }

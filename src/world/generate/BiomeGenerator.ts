@@ -1,5 +1,5 @@
 import { TerrainGenerator } from './TerrainGenerator.ts'
-import type { Chunk } from '../chunks/Chunk.ts'
+import type { IChunkData } from '../interfaces/IChunkData.ts'
 import type { WorldManager } from '../WorldManager.ts'
 import type { BlockId } from '../interfaces/IBlock.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
@@ -68,6 +68,13 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   private readonly skylightPropagator = new SkylightPropagator()
 
   /**
+   * Get the biome properties for serialization to workers.
+   */
+  getBiomeProperties(): BiomeProperties {
+    return this.properties
+  }
+
+  /**
    * Get base terrain height at world coordinates (before features).
    */
   override getHeightAt(worldX: number, worldZ: number): number {
@@ -85,7 +92,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
    * Generate the base terrain (stone/dirt/grass layers).
    * Yields based on time budget to prevent blocking the main thread.
    */
-  protected async generateTerrain(chunk: Chunk): Promise<void> {
+  protected async generateTerrain(chunk: IChunkData): Promise<void> {
     const { surfaceBlock, subsurfaceBlock, subsurfaceDepth, baseBlock } =
       this.properties
     const coord = chunk.coordinate
@@ -119,7 +126,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   /**
    * Apply all features from the biome's feature list.
    */
-  protected async generateFeatures(chunk: Chunk, world: WorldManager): Promise<void> {
+  protected async generateFeatures(chunk: IChunkData, world: WorldManager | null): Promise<void> {
     const context: FeatureContext = {
       chunk,
       world,
@@ -139,8 +146,8 @@ export abstract class BiomeGenerator extends TerrainGenerator {
    * Generate decorations (trees, flowers, etc.). Override in subclasses.
    */
   protected async generateDecorations(
-    chunk: Chunk,
-    world: WorldManager
+    chunk: IChunkData,
+    world: WorldManager | null
   ): Promise<void> {
     // Default: no decorations - override in subclasses
   }
@@ -148,7 +155,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   /**
    * Generate caves by carving air pockets in the terrain.
    */
-  protected async generateCaves(chunk: Chunk): Promise<void> {
+  protected async generateCaves(chunk: IChunkData): Promise<void> {
     const caves = this.properties.caves
     if (!caves?.enabled) return
 
@@ -168,7 +175,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   /**
    * Main generation method.
    */
-  async generate(chunk: Chunk, world: WorldManager): Promise<void> {
+  async generate(chunk: IChunkData, world: WorldManager | null): Promise<void> {
     await this.generateTerrain(chunk)
     await this.generateCaves(chunk)
     this.skylightPropagator.propagate(chunk)

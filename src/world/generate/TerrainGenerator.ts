@@ -1,6 +1,6 @@
 import { SimplexNoise } from './SimplexNoise.ts'
 import { GenerationConfig } from './GenerationConfig.ts'
-import type { Chunk } from '../chunks/Chunk.ts'
+import type { IChunkData } from '../interfaces/IChunkData.ts'
 import type { WorldManager } from '../WorldManager.ts'
 import type { BlockId } from '../interfaces/IBlock.ts'
 
@@ -26,7 +26,7 @@ export abstract class TerrainGenerator {
    * Fill a column with layered blocks (stone -> subsurface -> surface).
    */
   protected fillColumn(
-    chunk: Chunk,
+    chunk: IChunkData,
     localX: number,
     localZ: number,
     height: number,
@@ -66,5 +66,5 @@ export abstract class TerrainGenerator {
   /**
    * Generate terrain for a chunk. Must be implemented by subclasses.
    */
-  abstract generate(chunk: Chunk, world: WorldManager): Promise<void>
+  abstract generate(chunk: IChunkData, world: WorldManager | null): Promise<void>
 }

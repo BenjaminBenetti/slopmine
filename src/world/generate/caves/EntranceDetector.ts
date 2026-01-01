@@ -1,4 +1,4 @@
-import type { Chunk } from '../../chunks/Chunk.ts'
+import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { CaveSettings } from '../BiomeGenerator.ts'
 import type { HeightGetter } from './CaveCarver.ts'
 import { SimplexNoise } from '../SimplexNoise.ts'
@@ -21,7 +21,7 @@ export class EntranceDetector {
    * Generate cave entrances by carving from surface down to existing caves.
    */
   generateEntrances(
-    chunk: Chunk,
+    chunk: IChunkData,
     settings: CaveSettings,
     getHeightAt: HeightGetter
   ): void {
@@ -83,7 +83,7 @@ export class EntranceDetector {
    * Creates a walkable ramp by moving horizontally as it descends.
    */
   private carveEntrance(
-    chunk: Chunk,
+    chunk: IChunkData,
     centerX: number,
     centerZ: number,
     surfaceY: number,

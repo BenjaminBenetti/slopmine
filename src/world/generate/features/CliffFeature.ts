@@ -23,8 +23,11 @@ export interface CliffFeatureSettings {
  * Self-scans the chunk and applies modifications where cliff noise exceeds threshold.
  */
 export class CliffFeature extends Feature {
-  constructor(private readonly settings: CliffFeatureSettings) {
+  readonly settings: CliffFeatureSettings
+
+  constructor(settings: CliffFeatureSettings) {
     super()
+    this.settings = settings
   }
 
   /**
@@ -59,7 +62,7 @@ export class CliffFeature extends Feature {
     const { surfaceBlock, subsurfaceDepth } = biomeProperties
     const coord = chunk.coordinate
 
-    frameBudget.startFrame()
+    frameBudget?.startFrame()
 
     for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
       for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
@@ -127,8 +130,10 @@ export class CliffFeature extends Feature {
         }
       }
 
-      // Yield after each row
-      await frameBudget.yieldIfNeeded()
+      // Yield after each row (only in main thread context)
+      if (frameBudget) {
+        await frameBudget.yieldIfNeeded()
+      }
     }
   }
 }

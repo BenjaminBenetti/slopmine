@@ -237,6 +237,16 @@ export class Chunk implements IChunk {
     return highestGrounded
   }
 
+  /**
+   * Apply bulk data from worker generation result.
+   * Copies block and light data from worker buffers.
+   */
+  applyWorkerData(blocks: Uint16Array, lightData: Uint8Array): void {
+    this.blocks.set(blocks)
+    this.lightData.set(lightData)
+    this._dirty = true
+  }
+
   dispose(): void {
     // Uint16Array will be garbage collected
   }

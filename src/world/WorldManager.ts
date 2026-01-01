@@ -12,7 +12,15 @@ import { ChunkMesh } from '../renderer/ChunkMesh.ts'
 import type { HeightmapCache } from '../renderer/HeightmapCache.ts'
 import ChunkMeshWorker from '../workers/ChunkMeshWorker.ts?worker'
 import type { ChunkMeshRequest, ChunkMeshResponse } from '../workers/ChunkMeshWorker.ts'
+import type {
+  ChunkGenerationRequest,
+  ChunkGenerationResponse,
+  ChunkGenerationError,
+  TreePosition,
+  WorkerBiomeConfig,
+} from '../workers/ChunkGenerationWorker.ts'
 import { SkylightPropagator } from './lighting/SkylightPropagator.ts'
+import { CHUNK_VOLUME } from './interfaces/IChunk.ts'
 
 /**
  * Main world coordinator.
@@ -42,6 +50,17 @@ export class WorldManager {
   // Skylight propagator for dynamic light updates
   private readonly skylightPropagator = new SkylightPropagator()
 
+  // Web Worker pool for chunk generation (terrain, caves, lighting)
+  private readonly generationWorkers: Worker[] = []
+  private readonly generationCallbackMap: Map<
+    string,
+    {
+      resolve: (data: { blocks: Uint16Array; lightData: Uint8Array; treePositions: TreePosition[] }) => void
+      reject: (error: Error) => void
+    }
+  > = new Map()
+  private generationWorkerIndex = 0
+
   constructor() {
     this.chunkManager = new ChunkManager()
     this.blockRegistry = BlockRegistry.getInstance()
@@ -67,9 +86,10 @@ export class WorldManager {
   }
 
   /**
-   * Initialize the Web Worker pool for mesh building.
+   * Initialize the Web Worker pools for mesh building and chunk generation.
    */
   private initWorkers(): void {
+    // Mesh workers
     for (let i = 0; i < this.WORKER_COUNT; i++) {
       const worker = new ChunkMeshWorker()
       worker.onmessage = (event: MessageEvent<ChunkMeshResponse>) => {
@@ -77,6 +97,79 @@ export class WorldManager {
       }
       this.meshWorkers.push(worker)
     }
+
+    // Generation workers (module workers)
+    for (let i = 0; i < this.WORKER_COUNT; i++) {
+      const worker = new Worker(
+        new URL('../workers/ChunkGenerationWorker.ts', import.meta.url),
+        { type: 'module' }
+      )
+      worker.onmessage = (event: MessageEvent<ChunkGenerationResponse | ChunkGenerationError>) => {
+        this.handleGenerationResult(event.data)
+      }
+      this.generationWorkers.push(worker)
+    }
+  }
+
+  /**
+   * Handle generation result from worker.
+   */
+  private handleGenerationResult(result: ChunkGenerationResponse | ChunkGenerationError): void {
+    const chunkKey = createChunkKey(BigInt(result.chunkX), BigInt(result.chunkZ))
+    const callbacks = this.generationCallbackMap.get(chunkKey)
+
+    if (!callbacks) return
+    this.generationCallbackMap.delete(chunkKey)
+
+    if (result.type === 'generate-error') {
+      callbacks.reject(new Error(result.error))
+    } else {
+      callbacks.resolve({
+        blocks: result.blocks,
+        lightData: result.lightData,
+        treePositions: result.treePositions,
+      })
+    }
+  }
+
+  /**
+   * Generate chunk terrain using worker, returns promise.
+   * Handles terrain, caves, lighting, and calculates tree positions.
+   */
+  async generateChunkInWorker(
+    coordinate: IChunkCoordinate,
+    seed: number,
+    seaLevel: number,
+    biomeConfig: WorkerBiomeConfig
+  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; treePositions: TreePosition[] }> {
+    const chunkKey = createChunkKey(coordinate.x, coordinate.z)
+
+    // Pre-allocate buffers (will be transferred to worker)
+    const blocks = new Uint16Array(CHUNK_VOLUME)
+    const lightData = new Uint8Array(CHUNK_VOLUME)
+
+    const request: ChunkGenerationRequest = {
+      type: 'generate',
+      chunkX: Number(coordinate.x),
+      chunkZ: Number(coordinate.z),
+      seed,
+      seaLevel,
+      biomeConfig,
+      blocks,
+      lightData,
+    }
+
+    return new Promise((resolve, reject) => {
+      this.generationCallbackMap.set(chunkKey, { resolve, reject })
+
+      // Round-robin worker selection
+      const worker = this.generationWorkers[
+        this.generationWorkerIndex++ % this.generationWorkers.length
+      ]
+
+      // Transfer buffers to worker
+      worker.postMessage(request, [blocks.buffer, lightData.buffer])
+    })
   }
 
   /**
@@ -766,10 +859,17 @@ export class WorldManager {
     this.clearAllMeshes()
     this.chunkManager.dispose()
 
-    // Terminate workers
+    // Terminate mesh workers
     for (const worker of this.meshWorkers) {
       worker.terminate()
     }
     this.meshWorkers.length = 0
+
+    // Terminate generation workers
+    for (const worker of this.generationWorkers) {
+      worker.terminate()
+    }
+    this.generationWorkers.length = 0
+    this.generationCallbackMap.clear()
   }
 }

@@ -1,4 +1,4 @@
-import type { Chunk } from '../chunks/Chunk.ts'
+import type { IChunkData } from '../interfaces/IChunkData.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT } from '../interfaces/IChunk.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
 import { getBlock } from '../blocks/BlockRegistry.ts'
@@ -26,7 +26,7 @@ export class SkylightPropagator {
    * Calculate skylight for an entire chunk.
    * Call after terrain and caves are generated.
    */
-  propagate(chunk: Chunk): void {
+  propagate(chunk: IChunkData): void {
     // Phase 1: Initialize columns from sky down
     this.initializeColumns(chunk)
 
@@ -38,7 +38,7 @@ export class SkylightPropagator {
    * Update lighting after a block change at the given position.
    * Used when player mines/places blocks.
    */
-  updateAt(chunk: Chunk, x: number, y: number, z: number): void {
+  updateAt(chunk: IChunkData, x: number, y: number, z: number): void {
     // Check if this position now has sky access
     const hasSkyAccess = this.checkSkyAccess(chunk, x, y, z)
 
@@ -56,7 +56,7 @@ export class SkylightPropagator {
    * Set skylight=15 until hitting an opaque block, then 0 below.
    * Uses internal 0-30 scale, stores as 0-15.
    */
-  private initializeColumns(chunk: Chunk): void {
+  private initializeColumns(chunk: IChunkData): void {
     for (let x = 0; x < CHUNK_SIZE_X; x++) {
       for (let z = 0; z < CHUNK_SIZE_Z; z++) {
         let skylight = INTERNAL_MAX_LIGHT // 30 internally
@@ -94,7 +94,7 @@ export class SkylightPropagator {
    * Phase 2: BFS flood-fill to spread light horizontally into caves.
    * Works with internal 0-30 scale for slower falloff.
    */
-  private spreadLight(chunk: Chunk): void {
+  private spreadLight(chunk: IChunkData): void {
     const queue: LightNode[] = []
 
     // Find all light sources that can spread (blocks with light > 0 adjacent to darker blocks)
@@ -122,7 +122,7 @@ export class SkylightPropagator {
    * Process the light propagation queue.
    * Uses index-based iteration to avoid O(n) shift() calls.
    */
-  private processQueue(chunk: Chunk, queue: LightNode[]): void {
+  private processQueue(chunk: IChunkData, queue: LightNode[]): void {
     let head = 0
 
     while (head < queue.length) {
@@ -148,7 +148,7 @@ export class SkylightPropagator {
    * Try to propagate light to a neighbor position.
    * sourceLevel is in internal 0-30 scale.
    */
-  private tryPropagate(chunk: Chunk, queue: LightNode[], nx: number, ny: number, nz: number, sourceLevel: number): void {
+  private tryPropagate(chunk: IChunkData, queue: LightNode[], nx: number, ny: number, nz: number, sourceLevel: number): void {
     // Bounds check
     if (nx < 0 || nx >= CHUNK_SIZE_X) return
     if (nz < 0 || nz >= CHUNK_SIZE_Z) return
@@ -175,7 +175,7 @@ export class SkylightPropagator {
   /**
    * Check if any neighbor has lower light than expected.
    */
-  private hasLowerNeighbor(chunk: Chunk, x: number, y: number, z: number, light: number): boolean {
+  private hasLowerNeighbor(chunk: IChunkData, x: number, y: number, z: number, light: number): boolean {
     const neighbors = [
       [x - 1, y, z],
       [x + 1, y, z],
@@ -200,7 +200,7 @@ export class SkylightPropagator {
   /**
    * Check if a position has direct sky access (no opaque blocks above).
    */
-  private checkSkyAccess(chunk: Chunk, x: number, y: number, z: number): boolean {
+  private checkSkyAccess(chunk: IChunkData, x: number, y: number, z: number): boolean {
     for (let yy = y; yy < CHUNK_HEIGHT; yy++) {
       const blockId = chunk.getBlockId(x, yy, z)
       if (blockId !== BlockIds.AIR) {
@@ -217,7 +217,7 @@ export class SkylightPropagator {
    * Propagate light down a column from a given Y position.
    * Uses internal 0-30 scale for slower falloff.
    */
-  private propagateColumnDown(chunk: Chunk, x: number, z: number, startY: number): void {
+  private propagateColumnDown(chunk: IChunkData, x: number, z: number, startY: number): void {
     let skylight = INTERNAL_MAX_LIGHT
 
     // Start from sky and go down to startY to get current light level
@@ -253,7 +253,7 @@ export class SkylightPropagator {
    * Spread light from neighboring blocks into the given position.
    * Uses internal 0-30 scale for slower falloff.
    */
-  private spreadFromNeighbors(chunk: Chunk, x: number, y: number, z: number): void {
+  private spreadFromNeighbors(chunk: IChunkData, x: number, y: number, z: number): void {
     const queue: LightNode[] = []
     const neighbors = [
       [x - 1, y, z],
@@ -288,8 +288,8 @@ export class SkylightPropagator {
    * @param direction Which edge of target faces source: 'posX' | 'negX' | 'posZ' | 'negZ'
    */
   propagateFromNeighbor(
-    targetChunk: Chunk,
-    sourceChunk: Chunk,
+    targetChunk: IChunkData,
+    sourceChunk: IChunkData,
     direction: 'posX' | 'negX' | 'posZ' | 'negZ'
   ): boolean {
     const queue: LightNode[] = []

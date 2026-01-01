@@ -1,4 +1,4 @@
-import type { Chunk } from '../../chunks/Chunk.ts'
+import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { CaveSettings } from '../BiomeGenerator.ts'
 import type { FrameBudget } from '../../../core/FrameBudget.ts'
 import { SpaghettiCarver } from './SpaghettiCarver.ts'
@@ -26,10 +26,10 @@ export class CaveCarver {
    * Carve caves into the chunk terrain.
    */
   async carve(
-    chunk: Chunk,
+    chunk: IChunkData,
     settings: CaveSettings,
     getHeightAt: HeightGetter,
-    frameBudget: FrameBudget
+    frameBudget?: FrameBudget
   ): Promise<void> {
     // First pass: carve spaghetti tunnels
     await this.spaghettiCarver.carve(chunk, settings, getHeightAt, frameBudget)

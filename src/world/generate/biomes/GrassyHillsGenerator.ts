@@ -33,7 +33,7 @@ export class GrassyHillsGenerator extends BiomeGenerator {
       frequency: 0.025,      // higher = smaller/narrower tunnels
       threshold: 0.035,      // higher = narrower (less blocks carved)
       minY: 8,
-      maxY: 65,
+      maxY: 80,
       layerCount: 3,
       layerSpacing: 16,
       layerPeakY: 32,
