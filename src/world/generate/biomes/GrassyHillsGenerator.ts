@@ -31,15 +31,15 @@ export class GrassyHillsGenerator extends BiomeGenerator {
     caves: {
       enabled: true,
       frequency: 0.025,      // higher = smaller/narrower tunnels
-      threshold: 0.035,      // higher = narrower (less blocks carved)
+      threshold: 0.02,      // higher = narrower (less blocks carved)
       minY: 8,
-      maxY: 70,
+      maxY: 65,
       layerCount: 3,
       layerSpacing: 16,
       layerPeakY: 32,
       cheeseEnabled: true,
       cheeseFrequency: 0.008,
-      cheeseThreshold: 0.65,
+      cheeseThreshold: 0.75,
       entrancesEnabled: true,
       entranceMinWidth: 10,
     },

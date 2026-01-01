@@ -161,7 +161,7 @@ function generateTerrain(
 /**
  * Main chunk generation function.
  */
-function generateChunk(request: ChunkGenerationRequest): ChunkGenerationResponse {
+async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGenerationResponse> {
   const { chunkX, chunkZ, seed, seaLevel, biomeConfig, blocks, lightData } = request
 
   // Create WorkerChunk with the provided buffers
@@ -181,7 +181,7 @@ function generateChunk(request: ChunkGenerationRequest): ChunkGenerationResponse
   const caves = biomeConfig.caves
   if (caves?.enabled) {
     const caveCarver = new CaveCarver(seed)
-    caveCarver.carve(chunk, caves, getHeight)
+    await caveCarver.carve(chunk, caves, getHeight)
   }
 
   // Phase 3: Apply features
@@ -211,7 +211,7 @@ function generateChunk(request: ChunkGenerationRequest): ChunkGenerationResponse
     }
 
     for (const feature of features) {
-      feature.scan(featureContext)
+      await feature.scan(featureContext)
     }
   }
 
@@ -229,9 +229,9 @@ function generateChunk(request: ChunkGenerationRequest): ChunkGenerationResponse
 }
 
 // Worker message handler
-self.onmessage = (event: MessageEvent<ChunkGenerationRequest>) => {
+self.onmessage = async (event: MessageEvent<ChunkGenerationRequest>) => {
   try {
-    const result = generateChunk(event.data)
+    const result = await generateChunk(event.data)
 
     // Transfer buffers back (zero-copy)
     self.postMessage(result, {
