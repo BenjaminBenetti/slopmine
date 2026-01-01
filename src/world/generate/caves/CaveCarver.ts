@@ -9,7 +9,7 @@ export type HeightGetter = (worldX: number, worldZ: number) => number
 
 /**
  * Main orchestrator for cave generation.
- * Coordinates spaghetti tunnels, cheese chambers, and entrance detection.
+ * Coordinates spaghetti tunnels, cheese chambers, and entrance generation.
  */
 export class CaveCarver {
   private readonly spaghettiCarver: SpaghettiCarver
@@ -19,7 +19,7 @@ export class CaveCarver {
   constructor(seed: number) {
     this.spaghettiCarver = new SpaghettiCarver(seed)
     this.cheeseCarver = new CheeseCarver(seed + 1000)
-    this.entranceDetector = new EntranceDetector()
+    this.entranceDetector = new EntranceDetector(seed + 2000)
   }
 
   /**
@@ -31,32 +31,17 @@ export class CaveCarver {
     getHeightAt: HeightGetter,
     frameBudget: FrameBudget
   ): Promise<void> {
-    // Track entrance positions for later widening
-    const entrances: Array<{ localX: number; y: number; localZ: number }> = []
-
     // First pass: carve spaghetti tunnels
-    await this.spaghettiCarver.carve(
-      chunk,
-      settings,
-      getHeightAt,
-      frameBudget,
-      settings.entrancesEnabled ? entrances : undefined
-    )
+    await this.spaghettiCarver.carve(chunk, settings, getHeightAt, frameBudget)
 
     // Second pass: carve cheese chambers
     if (settings.cheeseEnabled) {
-      await this.cheeseCarver.carve(
-        chunk,
-        settings,
-        getHeightAt,
-        frameBudget,
-        settings.entrancesEnabled ? entrances : undefined
-      )
+      await this.cheeseCarver.carve(chunk, settings, getHeightAt, frameBudget)
     }
 
-    // Third pass: widen entrances for natural appearance
-    if (settings.entrancesEnabled && entrances.length > 0) {
-      this.entranceDetector.widenEntrances(chunk, entrances, settings)
+    // Third pass: generate entrances from surface down to caves
+    if (settings.entrancesEnabled) {
+      this.entranceDetector.generateEntrances(chunk, settings, getHeightAt)
     }
   }
 }

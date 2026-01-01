@@ -1,11 +1,12 @@
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { CaveSettings } from '../BiomeGenerator.ts'
 import type { FrameBudget } from '../../../core/FrameBudget.ts'
-import type { HeightGetter } from './CaveCarver.ts'
 import { SimplexNoise } from '../SimplexNoise.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
+
+export type HeightGetter = (worldX: number, worldZ: number) => number
 
 /**
  * Generates cheese-style cave chambers using single 3D noise with high threshold.
@@ -25,8 +26,7 @@ export class CheeseCarver {
     chunk: Chunk,
     settings: CaveSettings,
     getHeightAt: HeightGetter,
-    frameBudget: FrameBudget,
-    entrances?: Array<{ localX: number; y: number; localZ: number }>
+    frameBudget: FrameBudget
   ): Promise<void> {
     const { cheeseFrequency, cheeseThreshold, minY, maxY } = settings
     const coord = chunk.coordinate
@@ -40,7 +40,8 @@ export class CheeseCarver {
         const worldZ = Number(worldCoord.z)
 
         const surfaceY = getHeightAt(worldX, worldZ)
-        const columnMaxY = Math.min(maxY, surfaceY - 2)
+        // Allow caves to reach up to maxY, even if that's at or above surface
+        const columnMaxY = Math.min(maxY, surfaceY + 5)
 
         for (let y = minY; y <= columnMaxY; y++) {
           // Skip if already air
@@ -49,23 +50,19 @@ export class CheeseCarver {
           }
 
           // Use fractal noise for more interesting chamber shapes
+          // Scale Y by 3.0 for horizontally-stretched chambers (higher = flatter)
           const chamberNoise = this.noise.fractalNoise3D(
-            worldX,
-            y,
-            worldZ,
+            worldX * cheeseFrequency,
+            y * cheeseFrequency * 3.0,
+            worldZ * cheeseFrequency,
             2, // 2 octaves for chambers
             0.5,
-            cheeseFrequency
+            1.0 // scale already applied above
           )
 
           // Chambers form where noise exceeds threshold
           if (chamberNoise > cheeseThreshold) {
             chunk.setBlockId(localX, y, localZ, BlockIds.AIR)
-
-            // Track potential entrance if near surface
-            if (entrances && y >= surfaceY - 3) {
-              entrances.push({ localX, y, localZ })
-            }
           }
         }
       }

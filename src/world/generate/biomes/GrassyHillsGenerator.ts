@@ -33,7 +33,7 @@ export class GrassyHillsGenerator extends BiomeGenerator {
       frequency: 0.018,
       threshold: 0.02,
       minY: 8,
-      maxY: 65,
+      maxY: 65, // 65
       layerCount: 3,
       layerSpacing: 16,
       layerPeakY: 32,

@@ -1,11 +1,12 @@
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { CaveSettings } from '../BiomeGenerator.ts'
 import type { FrameBudget } from '../../../core/FrameBudget.ts'
-import type { HeightGetter } from './CaveCarver.ts'
 import { SimplexNoise } from '../SimplexNoise.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
+
+export type HeightGetter = (worldX: number, worldZ: number) => number
 
 /**
  * Generates spaghetti-style cave tunnels using dual 3D noise.
@@ -27,8 +28,7 @@ export class SpaghettiCarver {
     chunk: Chunk,
     settings: CaveSettings,
     getHeightAt: HeightGetter,
-    frameBudget: FrameBudget,
-    entrances?: Array<{ localX: number; y: number; localZ: number }>
+    frameBudget: FrameBudget
   ): Promise<void> {
     const { frequency, threshold, minY, maxY, layerCount, layerSpacing, layerPeakY } = settings
     const coord = chunk.coordinate
@@ -42,7 +42,8 @@ export class SpaghettiCarver {
         const worldZ = Number(worldCoord.z)
 
         const surfaceY = getHeightAt(worldX, worldZ)
-        const columnMaxY = Math.min(maxY, surfaceY - 1)
+        // Allow caves to reach up to maxY, even if that's at or above surface
+        const columnMaxY = Math.min(maxY, surfaceY + 5)
 
         for (let y = minY; y <= columnMaxY; y++) {
           // Skip if already air
@@ -62,11 +63,6 @@ export class SpaghettiCarver {
 
           if (density < threshold) {
             chunk.setBlockId(localX, y, localZ, BlockIds.AIR)
-
-            // Track potential entrance if near surface
-            if (entrances && y >= surfaceY - 3) {
-              entrances.push({ localX, y, localZ })
-            }
           }
         }
       }
@@ -89,8 +85,9 @@ export class SpaghettiCarver {
     layerSpacing: number,
     layerPeakY: number
   ): number {
-    // Scale Y frequency lower for horizontally-stretched tunnels
-    const yFreq = frequency * 0.5
+    // Scale Y frequency higher for horizontal tunnels (less steep)
+    // Higher Y freq = noise changes faster in Y = caves are thin vertically
+    const yFreq = frequency * 3.0
 
     // Primary noise sample
     const n1 = this.noise1.noise3D(x * frequency, y * yFreq, z * frequency)
