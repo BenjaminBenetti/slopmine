@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { FrustumCuller } from './FrustumCuller.ts'
-import { HorizonCuller } from './HorizonCuller.ts'
+import { AsyncHorizonCuller } from './AsyncHorizonCuller.ts'
 import type { ChunkMesh } from './ChunkMesh.ts'
 import type { HeightmapCache } from './HeightmapCache.ts'
 import type { GraphicsSettings, ResolutionPreset } from '../settings/index.ts'
@@ -17,7 +17,7 @@ export class Renderer {
   readonly scene: THREE.Scene
   readonly camera: THREE.PerspectiveCamera
   private readonly frustumCuller = new FrustumCuller()
-  private readonly horizonCuller = new HorizonCuller()
+  private readonly horizonCuller = new AsyncHorizonCuller()
   private chunkMeshSource: (() => Iterable<ChunkMesh>) | null = null
   private heightmapCache: HeightmapCache | null = null
   private graphicsSettings: GraphicsSettings | null = null
@@ -145,6 +145,7 @@ export class Renderer {
 
   dispose(): void {
     window.removeEventListener('resize', this.onResize)
+    this.horizonCuller.dispose()
     this.renderer.dispose()
   }
 }

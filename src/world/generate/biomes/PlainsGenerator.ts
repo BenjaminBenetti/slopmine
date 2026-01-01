@@ -28,6 +28,21 @@ export class PlainsGenerator extends BiomeGenerator {
         block: BlockIds.STONE,
       }),
     ],
+    caves: {
+      enabled: true,
+      frequency: 0.02,
+      threshold: 0.025,
+      minY: 8,
+      maxY: 48,
+      layerCount: 2,
+      layerSpacing: 18,
+      layerPeakY: 28,
+      cheeseEnabled: true,
+      cheeseFrequency: 0.008,
+      cheeseThreshold: 0.65,
+      entrancesEnabled: true,
+      entranceMinWidth: 2,
+    },
   }
 
   // Tree placement grid size

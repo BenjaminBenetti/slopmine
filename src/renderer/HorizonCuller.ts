@@ -81,6 +81,9 @@ export class HorizonCuller {
   /**
    * Ray march from camera to target point, checking for terrain occlusion.
    * Returns true if the target is visible (not blocked by terrain).
+   *
+   * Uses GROUNDED heights for blocking - only solid terrain connected to ground
+   * blocks visibility, not floating blocks like tree leaves.
    */
   private isPointVisible(
     camX: number,
@@ -114,7 +117,8 @@ export class HorizonCuller {
       const rayZ = camZ + dirZ * t
       const rayY = camY + dirY * t
 
-      const terrainHeight = heightmap.getHeightAt(rayX, rayZ)
+      // Use GROUNDED height for blocking - only solid terrain blocks view
+      const terrainHeight = heightmap.getGroundedHeightAt(rayX, rayZ)
 
       // If terrain is above ray height, it occludes the target
       if (terrainHeight > rayY) {

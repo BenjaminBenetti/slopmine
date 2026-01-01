@@ -3,6 +3,7 @@ import { Renderer } from './renderer/Renderer.ts'
 import { HeightmapCache } from './renderer/HeightmapCache.ts'
 import { WorldLighting } from './renderer/WorldLighting.ts'
 import { Skybox } from './renderer/skybox/Skybox.ts'
+import { HeldItemRenderer } from './renderer/helditem/index.ts'
 import {
 	  FirstPersonCameraControls,
 	} from './player/FirstPersonCameraControls.ts'
@@ -183,6 +184,22 @@ const skybox = new Skybox()
 skybox.setSunPosition(lighting.sun.position)
 skybox.addTo(renderer.scene)
 
+// Held item renderer (shows selected item in player's hand)
+const heldItemRenderer = new HeldItemRenderer(
+  renderer.renderer,
+  renderer.camera
+)
+
+// Track toolbar selection changes
+let lastSelectedIndex = playerState.inventory.toolbar.selectedIndex
+const updateHeldItem = () => {
+  const item = playerState.inventory.toolbar.getItem(
+    playerState.inventory.toolbar.selectedIndex
+  )
+  heldItemRenderer.setItem(item)
+}
+updateHeldItem() // Set initial held item
+
 // Block interaction system (mining)
 const blockInteraction = new BlockInteraction(
   renderer.camera,
@@ -193,6 +210,7 @@ const blockInteraction = new BlockInteraction(
   {
     onItemsCollected: () => {
       toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
+      updateHeldItem() // Update held item when inventory changes
     },
   }
 )
@@ -219,9 +237,19 @@ const gameLoop = new GameLoop({
 
     // Keep skybox centered on camera so player can never leave it
     skybox.update(renderer.camera)
+
+    // Update held item (walking bob + selection change detection)
+    heldItemRenderer.setWalking(cameraControls.isWalking())
+    if (playerState.inventory.toolbar.selectedIndex !== lastSelectedIndex) {
+      lastSelectedIndex = playerState.inventory.toolbar.selectedIndex
+      updateHeldItem()
+    }
+    heldItemRenderer.update(deltaTime)
   },
   render() {
     renderer.render()
+    // Render held item on top of world
+    heldItemRenderer.render()
     // Update wireframe colors based on culling (after culling runs in render)
     wireframeManager.updateColors(world.getChunkMeshes())
     // Measure total CPU time for update + render

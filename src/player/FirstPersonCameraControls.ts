@@ -242,6 +242,14 @@ export class FirstPersonCameraControls implements CameraControls {
     }
   }
 
+  /**
+   * Check if the player is currently walking (any movement key pressed).
+   */
+  isWalking(): boolean {
+    return this.moveForward || this.moveBackward ||
+           this.moveLeft || this.moveRight
+  }
+
   dispose(): void {
     this.domElement.removeEventListener('click', this.onClick)
     document.removeEventListener('pointerlockchange', this.onPointerLockChange)

@@ -28,6 +28,21 @@ export class GrassyHillsGenerator extends BiomeGenerator {
         block: BlockIds.STONE,
       }),
     ],
+    caves: {
+      enabled: true,
+      frequency: 0.018,
+      threshold: 0.02,
+      minY: 8,
+      maxY: 55,
+      layerCount: 3,
+      layerSpacing: 16,
+      layerPeakY: 32,
+      cheeseEnabled: true,
+      cheeseFrequency: 0.006,
+      cheeseThreshold: 0.6,
+      entrancesEnabled: true,
+      entranceMinWidth: 3,
+    },
   }
 
   private readonly TREE_GRID_SIZE = 8

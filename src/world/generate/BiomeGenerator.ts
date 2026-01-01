@@ -6,6 +6,43 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
 import { localToWorld } from '../coordinates/CoordinateUtils.ts'
 import { FrameBudget } from '../../core/FrameBudget.ts'
 import { Feature, type FeatureContext } from './features/Feature.ts'
+import { CaveCarver } from './caves/CaveCarver.ts'
+
+/**
+ * Configuration for cave generation within a biome.
+ */
+export interface CaveSettings {
+  /** Enable/disable caves for this biome */
+  readonly enabled: boolean
+
+  /** Noise scale for spaghetti tunnels (lower = longer tunnels, 0.02 typical) */
+  readonly frequency: number
+  /** Carving threshold (lower = more caves, 0.02 typical) */
+  readonly threshold: number
+  /** Minimum Y level where caves can generate */
+  readonly minY: number
+  /** Maximum Y level where caves can generate */
+  readonly maxY: number
+
+  /** Number of distinct cave layers (1-4 typical) */
+  readonly layerCount: number
+  /** Vertical spacing between layer centers */
+  readonly layerSpacing: number
+  /** Center Y level for layer distribution */
+  readonly layerPeakY: number
+
+  /** Enable large chambers (cheese caves) */
+  readonly cheeseEnabled: boolean
+  /** Noise scale for chambers (lower = larger chambers, 0.008 typical) */
+  readonly cheeseFrequency: number
+  /** Threshold for chamber carving (higher = fewer chambers, 0.6 typical) */
+  readonly cheeseThreshold: number
+
+  /** Allow natural cave openings at surface */
+  readonly entrancesEnabled: boolean
+  /** Minimum width of cave entrances in blocks */
+  readonly entranceMinWidth: number
+}
 
 export interface BiomeProperties {
   readonly name: string
@@ -17,6 +54,7 @@ export interface BiomeProperties {
   readonly heightOffset: number
   readonly treeDensity: number
   readonly features: Feature[]
+  readonly caves?: CaveSettings
 }
 
 /**
@@ -25,6 +63,7 @@ export interface BiomeProperties {
 export abstract class BiomeGenerator extends TerrainGenerator {
   protected abstract readonly properties: BiomeProperties
   protected readonly frameBudget = new FrameBudget()
+  private caveCarver: CaveCarver | null = null
 
   /**
    * Get base terrain height at world coordinates (before features).
@@ -105,10 +144,31 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   }
 
   /**
+   * Generate caves by carving air pockets in the terrain.
+   */
+  protected async generateCaves(chunk: Chunk): Promise<void> {
+    const caves = this.properties.caves
+    if (!caves?.enabled) return
+
+    // Lazy initialization of cave carver
+    if (!this.caveCarver) {
+      this.caveCarver = new CaveCarver(this.config.seed)
+    }
+
+    await this.caveCarver.carve(
+      chunk,
+      caves,
+      (worldX, worldZ) => this.getHeightAt(worldX, worldZ),
+      this.frameBudget
+    )
+  }
+
+  /**
    * Main generation method.
    */
   async generate(chunk: Chunk, world: WorldManager): Promise<void> {
     await this.generateTerrain(chunk)
+    await this.generateCaves(chunk)
     await this.generateFeatures(chunk, world)
     await this.generateDecorations(chunk, world)
   }
