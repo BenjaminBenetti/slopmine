@@ -92,6 +92,13 @@ interface NeighborData {
   negZ: Uint16Array | null
 }
 
+interface NeighborLightData {
+  posX: Uint8Array | null
+  negX: Uint8Array | null
+  posZ: Uint8Array | null
+  negZ: Uint8Array | null
+}
+
 export interface ChunkMeshRequest {
   type: 'mesh'
   chunkX: number
@@ -99,6 +106,7 @@ export interface ChunkMeshRequest {
   blocks: Uint16Array
   lightData: Uint8Array
   neighbors: NeighborData
+  neighborLights: NeighborLightData
   // Set of block IDs that are opaque (blocks visibility)
   opaqueBlockIds: number[]
 }
@@ -130,20 +138,36 @@ function getLightLevelAt(lightData: Uint8Array, x: number, y: number, z: number)
 /**
  * Get the light level for rendering a block by checking adjacent air blocks.
  * Solid blocks store 0 light internally, so we need to look at neighbors.
+ * Samples from neighbor chunk light data at chunk boundaries.
  */
-function getBlockRenderLight(lightData: Uint8Array, x: number, y: number, z: number): number {
+function getBlockRenderLight(
+  lightData: Uint8Array,
+  neighborLights: NeighborLightData,
+  x: number,
+  y: number,
+  z: number
+): number {
   let maxLight = 0
 
   // Check all 6 neighbors and use the max light
-  // Only sample from in-bounds neighbors (except +Y which defaults to sky)
 
-  // +X (only if in bounds)
-  if (x + 1 < CHUNK_SIZE_X) {
+  // +X
+  if (x + 1 >= CHUNK_SIZE_X) {
+    // Sample from neighbor chunk at +X (their x=0 edge)
+    if (neighborLights.posX) {
+      maxLight = Math.max(maxLight, getLightLevelAt(neighborLights.posX, 0, y, z))
+    }
+  } else {
     maxLight = Math.max(maxLight, getLightLevelAt(lightData, x + 1, y, z))
   }
 
-  // -X (only if in bounds)
-  if (x - 1 >= 0) {
+  // -X
+  if (x - 1 < 0) {
+    // Sample from neighbor chunk at -X (their x=CHUNK_SIZE_X-1 edge)
+    if (neighborLights.negX) {
+      maxLight = Math.max(maxLight, getLightLevelAt(neighborLights.negX, CHUNK_SIZE_X - 1, y, z))
+    }
+  } else {
     maxLight = Math.max(maxLight, getLightLevelAt(lightData, x - 1, y, z))
   }
 
@@ -154,18 +178,28 @@ function getBlockRenderLight(lightData: Uint8Array, x: number, y: number, z: num
     maxLight = Math.max(maxLight, getLightLevelAt(lightData, x, y + 1, z))
   }
 
-  // -Y (only if in bounds)
+  // -Y (only if in bounds, no vertical chunk neighbors)
   if (y - 1 >= 0) {
     maxLight = Math.max(maxLight, getLightLevelAt(lightData, x, y - 1, z))
   }
 
-  // +Z (only if in bounds)
-  if (z + 1 < CHUNK_SIZE_Z) {
+  // +Z
+  if (z + 1 >= CHUNK_SIZE_Z) {
+    // Sample from neighbor chunk at +Z (their z=0 edge)
+    if (neighborLights.posZ) {
+      maxLight = Math.max(maxLight, getLightLevelAt(neighborLights.posZ, x, y, 0))
+    }
+  } else {
     maxLight = Math.max(maxLight, getLightLevelAt(lightData, x, y, z + 1))
   }
 
-  // -Z (only if in bounds)
-  if (z - 1 >= 0) {
+  // -Z
+  if (z - 1 < 0) {
+    // Sample from neighbor chunk at -Z (their z=CHUNK_SIZE_Z-1 edge)
+    if (neighborLights.negZ) {
+      maxLight = Math.max(maxLight, getLightLevelAt(neighborLights.negZ, x, y, CHUNK_SIZE_Z - 1))
+    }
+  } else {
     maxLight = Math.max(maxLight, getLightLevelAt(lightData, x, y, z - 1))
   }
 
@@ -176,7 +210,7 @@ function getBlockRenderLight(lightData: Uint8Array, x: number, y: number, z: num
  * Process a chunk and find all visible blocks.
  */
 function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
-  const { chunkX, chunkZ, blocks, lightData, neighbors, opaqueBlockIds } = request
+  const { chunkX, chunkZ, blocks, lightData, neighbors, neighborLights, opaqueBlockIds } = request
 
   // Create set of opaque block IDs for fast lookup
   const opaqueSet = new Set(opaqueBlockIds)
@@ -214,7 +248,7 @@ function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
           lights = []
           blockLights.set(blockId, lights)
         }
-        lights.push(getBlockRenderLight(lightData, x, y, z))
+        lights.push(getBlockRenderLight(lightData, neighborLights, x, y, z))
       }
     }
   }

@@ -279,4 +279,77 @@ export class SkylightPropagator {
     // Process spreading from neighbors
     this.processQueue(chunk, queue)
   }
+
+  /**
+   * Propagate light from a source chunk's edge into a target chunk.
+   * Call this when a new chunk is generated to update neighbor lighting.
+   * @param targetChunk The chunk to update lighting in
+   * @param sourceChunk The newly generated chunk providing light
+   * @param direction Which edge of target faces source: 'posX' | 'negX' | 'posZ' | 'negZ'
+   */
+  propagateFromNeighbor(
+    targetChunk: Chunk,
+    sourceChunk: Chunk,
+    direction: 'posX' | 'negX' | 'posZ' | 'negZ'
+  ): boolean {
+    const queue: LightNode[] = []
+    let changed = false
+
+    // Determine which edge to read from source and write to target
+    let sourceX: number, targetX: number
+    let sourceZ: number, targetZ: number
+
+    for (let y = 0; y < CHUNK_HEIGHT; y++) {
+      if (direction === 'posX' || direction === 'negX') {
+        // X-axis boundary
+        sourceX = direction === 'posX' ? 0 : CHUNK_SIZE_X - 1
+        targetX = direction === 'posX' ? CHUNK_SIZE_X - 1 : 0
+
+        for (let z = 0; z < CHUNK_SIZE_Z; z++) {
+          const sourceLight = sourceChunk.getSkylight(sourceX, y, z)
+          if (sourceLight > 0) {
+            const internalLight = sourceLight * LIGHT_SCALE
+            // Try to propagate into target
+            const targetLight = targetChunk.getSkylight(targetX, y, z)
+            const newInternalLight = internalLight - 1 // Decrease by 1 crossing boundary
+            const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+
+            if (newStoredLight > targetLight) {
+              targetChunk.setSkylight(targetX, y, z, newStoredLight)
+              queue.push({ x: targetX, y, z, level: newInternalLight })
+              changed = true
+            }
+          }
+        }
+      } else {
+        // Z-axis boundary
+        sourceZ = direction === 'posZ' ? 0 : CHUNK_SIZE_Z - 1
+        targetZ = direction === 'posZ' ? CHUNK_SIZE_Z - 1 : 0
+
+        for (let x = 0; x < CHUNK_SIZE_X; x++) {
+          const sourceLight = sourceChunk.getSkylight(x, y, sourceZ)
+          if (sourceLight > 0) {
+            const internalLight = sourceLight * LIGHT_SCALE
+            // Try to propagate into target
+            const targetLight = targetChunk.getSkylight(x, y, targetZ)
+            const newInternalLight = internalLight - 1 // Decrease by 1 crossing boundary
+            const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+
+            if (newStoredLight > targetLight) {
+              targetChunk.setSkylight(x, y, targetZ, newStoredLight)
+              queue.push({ x, y, z: targetZ, level: newInternalLight })
+              changed = true
+            }
+          }
+        }
+      }
+    }
+
+    // Propagate the edge light further into target chunk
+    if (queue.length > 0) {
+      this.processQueue(targetChunk, queue)
+    }
+
+    return changed
+  }
 }

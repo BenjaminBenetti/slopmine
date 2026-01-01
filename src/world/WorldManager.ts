@@ -164,6 +164,14 @@ export class WorldManager {
       negZ: this.getNeighborBlockData(coord, 0, -1),
     }
 
+    // Get neighbor light data for edge lighting
+    const neighborLights = {
+      posX: this.getNeighborLightData(coord, 1, 0),
+      negX: this.getNeighborLightData(coord, -1, 0),
+      posZ: this.getNeighborLightData(coord, 0, 1),
+      negZ: this.getNeighborLightData(coord, 0, -1),
+    }
+
     // Copy block and light data since we can't transfer it (chunk still needs it)
     const blocksCopy = new Uint16Array(chunk.getBlockData())
     const lightCopy = new Uint8Array(chunk.getLightData())
@@ -175,6 +183,7 @@ export class WorldManager {
       blocks: blocksCopy,
       lightData: lightCopy,
       neighbors,
+      neighborLights,
       opaqueBlockIds: this.opaqueBlockIds,
     }
 
@@ -194,6 +203,18 @@ export class WorldManager {
     }
     const neighbor = this.chunkManager.getChunk(neighborCoord)
     return neighbor ? neighbor.getBlockData() : null
+  }
+
+  /**
+   * Get light data from a neighbor chunk, or null if not loaded.
+   */
+  private getNeighborLightData(coord: IChunkCoordinate, dx: number, dz: number): Uint8Array | null {
+    const neighborCoord: IChunkCoordinate = {
+      x: coord.x + BigInt(dx),
+      z: coord.z + BigInt(dz),
+    }
+    const neighbor = this.chunkManager.getChunk(neighborCoord)
+    return neighbor ? neighbor.getLightData() : null
   }
 
   /**
@@ -432,6 +453,9 @@ export class WorldManager {
       chunk.setState(ChunkState.LOADED)
       chunk.markDirty()
 
+      // Propagate light to/from neighboring chunks
+      this.propagateLightToNeighbors(chunk, coordinate)
+
       // Notify listeners
       for (const callback of this.generationCallbacks) {
         callback(chunk)
@@ -441,6 +465,55 @@ export class WorldManager {
     } catch (error) {
       chunk.setState(ChunkState.LOADED)
       throw error
+    }
+  }
+
+  /**
+   * Propagate light between the new chunk and its existing neighbors.
+   * Updates neighbor lighting when a new chunk is added.
+   */
+  private propagateLightToNeighbors(newChunk: Chunk, coordinate: IChunkCoordinate): void {
+    const neighbors: Array<{ chunk: Chunk; toNew: 'posX' | 'negX' | 'posZ' | 'negZ'; toNeighbor: 'posX' | 'negX' | 'posZ' | 'negZ' }> = []
+
+    // Check all 4 horizontal neighbors
+    const neighborCoords: Array<{ dx: bigint; dz: bigint; toNew: 'posX' | 'negX' | 'posZ' | 'negZ'; toNeighbor: 'posX' | 'negX' | 'posZ' | 'negZ' }> = [
+      { dx: -1n, dz: 0n, toNew: 'negX', toNeighbor: 'posX' },  // Neighbor at -X
+      { dx: 1n, dz: 0n, toNew: 'posX', toNeighbor: 'negX' },   // Neighbor at +X
+      { dx: 0n, dz: -1n, toNew: 'negZ', toNeighbor: 'posZ' },  // Neighbor at -Z
+      { dx: 0n, dz: 1n, toNew: 'posZ', toNeighbor: 'negZ' },   // Neighbor at +Z
+    ]
+
+    for (const { dx, dz, toNew, toNeighbor } of neighborCoords) {
+      const neighborCoord: IChunkCoordinate = {
+        x: coordinate.x + dx,
+        z: coordinate.z + dz,
+      }
+      const neighborChunk = this.chunkManager.getChunk(neighborCoord)
+      if (neighborChunk && neighborChunk.state === ChunkState.LOADED) {
+        neighbors.push({ chunk: neighborChunk, toNew, toNeighbor })
+      }
+    }
+
+    // Propagate light both directions for each neighbor
+    for (const { chunk: neighborChunk, toNew, toNeighbor } of neighbors) {
+      // Light from new chunk into neighbor
+      const neighborChanged = this.skylightPropagator.propagateFromNeighbor(
+        neighborChunk,
+        newChunk,
+        toNew
+      )
+
+      // Light from neighbor into new chunk
+      this.skylightPropagator.propagateFromNeighbor(
+        newChunk,
+        neighborChunk,
+        toNeighbor
+      )
+
+      // Mark neighbor dirty if its lighting changed
+      if (neighborChanged) {
+        neighborChunk.markDirty()
+      }
     }
   }
 
