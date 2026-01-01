@@ -1,5 +1,5 @@
 import type { GenerationConfig } from '../world/generate/GenerationConfig.ts'
-import type { GraphicsSettings } from '../settings/index.ts'
+import type { GraphicsSettings, ResolutionPreset } from '../settings/index.ts'
 
 export type SettingsPage = 'main' | 'config'
 
@@ -8,6 +8,8 @@ export interface SettingsMenuUIOptions {
   onResume?: () => void
   /** Called when chunk distance setting changes */
   onChunkDistanceChange?: (value: number) => void
+  /** Called when resolution setting changes */
+  onResolutionChange?: (preset: ResolutionPreset) => void
 }
 
 export interface SettingsMenuUI {
@@ -209,6 +211,57 @@ export function createSettingsMenuUI(
     sliderContainer.appendChild(sliderLabel)
     sliderContainer.appendChild(slider)
     panel.appendChild(sliderContainer)
+
+    // Resolution dropdown
+    const resolutionContainer = document.createElement('div')
+    resolutionContainer.style.marginBottom = '1.5rem'
+    resolutionContainer.style.display = 'flex'
+    resolutionContainer.style.alignItems = 'center'
+    resolutionContainer.style.justifyContent = 'space-between'
+
+    const resolutionLabel = document.createElement('label')
+    resolutionLabel.textContent = 'Resolution'
+    resolutionLabel.style.fontSize = '0.9rem'
+    resolutionLabel.htmlFor = 'resolution-select'
+
+    const resolutionSelect = document.createElement('select')
+    resolutionSelect.id = 'resolution-select'
+    resolutionSelect.style.padding = '0.4rem 0.6rem'
+    resolutionSelect.style.background = 'rgba(50, 50, 50, 0.9)'
+    resolutionSelect.style.border = '2px solid rgba(255, 255, 255, 0.3)'
+    resolutionSelect.style.borderRadius = '4px'
+    resolutionSelect.style.color = 'rgba(255, 255, 255, 0.9)'
+    resolutionSelect.style.fontSize = '0.9rem'
+    resolutionSelect.style.cursor = 'pointer'
+
+    const resolutionOptions: { value: ResolutionPreset; label: string }[] = [
+      { value: '720p', label: '720p' },
+      { value: '1080p', label: '1080p' },
+      { value: '1440p', label: '1440p' },
+      { value: '4k', label: '4K' },
+      { value: 'native', label: 'Native' },
+    ]
+
+    for (const opt of resolutionOptions) {
+      const option = document.createElement('option')
+      option.value = opt.value
+      option.textContent = opt.label
+      option.style.background = 'rgba(30, 30, 30, 1)'
+      if (opt.value === graphicsSettings.resolutionPreset) {
+        option.selected = true
+      }
+      resolutionSelect.appendChild(option)
+    }
+
+    resolutionSelect.addEventListener('change', () => {
+      const preset = resolutionSelect.value as ResolutionPreset
+      graphicsSettings.resolutionPreset = preset
+      options.onResolutionChange?.(preset)
+    })
+
+    resolutionContainer.appendChild(resolutionLabel)
+    resolutionContainer.appendChild(resolutionSelect)
+    panel.appendChild(resolutionContainer)
 
     // Culling toggle
     const cullingContainer = document.createElement('div')

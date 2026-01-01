@@ -1,11 +1,15 @@
 const STORAGE_KEY = 'slopmine:graphicsSettings'
 
+export type ResolutionPreset = '720p' | '1080p' | '1440p' | '4k' | 'native'
+
 export interface IGraphicsSettings {
   cullingEnabled: boolean
+  resolutionPreset: ResolutionPreset
 }
 
 const DEFAULT_SETTINGS: IGraphicsSettings = {
   cullingEnabled: true,
+  resolutionPreset: 'native',
 }
 
 export class GraphicsSettings {
@@ -21,6 +25,15 @@ export class GraphicsSettings {
 
   set cullingEnabled(value: boolean) {
     this.settings.cullingEnabled = value
+    this.save()
+  }
+
+  get resolutionPreset(): ResolutionPreset {
+    return this.settings.resolutionPreset
+  }
+
+  set resolutionPreset(value: ResolutionPreset) {
+    this.settings.resolutionPreset = value
     this.save()
   }
 

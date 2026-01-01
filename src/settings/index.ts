@@ -1,1 +1,1 @@
-export { GraphicsSettings, type IGraphicsSettings } from './GraphicsSettings.ts'
+export { GraphicsSettings, type IGraphicsSettings, type ResolutionPreset } from './GraphicsSettings.ts'

@@ -104,6 +104,10 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
     // Apply new render distance immediately
     worldGenerator.refreshChunks()
   },
+  onResolutionChange: (preset) => {
+    // Apply new resolution immediately
+    renderer.setResolution(preset)
+  },
 })
 
 const seaLevel = worldGenerator.getConfig().seaLevel
@@ -222,6 +226,8 @@ const gameLoop = new GameLoop({
     wireframeManager.updateColors(world.getChunkMeshes())
     // Measure total CPU time for update + render
     const cpuTime = performance.now() - frameCpuStart
+    const renderRes = renderer.getRenderResolution()
+    fpsCounter.setRenderResolution(renderRes.width, renderRes.height)
     fpsCounter.update({
       deltaTime: lastFrameTime / 1000,
       cpuTime,

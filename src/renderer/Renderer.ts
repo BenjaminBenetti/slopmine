@@ -3,7 +3,14 @@ import { FrustumCuller } from './FrustumCuller.ts'
 import { HorizonCuller } from './HorizonCuller.ts'
 import type { ChunkMesh } from './ChunkMesh.ts'
 import type { HeightmapCache } from './HeightmapCache.ts'
-import type { GraphicsSettings } from '../settings/index.ts'
+import type { GraphicsSettings, ResolutionPreset } from '../settings/index.ts'
+
+const RESOLUTION_PRESETS: Record<Exclude<ResolutionPreset, 'native'>, { width: number; height: number }> = {
+  '720p': { width: 1280, height: 720 },
+  '1080p': { width: 1920, height: 1080 },
+  '1440p': { width: 2560, height: 1440 },
+  '4k': { width: 3840, height: 2160 },
+}
 
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer
@@ -14,6 +21,7 @@ export class Renderer {
   private chunkMeshSource: (() => Iterable<ChunkMesh>) | null = null
   private heightmapCache: HeightmapCache | null = null
   private graphicsSettings: GraphicsSettings | null = null
+  private currentResolutionPreset: ResolutionPreset = 'native'
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -43,7 +51,52 @@ export class Renderer {
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight
     this.camera.updateProjectionMatrix()
+    this.applyResolution()
+  }
+
+  /**
+   * Calculate the pixel ratio for a given resolution preset.
+   */
+  private getPixelRatioForPreset(preset: ResolutionPreset): number {
+    if (preset === 'native') {
+      return window.devicePixelRatio
+    }
+
+    const target = RESOLUTION_PRESETS[preset]
+    // Calculate pixel ratio needed to achieve target resolution
+    const ratioForWidth = target.width / window.innerWidth
+    const ratioForHeight = target.height / window.innerHeight
+    // Use smaller ratio to fit within target, never exceed native
+    return Math.min(ratioForWidth, ratioForHeight, window.devicePixelRatio)
+  }
+
+  /**
+   * Apply the current resolution preset to the renderer.
+   */
+  private applyResolution(): void {
+    const pixelRatio = this.getPixelRatioForPreset(this.currentResolutionPreset)
+    this.renderer.setPixelRatio(pixelRatio)
     this.renderer.setSize(window.innerWidth, window.innerHeight)
+  }
+
+  /**
+   * Update the rendering resolution preset.
+   */
+  setResolution(preset: ResolutionPreset): void {
+    this.currentResolutionPreset = preset
+    this.applyResolution()
+  }
+
+  /**
+   * Get the current internal render resolution in pixels.
+   */
+  getRenderResolution(): { width: number; height: number } {
+    const size = this.renderer.getSize(new THREE.Vector2())
+    const pixelRatio = this.renderer.getPixelRatio()
+    return {
+      width: Math.round(size.x * pixelRatio),
+      height: Math.round(size.y * pixelRatio),
+    }
   }
 
   /**
@@ -65,6 +118,8 @@ export class Renderer {
    */
   setGraphicsSettings(settings: GraphicsSettings): void {
     this.graphicsSettings = settings
+    // Apply the saved resolution preset
+    this.setResolution(settings.resolutionPreset)
   }
 
   render(): void {
