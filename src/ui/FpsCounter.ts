@@ -14,6 +14,7 @@ export interface FpsCounterUI {
   readonly element: HTMLDivElement
   update(metrics: FrameMetrics): void
   setRenderResolution(width: number, height: number): void
+  setPlayerPosition(x: number, y: number, z: number): void
   show(): void
   hide(): void
   toggle(): boolean
@@ -59,6 +60,9 @@ export function createFpsCounterUI(
   let totalTickCount = 0
   let renderWidth = 0
   let renderHeight = 0
+  let playerX = 0
+  let playerY = 0
+  let playerZ = 0
 
   // Target frame budget for 60 FPS
   const frameBudgetMs = 16.67
@@ -81,7 +85,9 @@ export function createFpsCounterUI(
         const headroom = Math.max(0, frameBudgetMs - avgCpuTime)
         const cpuPercent = Math.min(100, (avgCpuTime / frameBudgetMs) * 100)
 
+        const posLine = `X: <span style="color:#00ff00">${playerX.toFixed(1)}</span>  Y: <span style="color:#ff0000">${playerY.toFixed(1)}</span>  Z: <span style="color:#ffff00">${playerZ.toFixed(1)}</span>`
         const lines = [
+          posLine,
           `FPS: ${fps}`,
           `UPS: ${ups}`,
           `Frame: ${avgFrameTime.toFixed(1)}ms`,
@@ -103,6 +109,12 @@ export function createFpsCounterUI(
     setRenderResolution(width: number, height: number): void {
       renderWidth = width
       renderHeight = height
+    },
+
+    setPlayerPosition(x: number, y: number, z: number): void {
+      playerX = x
+      playerY = y
+      playerZ = z
     },
 
     show(): void {

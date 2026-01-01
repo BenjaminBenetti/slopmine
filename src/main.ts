@@ -256,6 +256,7 @@ const gameLoop = new GameLoop({
     const cpuTime = performance.now() - frameCpuStart
     const renderRes = renderer.getRenderResolution()
     fpsCounter.setRenderResolution(renderRes.width, renderRes.height)
+    fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
     fpsCounter.update({
       deltaTime: lastFrameTime / 1000,
       cpuTime,

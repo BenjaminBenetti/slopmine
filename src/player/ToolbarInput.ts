@@ -16,47 +16,51 @@ export class ToolbarInputHandler implements ToolbarInput {
   private readonly toolbar: IToolbarState
   private readonly ui: ToolbarUI
   private readonly domElement: HTMLElement
-
-  private pointerLocked = false
+  private lastWheelTime = 0
 
   constructor(toolbar: IToolbarState, ui: ToolbarUI, domElement: HTMLElement) {
     this.toolbar = toolbar
     this.ui = ui
     this.domElement = domElement
 
-    document.addEventListener('pointerlockchange', this.onPointerLockChange)
-    // Use passive: false so we can prevent default scrolling when handling the wheel
-    window.addEventListener('wheel', this.onWheel, { passive: false })
+    // Listen on both window and document for maximum compatibility
+    window.addEventListener('wheel', this.onWheel)
+    document.addEventListener('wheel', this.onWheel)
     window.addEventListener('keydown', this.onKeyDown)
   }
 
-  private onPointerLockChange = (): void => {
-    this.pointerLocked = document.pointerLockElement === this.domElement
-  }
-
   private onWheel = (event: WheelEvent): void => {
-    if (!this.pointerLocked) return
+    // Debounce to prevent double-firing from window+document listeners
+    const now = performance.now()
+    if (now - this.lastWheelTime < 5) return
+    this.lastWheelTime = now
 
-    const size = this.toolbar.size
-    if (size <= 0) return
+    // Check pointer lock state directly to avoid sync issues with cached state
+    if (document.pointerLockElement !== this.domElement) return
 
-    if (event.deltaY === 0) return
+    // Ignore if no meaningful vertical scroll (use threshold for floating-point safety)
+    if (Math.abs(event.deltaY) < 0.01) return
 
     // Prevent page scrolling while controlling the hotbar
     event.preventDefault()
 
-    const direction = event.deltaY > 0 ? 1 : -1
-    const current = this.toolbar.selectedIndex
-    const next = (current + direction + size) % size
+    const size = this.toolbar.size
+    if (size <= 0) return
 
-    if (next === current) return
+    // Use Math.sign for cleaner direction handling (returns -1, 0, or 1)
+    const direction = Math.sign(event.deltaY)
+    if (direction === 0) return
+
+    const current = this.toolbar.selectedIndex
+    const next = ((current + direction) % size + size) % size
 
     this.toolbar.selectSlot(next)
     this.ui.updateSelectedSlot(next)
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
-    if (!this.pointerLocked) return
+    // Check pointer lock state directly to avoid sync issues with cached state
+    if (document.pointerLockElement !== this.domElement) return
 
     // Ignore when any modifier is held to avoid conflicting with browser shortcuts
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
@@ -113,9 +117,8 @@ export class ToolbarInputHandler implements ToolbarInput {
   }
 
   dispose(): void {
-    document.removeEventListener('pointerlockchange', this.onPointerLockChange)
     window.removeEventListener('wheel', this.onWheel)
+    document.removeEventListener('wheel', this.onWheel)
     window.removeEventListener('keydown', this.onKeyDown)
   }
 }
-
