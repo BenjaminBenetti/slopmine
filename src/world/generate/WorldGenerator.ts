@@ -7,7 +7,6 @@ import { BiomeGenerator } from './BiomeGenerator.ts'
 import { PlainsGenerator } from './biomes/PlainsGenerator.ts'
 import { GrassyHillsGenerator } from './biomes/GrassyHillsGenerator.ts'
 import { CliffFeature } from './features/CliffFeature.ts'
-import { OakTree } from './structures/OakTree.ts'
 import type { WorkerBiomeConfig, FeatureConfig } from '../../workers/ChunkGenerationWorker.ts'
 
 interface QueuedChunk {
@@ -223,15 +222,15 @@ export class WorldGenerator {
   /**
    * Generate a single chunk using worker for heavy computation.
    * Two-phase approach:
-   * 1. Worker: terrain, caves, lighting, tree position calculation
-   * 2. Main thread: apply data, place trees (handles cross-chunk)
+   * 1. Worker: terrain, caves, lighting, features
+   * 2. Main thread: apply data, place decorations (trees handle cross-chunk)
    */
   private async generateChunk(
     coordinate: IChunkCoordinate,
     key: ChunkKey
   ): Promise<void> {
     try {
-      // Phase 1: Generate terrain/caves/lighting in worker
+      // Phase 1: Generate terrain/caves/lighting/features in worker
       const workerResult = await this.world.generateChunkInWorker(
         coordinate,
         this.config.seed,
@@ -239,21 +238,13 @@ export class WorldGenerator {
         this.workerBiomeConfig
       )
 
-      // Phase 2: Apply results and place trees on main thread
+      // Phase 2: Apply results and generate decorations on main thread
       await this.world.generateChunkAsync(coordinate, async (chunk, world) => {
         // Apply bulk data from worker
         chunk.applyWorkerData(workerResult.blocks, workerResult.lightData)
 
-        // Place trees on main thread (handles cross-chunk placement)
-        for (const tree of workerResult.treePositions) {
-          OakTree.place(
-            world,
-            BigInt(tree.worldX),
-            BigInt(tree.worldY),
-            BigInt(tree.worldZ),
-            { trunkHeight: tree.trunkHeight, leafRadius: tree.leafRadius }
-          )
-        }
+        // Generate decorations (trees etc) - uses existing generator logic
+        await this.generator.generateDecorationsOnly(chunk, world)
       })
 
       this.generatedChunks.add(key)

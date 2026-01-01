@@ -16,7 +16,6 @@ import type {
   ChunkGenerationRequest,
   ChunkGenerationResponse,
   ChunkGenerationError,
-  TreePosition,
   WorkerBiomeConfig,
 } from '../workers/ChunkGenerationWorker.ts'
 import { SkylightPropagator } from './lighting/SkylightPropagator.ts'
@@ -55,7 +54,7 @@ export class WorldManager {
   private readonly generationCallbackMap: Map<
     string,
     {
-      resolve: (data: { blocks: Uint16Array; lightData: Uint8Array; treePositions: TreePosition[] }) => void
+      resolve: (data: { blocks: Uint16Array; lightData: Uint8Array }) => void
       reject: (error: Error) => void
     }
   > = new Map()
@@ -127,21 +126,20 @@ export class WorldManager {
       callbacks.resolve({
         blocks: result.blocks,
         lightData: result.lightData,
-        treePositions: result.treePositions,
       })
     }
   }
 
   /**
    * Generate chunk terrain using worker, returns promise.
-   * Handles terrain, caves, lighting, and calculates tree positions.
+   * Handles terrain, caves, lighting, and features.
    */
   async generateChunkInWorker(
     coordinate: IChunkCoordinate,
     seed: number,
     seaLevel: number,
     biomeConfig: WorkerBiomeConfig
-  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; treePositions: TreePosition[] }> {
+  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array }> {
     const chunkKey = createChunkKey(coordinate.x, coordinate.z)
 
     // Pre-allocate buffers (will be transferred to worker)

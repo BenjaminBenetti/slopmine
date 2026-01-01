@@ -75,6 +75,14 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   }
 
   /**
+   * Generate decorations only (trees, flowers, etc).
+   * Called after worker has generated terrain/caves/lighting/features.
+   */
+  async generateDecorationsOnly(chunk: IChunkData, world: WorldManager | null): Promise<void> {
+    await this.generateDecorations(chunk, world)
+  }
+
+  /**
    * Get base terrain height at world coordinates (before features).
    */
   override getHeightAt(worldX: number, worldZ: number): number {

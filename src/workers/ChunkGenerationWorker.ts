@@ -55,17 +55,6 @@ export interface ChunkGenerationRequest {
 }
 
 /**
- * Tree position data calculated in worker but placed on main thread.
- */
-export interface TreePosition {
-  worldX: number
-  worldY: number
-  worldZ: number
-  trunkHeight: number
-  leafRadius: number
-}
-
-/**
  * Response from the chunk generation worker.
  */
 export interface ChunkGenerationResponse {
@@ -74,7 +63,6 @@ export interface ChunkGenerationResponse {
   chunkZ: number
   blocks: Uint16Array
   lightData: Uint8Array
-  treePositions: TreePosition[]
 }
 
 /**
@@ -86,9 +74,6 @@ export interface ChunkGenerationError {
   chunkZ: number
   error: string
 }
-
-// Tree grid size for placement
-const TREE_GRID_SIZE = 8
 
 /**
  * Reconstruct Feature instances from serialized configs.
@@ -117,17 +102,6 @@ function getHeightAt(
   const baseNoise = noise.fractalNoise2D(worldX, worldZ, 4, 0.5, 0.01)
   const { heightAmplitude, heightOffset } = biomeConfig
   return Math.floor(seaLevel + heightOffset + baseNoise * heightAmplitude)
-}
-
-/**
- * Deterministic random based on position.
- */
-function positionRandom(seed: number, worldX: number, worldZ: number, salt: number = 0): number {
-  let hash = seed ^ (worldX * 73856093) ^ (worldZ * 19349663) ^ (salt * 83492791)
-  hash = ((hash ^ (hash >>> 16)) * 0x85ebca6b) >>> 0
-  hash = ((hash ^ (hash >>> 13)) * 0xc2b2ae35) >>> 0
-  hash = (hash ^ (hash >>> 16)) >>> 0
-  return (hash & 0x7fffffff) / 0x7fffffff
 }
 
 /**
@@ -178,59 +152,6 @@ function generateTerrain(
       fillColumn(chunk, localX, localZ, height, biomeConfig)
     }
   }
-}
-
-/**
- * Calculate tree positions (deterministic, doesn't place blocks).
- */
-function calculateTreePositions(
-  chunk: WorkerChunk,
-  noise: SimplexNoise,
-  seed: number,
-  seaLevel: number,
-  biomeConfig: WorkerBiomeConfig
-): TreePosition[] {
-  const treePositions: TreePosition[] = []
-  const coord = chunk.coordinate
-  const treeDensity = biomeConfig.treeDensity
-
-  for (let localX = 0; localX < CHUNK_SIZE_X; localX += TREE_GRID_SIZE) {
-    for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ += TREE_GRID_SIZE) {
-      const worldCoord = localToWorld(coord, { x: localX, y: 0, z: localZ })
-      const worldX = Number(worldCoord.x)
-      const worldZ = Number(worldCoord.z)
-
-      // Use jittered grid for more natural placement
-      const jitterX = Math.floor(positionRandom(seed, worldX, worldZ, 1) * TREE_GRID_SIZE)
-      const jitterZ = Math.floor(positionRandom(seed, worldX, worldZ, 2) * TREE_GRID_SIZE)
-
-      const treeWorldX = worldX + jitterX
-      const treeWorldZ = worldZ + jitterZ
-
-      // Probability check for tree placement
-      const treeChance = positionRandom(seed, treeWorldX, treeWorldZ, 0)
-      const threshold = treeDensity / (TREE_GRID_SIZE * TREE_GRID_SIZE)
-
-      if (treeChance > threshold) continue
-
-      // Get ground height at tree position
-      const groundHeight = getHeightAt(noise, treeWorldX, treeWorldZ, seaLevel, biomeConfig)
-
-      // Random tree parameters
-      const trunkHeight = 4 + Math.floor(positionRandom(seed, treeWorldX, treeWorldZ, 3) * 3)
-      const leafRadius = 2 + Math.floor(positionRandom(seed, treeWorldX, treeWorldZ, 4) * 1.5)
-
-      treePositions.push({
-        worldX: treeWorldX,
-        worldY: groundHeight + 1,
-        worldZ: treeWorldZ,
-        trunkHeight,
-        leafRadius,
-      })
-    }
-  }
-
-  return treePositions
 }
 
 /**
@@ -294,16 +215,12 @@ function generateChunk(request: ChunkGenerationRequest): ChunkGenerationResponse
   const skylightPropagator = new SkylightPropagator()
   skylightPropagator.propagate(chunk)
 
-  // Phase 5: Calculate tree positions (don't place - main thread does that)
-  const treePositions = calculateTreePositions(chunk, noise, seed, seaLevel, biomeConfig)
-
   return {
     type: 'generate-result',
     chunkX,
     chunkZ,
     blocks: chunk.getBlockData(),
     lightData: chunk.getLightData(),
-    treePositions,
   }
 }
 
