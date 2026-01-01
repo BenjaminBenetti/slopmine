@@ -85,9 +85,9 @@ export class SpaghettiCarver {
     layerSpacing: number,
     layerPeakY: number
   ): number {
-    // Scale Y frequency higher for horizontal tunnels (less steep)
-    // Higher Y freq = noise changes faster in Y = caves are thin vertically
-    const yFreq = frequency * 3.0
+    // Scale Y frequency for balance between horizontal flow and headroom
+    // 1.5 = caves flow horizontally but still have decent height
+    const yFreq = frequency * 1.5
 
     // Primary noise sample
     const n1 = this.noise1.noise3D(x * frequency, y * yFreq, z * frequency)

@@ -30,8 +30,8 @@ export class PlainsGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      frequency: 0.02,
-      threshold: 0.025,
+      frequency: 0.025,      // higher = smaller/narrower tunnels
+      threshold: 0.035,      // higher = narrower (less blocks carved)
       minY: 8,
       maxY: 48,
       layerCount: 2,
@@ -41,7 +41,7 @@ export class PlainsGenerator extends BiomeGenerator {
       cheeseFrequency: 0.008,
       cheeseThreshold: 0.65,
       entrancesEnabled: true,
-      entranceMinWidth: 2,
+      entranceMinWidth: 4,
     },
   }
 

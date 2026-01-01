@@ -50,10 +50,10 @@ export class CheeseCarver {
           }
 
           // Use fractal noise for more interesting chamber shapes
-          // Scale Y by 3.0 for horizontally-stretched chambers (higher = flatter)
+          // Scale Y by 1.5 for chambers with decent height
           const chamberNoise = this.noise.fractalNoise3D(
             worldX * cheeseFrequency,
-            y * cheeseFrequency * 3.0,
+            y * cheeseFrequency * 1.5,
             worldZ * cheeseFrequency,
             2, // 2 octaves for chambers
             0.5,
