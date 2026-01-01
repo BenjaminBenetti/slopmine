@@ -32,8 +32,15 @@ export function getAnisotropy(): number {
  * - Nearest mag filter (pixelated up close)
  * - Mipmap min filter (smooth at distance)
  * - Anisotropic filtering (better at angles)
+ *
+ * Returns a dummy texture in worker context (no document).
  */
 export function loadBlockTexture(url: string): THREE.Texture {
+  // Workers don't have document - return dummy texture
+  if (typeof document === 'undefined') {
+    return new THREE.Texture()
+  }
+
   const texture = loader.load(url)
 
   // Keep pixelated look when magnified (close up)

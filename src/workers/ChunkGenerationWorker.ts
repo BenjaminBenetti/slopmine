@@ -1,6 +1,6 @@
 /**
  * Web Worker for chunk terrain generation.
- * Handles: terrain, caves, initial skylight, features, tree position calculation.
+ * Handles: terrain, caves, initial skylight, features.
  * Does NOT handle: actual tree placement (crosses chunk boundaries).
  *
  * Receives biome config from main thread - no duplicated configuration here.
@@ -14,9 +14,13 @@ import { CliffFeature, type CliffFeatureSettings } from '../world/generate/featu
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
+import { registerDefaultBlocks } from '../world/blocks/registerDefaultBlocks.ts'
 import type { CaveSettings } from '../world/generate/BiomeGenerator.ts'
 import type { IGenerationConfig } from '../world/generate/GenerationConfig.ts'
 import type { BlockId } from '../world/interfaces/IBlock.ts'
+
+// Initialize block registry in worker context
+registerDefaultBlocks()
 
 /**
  * Serialized feature config passed from main thread.
