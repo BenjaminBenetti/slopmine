@@ -78,10 +78,12 @@ export class ChunkMesh {
         instancedMesh.setMatrixAt(i, matrix)
 
         // Calculate brightness from light level (0-15)
+        // Power curve (exponent > 1): fast falloff at entrance, slow near darkness
         // Minimum brightness of 2% to prevent pure black
         const light = lights[i] ?? 15
         const minBrightness = 0.02
-        const brightness = minBrightness + (light / 15) * (1 - minBrightness)
+        const normalized = light / 15
+        const brightness = minBrightness + Math.pow(normalized, 1.5) * (1 - minBrightness)
 
         colors[posIdx] = brightness
         colors[posIdx + 1] = brightness
