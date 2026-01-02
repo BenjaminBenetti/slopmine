@@ -502,16 +502,16 @@ export class BackgroundLightingManager {
       const column = this.getColumn(coord)
       if (!column) continue
 
-      // Track if any light changed in this column
-      let columnChanged = false
-
       // Get light from all 4 neighbors
       const neighborDirs: Array<{ dx: bigint; dz: bigint; dir: 'posX' | 'negX' | 'posZ' | 'negZ' }> = [
-        { dx: 1n, dz: 0n, dir: 'negX' },  // neighbor at +X provides light from negX direction
-        { dx: -1n, dz: 0n, dir: 'posX' }, // neighbor at -X provides light from posX direction
-        { dx: 0n, dz: 1n, dir: 'negZ' },  // neighbor at +Z provides light from negZ direction
-        { dx: 0n, dz: -1n, dir: 'posZ' }, // neighbor at -Z provides light from posZ direction
+        { dx: 1n, dz: 0n, dir: 'posX' },  // neighbor at +X → light comes from posX
+        { dx: -1n, dz: 0n, dir: 'negX' }, // neighbor at -X → light comes from negX
+        { dx: 0n, dz: 1n, dir: 'posZ' },  // neighbor at +Z → light comes from posZ
+        { dx: 0n, dz: -1n, dir: 'negZ' }, // neighbor at -Z → light comes from negZ
       ]
+
+      // Track if any light changed in this column
+      let columnChanged = false
 
       for (const { dx, dz, dir } of neighborDirs) {
         const neighborCoord: IChunkCoordinate = { x: coord.x + dx, z: coord.z + dz }
