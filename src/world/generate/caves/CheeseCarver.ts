@@ -1,4 +1,5 @@
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
+import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { CaveSettings } from '../BiomeGenerator.ts'
 import type { FrameBudget } from '../../../core/FrameBudget.ts'
 import { SimplexNoise } from '../SimplexNoise.ts'
@@ -70,6 +71,66 @@ export class CheeseCarver {
       // Yield less frequently for cheese caves (faster pass)
       if (frameBudget && localX % 2 === 1) {
         await frameBudget.yieldIfNeeded()
+      }
+    }
+  }
+
+  /**
+   * Carve cheese chambers within a sub-chunk's Y range.
+   * Uses world coordinates for noise to ensure chambers span sub-chunks correctly.
+   */
+  async carveSubChunk(
+    subChunk: ISubChunkData,
+    settings: CaveSettings,
+    getHeightAt: HeightGetter,
+    minWorldY: number,
+    maxWorldY: number
+  ): Promise<void> {
+    const { cheeseFrequency, cheeseThreshold, minY, maxY } = settings
+    const coord = subChunk.coordinate
+
+    // Clamp to both sub-chunk range and cave settings range
+    const effectiveMinY = Math.max(minWorldY, minY)
+    const effectiveMaxY = Math.min(maxWorldY, maxY)
+
+    if (effectiveMinY > effectiveMaxY) {
+      return // No overlap with cave Y range
+    }
+
+    for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
+      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
+        const worldCoord = localToWorld(
+          { x: coord.x, z: coord.z },
+          { x: localX, y: 0, z: localZ }
+        )
+        const worldX = Number(worldCoord.x)
+        const worldZ = Number(worldCoord.z)
+
+        const surfaceY = getHeightAt(worldX, worldZ)
+        const columnMaxY = Math.min(effectiveMaxY, surfaceY + 5)
+
+        for (let worldY = effectiveMinY; worldY <= columnMaxY; worldY++) {
+          const localY = worldY - minWorldY // Convert to sub-chunk local Y
+
+          // Skip if already air
+          if (subChunk.getBlockId(localX, localY, localZ) === BlockIds.AIR) {
+            continue
+          }
+
+          // Use world Y for noise calculation (ensures chambers span sub-chunks)
+          const chamberNoise = this.noise.fractalNoise3D(
+            worldX * cheeseFrequency,
+            worldY * cheeseFrequency * 1.5,
+            worldZ * cheeseFrequency,
+            2,
+            0.5,
+            1.0
+          )
+
+          if (chamberNoise > cheeseThreshold) {
+            subChunk.setBlockId(localX, localY, localZ, BlockIds.AIR)
+          }
+        }
       }
     }
   }

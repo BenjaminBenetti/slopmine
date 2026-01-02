@@ -1,4 +1,4 @@
-import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT } from '../interfaces/IChunk.ts'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../interfaces/IChunk.ts'
 import type { IWorldCoordinate, IChunkCoordinate, ILocalCoordinate } from '../interfaces/ICoordinates.ts'
 
 /**
@@ -92,4 +92,23 @@ export function getNeighborChunk(
     x: chunk.x + BigInt(deltaX),
     z: chunk.z + BigInt(deltaZ),
   }
+}
+
+/**
+ * Calculate index into a sub-chunk flat array for 3D coordinates.
+ * Memory layout: Y-major (y * SIZE_X * SIZE_Z + z * SIZE_X + x)
+ * Y range is 0-63 for sub-chunks.
+ */
+export function localToSubChunkIndex(x: number, y: number, z: number): number {
+  return y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
+}
+
+/**
+ * Check if local coordinates are valid for a sub-chunk.
+ * Y range is 0-63 instead of 0-1023.
+ */
+export function isValidSubChunkLocal(x: number, y: number, z: number): boolean {
+  return x >= 0 && x < CHUNK_SIZE_X &&
+         y >= 0 && y < SUB_CHUNK_HEIGHT &&
+         z >= 0 && z < CHUNK_SIZE_Z
 }

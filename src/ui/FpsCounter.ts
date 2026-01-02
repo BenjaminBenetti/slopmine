@@ -10,11 +10,19 @@ export interface FrameMetrics {
   tickCount: number
 }
 
+export interface LightingStats {
+  waitingCount: number
+  pendingCount: number
+  processedCount: number
+  enabled: boolean
+}
+
 export interface FpsCounterUI {
   readonly element: HTMLDivElement
   update(metrics: FrameMetrics): void
   setRenderResolution(width: number, height: number): void
   setPlayerPosition(x: number, y: number, z: number): void
+  setLightingStats(stats: LightingStats): void
   show(): void
   hide(): void
   toggle(): boolean
@@ -63,6 +71,7 @@ export function createFpsCounterUI(
   let playerX = 0
   let playerY = 0
   let playerZ = 0
+  let lightingStats: LightingStats | null = null
 
   // Target frame budget for 60 FPS
   const frameBudgetMs = 16.67
@@ -97,6 +106,14 @@ export function createFpsCounterUI(
         if (renderWidth > 0 && renderHeight > 0) {
           lines.push(`Render: ${renderWidth}x${renderHeight}`)
         }
+        if (lightingStats) {
+          const status = lightingStats.enabled ? 'ON' : 'OFF'
+          lines.push(`== Light Flood ==`)
+          lines.push(`  waiting: ${lightingStats.waitingCount}`)
+          lines.push(`  pending: ${lightingStats.pendingCount}`)
+          lines.push(`  done: ${lightingStats.processedCount}`)
+          lines.push(`  status: ${status}`)
+        }
         el.innerHTML = lines.join('<br>')
 
         frameCount = 0
@@ -115,6 +132,10 @@ export function createFpsCounterUI(
       playerX = x
       playerY = y
       playerZ = z
+    },
+
+    setLightingStats(stats: LightingStats): void {
+      lightingStats = stats
     },
 
     show(): void {

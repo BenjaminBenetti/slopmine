@@ -146,12 +146,17 @@ const debugManager = new DebugManager({
 })
 debugManager.restoreFromStorage()
 
-// Sync wireframes with chunk mesh lifecycle
-world.onChunkMeshAdded((coord) => {
-  wireframeManager.addChunk(coord)
+// Sync wireframes with sub-chunk mesh lifecycle
+world.onSubChunkMeshAdded((coord) => {
+  wireframeManager.addSubChunk(coord)
 })
-world.onChunkMeshRemoved((coord) => {
-  wireframeManager.removeChunk(coord)
+world.onSubChunkMeshRemoved((coord) => {
+  wireframeManager.removeSubChunk(coord)
+})
+
+// Highlight wireframes when columns are being lit
+world.onColumnLightingStarted((coord) => {
+  wireframeManager.highlightColumnLighting(coord, 1000)
 })
 
 // Cycle debug mode with Ctrl+Shift+P
@@ -170,10 +175,6 @@ renderer.setHeightmapCache(heightmapCache)
 // Connect chunk meshes to renderer for frustum culling
 renderer.setChunkMeshSource(() => world.getChunkMeshes())
 
-// Queue chunk for background meshing when generation completes
-world.onChunkGenerated((chunk) => {
-  world.queueChunkForMeshing(chunk)
-})
 
 // Add world lighting (sun at 10am)
 const lighting = new WorldLighting({ timeOfDay: 10 })
@@ -232,6 +233,9 @@ const gameLoop = new GameLoop({
       renderer.camera.position.z
     )
 
+    // Update world systems (background lighting correction, etc)
+    world.update(renderer.camera.position.x, renderer.camera.position.z)
+
     // Update shadow camera to follow player
     lighting.updateShadowTarget(renderer.camera.position)
 
@@ -257,6 +261,7 @@ const gameLoop = new GameLoop({
     const renderRes = renderer.getRenderResolution()
     fpsCounter.setRenderResolution(renderRes.width, renderRes.height)
     fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
+    fpsCounter.setLightingStats(world.getBackgroundLightingStats())
     fpsCounter.update({
       deltaTime: lastFrameTime / 1000,
       cpuTime,

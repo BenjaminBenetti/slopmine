@@ -1,7 +1,8 @@
 import type { WorldManager } from '../WorldManager.ts'
-import type { IChunkCoordinate } from '../interfaces/ICoordinates.ts'
-import { createChunkKey, type ChunkKey } from '../interfaces/ICoordinates.ts'
+import type { ISubChunkCoordinate } from '../interfaces/ICoordinates.ts'
+import { createSubChunkKey, type SubChunkKey } from '../interfaces/ICoordinates.ts'
 import { worldToChunk } from '../coordinates/CoordinateUtils.ts'
+import { SUB_CHUNK_HEIGHT, SUB_CHUNK_COUNT } from '../interfaces/IChunk.ts'
 import { GenerationConfig, type IGenerationConfig } from './GenerationConfig.ts'
 import { BiomeGenerator } from './BiomeGenerator.ts'
 import { PlainsGenerator } from './biomes/PlainsGenerator.ts'
@@ -9,8 +10,8 @@ import { GrassyHillsGenerator } from './biomes/GrassyHillsGenerator.ts'
 import { CliffFeature } from './features/CliffFeature.ts'
 import type { WorkerBiomeConfig, FeatureConfig } from '../../workers/ChunkGenerationWorker.ts'
 
-interface QueuedChunk {
-  coordinate: IChunkCoordinate
+interface QueuedSubChunk {
+  coordinate: ISubChunkCoordinate
   priority: number
 }
 
@@ -27,13 +28,16 @@ export class WorldGenerator {
   private readonly generator: BiomeGenerator
   private readonly workerBiomeConfig: WorkerBiomeConfig
 
-  private readonly chunkQueue: QueuedChunk[] = []
-  private readonly generatingChunks: Set<ChunkKey> = new Set()
-  private readonly generatedChunks: Set<ChunkKey> = new Set()
+  // Sub-chunk queue for 3D generation
+  private readonly subChunkQueue: QueuedSubChunk[] = []
+  private readonly generatingSubChunks: Set<SubChunkKey> = new Set()
+  private readonly generatedSubChunks: Set<SubChunkKey> = new Set()
 
-  private readonly chunksPerFrame: number = 1
+  private readonly subChunksPerFrame: number = 2
   private playerChunkX: bigint = 0n
   private playerChunkZ: bigint = 0n
+  private playerSubY: number = 0 // Player's sub-chunk Y index (0-15)
+  private playerWorldY: number = 0 // Player's world Y position
   private initialized: boolean = false
 
   constructor(world: WorldManager, config?: Partial<IGenerationConfig>) {
@@ -87,8 +91,9 @@ export class WorldGenerator {
    *
    * @param playerX - Player world X position
    * @param playerZ - Player world Z position
+   * @param playerY - Player world Y position
    */
-  update(playerX: number, playerZ: number): void {
+  update(playerX: number, playerZ: number, playerY: number = 0): void {
     // Convert to chunk coordinates
     const playerChunk = worldToChunk({
       x: BigInt(Math.floor(playerX)),
@@ -96,22 +101,30 @@ export class WorldGenerator {
       z: BigInt(Math.floor(playerZ)),
     })
 
+    // Calculate player's sub-chunk Y index
+    const newPlayerSubY = Math.floor(Math.max(0, playerY) / SUB_CHUNK_HEIGHT)
+    const clampedPlayerSubY = Math.min(newPlayerSubY, SUB_CHUNK_COUNT - 1)
+
     const chunkChanged =
       playerChunk.x !== this.playerChunkX ||
       playerChunk.z !== this.playerChunkZ
 
+    const subYChanged = clampedPlayerSubY !== this.playerSubY
+
     this.playerChunkX = playerChunk.x
     this.playerChunkZ = playerChunk.z
+    this.playerSubY = clampedPlayerSubY
+    this.playerWorldY = playerY
 
-    // Update queue on first call or when player moves to new chunk
-    if (!this.initialized || chunkChanged) {
+    // Update queue on first call or when player moves to new chunk/sub-chunk
+    if (!this.initialized || chunkChanged || subYChanged) {
       this.initialized = true
-      this.updateQueue()
+      this.updateSubChunkQueue()
       this.unloadDistantChunks()
     }
 
-    // Process chunk queue
-    this.processQueue()
+    // Process sub-chunk generation queue
+    this.processSubChunkQueue()
   }
 
   /**
@@ -120,49 +133,8 @@ export class WorldGenerator {
    */
   refreshChunks(): void {
     if (!this.initialized) return
-    this.updateQueue()
+    this.updateSubChunkQueue()
     this.unloadDistantChunks()
-  }
-
-  /**
-   * Rebuild the chunk queue based on current player position.
-   * Uses spiral ordering for efficient nearby-first generation.
-   */
-  private updateQueue(): void {
-    this.chunkQueue.length = 0
-
-    const distance = this.config.chunkDistance
-    const centerX = this.playerChunkX
-    const centerZ = this.playerChunkZ
-
-    // Generate chunks in a spiral pattern from center
-    for (const coord of this.spiralCoordinates(distance)) {
-      const chunkCoord: IChunkCoordinate = {
-        x: centerX + BigInt(coord.dx),
-        z: centerZ + BigInt(coord.dz),
-      }
-
-      const key = createChunkKey(chunkCoord.x, chunkCoord.z)
-
-      // Skip already generated or in-progress chunks
-      if (this.generatedChunks.has(key) || this.generatingChunks.has(key)) {
-        continue
-      }
-
-      // Skip already loaded chunks (may have been loaded externally)
-      if (this.world.hasChunk(chunkCoord)) {
-        this.generatedChunks.add(key)
-        continue
-      }
-
-      this.chunkQueue.push({
-        coordinate: chunkCoord,
-        priority: coord.distance,
-      })
-    }
-
-    // Sort by priority (closest first)
-    this.chunkQueue.sort((a, b) => a.priority - b.priority)
   }
 
   /**
@@ -197,66 +169,8 @@ export class WorldGenerator {
   }
 
   /**
-   * Process queued chunks (generate N per frame).
-   */
-  private processQueue(): void {
-    let started = 0
-
-    while (started < this.chunksPerFrame && this.chunkQueue.length > 0) {
-      const queued = this.chunkQueue.shift()
-      if (!queued) break
-
-      const key = createChunkKey(queued.coordinate.x, queued.coordinate.z)
-
-      // Double-check not already generating
-      if (this.generatingChunks.has(key)) continue
-
-      this.generatingChunks.add(key)
-
-      // Start async generation (fire-and-forget)
-      this.generateChunk(queued.coordinate, key)
-      started++
-    }
-  }
-
-  /**
-   * Generate a single chunk using worker for heavy computation.
-   * Two-phase approach:
-   * 1. Worker: terrain, caves, lighting, features
-   * 2. Main thread: apply data, place decorations (trees handle cross-chunk)
-   */
-  private async generateChunk(
-    coordinate: IChunkCoordinate,
-    key: ChunkKey
-  ): Promise<void> {
-    try {
-      // Phase 1: Generate terrain/caves/lighting/features in worker
-      const workerResult = await this.world.generateChunkInWorker(
-        coordinate,
-        this.config.seed,
-        this.config.seaLevel,
-        this.workerBiomeConfig
-      )
-
-      // Phase 2: Apply results and generate decorations on main thread
-      await this.world.generateChunkAsync(coordinate, async (chunk, world) => {
-        // Apply bulk data from worker
-        chunk.applyWorkerData(workerResult.blocks, workerResult.lightData)
-
-        // Generate decorations (trees etc) - uses existing generator logic
-        await this.generator.generateDecorationsOnly(chunk, world)
-      })
-
-      this.generatedChunks.add(key)
-    } catch (error) {
-      console.error(`Failed to generate chunk ${key}:`, error)
-    } finally {
-      this.generatingChunks.delete(key)
-    }
-  }
-
-  /**
-   * Unload chunks beyond the unload distance.
+   * Unload columns beyond the unload distance.
+   * Removes all sub-chunks in the column.
    */
   private unloadDistantChunks(): void {
     const unloadDistance = this.config.getUnloadDistance()
@@ -274,9 +188,14 @@ export class WorldGenerator {
       const maxDist = absDx > absDz ? absDx : absDz
 
       if (maxDist > unloadDistanceBig) {
-        const key = createChunkKey(chunk.coordinate.x, chunk.coordinate.z)
         this.world.unloadChunk(chunk.coordinate)
-        this.generatedChunks.delete(key)
+
+        // Clear all sub-chunk keys for this column
+        for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
+          const subKey = createSubChunkKey(chunk.coordinate.x, chunk.coordinate.z, subY)
+          this.generatedSubChunks.delete(subKey)
+          this.generatingSubChunks.delete(subKey)
+        }
       }
     }
   }
@@ -289,33 +208,155 @@ export class WorldGenerator {
   }
 
   /**
-   * Force regeneration of all chunks (e.g., after seed change).
+   * Force regeneration of all sub-chunks (e.g., after seed change).
    */
   reset(): void {
-    this.chunkQueue.length = 0
-    this.generatingChunks.clear()
-    this.generatedChunks.clear()
+    this.subChunkQueue.length = 0
+    this.generatingSubChunks.clear()
+    this.generatedSubChunks.clear()
     this.initialized = false
   }
 
   /**
-   * Get the number of chunks waiting to be generated.
+   * Get the number of sub-chunks waiting to be generated.
    */
   getQueuedCount(): number {
-    return this.chunkQueue.length
+    return this.subChunkQueue.length
   }
 
   /**
-   * Get the number of chunks currently generating.
+   * Get the number of sub-chunks currently generating.
    */
   getGeneratingCount(): number {
-    return this.generatingChunks.size
+    return this.generatingSubChunks.size
   }
 
   /**
-   * Get the number of chunks that have been generated.
+   * Get the number of sub-chunks that have been generated.
    */
   getGeneratedCount(): number {
-    return this.generatedChunks.size
+    return this.generatedSubChunks.size
   }
+
+  /**
+   * Calculate 3D priority for a sub-chunk based on distance from player.
+   * Prioritizes sub-chunks near the player's Y position.
+   */
+  private calculateSubChunkPriority(subCoord: ISubChunkCoordinate): number {
+    const dx = Number(subCoord.x - this.playerChunkX)
+    const dz = Number(subCoord.z - this.playerChunkZ)
+    const dy = subCoord.subY - this.playerSubY
+
+    // Weight Y distance slightly more for immediate visibility
+    // This ensures sub-chunks at the player's eye level load first
+    return Math.sqrt(dx * dx + dz * dz + dy * dy * 1.5)
+  }
+
+  /**
+   * Rebuild the sub-chunk queue based on current player position.
+   * Uses 3D distance for priority ordering.
+   */
+  private updateSubChunkQueue(): void {
+    this.subChunkQueue.length = 0
+
+    const distance = this.config.chunkDistance
+    const centerX = this.playerChunkX
+    const centerZ = this.playerChunkZ
+
+    // Generate sub-chunks in all columns within distance
+    for (const coord of this.spiralCoordinates(distance)) {
+      const chunkX = centerX + BigInt(coord.dx)
+      const chunkZ = centerZ + BigInt(coord.dz)
+
+      // For each column, queue all sub-chunks
+      for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
+        const subCoord: ISubChunkCoordinate = {
+          x: chunkX,
+          z: chunkZ,
+          subY,
+        }
+
+        const key = createSubChunkKey(chunkX, chunkZ, subY)
+
+        // Skip already generated or in-progress sub-chunks
+        if (this.generatedSubChunks.has(key) || this.generatingSubChunks.has(key)) {
+          continue
+        }
+
+        const priority = this.calculateSubChunkPriority(subCoord)
+
+        this.subChunkQueue.push({
+          coordinate: subCoord,
+          priority,
+        })
+      }
+    }
+
+    // Sort by priority (closest first)
+    this.subChunkQueue.sort((a, b) => a.priority - b.priority)
+  }
+
+  /**
+   * Process queued sub-chunks (generate N per frame).
+   */
+  private processSubChunkQueue(): void {
+    let started = 0
+
+    while (started < this.subChunksPerFrame && this.subChunkQueue.length > 0) {
+      const queued = this.subChunkQueue.shift()
+      if (!queued) break
+
+      const key = createSubChunkKey(
+        queued.coordinate.x,
+        queued.coordinate.z,
+        queued.coordinate.subY
+      )
+
+      // Double-check not already generating
+      if (this.generatingSubChunks.has(key)) continue
+
+      this.generatingSubChunks.add(key)
+
+      // Start async generation (fire-and-forget)
+      this.generateSubChunk(queued.coordinate, key)
+      started++
+    }
+  }
+
+  /**
+   * Generate a single sub-chunk using worker for heavy computation.
+   */
+  private async generateSubChunk(
+    coordinate: ISubChunkCoordinate,
+    key: SubChunkKey
+  ): Promise<void> {
+    try {
+      const minWorldY = coordinate.subY * SUB_CHUNK_HEIGHT
+      const maxWorldY = minWorldY + SUB_CHUNK_HEIGHT - 1
+
+      // Generate in worker
+      const workerResult = await this.world.generateSubChunkInWorker(
+        coordinate,
+        this.config.seed,
+        this.config.seaLevel,
+        minWorldY,
+        maxWorldY,
+        this.workerBiomeConfig
+      )
+
+      // Apply results to the sub-chunk
+      await this.world.applySubChunkData(
+        coordinate,
+        workerResult.blocks,
+        workerResult.lightData
+      )
+
+      this.generatedSubChunks.add(key)
+    } catch (error) {
+      console.error(`Failed to generate sub-chunk ${key}:`, error)
+    } finally {
+      this.generatingSubChunks.delete(key)
+    }
+  }
+
 }

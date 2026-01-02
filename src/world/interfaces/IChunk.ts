@@ -14,6 +14,14 @@ export const CHUNK_HEIGHT = 1024
 export const CHUNK_VOLUME = CHUNK_SIZE_X * CHUNK_SIZE_Z * CHUNK_HEIGHT
 
 /**
+ * Sub-chunk dimensions for vertical chunking.
+ * Each column is divided into 16 sub-chunks of 64 blocks height.
+ */
+export const SUB_CHUNK_HEIGHT = 64
+export const SUB_CHUNK_COUNT = 16 // CHUNK_HEIGHT / SUB_CHUNK_HEIGHT
+export const SUB_CHUNK_VOLUME = CHUNK_SIZE_X * CHUNK_SIZE_Z * SUB_CHUNK_HEIGHT // 65,536
+
+/**
  * Chunk state for lifecycle management.
  */
 export enum ChunkState {

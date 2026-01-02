@@ -4,7 +4,7 @@ import type { IChunkCoordinate } from '../world/interfaces/ICoordinates.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
 
 /**
- * Manages InstancedMesh objects for a single chunk.
+ * Manages InstancedMesh objects for a single chunk or sub-chunk.
  * One InstancedMesh per block type for efficient batched rendering.
  */
 export class ChunkMesh {
@@ -14,9 +14,12 @@ export class ChunkMesh {
   private readonly group: THREE.Group = new THREE.Group()
 
   readonly chunkCoordinate: IChunkCoordinate
+  /** Sub-chunk Y index (0-15), or null for legacy full-chunk meshes */
+  readonly subY: number | null
 
-  constructor(chunkCoordinate: IChunkCoordinate) {
+  constructor(chunkCoordinate: IChunkCoordinate, subY: number | null = null) {
     this.chunkCoordinate = chunkCoordinate
+    this.subY = subY
   }
 
   /**

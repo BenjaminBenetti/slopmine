@@ -226,14 +226,8 @@ export class BlockInteraction {
       this.onItemsCollected?.()
     }
 
-    // Set block to air
+    // Set block to air (automatically queues affected sub-chunk for remeshing)
     this.worldManager.setBlock(worldX, worldY, worldZ, BlockIds.AIR)
-
-    // Queue chunk for re-meshing via worker (async but non-blocking)
-    const chunk = this.worldManager.getChunkAt(worldX, worldY, worldZ)
-    if (chunk) {
-      this.worldManager.queueChunkForMeshing(chunk)
-    }
 
     // Hide overlay and reset state
     this.miningOverlay.hide()
