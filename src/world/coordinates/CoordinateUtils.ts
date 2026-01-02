@@ -1,21 +1,25 @@
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../interfaces/IChunk.ts'
 import type { IWorldCoordinate, IChunkCoordinate, ILocalCoordinate } from '../interfaces/ICoordinates.ts'
 
+// Pre-convert to BigInt for performance
+const SIZE_X_BI = BigInt(CHUNK_SIZE_X)
+const SIZE_Z_BI = BigInt(CHUNK_SIZE_Z)
+
 /**
- * Constants for bit shifting operations.
- * 32 = 2^5, so we shift by 5 bits for chunk conversion.
+ * Helper for BigInt floor division (handles negatives correctly).
+ * Equivalent to Math.floor(n / d)
  */
-const CHUNK_SHIFT = 5n
-const CHUNK_MASK = 31n
+function floorDiv(n: bigint, d: bigint): bigint {
+  return n >= 0n ? n / d : (n - d + 1n) / d
+}
 
 /**
  * Convert world coordinates to chunk coordinates.
- * Uses arithmetic right shift for floor division with negative numbers.
  */
 export function worldToChunk(world: IWorldCoordinate): IChunkCoordinate {
   return {
-    x: world.x >> CHUNK_SHIFT,
-    z: world.z >> CHUNK_SHIFT,
+    x: floorDiv(world.x, SIZE_X_BI),
+    z: floorDiv(world.z, SIZE_Z_BI),
   }
 }
 
@@ -29,13 +33,13 @@ function positiveMod(n: bigint, m: bigint): number {
 
 /**
  * Convert world coordinates to local chunk coordinates.
- * Result is always in range [0, 31] for x/z.
+ * Result is always in range [0, SIZE-1].
  */
 export function worldToLocal(world: IWorldCoordinate): ILocalCoordinate {
   return {
-    x: positiveMod(world.x, BigInt(CHUNK_SIZE_X)),
+    x: positiveMod(world.x, SIZE_X_BI),
     y: Number(world.y),
-    z: positiveMod(world.z, BigInt(CHUNK_SIZE_Z)),
+    z: positiveMod(world.z, SIZE_Z_BI),
   }
 }
 
@@ -44,9 +48,9 @@ export function worldToLocal(world: IWorldCoordinate): ILocalCoordinate {
  */
 export function localToWorld(chunk: IChunkCoordinate, local: ILocalCoordinate): IWorldCoordinate {
   return {
-    x: (chunk.x << CHUNK_SHIFT) + BigInt(local.x),
+    x: (chunk.x * SIZE_X_BI) + BigInt(local.x),
     y: BigInt(local.y),
-    z: (chunk.z << CHUNK_SHIFT) + BigInt(local.z),
+    z: (chunk.z * SIZE_Z_BI) + BigInt(local.z),
   }
 }
 
