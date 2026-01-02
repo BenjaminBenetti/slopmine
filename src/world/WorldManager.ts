@@ -626,6 +626,13 @@ export class WorldManager {
   }
 
   /**
+   * Get a sub-chunk at the given coordinates.
+   */
+  getSubChunk(coordinate: ISubChunkCoordinate): SubChunk | undefined {
+    return this.chunkManager.getSubChunk(coordinate)
+  }
+
+  /**
    * Get all chunk meshes for frustum culling.
    * Includes both legacy full-chunk meshes and sub-chunk meshes.
    */

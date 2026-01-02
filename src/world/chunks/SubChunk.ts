@@ -228,8 +228,21 @@ export class SubChunk {
    * Apply bulk data from worker generation result.
    */
   applyWorkerData(blocks: Uint16Array, lightData: Uint8Array): void {
-    this.blocks.set(blocks)
-    this.lightData.set(lightData)
+    if (!this._dirty) {
+      this.blocks.set(blocks)
+      this.lightData.set(lightData)
+    } else {
+      // Merge: Keep existing non-air blocks, overwrite air with worker data
+      for (let i = 0; i < SUB_CHUNK_VOLUME; i++) {
+        if (this.blocks[i] === BlockIds.AIR) {
+          this.blocks[i] = blocks[i]
+          this.lightData[i] = lightData[i]
+        }
+        // If block is not AIR, we keep it (e.g., placed tree leaves)
+        // We generally keep the existing light data for it too, or we could accept worker light?
+        // For now, assume existing light is "valid enough" or will be fixed by relighting.
+      }
+    }
     this._dirty = true
   }
 

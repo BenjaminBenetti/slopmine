@@ -351,6 +351,12 @@ export class WorldGenerator {
         workerResult.lightData
       )
 
+      // Generate decorations (trees, etc) for this sub-chunk
+      const subChunk = this.world.getSubChunk(coordinate)
+      if (subChunk) {
+        await this.generator.generateSubChunkDecorations(subChunk, this.world)
+      }
+
       this.generatedSubChunks.add(key)
     } catch (error) {
       console.error(`Failed to generate sub-chunk ${key}:`, error)

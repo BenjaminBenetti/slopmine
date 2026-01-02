@@ -1,5 +1,6 @@
 import { TerrainGenerator } from './TerrainGenerator.ts'
 import type { IChunkData } from '../interfaces/IChunkData.ts'
+import type { ISubChunkData } from '../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../WorldManager.ts'
 import type { BlockId } from '../interfaces/IBlock.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
@@ -158,6 +159,17 @@ export abstract class BiomeGenerator extends TerrainGenerator {
     world: WorldManager | null
   ): Promise<void> {
     // Default: no decorations - override in subclasses
+  }
+
+  /**
+   * Generate decorations for a specific sub-chunk.
+   * Called from the main thread after worker generation is applied.
+   */
+  async generateSubChunkDecorations(
+    subChunk: ISubChunkData,
+    world: WorldManager
+  ): Promise<void> {
+    // Default: no-op - override in subclasses
   }
 
   /**
