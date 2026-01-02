@@ -363,6 +363,81 @@ export class SkylightPropagator {
     return changed
   }
 
+  /**
+   * Propagate light from a neighboring sub-chunk across their shared edge.
+   * Call this when a sub-chunk has edge light that should spread to neighbors.
+   *
+   * @param targetSubChunk The sub-chunk to update lighting in
+   * @param sourceSubChunk The sub-chunk providing light
+   * @param direction Which edge of target faces source: 'posX' | 'negX' | 'posZ' | 'negZ'
+   * @returns true if any light values changed
+   */
+  propagateFromNeighborSubChunk(
+    targetSubChunk: ISubChunkData,
+    sourceSubChunk: ISubChunkData,
+    direction: 'posX' | 'negX' | 'posZ' | 'negZ'
+  ): boolean {
+    const queue: LightNode[] = []
+    let changed = false
+
+    // Determine which edge to read from source and write to target
+    let sourceX: number, targetX: number
+    let sourceZ: number, targetZ: number
+
+    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
+      if (direction === 'posX' || direction === 'negX') {
+        // X-axis boundary
+        sourceX = direction === 'posX' ? 0 : CHUNK_SIZE_X - 1
+        targetX = direction === 'posX' ? CHUNK_SIZE_X - 1 : 0
+
+        for (let z = 0; z < CHUNK_SIZE_Z; z++) {
+          const sourceLight = sourceSubChunk.getSkylight(sourceX, y, z)
+          if (sourceLight > 0) {
+            const internalLight = sourceLight * LIGHT_SCALE
+            // Try to propagate into target
+            const targetLight = targetSubChunk.getSkylight(targetX, y, z)
+            const newInternalLight = internalLight - 1 // Decrease by 1 crossing boundary
+            const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+
+            if (newStoredLight > targetLight) {
+              targetSubChunk.setSkylight(targetX, y, z, newStoredLight)
+              queue.push({ x: targetX, y, z, level: newInternalLight })
+              changed = true
+            }
+          }
+        }
+      } else {
+        // Z-axis boundary
+        sourceZ = direction === 'posZ' ? 0 : CHUNK_SIZE_Z - 1
+        targetZ = direction === 'posZ' ? CHUNK_SIZE_Z - 1 : 0
+
+        for (let x = 0; x < CHUNK_SIZE_X; x++) {
+          const sourceLight = sourceSubChunk.getSkylight(x, y, sourceZ)
+          if (sourceLight > 0) {
+            const internalLight = sourceLight * LIGHT_SCALE
+            // Try to propagate into target
+            const targetLight = targetSubChunk.getSkylight(x, y, targetZ)
+            const newInternalLight = internalLight - 1 // Decrease by 1 crossing boundary
+            const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+
+            if (newStoredLight > targetLight) {
+              targetSubChunk.setSkylight(x, y, targetZ, newStoredLight)
+              queue.push({ x, y, z: targetZ, level: newInternalLight })
+              changed = true
+            }
+          }
+        }
+      }
+    }
+
+    // Propagate the edge light further into target sub-chunk
+    if (queue.length > 0) {
+      this.processSubChunkQueue(targetSubChunk, queue)
+    }
+
+    return changed
+  }
+
   // ============================================
   // Sub-Chunk Lighting Methods
   // ============================================
@@ -608,28 +683,53 @@ export class SkylightPropagator {
 
     if (wasBlockRemoved) {
       // Block was removed - light can now flow through this position
-      // Find the light level from above
+      // Find the maximum light level from any neighbor (all 6 directions)
       let incomingLight = 0
 
-      // Check if there's light from the sub-chunk above at this position
-      if (localSubY === SUB_CHUNK_HEIGHT - 1) {
-        // At top of sub-chunk, get light from sub-chunk above
-        const aboveSubChunk = column.getSubChunk(subY + 1)
-        if (aboveSubChunk) {
-          incomingLight = aboveSubChunk.getSkylight(localX, 0, localZ)
-        } else if (subY === 15) {
-          // Topmost sub-chunk, full sky light
-          incomingLight = 15
-        }
-      } else {
-        // Check light from block directly above in same sub-chunk
-        incomingLight = subChunk.getSkylight(localX, localSubY + 1, localZ)
-      }
-
-      // Also check if there's direct sky access by scanning up
+      // Check if there's direct sky access by scanning up
       const hasSkyAccess = SkylightPropagator.checkSubChunkSkyAccess(column, localX, localY, localZ)
       if (hasSkyAccess) {
         incomingLight = 15
+      } else {
+        // No sky access - find brightest neighbor and use that minus 1
+        // Check above
+        if (localSubY === SUB_CHUNK_HEIGHT - 1) {
+          const aboveSubChunk = column.getSubChunk(subY + 1)
+          if (aboveSubChunk) {
+            incomingLight = Math.max(incomingLight, aboveSubChunk.getSkylight(localX, 0, localZ))
+          }
+        } else {
+          incomingLight = Math.max(incomingLight, subChunk.getSkylight(localX, localSubY + 1, localZ))
+        }
+
+        // Check below
+        if (localSubY === 0) {
+          const belowSubChunk = column.getSubChunk(subY - 1)
+          if (belowSubChunk) {
+            incomingLight = Math.max(incomingLight, belowSubChunk.getSkylight(localX, SUB_CHUNK_HEIGHT - 1, localZ))
+          }
+        } else {
+          incomingLight = Math.max(incomingLight, subChunk.getSkylight(localX, localSubY - 1, localZ))
+        }
+
+        // Check horizontal neighbors (within same sub-chunk, clamped to bounds)
+        if (localX > 0) {
+          incomingLight = Math.max(incomingLight, subChunk.getSkylight(localX - 1, localSubY, localZ))
+        }
+        if (localX < CHUNK_SIZE_X - 1) {
+          incomingLight = Math.max(incomingLight, subChunk.getSkylight(localX + 1, localSubY, localZ))
+        }
+        if (localZ > 0) {
+          incomingLight = Math.max(incomingLight, subChunk.getSkylight(localX, localSubY, localZ - 1))
+        }
+        if (localZ < CHUNK_SIZE_Z - 1) {
+          incomingLight = Math.max(incomingLight, subChunk.getSkylight(localX, localSubY, localZ + 1))
+        }
+
+        // Apply attenuation (light decreases by 1 when passing through air)
+        if (incomingLight > 0) {
+          incomingLight = incomingLight - 1
+        }
       }
 
       // Set light at the removed block position

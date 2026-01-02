@@ -200,9 +200,9 @@ function processLightingRequest(request: LightingRequest): LightingResponse | Li
     for (const sc of sortedSubChunks) {
       const workerSubChunk = workerSubChunks.get(sc.subY)!
 
-      // Clear existing light data and recalculate
-      const lightData = workerSubChunk.getLightData()
-      lightData.fill(0)
+      // Don't clear existing light data - preserve correct values from initial generation
+      // The propagation will enhance/fix existing lighting rather than rebuilding from scratch
+      // This matches mining behavior and avoids losing light from neighboring chunks
 
       // Propagate skylight for this sub-chunk
       skylightPropagator.propagateSubChunk(workerSubChunk, aboveBoundaryLight)

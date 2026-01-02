@@ -15,6 +15,7 @@ import type {
   BlockChangeLightingRequest,
   SubChunkData,
 } from '../../workers/LightingWorker.ts'
+import { SkylightPropagator } from './SkylightPropagator.ts'
 
 export interface BackgroundLightingConfig {
   /** How many columns to process per update cycle (default: 1) */
@@ -48,6 +49,10 @@ export class BackgroundLightingManager {
   private readonly pendingColumns: Map<ChunkKey, ChunkColumn> = new Map()
   private readonly processedColumns: Map<ChunkKey, number> = new Map() // chunkKey -> timestamp
   private readonly columnQueue: ChunkKey[] = []
+
+  // Edge propagation queue - columns needing light from neighbors
+  private readonly edgePropagationQueue: Set<ChunkKey> = new Set()
+  private readonly skylightPropagator = new SkylightPropagator()
 
   // Player position for priority processing (in chunk coordinates)
   private playerChunkX = 0
@@ -247,6 +252,10 @@ export class BackgroundLightingManager {
   update(): void {
     if (!this.config.enabled) return
     if (!this.getColumn || !this.queueSubChunkForMeshing) return
+
+    // Process edge propagation first (spreads light across chunk borders)
+    this.processEdgePropagation()
+
     if (this.columnQueue.length === 0) return
 
     // Process up to columnsPerUpdate columns
@@ -314,28 +323,33 @@ export class BackgroundLightingManager {
         continue
       }
 
-      // Send to worker
-      this.sendColumnToWorker(column, key)
-      this.columnQueue.splice(randomIndex, 1)
-      processed++
+      // Send to worker - only remove from queue if successfully sent
+      if (this.sendColumnToWorker(column, key)) {
+        this.columnQueue.splice(randomIndex, 1)
+        processed++
+      } else {
+        // All workers busy - stop trying this frame, will retry next update
+        break
+      }
     }
   }
 
   /**
    * Send a column to the worker for lighting recalculation.
+   * @returns true if sent successfully, false if no worker available
    */
-  private sendColumnToWorker(column: ChunkColumn, key: ChunkKey): void {
+  private sendColumnToWorker(column: ChunkColumn, key: ChunkKey): boolean {
     const coord = column.coordinate
     const subChunks = this.serializeSubChunks(column)
 
     if (subChunks.length === 0) {
-      // No sub-chunks to process
-      return
+      // No sub-chunks to process - consider this "success" to remove from queue
+      return true
     }
 
     // Find an available worker first - don't mark as pending until we can actually send
     const workerIndex = this.getAvailableWorker()
-    if (workerIndex === -1) return // All workers busy, will retry next update
+    if (workerIndex === -1) return false // All workers busy, will retry next update
 
     // Notify listeners that lighting is starting for this column
     for (const callback of this.onColumnLightingStarted) {
@@ -354,6 +368,8 @@ export class BackgroundLightingManager {
     this.workerBusy[workerIndex] = true
     const transfers = subChunks.flatMap((sc) => [sc.blocks.buffer as ArrayBuffer, sc.lightData.buffer as ArrayBuffer])
     this.workers[workerIndex].postMessage(request, transfers)
+
+    return true
   }
 
   /**
@@ -418,6 +434,78 @@ export class BackgroundLightingManager {
       }
       for (const callback of this.onSubChunkLightingUpdated) {
         callback(coord)
+      }
+    }
+
+    // Queue neighbors for edge propagation to spread light across chunk borders
+    this.queueNeighborsForEdgePropagation(column.coordinate)
+  }
+
+  /**
+   * Queue neighboring columns for edge light propagation.
+   */
+  private queueNeighborsForEdgePropagation(coord: IChunkCoordinate): void {
+    const neighbors = [
+      createChunkKey(coord.x + 1n, coord.z),
+      createChunkKey(coord.x - 1n, coord.z),
+      createChunkKey(coord.x, coord.z + 1n),
+      createChunkKey(coord.x, coord.z - 1n),
+    ]
+    for (const neighborKey of neighbors) {
+      this.edgePropagationQueue.add(neighborKey)
+    }
+    // Also add the source column itself (it may receive light from neighbors)
+    this.edgePropagationQueue.add(createChunkKey(coord.x, coord.z))
+  }
+
+  /**
+   * Process edge propagation - spread light across chunk borders.
+   * Runs on main thread (fast, only processes edge blocks).
+   */
+  private processEdgePropagation(): void {
+    if (!this.getColumn || !this.queueSubChunkForMeshing) return
+    if (this.edgePropagationQueue.size === 0) return
+
+    // Process up to 5 columns per frame
+    const keysToProcess = Array.from(this.edgePropagationQueue).slice(0, 5)
+
+    for (const key of keysToProcess) {
+      this.edgePropagationQueue.delete(key)
+
+      // Parse the key to get coordinates
+      const [xStr, zStr] = key.split(',')
+      const coord: IChunkCoordinate = { x: BigInt(xStr), z: BigInt(zStr) }
+      const column = this.getColumn(coord)
+      if (!column) continue
+
+      // Get light from all 4 neighbors
+      const neighborDirs: Array<{ dx: bigint; dz: bigint; dir: 'posX' | 'negX' | 'posZ' | 'negZ' }> = [
+        { dx: 1n, dz: 0n, dir: 'negX' },  // neighbor at +X provides light from negX direction
+        { dx: -1n, dz: 0n, dir: 'posX' }, // neighbor at -X provides light from posX direction
+        { dx: 0n, dz: 1n, dir: 'negZ' },  // neighbor at +Z provides light from negZ direction
+        { dx: 0n, dz: -1n, dir: 'posZ' }, // neighbor at -Z provides light from posZ direction
+      ]
+
+      for (const { dx, dz, dir } of neighborDirs) {
+        const neighborCoord: IChunkCoordinate = { x: coord.x + dx, z: coord.z + dz }
+        const neighborColumn = this.getColumn(neighborCoord)
+        if (!neighborColumn) continue
+
+        // Propagate from neighbor to target for each sub-chunk
+        for (let subY = 0; subY < 16; subY++) {
+          const targetSub = column.getSubChunk(subY)
+          const sourceSub = neighborColumn.getSubChunk(subY)
+          if (!targetSub || !sourceSub) continue
+
+          const changed = this.skylightPropagator.propagateFromNeighborSubChunk(
+            targetSub,
+            sourceSub,
+            dir
+          )
+          if (changed) {
+            this.queueSubChunkForMeshing(targetSub)
+          }
+        }
       }
     }
   }
