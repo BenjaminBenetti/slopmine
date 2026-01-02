@@ -50,7 +50,12 @@ export class InventoryInputHandler implements InventoryInput {
       toolbarSlots: toolbarUI.slots,
       inventoryRoot: inventoryUI.panel,
       inventorySlots: inventoryUI.slots,
+      craftingRoot: inventoryUI.panel,
+      craftingSlots: inventoryUI.craftingSlots,
       onStateChanged: () => this.syncUI(),
+      onCraftingSlotsChanged: (items) => {
+        inventoryUI.updateCraftingRecipes(items)
+      },
     })
 
     document.addEventListener('pointerlockchange', this.onPointerLockChange)

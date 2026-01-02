@@ -27,6 +27,7 @@ import {
 } from './world/index.ts'
 import { WorldGenerator } from './world/generate/index.ts'
 import { GraphicsSettings } from './settings/index.ts'
+import { registerDefaultRecipes } from './items/registerDefaultRecipes.ts'
 import * as THREE from 'three'
 import {
   PhysicsEngine,
@@ -40,6 +41,9 @@ import {
 
 // Initialize world system
 registerDefaultBlocks()
+
+// Initialize crafting recipes
+registerDefaultRecipes()
 
 const renderer = new Renderer()
 

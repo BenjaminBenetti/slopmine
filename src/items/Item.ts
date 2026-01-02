@@ -1,3 +1,5 @@
+import type { IRecipe } from './IRecipe.ts'
+
 /**
  * Interface for all inventory items.
  */
@@ -7,6 +9,11 @@ export interface IItem {
   readonly displayName: string
   readonly maxStackSize: number
   readonly iconUrl?: string
+  /**
+   * Get the crafting recipe for this item, if any.
+   * @returns The recipe to craft this item, or null if not craftable.
+   */
+  getRecipe(): IRecipe | null
 }
 
 /**
@@ -36,6 +43,15 @@ export abstract class Item implements IItem {
    */
   get iconUrl(): string | undefined {
     return undefined
+  }
+
+  /**
+   * Get the crafting recipe for this item, if any.
+   * Override in subclasses to provide a recipe.
+   * @returns The recipe to craft this item, or null if not craftable.
+   */
+  getRecipe(): IRecipe | null {
+    return null
   }
 
   /**
