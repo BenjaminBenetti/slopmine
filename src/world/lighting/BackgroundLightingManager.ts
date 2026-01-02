@@ -502,6 +502,9 @@ export class BackgroundLightingManager {
       const column = this.getColumn(coord)
       if (!column) continue
 
+      // Track if any light changed in this column
+      let columnChanged = false
+
       // Get light from all 4 neighbors
       const neighborDirs: Array<{ dx: bigint; dz: bigint; dir: 'posX' | 'negX' | 'posZ' | 'negZ' }> = [
         { dx: 1n, dz: 0n, dir: 'negX' },  // neighbor at +X provides light from negX direction
@@ -528,8 +531,15 @@ export class BackgroundLightingManager {
           )
           if (changed) {
             this.queueSubChunkForMeshing(targetSub)
+            columnChanged = true
           }
         }
+      }
+
+      // If light changed in this column, queue its neighbors for further propagation
+      // This allows light to flow across multiple chunk boundaries
+      if (columnChanged) {
+        this.queueNeighborsForEdgePropagation(coord)
       }
     }
   }
