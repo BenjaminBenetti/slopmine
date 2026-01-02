@@ -12,6 +12,7 @@ import { ToolbarInputHandler } from './player/ToolbarInput.ts'
 import { InventoryInputHandler } from './player/InventoryInput.ts'
 import { SettingsInputHandler } from './player/SettingsInput.ts'
 import { BlockInteraction } from './player/BlockInteraction.ts'
+import { BlockPlacement } from './player/BlockPlacement.ts'
 import { createCrosshairUI } from './ui/Crosshair.ts'
 import { createToolbarUI } from './ui/Toolbar.ts'
 import { createInventoryUI } from './ui/Inventory.ts'
@@ -216,6 +217,21 @@ const blockInteraction = new BlockInteraction(
   }
 )
 
+// Block placement system (right-click to place blocks)
+const blockPlacement = new BlockPlacement(
+  renderer.camera,
+  world,
+  playerState,
+  playerBody,
+  renderer.renderer.domElement,
+  {
+    onBlockPlaced: () => {
+      toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
+      updateHeldItem() // Update held item when inventory changes
+    },
+  }
+)
+
 let frameCpuStart = 0
 let lastTickCount = 0
 let lastFrameTime = 0
@@ -242,8 +258,9 @@ const gameLoop = new GameLoop({
     // Keep skybox centered on camera so player can never leave it
     skybox.update(renderer.camera)
 
-    // Update held item (walking bob + selection change detection)
+    // Update held item (walking bob + mining swing + selection change detection)
     heldItemRenderer.setWalking(cameraControls.isWalking())
+    heldItemRenderer.setMining(blockInteraction.isMining())
     if (playerState.inventory.toolbar.selectedIndex !== lastSelectedIndex) {
       lastSelectedIndex = playerState.inventory.toolbar.selectedIndex
       updateHeldItem()

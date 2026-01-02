@@ -504,7 +504,7 @@ export class SkylightPropagator {
   /**
    * BFS flood-fill to spread light horizontally into caves within a sub-chunk.
    */
-  private spreadSubChunkLight(subChunk: ISubChunkData): void {
+  spreadSubChunkLight(subChunk: ISubChunkData): void {
     const queue: LightNode[] = []
 
     // Find all light sources that can spread
@@ -627,7 +627,7 @@ export class SkylightPropagator {
       }
 
       // Also check if there's direct sky access by scanning up
-      const hasSkyAccess = this.checkSubChunkSkyAccess(column, localX, localY, localZ)
+      const hasSkyAccess = SkylightPropagator.checkSubChunkSkyAccess(column, localX, localY, localZ)
       if (hasSkyAccess) {
         incomingLight = 15
       }
@@ -661,8 +661,9 @@ export class SkylightPropagator {
 
   /**
    * Check if a position has direct sky access through the sub-chunk column.
+   * This is a static method so it can be called from both main thread and workers.
    */
-  private checkSubChunkSkyAccess(
+  static checkSubChunkSkyAccess(
     column: { getSubChunk(subY: number): ISubChunkData | null },
     localX: number,
     localY: number,

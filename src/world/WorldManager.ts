@@ -20,7 +20,6 @@ import type {
   SubChunkGenerationError,
   WorkerBiomeConfig,
 } from '../workers/ChunkGenerationWorker.ts'
-import { SkylightPropagator } from './lighting/SkylightPropagator.ts'
 import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
 
 /**
@@ -48,10 +47,7 @@ export class WorldManager {
   // Heightmap cache for horizon culling
   private heightmapCache: HeightmapCache | null = null
 
-  // Skylight propagator for dynamic light updates
-  private readonly skylightPropagator = new SkylightPropagator()
-
-  // Background lighting manager for correcting generation lighting errors
+  // Background lighting manager for all lighting updates (generation and block changes)
   private readonly backgroundLightingManager: BackgroundLightingManager
 
   // Web Worker pool for chunk generation (terrain, caves, lighting)
@@ -500,10 +496,8 @@ export class WorldManager {
    * Get background lighting statistics for debug display.
    */
   getBackgroundLightingStats(): {
-    waitingCount: number
-    pendingCount: number
-    processedCount: number
-    enabled: boolean
+    queued: number
+    processing: number
   } {
     return this.backgroundLightingManager.getStats()
   }
@@ -578,15 +572,6 @@ export class WorldManager {
 
     const changed = column.setBlockId(local.x, local.y, local.z, blockId)
     if (changed) {
-      // Update lighting for this block change
-      const affectedSubChunks = this.skylightPropagator.updateSubChunkLightingAt(
-        column,
-        local.x,
-        local.y,
-        local.z,
-        wasBlockRemoved
-      )
-
       // Find the affected sub-chunk and queue for remeshing
       const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
       const subChunk = column.getSubChunk(subY)
@@ -594,15 +579,14 @@ export class WorldManager {
         this.queueSubChunkForMeshing(subChunk)
       }
 
-      // Queue any additional sub-chunks affected by lighting changes
-      for (const affectedSubY of affectedSubChunks) {
-        if (affectedSubY !== subY) {
-          const affectedSubChunk = column.getSubChunk(affectedSubY)
-          if (affectedSubChunk) {
-            this.queueSubChunkForMeshing(affectedSubChunk)
-          }
-        }
-      }
+      // Queue lighting update to worker - will remesh affected sub-chunks via callback
+      this.backgroundLightingManager.queueBlockChange(
+        column,
+        local.x,
+        local.y,
+        local.z,
+        wasBlockRemoved
+      )
 
       // Mark horizontal neighbor sub-chunks dirty if on chunk edge
       this.markSubChunkNeighborsDirtyIfEdge(chunkCoord, local.x, local.z, subY)

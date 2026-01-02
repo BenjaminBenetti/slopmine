@@ -122,6 +122,15 @@ export class BlockInteraction {
   }
 
   /**
+   * Check if the player is performing a mining action (left mouse down).
+   * Returns true when left mouse is down and pointer is locked,
+   * regardless of whether a block is being targeted.
+   */
+  isMining(): boolean {
+    return this.isMouseDown && document.pointerLockElement === this.domElement
+  }
+
+  /**
    * Clean up resources.
    */
   dispose(): void {

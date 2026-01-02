@@ -11,10 +11,8 @@ export interface FrameMetrics {
 }
 
 export interface LightingStats {
-  waitingCount: number
-  pendingCount: number
-  processedCount: number
-  enabled: boolean
+  queued: number
+  processing: number
 }
 
 export interface FpsCounterUI {
@@ -107,12 +105,7 @@ export function createFpsCounterUI(
           lines.push(`Render: ${renderWidth}x${renderHeight}`)
         }
         if (lightingStats) {
-          const status = lightingStats.enabled ? 'ON' : 'OFF'
-          lines.push(`== Light Flood ==`)
-          lines.push(`  waiting: ${lightingStats.waitingCount}`)
-          lines.push(`  pending: ${lightingStats.pendingCount}`)
-          lines.push(`  done: ${lightingStats.processedCount}`)
-          lines.push(`  status: ${status}`)
+          lines.push(`Light: ${lightingStats.queued} queued, ${lightingStats.processing} active`)
         }
         el.innerHTML = lines.join('<br>')
 

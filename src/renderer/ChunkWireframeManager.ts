@@ -24,6 +24,10 @@ export class ChunkWireframeManager {
   // Track columns being lit (chunkKey -> expiry timestamp)
   private readonly lightingHighlights: Map<ChunkKey, number> = new Map()
 
+  // Frame counter for throttling color updates
+  private frameCount = 0
+  private readonly UPDATE_INTERVAL = 60
+
   constructor(scene: THREE.Scene) {
     this.scene = scene
 
@@ -162,6 +166,11 @@ export class ChunkWireframeManager {
    */
   updateColors(chunkMeshes: Iterable<ChunkMesh>): void {
     if (!this.visible) return
+
+    // Only update every N frames
+    this.frameCount++
+    if (this.frameCount < this.UPDATE_INTERVAL) return
+    this.frameCount = 0
 
     const now = performance.now()
 

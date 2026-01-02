@@ -23,6 +23,30 @@ const DEFAULT_CONFIG: HeldItemRendererConfig = {
 }
 
 /**
+ * Swing animation configuration
+ */
+interface SwingAnimationConfig {
+  /** Duration of one complete swing cycle in seconds */
+  duration: number
+  /** Forward/backward arc amplitude */
+  forwardAmplitude: number
+  /** Up/down arc amplitude */
+  verticalAmplitude: number
+  /** Rotation amplitude in radians */
+  rotationAmplitude: number
+  /** Speed to return to idle position when mining stops */
+  returnSpeed: number
+}
+
+const SWING_CONFIG: SwingAnimationConfig = {
+  duration: 0.35,
+  forwardAmplitude: 0.04,
+  verticalAmplitude: 0.03,
+  rotationAmplitude: Math.PI / 16,
+  returnSpeed: 10,
+}
+
+/**
  * Determines the type of item for rendering purposes.
  */
 function isBlockItem(item: IItem): boolean {
@@ -45,6 +69,16 @@ export class HeldItemRenderer {
 
   private isWalking = false
   private bobPhase = 0
+
+  // Swing animation state
+  private isMining = false
+  private swingPhase = 0
+  /** Stores the current swing offset applied to position */
+  private readonly swingOffset = new THREE.Vector3()
+  /** Stores the current swing rotation applied to mesh */
+  private readonly swingRotation = new THREE.Euler()
+  /** Base rotation of the mesh (saved when setting item) */
+  private readonly baseRotation = new THREE.Euler()
 
   private readonly config: HeldItemRendererConfig
   private readonly basePosition: THREE.Vector3
@@ -114,6 +148,14 @@ export class HeldItemRenderer {
   }
 
   /**
+   * Set whether the player is currently mining.
+   * Controls the swing animation.
+   */
+  setMining(mining: boolean): void {
+    this.isMining = mining
+  }
+
+  /**
    * Set the currently held item.
    * Updates the rendered mesh accordingly.
    */
@@ -144,44 +186,124 @@ export class HeldItemRenderer {
     // Position mesh
     mesh.position.copy(this.basePosition)
 
+    // Save base rotation for swing animation to layer on top
+    this.baseRotation.copy(mesh.rotation)
+
     this.currentMesh = mesh
     this.overlayScene.add(mesh)
 
-    // Reset bob phase when switching items
+    // Reset animation phases when switching items
     this.bobPhase = 0
+    this.swingPhase = 0
+    this.swingOffset.set(0, 0, 0)
+    this.swingRotation.set(0, 0, 0)
   }
 
   /**
-   * Update animation (walking bob).
+   * Update animation (walking bob + mining swing).
    */
   update(deltaTime: number): void {
     if (!this.currentMesh) return
+
+    // Calculate bob offset
+    let bobX = 0
+    let bobY = 0
 
     if (this.isWalking) {
       // Advance bob phase
       this.bobPhase += deltaTime * this.config.bobFrequency * Math.PI * 2
 
       // Calculate bob offset (up/down sinusoidal motion)
-      const bobY = Math.sin(this.bobPhase) * this.config.bobAmplitude
+      bobY = Math.sin(this.bobPhase) * this.config.bobAmplitude
 
       // Also add slight horizontal sway
-      const bobX = Math.sin(this.bobPhase * 0.5) * this.config.bobAmplitude * 0.3
-
-      this.currentMesh.position.set(
-        this.basePosition.x + bobX,
-        this.basePosition.y + bobY,
-        this.basePosition.z
-      )
+      bobX = Math.sin(this.bobPhase * 0.5) * this.config.bobAmplitude * 0.3
     } else {
-      // Not walking - smoothly return to rest position
-      this.currentMesh.position.lerp(this.basePosition, deltaTime * 10)
-
       // Decay bob phase for smooth stop
       if (this.bobPhase > 0) {
         this.bobPhase *= 0.9
         if (this.bobPhase < 0.01) {
           this.bobPhase = 0
         }
+      }
+    }
+
+    // Update swing animation
+    this.updateSwingAnimation(deltaTime)
+
+    // Compose final position: base + bob + swing
+    this.currentMesh.position.set(
+      this.basePosition.x + bobX + this.swingOffset.x,
+      this.basePosition.y + bobY + this.swingOffset.y,
+      this.basePosition.z + this.swingOffset.z
+    )
+
+    // Compose final rotation: base + swing rotation
+    this.currentMesh.rotation.set(
+      this.baseRotation.x + this.swingRotation.x,
+      this.baseRotation.y + this.swingRotation.y,
+      this.baseRotation.z + this.swingRotation.z
+    )
+  }
+
+  /**
+   * Update the swing animation state.
+   */
+  private updateSwingAnimation(deltaTime: number): void {
+    if (this.isMining) {
+      // Advance swing phase (loops continuously)
+      const swingSpeed = (1 / SWING_CONFIG.duration) * Math.PI * 2
+      this.swingPhase += deltaTime * swingSpeed
+
+      // Keep phase in [0, 2π] range to prevent float overflow
+      if (this.swingPhase > Math.PI * 2) {
+        this.swingPhase -= Math.PI * 2
+      }
+
+      // Calculate swing using a smooth arc motion
+      // Phase 0 -> π: swing forward and down (striking)
+      // Phase π -> 2π: return back up (recovery)
+      const t = this.swingPhase
+
+      // Forward/backward motion (z-axis): moves toward target then back
+      // Uses a modified sine that peaks at the strike point
+      const forwardProgress = Math.sin(t)
+      this.swingOffset.z = forwardProgress * SWING_CONFIG.forwardAmplitude
+
+      // Vertical arc motion (y-axis): slight downward arc during strike
+      // Negative sine so it goes down during the forward swing
+      const verticalProgress = -Math.sin(t) * Math.abs(Math.sin(t * 0.5))
+      this.swingOffset.y = verticalProgress * SWING_CONFIG.verticalAmplitude
+
+      // Slight horizontal shift during swing for more natural motion
+      this.swingOffset.x = Math.sin(t * 0.5) * 0.01
+
+      // Rotation: tilt the item as if striking
+      // X rotation: pitch forward during strike
+      this.swingRotation.x = Math.sin(t) * SWING_CONFIG.rotationAmplitude
+
+      // Z rotation: slight roll for natural wrist motion
+      this.swingRotation.z = Math.sin(t * 0.5) * (SWING_CONFIG.rotationAmplitude * 0.3)
+    } else {
+      // Not mining - smoothly return to idle
+      const returnFactor = 1 - Math.exp(-deltaTime * SWING_CONFIG.returnSpeed)
+
+      // Lerp offset back to zero
+      this.swingOffset.x *= 1 - returnFactor
+      this.swingOffset.y *= 1 - returnFactor
+      this.swingOffset.z *= 1 - returnFactor
+
+      // Lerp rotation back to zero
+      this.swingRotation.x *= 1 - returnFactor
+      this.swingRotation.y *= 1 - returnFactor
+      this.swingRotation.z *= 1 - returnFactor
+
+      // Reset phase when values are near zero
+      const offsetMagnitude = this.swingOffset.length()
+      if (offsetMagnitude < 0.001) {
+        this.swingOffset.set(0, 0, 0)
+        this.swingRotation.set(0, 0, 0)
+        this.swingPhase = 0
       }
     }
   }
