@@ -14,6 +14,7 @@ export class SubChunk {
 
   private _state: ChunkState = ChunkState.UNLOADED
   private _dirty = false
+  private _isFullyOpaque = false
 
   /**
    * Block data stored as flat Uint16Array.
@@ -222,6 +223,29 @@ export class SubChunk {
       }
     }
     return true
+  }
+
+  /**
+   * Whether this sub-chunk is fully opaque (all blocks are opaque).
+   * Used for software occlusion culling - fully opaque sub-chunks can act as occluders.
+   */
+  get isFullyOpaque(): boolean {
+    return this._isFullyOpaque
+  }
+
+  /**
+   * Compute whether this sub-chunk is fully opaque.
+   * Call after generation or when blocks are modified.
+   * @param opaqueBlockIds Set of block IDs that are opaque
+   */
+  computeOpacity(opaqueBlockIds: Set<number>): void {
+    this._isFullyOpaque = true
+    for (let i = 0; i < SUB_CHUNK_VOLUME; i++) {
+      if (!opaqueBlockIds.has(this.blocks[i])) {
+        this._isFullyOpaque = false
+        return
+      }
+    }
   }
 
   /**

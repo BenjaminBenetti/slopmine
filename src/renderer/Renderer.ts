@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { FrustumCuller } from './FrustumCuller.ts'
-import { AsyncHorizonCuller } from './AsyncHorizonCuller.ts'
+import { SoftwareOcclusionCuller, type SoftwareOcclusionStats } from './SoftwareOcclusionCuller.ts'
 import type { ChunkMesh } from './ChunkMesh.ts'
-import type { HeightmapCache } from './HeightmapCache.ts'
+import type { SubChunkOpacityCache } from './SubChunkOpacityCache.ts'
 import type { GraphicsSettings, ResolutionPreset } from '../settings/index.ts'
 
 const RESOLUTION_PRESETS: Record<Exclude<ResolutionPreset, 'native'>, { width: number; height: number }> = {
@@ -17,9 +17,9 @@ export class Renderer {
   readonly scene: THREE.Scene
   readonly camera: THREE.PerspectiveCamera
   private readonly frustumCuller = new FrustumCuller()
-  private readonly horizonCuller = new AsyncHorizonCuller()
+  private readonly softwareOcclusionCuller = new SoftwareOcclusionCuller()
   private chunkMeshSource: (() => Iterable<ChunkMesh>) | null = null
-  private heightmapCache: HeightmapCache | null = null
+  private opacityCache: SubChunkOpacityCache | null = null
   private graphicsSettings: GraphicsSettings | null = null
   private currentResolutionPreset: ResolutionPreset = 'native'
 
@@ -107,10 +107,17 @@ export class Renderer {
   }
 
   /**
-   * Set the heightmap cache for horizon culling.
+   * Set the opacity cache for software occlusion culling.
    */
-  setHeightmapCache(cache: HeightmapCache): void {
-    this.heightmapCache = cache
+  setOpacityCache(cache: SubChunkOpacityCache): void {
+    this.opacityCache = cache
+  }
+
+  /**
+   * Get the latest software occlusion culling statistics.
+   */
+  getOcclusionStats(): SoftwareOcclusionStats {
+    return this.softwareOcclusionCuller.getStats()
   }
 
   /**
@@ -129,9 +136,13 @@ export class Renderer {
         // Step 1: Frustum culling
         this.frustumCuller.updateVisibility(this.camera, this.chunkMeshSource())
 
-        // Step 2: Horizon culling (only chunks that passed frustum culling)
-        if (this.heightmapCache) {
-          this.horizonCuller.updateVisibility(this.camera, this.chunkMeshSource(), this.heightmapCache)
+        // Step 2: Software occlusion culling (only sub-chunks that passed frustum culling)
+        if (this.opacityCache) {
+          this.softwareOcclusionCuller.updateVisibility(
+            this.camera,
+            this.chunkMeshSource(),
+            this.opacityCache
+          )
         }
       } else {
         // Culling disabled - make all chunks visible
@@ -145,7 +156,7 @@ export class Renderer {
 
   dispose(): void {
     window.removeEventListener('resize', this.onResize)
-    this.horizonCuller.dispose()
+    this.softwareOcclusionCuller.dispose()
     this.renderer.dispose()
   }
 }

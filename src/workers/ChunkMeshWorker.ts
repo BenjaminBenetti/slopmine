@@ -3,11 +3,7 @@
  * Offloads expensive visibility calculations from the main thread.
  */
 
-// Chunk constants (duplicated to avoid import issues in worker)
-const CHUNK_SIZE_X = 32
-const CHUNK_SIZE_Z = 32
-const CHUNK_HEIGHT = 1024
-const SUB_CHUNK_HEIGHT = 64
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 
 // Block ID for air (invisible)
 const AIR = 0

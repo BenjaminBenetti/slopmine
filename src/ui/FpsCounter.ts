@@ -15,12 +15,19 @@ export interface LightingStats {
   processing: number
 }
 
+export interface OcclusionStats {
+  occluderCount: number
+  candidateCount: number
+  occludedCount: number
+}
+
 export interface FpsCounterUI {
   readonly element: HTMLDivElement
   update(metrics: FrameMetrics): void
   setRenderResolution(width: number, height: number): void
   setPlayerPosition(x: number, y: number, z: number): void
   setLightingStats(stats: LightingStats): void
+  setOcclusionStats(stats: OcclusionStats): void
   show(): void
   hide(): void
   toggle(): boolean
@@ -70,6 +77,7 @@ export function createFpsCounterUI(
   let playerY = 0
   let playerZ = 0
   let lightingStats: LightingStats | null = null
+  let occlusionStats: OcclusionStats | null = null
 
   // Target frame budget for 60 FPS
   const frameBudgetMs = 16.67
@@ -107,6 +115,11 @@ export function createFpsCounterUI(
         if (lightingStats) {
           lines.push(`Light: ${lightingStats.queued} queued, ${lightingStats.processing} active`)
         }
+        if (occlusionStats && occlusionStats.candidateCount > 0) {
+          const cullPercent = Math.round((occlusionStats.occludedCount / occlusionStats.candidateCount) * 100)
+          lines.push(`Occlusion: ${occlusionStats.occludedCount}/${occlusionStats.candidateCount} culled (${cullPercent}%)`)
+          lines.push(`Occluders: ${occlusionStats.occluderCount}`)
+        }
         el.innerHTML = lines.join('<br>')
 
         frameCount = 0
@@ -129,6 +142,10 @@ export function createFpsCounterUI(
 
     setLightingStats(stats: LightingStats): void {
       lightingStats = stats
+    },
+
+    setOcclusionStats(stats: OcclusionStats): void {
+      occlusionStats = stats
     },
 
     show(): void {

@@ -1,6 +1,6 @@
 import { GameLoop } from './core/GameLoop.ts'
 import { Renderer } from './renderer/Renderer.ts'
-import { HeightmapCache } from './renderer/HeightmapCache.ts'
+import { SubChunkOpacityCache } from './renderer/SubChunkOpacityCache.ts'
 import { WorldLighting } from './renderer/WorldLighting.ts'
 import { Skybox } from './renderer/skybox/Skybox.ts'
 import { HeldItemRenderer } from './renderer/helditem/index.ts'
@@ -18,6 +18,7 @@ import { createToolbarUI } from './ui/Toolbar.ts'
 import { createInventoryUI } from './ui/Inventory.ts'
 import { createSettingsMenuUI } from './ui/SettingsMenu.ts'
 import { createFpsCounterUI } from './ui/FpsCounter.ts'
+import { createLoadingScreenUI } from './ui/LoadingScreen.ts'
 import { ChunkWireframeManager } from './renderer/ChunkWireframeManager.ts'
 import { DebugManager } from './ui/DebugManager.ts'
 import {
@@ -49,13 +50,21 @@ renderer.setGraphicsSettings(graphicsSettings)
 // Player state (including toolbar/inventory)
 const playerState = new PlayerState(10)
 
+// Loading screen (shown until initial chunks are generated)
+const loadingScreen = createLoadingScreenUI()
+let isLoading = true
+let requiredChunks = 64 // Will be recalculated based on chunkDistance
+
 // UI overlays (crosshair + hotbar + FPS counter) rendered above the canvas
-createCrosshairUI()
+const crosshair = createCrosshairUI()
+crosshair.element.style.display = 'none' // Hidden during loading
 const fpsCounter = createFpsCounterUI()
+fpsCounter.element.style.display = 'none' // Hidden during loading
 
 const toolbarUI = createToolbarUI(undefined, {
 	  slotCount: playerState.inventory.toolbar.size,
 })
+toolbarUI.root.style.display = 'none' // Hidden during loading
 
 const inventoryUI = createInventoryUI(undefined, {
   columns: playerState.inventory.inventory.width,
@@ -94,6 +103,11 @@ toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
 // Create world with terrain generation
 const world = new WorldManager()
 const worldGenerator = new WorldGenerator(world)
+
+// Calculate required chunks for loading (25% of total chunks for current distance)
+const chunkDistance = worldGenerator.getConfig().chunkDistance
+const totalChunks = (2 * chunkDistance + 1) ** 2
+requiredChunks = Math.floor(totalChunks * 0.25)
 
 // Settings menu UI (settingsInput is created later after gameLoop)
 const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSettings, document.body, {
@@ -168,10 +182,10 @@ window.addEventListener('keydown', (event) => {
   }
 })
 
-// Create heightmap cache for horizon culling
-const heightmapCache = new HeightmapCache()
-world.setHeightmapCache(heightmapCache)
-renderer.setHeightmapCache(heightmapCache)
+// Create opacity cache for software occlusion culling
+const opacityCache = new SubChunkOpacityCache()
+world.setOpacityCache(opacityCache)
+renderer.setOpacityCache(opacityCache)
 
 // Connect chunk meshes to renderer for frustum culling
 renderer.setChunkMeshSource(() => world.getChunkMeshes())
@@ -236,9 +250,40 @@ let frameCpuStart = 0
 let lastTickCount = 0
 let lastFrameTime = 0
 
+/**
+ * Transition from loading to playing state.
+ * Shows UI elements and enables player controls.
+ */
+function finishLoading(): void {
+  isLoading = false
+  loadingScreen.hide()
+  crosshair.element.style.display = ''
+  fpsCounter.element.style.display = ''
+  toolbarUI.root.style.display = 'flex'
+}
+
 const gameLoop = new GameLoop({
   update(deltaTime: number) {
     frameCpuStart = performance.now()
+
+    // During loading, only update world generation
+    if (isLoading) {
+      // Update world generation from spawn position
+      worldGenerator.update(spawnPosition.x, spawnPosition.z, spawnPosition.y)
+      world.update(spawnPosition.x, spawnPosition.z)
+
+      // Update loading progress
+      const chunksLoaded = worldGenerator.getGeneratedChunkColumnCount()
+      loadingScreen.setProgress(chunksLoaded, requiredChunks)
+
+      // Check if we have enough chunks to spawn
+      if (chunksLoaded >= requiredChunks) {
+        finishLoading()
+      }
+      return
+    }
+
+    // Normal gameplay updates
     cameraControls.update(deltaTime)
     physicsEngine.update(deltaTime)
     blockInteraction.update(deltaTime)
@@ -279,6 +324,7 @@ const gameLoop = new GameLoop({
     fpsCounter.setRenderResolution(renderRes.width, renderRes.height)
     fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
     fpsCounter.setLightingStats(world.getBackgroundLightingStats())
+    fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
     fpsCounter.update({
       deltaTime: lastFrameTime / 1000,
       cpuTime,

@@ -239,6 +239,20 @@ export class WorldGenerator {
   }
 
   /**
+   * Get the number of unique chunk columns that have at least one generated sub-chunk.
+   */
+  getGeneratedChunkColumnCount(): number {
+    const columns = new Set<string>()
+    for (const key of this.generatedSubChunks) {
+      // SubChunkKey format is "x,z,subY" - extract "x,z" as column key
+      const lastComma = key.lastIndexOf(',')
+      const columnKey = key.substring(0, lastComma)
+      columns.add(columnKey)
+    }
+    return columns.size
+  }
+
+  /**
    * Calculate 3D priority for a sub-chunk based on distance from player.
    * Prioritizes sub-chunks near the player's Y position.
    */

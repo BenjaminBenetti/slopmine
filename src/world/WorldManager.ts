@@ -9,7 +9,7 @@ import { Chunk } from './chunks/Chunk.ts'
 import { BlockIds } from './blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState, SUB_CHUNK_VOLUME } from './interfaces/IChunk.ts'
 import { ChunkMesh } from '../renderer/ChunkMesh.ts'
-import type { HeightmapCache } from '../renderer/HeightmapCache.ts'
+import type { SubChunkOpacityCache } from '../renderer/SubChunkOpacityCache.ts'
 import ChunkMeshWorker from '../workers/ChunkMeshWorker.ts?worker'
 import type { SubChunkMeshRequest, SubChunkMeshResponse } from '../workers/ChunkMeshWorker.ts'
 import { SubChunk } from './chunks/SubChunk.ts'
@@ -43,9 +43,10 @@ export class WorldManager {
 
   // Cache of opaque block IDs for worker visibility checks
   private opaqueBlockIds: number[] = []
+  private opaqueBlockIdSet: Set<number> = new Set()
 
-  // Heightmap cache for horizon culling
-  private heightmapCache: HeightmapCache | null = null
+  // Opacity cache for software occlusion culling
+  private opacityCache: SubChunkOpacityCache | null = null
 
   // Background lighting manager for all lighting updates (generation and block changes)
   private readonly backgroundLightingManager: BackgroundLightingManager
@@ -86,13 +87,21 @@ export class WorldManager {
     this.opaqueBlockIds = this.blockRegistry
       .getAllBlockIds()
       .filter((id) => getBlock(id).properties.isOpaque)
+    this.opaqueBlockIdSet = new Set(this.opaqueBlockIds)
   }
 
   /**
-   * Set the heightmap cache for horizon culling updates.
+   * Set the opacity cache for software occlusion culling.
    */
-  setHeightmapCache(cache: HeightmapCache): void {
-    this.heightmapCache = cache
+  setOpacityCache(cache: SubChunkOpacityCache): void {
+    this.opacityCache = cache
+  }
+
+  /**
+   * Get the opacity cache for external access.
+   */
+  getOpacityCache(): SubChunkOpacityCache | null {
+    return this.opacityCache
   }
 
   /**
@@ -217,6 +226,12 @@ export class WorldManager {
 
     // Apply the block and light data
     subChunk.applyWorkerData(blocks, lightData)
+
+    // Compute opacity for software occlusion culling
+    subChunk.computeOpacity(this.opaqueBlockIdSet)
+    if (this.opacityCache) {
+      this.opacityCache.updateSubChunk(coordinate, subChunk.isFullyOpaque)
+    }
 
     // Register the sub-chunk with the manager for fast lookups
     this.chunkManager.registerSubChunk(subChunk)
@@ -511,8 +526,10 @@ export class WorldManager {
 
   /**
    * Remove a sub-chunk mesh.
+   * @param subChunkKey The key of the sub-chunk to remove
+   * @param isUnloading If true, also removes from opacity cache (only for actual unloads, not mesh updates)
    */
-  private removeSubChunkMesh(subChunkKey: SubChunkKey): void {
+  private removeSubChunkMesh(subChunkKey: SubChunkKey, isUnloading: boolean = false): void {
     const chunkMesh = this.subChunkMeshes.get(subChunkKey)
     if (chunkMesh && this.scene) {
       // Notify listeners before removal
@@ -525,6 +542,11 @@ export class WorldManager {
       chunkMesh.dispose()
     }
     this.subChunkMeshes.delete(subChunkKey)
+
+    // Only remove from opacity cache during actual unloads, not mesh updates
+    if (isUnloading && this.opacityCache) {
+      this.opacityCache.removeSubChunkByKey(subChunkKey)
+    }
   }
 
   /**
@@ -777,13 +799,7 @@ export class WorldManager {
     // Remove all sub-chunk meshes for this column
     for (let subY = 0; subY < 16; subY++) {
       const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, subY)
-      this.removeSubChunkMesh(subChunkKey)
-    }
-
-    // Remove from heightmap cache
-    const chunkKey = createChunkKey(coordinate.x, coordinate.z)
-    if (this.heightmapCache) {
-      this.heightmapCache.removeChunk(chunkKey)
+      this.removeSubChunkMesh(subChunkKey, true) // true = isUnloading, also clears opacity cache
     }
 
     // Remove from background lighting queue
