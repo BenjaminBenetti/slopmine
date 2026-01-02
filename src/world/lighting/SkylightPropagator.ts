@@ -751,8 +751,12 @@ export class SkylightPropagator {
         subChunk.setSkylight(localX, localSubY, localZ, 0)
         affectedSubChunks.add(subY)
 
-        // Propagate darkness down
+        // Propagate darkness down, then recalculate from neighbors
         this.propagateSubChunkDarknessDown(column, localX, localZ, localY, affectedSubChunks)
+
+        // Re-spread light from neighbors to blocks that were darkened
+        // Start from one block below the placed block
+        this.recalculateLightFromNeighbors(column, localX, localY - 1, localZ, affectedSubChunks)
       }
     }
 
@@ -904,8 +908,66 @@ export class SkylightPropagator {
         }
       }
     }
+  }
 
-    // TODO: Re-spread light from neighbors to fix over-darkening
+  /**
+   * Recalculate light from neighbors for blocks that were darkened.
+   * Called after darkness propagation to restore light from horizontal sources.
+   */
+  private recalculateLightFromNeighbors(
+    column: { getSubChunk(subY: number): ISubChunkData | null },
+    localX: number,
+    startY: number,
+    localZ: number,
+    affectedSubChunks: Set<number>
+  ): void {
+    if (startY < 0) return
+
+    const startSubY = Math.floor(startY / SUB_CHUNK_HEIGHT)
+
+    // Scan down through the darkened column and recalculate light from neighbors
+    for (let subY = startSubY; subY >= 0; subY--) {
+      const subChunk = column.getSubChunk(subY)
+      if (!subChunk) break
+
+      const startLocalY = subY === startSubY ? (startY % SUB_CHUNK_HEIGHT) : SUB_CHUNK_HEIGHT - 1
+
+      for (let y = startLocalY; y >= 0; y--) {
+        const blockId = subChunk.getBlockId(localX, y, localZ)
+
+        // If we hit an opaque block, stop
+        if (blockId !== BlockIds.AIR) {
+          const block = getBlock(blockId)
+          if (block.properties.lightBlocking >= 15) return
+        }
+
+        // Find maximum light from horizontal neighbors
+        let maxNeighborLight = 0
+
+        if (localX > 0) {
+          maxNeighborLight = Math.max(maxNeighborLight, subChunk.getSkylight(localX - 1, y, localZ))
+        }
+        if (localX < CHUNK_SIZE_X - 1) {
+          maxNeighborLight = Math.max(maxNeighborLight, subChunk.getSkylight(localX + 1, y, localZ))
+        }
+        if (localZ > 0) {
+          maxNeighborLight = Math.max(maxNeighborLight, subChunk.getSkylight(localX, y, localZ - 1))
+        }
+        if (localZ < CHUNK_SIZE_Z - 1) {
+          maxNeighborLight = Math.max(maxNeighborLight, subChunk.getSkylight(localX, y, localZ + 1))
+        }
+
+        // Apply light with attenuation
+        if (maxNeighborLight > 1) {
+          const newLight = maxNeighborLight - 1
+          const currentLight = subChunk.getSkylight(localX, y, localZ)
+          if (newLight > currentLight) {
+            subChunk.setSkylight(localX, y, localZ, newLight)
+            affectedSubChunks.add(subY)
+          }
+        }
+      }
+    }
   }
 
   /**

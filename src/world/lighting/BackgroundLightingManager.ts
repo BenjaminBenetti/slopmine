@@ -49,6 +49,10 @@ export class BackgroundLightingManager {
   private readonly pendingColumns: Map<ChunkKey, ChunkColumn> = new Map()
   private readonly processedColumns: Map<ChunkKey, number> = new Map() // chunkKey -> timestamp
   private readonly columnQueue: ChunkKey[] = []
+  private readonly columnQueueSet: Set<ChunkKey> = new Set() // Fast O(1) lookup for queue membership
+
+  // Pending queue - columns waiting to be added to main queue (throttled to 1/frame)
+  private readonly pendingAddQueue: ChunkKey[] = []
 
   // Edge propagation queue - columns needing light from neighbors
   private readonly edgePropagationQueue: Set<ChunkKey> = new Set()
@@ -129,16 +133,19 @@ export class BackgroundLightingManager {
   /**
    * Add a chunk column to the processing queue.
    * Called when a new chunk column is generated.
+   * Columns are added to a pending queue and throttled to 1/frame to avoid stuttering.
    */
   queueColumn(coordinate: IChunkCoordinate): void {
     if (!this.config.enabled) return
 
     const key = createChunkKey(coordinate.x, coordinate.z)
 
-    // Don't queue if already in queue
-    if (this.columnQueue.includes(key)) return
+    // Don't queue if already in queue or pending
+    if (this.columnQueueSet.has(key)) return
 
-    this.columnQueue.push(key)
+    // Add to pending queue - will be moved to main queue 1/frame
+    this.pendingAddQueue.push(key)
+    this.columnQueueSet.add(key) // Mark as "in queue" to prevent duplicates
   }
 
   /**
@@ -224,10 +231,17 @@ export class BackgroundLightingManager {
   unloadColumn(coordinate: IChunkCoordinate): void {
     const key = createChunkKey(coordinate.x, coordinate.z)
 
-    // Remove from queue
+    // Remove from queue and Set
     const queueIndex = this.columnQueue.indexOf(key)
     if (queueIndex !== -1) {
       this.columnQueue.splice(queueIndex, 1)
+    }
+    this.columnQueueSet.delete(key)
+
+    // Also remove from pending add queue
+    const pendingIndex = this.pendingAddQueue.indexOf(key)
+    if (pendingIndex !== -1) {
+      this.pendingAddQueue.splice(pendingIndex, 1)
     }
 
     // Remove from pending and processed tracking
@@ -252,6 +266,12 @@ export class BackgroundLightingManager {
   update(): void {
     if (!this.config.enabled) return
     if (!this.getColumn || !this.queueSubChunkForMeshing) return
+
+    // Throttle: move 1 pending column to the main queue per frame
+    if (this.pendingAddQueue.length > 0) {
+      const key = this.pendingAddQueue.shift()!
+      this.columnQueue.push(key)
+    }
 
     // Process edge propagation first (spreads light across chunk borders)
     this.processEdgePropagation()
@@ -309,6 +329,7 @@ export class BackgroundLightingManager {
       // Check if already pending
       if (this.pendingColumns.has(key)) {
         this.columnQueue.splice(randomIndex, 1)
+        this.columnQueueSet.delete(key)
         continue
       }
 
@@ -319,6 +340,7 @@ export class BackgroundLightingManager {
       if (!column) {
         // Column no longer exists, remove from queue
         this.columnQueue.splice(randomIndex, 1)
+        this.columnQueueSet.delete(key)
         this.processedColumns.delete(key)
         continue
       }
@@ -326,6 +348,7 @@ export class BackgroundLightingManager {
       // Send to worker - only remove from queue if successfully sent
       if (this.sendColumnToWorker(column, key)) {
         this.columnQueue.splice(randomIndex, 1)
+        this.columnQueueSet.delete(key)
         processed++
       } else {
         // All workers busy - stop trying this frame, will retry next update
@@ -406,8 +429,9 @@ export class BackgroundLightingManager {
     this.processedColumns.set(key, Date.now())
 
     // Re-add to queue for future processing
-    if (!this.columnQueue.includes(key)) {
+    if (!this.columnQueueSet.has(key)) {
       this.columnQueue.push(key)
+      this.columnQueueSet.add(key)
     }
 
     // Apply updated light data
@@ -575,6 +599,9 @@ export class BackgroundLightingManager {
     this.pendingColumns.clear()
     this.processedColumns.clear()
     this.columnQueue.length = 0
+    this.columnQueueSet.clear()
+    this.pendingAddQueue.length = 0
+    this.edgePropagationQueue.clear()
     this.onSubChunkLightingUpdated.length = 0
   }
 }
