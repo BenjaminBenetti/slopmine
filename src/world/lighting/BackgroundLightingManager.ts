@@ -441,7 +441,7 @@ export class BackgroundLightingManager {
       const subChunk = column.getSubChunk(updated.subY)
       if (!subChunk) continue
 
-      // Apply the new light data
+      // Apply the new light data - worker results are authoritative
       const currentLightData = subChunk.getLightData()
       currentLightData.set(updated.lightData)
 

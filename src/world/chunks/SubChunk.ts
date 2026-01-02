@@ -238,9 +238,6 @@ export class SubChunk {
           this.blocks[i] = blocks[i]
           this.lightData[i] = lightData[i]
         }
-        // If block is not AIR, we keep it (e.g., placed tree leaves)
-        // We generally keep the existing light data for it too, or we could accept worker light?
-        // For now, assume existing light is "valid enough" or will be fixed by relighting.
       }
     }
     this._dirty = true
