@@ -32,16 +32,16 @@ export class GrassyHillsGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      frequency: 0.025,      // higher = smaller/narrower tunnels
-      threshold: 0.02,      // higher = narrower (less blocks carved)
+      frequency: 0.005,
+      threshold: 0.006,       // very low - only carve the center of noise tubes for thin tunnels
       minY: 8,
-      maxY: 75,
+      maxY: 68,               // high enough for entrances to find caves
       layerCount: 1,
       layerSpacing: 16,
       layerPeakY: 32,
       cheeseEnabled: true,
-      cheeseFrequency: 0.008,
-      cheeseThreshold: 0.75,
+      cheeseFrequency: 0.003, // lower frequency for larger scattered chambers
+      cheeseThreshold: 0.82,  // higher threshold for smaller, rarer chambers
       entrancesEnabled: true,
       entranceMinWidth: 10,
     },
