@@ -23,6 +23,7 @@ export class WoodPickaxeItem extends PickaxeItem {
       ingredients: [
         [new OakLogBlockItem()],
         [new OakLogBlockItem()],
+        [new OakLogBlockItem()],
       ],
     }
   }

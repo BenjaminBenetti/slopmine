@@ -73,11 +73,4 @@ export class RecipeRegistry {
       return true
     })
   }
-
-  /**
-   * Clear all recipes (mainly for testing).
-   */
-  clear(): void {
-    this.recipes = []
-  }
 }

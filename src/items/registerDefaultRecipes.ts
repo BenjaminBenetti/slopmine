@@ -10,24 +10,7 @@ import { WoodShovelItem } from './tools/shovel/WoodShovelItem.ts'
 export function registerDefaultRecipes(): void {
   const registry = RecipeRegistry.getInstance()
 
-  // Wood Pickaxe
-  const woodPickaxe = new WoodPickaxeItem()
-  const woodPickaxeRecipe = woodPickaxe.getRecipe()
-  if (woodPickaxeRecipe) {
-    registry.register(woodPickaxeRecipe)
-  }
-
-  // Wood Axe
-  const woodAxe = new WoodAxeItem()
-  const woodAxeRecipe = woodAxe.getRecipe()
-  if (woodAxeRecipe) {
-    registry.register(woodAxeRecipe)
-  }
-
-  // Wood Shovel
-  const woodShovel = new WoodShovelItem()
-  const woodShovelRecipe = woodShovel.getRecipe()
-  if (woodShovelRecipe) {
-    registry.register(woodShovelRecipe)
-  }
+  registry.register(new WoodPickaxeItem().getRecipe()!)
+  registry.register(new WoodAxeItem().getRecipe()!)
+  registry.register(new WoodShovelItem().getRecipe()!)
 }

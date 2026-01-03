@@ -22,7 +22,6 @@ export class WoodShovelItem extends ShovelItem {
       output: this,
       ingredients: [
         [new OakLogBlockItem()],
-        [new OakLogBlockItem()],
       ],
     }
   }
