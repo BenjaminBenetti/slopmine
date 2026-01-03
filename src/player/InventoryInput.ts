@@ -1,8 +1,11 @@
 import type { InventoryUI } from '../ui/Inventory.ts'
 import type { ToolbarUI } from '../ui/Toolbar.ts'
-import type { IInventoryGridState, IToolbarState } from './PlayerState.ts'
+import type { IInventoryGridState, IPlayerState, IToolbarState } from './PlayerState.ts'
 import type { CameraControls } from './FirstPersonCameraControls.ts'
 import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandler.ts'
+import { CraftingState } from '../crafting/CraftingState.ts'
+import { createCraftingPanelUI, type CraftingPanelUI } from '../ui/CraftingPanel.ts'
+import type { IRecipe } from '../crafting/RecipeRegistry.ts'
 
 export interface InventoryInput {
   dispose(): void
@@ -24,7 +27,10 @@ export class InventoryInputHandler implements InventoryInput {
   private readonly toolbarUI: ToolbarUI
   private readonly toolbarState: IToolbarState
   private readonly cameraControls: CameraControls
+  private readonly playerState: IPlayerState
   private readonly dragDrop: DragDropHandler
+  private readonly craftingState: CraftingState
+  private readonly craftingPanel: CraftingPanelUI
 
   private pointerLocked = false
 
@@ -35,6 +41,7 @@ export class InventoryInputHandler implements InventoryInput {
     toolbarUI: ToolbarUI,
     toolbarState: IToolbarState,
     cameraControls: CameraControls,
+    playerState: IPlayerState,
   ) {
     this.domElement = domElement
     this.inventoryUI = inventoryUI
@@ -42,14 +49,28 @@ export class InventoryInputHandler implements InventoryInput {
     this.toolbarUI = toolbarUI
     this.toolbarState = toolbarState
     this.cameraControls = cameraControls
+    this.playerState = playerState
+
+    // Initialize crafting system
+    this.craftingState = new CraftingState()
+    this.craftingPanel = createCraftingPanelUI()
+
+    // Append crafting panel to the end of the content wrapper (right side)
+    inventoryUI.contentWrapper.appendChild(this.craftingPanel.root)
+
+    // Set up crafting callback
+    this.craftingPanel.onCraft((recipe) => this.handleCraft(recipe))
 
     this.dragDrop = createDragDropHandler({
       toolbarState,
       inventoryState,
+      craftingState: this.craftingState,
       toolbarRoot: toolbarUI.root,
       toolbarSlots: toolbarUI.slots,
       inventoryRoot: inventoryUI.panel,
       inventorySlots: inventoryUI.slots,
+      craftingRoot: this.craftingPanel.root,
+      craftingSlots: this.craftingPanel.craftingSlots,
       onStateChanged: () => this.syncUI(),
     })
 
@@ -60,6 +81,30 @@ export class InventoryInputHandler implements InventoryInput {
   private syncUI(): void {
     this.inventoryUI.syncFromState(this.inventoryState.slots)
     this.toolbarUI.syncFromState(this.toolbarState.slots)
+    this.craftingPanel.syncFromState(this.craftingState.slots)
+
+    // Update craftable recipes list
+    const craftable = this.craftingState.getCraftableRecipes()
+    this.craftingPanel.updateCraftableList(craftable)
+  }
+
+  private handleCraft(recipe: IRecipe): void {
+    const result = this.craftingState.craft(recipe)
+    if (result) {
+      // Add crafted item to player inventory
+      this.playerState.addItem(result.item, result.count)
+      this.syncUI()
+    }
+  }
+
+  private returnCraftingItems(): void {
+    for (let i = 0; i < this.craftingState.slots.length; i++) {
+      const stack = this.craftingState.getStack(i)
+      if (stack) {
+        this.playerState.addItem(stack.item, stack.count)
+        this.craftingState.clearSlot(i)
+      }
+    }
   }
 
   private onPointerLockChange = (): void => {
@@ -75,7 +120,7 @@ export class InventoryInputHandler implements InventoryInput {
     // Avoid conflicting with browser/system shortcuts
     if (event.altKey || event.ctrlKey || event.metaKey) return
 
-    if (event.code === 'KeyI') {
+    if (event.code === 'KeyI' || event.code === 'KeyQ') {
       event.preventDefault()
       this.toggleInventory()
     } else if (event.code === 'Escape' && this.inventoryUI.isOpen) {
@@ -109,6 +154,11 @@ export class InventoryInputHandler implements InventoryInput {
 
   private closeInventory(): void {
     this.dragDrop.disable()
+
+    // Return items from crafting slots to player inventory
+    this.returnCraftingItems()
+    this.syncUI()
+
     this.inventoryUI.close()
     this.cameraControls.setInputEnabled(true)
 
@@ -121,6 +171,8 @@ export class InventoryInputHandler implements InventoryInput {
   }
 
   dispose(): void {
+    this.returnCraftingItems()
+    this.craftingPanel.destroy()
     this.dragDrop.dispose()
     document.removeEventListener('pointerlockchange', this.onPointerLockChange)
     window.removeEventListener('keydown', this.onKeyDown)

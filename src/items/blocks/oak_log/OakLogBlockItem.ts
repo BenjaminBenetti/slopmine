@@ -1,4 +1,5 @@
 import { Item } from '../../Item.ts'
+import { ItemTags } from '../../tags/index.ts'
 
 /**
  * Oak log block item for player inventory.
@@ -13,5 +14,9 @@ export class OakLogBlockItem extends Item {
 
   override get iconUrl(): string {
     return new URL('./assets/oak-log-block-icon.webp', import.meta.url).href
+  }
+
+  override get tags(): ReadonlyArray<string> {
+    return [ItemTags.WOOD]
   }
 }

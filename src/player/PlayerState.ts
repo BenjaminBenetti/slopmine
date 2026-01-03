@@ -240,9 +240,11 @@ export interface IPlayerState {
   /**
    * Try to add an item to the player's inventory.
    * Tries toolbar first, then main inventory.
-   * @returns true if item was added, false if inventory is full
+   * @param item The item to add
+   * @param amount The number of items to add (default 1)
+   * @returns true if all items were added, false if inventory is full
    */
-  addItem(item: IItem): boolean
+  addItem(item: IItem, amount?: number): boolean
 }
 
 /**

@@ -25,6 +25,7 @@ import {
   WorldManager,
   registerDefaultBlocks,
 } from './world/index.ts'
+import { registerDefaultRecipes } from './crafting/index.ts'
 import { WorldGenerator } from './world/generate/index.ts'
 import { GraphicsSettings } from './settings/index.ts'
 import * as THREE from 'three'
@@ -40,6 +41,7 @@ import {
 
 // Initialize world system
 registerDefaultBlocks()
+registerDefaultRecipes()
 
 const renderer = new Renderer()
 
@@ -95,6 +97,7 @@ const inventoryInput = new InventoryInputHandler(
   toolbarUI,
   playerState.inventory.toolbar,
   cameraControls,
+  playerState,
 )
 
 // Initial toolbar sync to render any items that exist at startup

@@ -7,6 +7,7 @@ export interface IItem {
   readonly displayName: string
   readonly maxStackSize: number
   readonly iconUrl?: string
+  readonly tags?: ReadonlyArray<string>
 }
 
 /**
@@ -36,6 +37,13 @@ export abstract class Item implements IItem {
    */
   get iconUrl(): string | undefined {
     return undefined
+  }
+
+  /**
+   * Tags for recipe matching (e.g., 'wood', 'stone').
+   */
+  get tags(): ReadonlyArray<string> {
+    return []
   }
 
   /**

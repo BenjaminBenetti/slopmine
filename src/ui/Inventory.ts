@@ -10,6 +10,7 @@ export interface InventoryUIOptions {
 export interface InventoryUI {
   readonly root: HTMLDivElement
   readonly panel: HTMLDivElement
+  readonly contentWrapper: HTMLDivElement
   readonly slots: HTMLDivElement[]
   readonly isOpen: boolean
   open(): void
@@ -42,11 +43,19 @@ export function createInventoryUI(
   overlay.style.zIndex = '35'
 
   const panel = document.createElement('div')
-  panel.style.background = 'rgba(12, 12, 12, 0.96)'
-  panel.style.borderRadius = '8px'
-  panel.style.border = '2px solid rgba(255, 255, 255, 0.18)'
-  panel.style.boxShadow = '0 0 14px rgba(0, 0, 0, 0.95)'
-  panel.style.padding = '1rem 1.25rem'
+
+  // Content wrapper for horizontal layout (crafting panel + inventory grid)
+  const contentWrapper = document.createElement('div')
+  contentWrapper.style.display = 'flex'
+  contentWrapper.style.gap = '1rem'
+  contentWrapper.style.alignItems = 'flex-start'
+
+  // Grid container with its own styling
+  const gridContainer = document.createElement('div')
+  gridContainer.style.background = 'rgba(12, 12, 12, 0.96)'
+  gridContainer.style.borderRadius = '8px'
+  gridContainer.style.border = '2px solid rgba(255, 255, 255, 0.18)'
+  gridContainer.style.padding = '1rem 1.25rem'
 
   const grid = document.createElement('div')
   grid.style.display = 'grid'
@@ -72,7 +81,9 @@ export function createInventoryUI(
     grid.appendChild(slot)
   }
 
-  panel.appendChild(grid)
+  gridContainer.appendChild(grid)
+  contentWrapper.appendChild(gridContainer)
+  panel.appendChild(contentWrapper)
   overlay.appendChild(panel)
   parent.appendChild(overlay)
 
@@ -85,6 +96,7 @@ export function createInventoryUI(
   const api: InventoryUI = {
     root: overlay,
     panel,
+    contentWrapper,
     slots,
     get isOpen() {
       return open

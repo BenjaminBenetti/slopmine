@@ -1,20 +1,24 @@
 import type { IItem } from '../items/Item.ts'
 import type { IItemStack, IToolbarState, IInventoryGridState } from '../player/PlayerState.ts'
+import type { ICraftingState } from '../crafting/CraftingState.ts'
 import { renderStackInSlot } from './SlotRenderer.ts'
 
 export interface DragDropSlotInfo {
   element: HTMLDivElement
-  container: 'toolbar' | 'inventory'
+  container: 'toolbar' | 'inventory' | 'crafting'
   index: number
 }
 
 export interface DragDropOptions {
   toolbarState: IToolbarState
   inventoryState: IInventoryGridState
+  craftingState?: ICraftingState
   toolbarRoot: HTMLDivElement
   toolbarSlots: HTMLDivElement[]
   inventoryRoot: HTMLDivElement
   inventorySlots: HTMLDivElement[]
+  craftingRoot?: HTMLDivElement
+  craftingSlots?: HTMLDivElement[]
   /** Called after any successful drop to sync UI with state */
   onStateChanged?: () => void
 }
@@ -32,10 +36,13 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
   const {
     toolbarState,
     inventoryState,
+    craftingState,
     toolbarRoot,
     toolbarSlots,
     inventoryRoot,
     inventorySlots,
+    craftingRoot,
+    craftingSlots,
     onStateChanged,
   } = options
 
@@ -57,11 +64,19 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     inventorySlots.forEach((el, i) => {
       slotMap.set(el, { element: el, container: 'inventory', index: i })
     })
+    if (craftingSlots) {
+      craftingSlots.forEach((el, i) => {
+        slotMap.set(el, { element: el, container: 'crafting', index: i })
+      })
+    }
   }
 
   function getStackFromSlot(info: DragDropSlotInfo): IItemStack | null {
     if (info.container === 'toolbar') {
       return toolbarState.getStack(info.index)
+    }
+    if (info.container === 'crafting' && craftingState) {
+      return craftingState.getStack(info.index)
     }
     return inventoryState.getStack(info.index)
   }
@@ -69,6 +84,8 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
   function setStackInSlot(info: DragDropSlotInfo, stack: IItemStack | null): void {
     if (info.container === 'toolbar') {
       toolbarState.setStack(info.index, stack)
+    } else if (info.container === 'crafting' && craftingState) {
+      craftingState.setStack(info.index, stack)
     } else {
       inventoryState.setStack(info.index, stack)
     }
@@ -207,11 +224,12 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     const exact = findSlotUnderPoint(x, y)
     if (exact) return exact
 
-    // Check if cursor is within toolbar or inventory area
+    // Check if cursor is within toolbar, inventory, or crafting area
     const inToolbar = isPointInElement(x, y, toolbarRoot)
     const inInventory = isPointInElement(x, y, inventoryRoot)
+    const inCrafting = craftingRoot ? isPointInElement(x, y, craftingRoot) : false
 
-    if (!inToolbar && !inInventory) {
+    if (!inToolbar && !inInventory && !inCrafting) {
       return null
     }
 
@@ -220,9 +238,10 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     let closestDistSq = Infinity
 
     for (const [slotEl, info] of slotMap) {
-      // If in toolbar, only consider toolbar slots; if in inventory, only inventory slots
+      // Only consider slots from the container the cursor is in
       if (inToolbar && info.container !== 'toolbar') continue
       if (inInventory && info.container !== 'inventory') continue
+      if (inCrafting && info.container !== 'crafting') continue
 
       const center = getSlotCenter(slotEl)
       const distSq = distanceSquared(x, y, center.x, center.y)
@@ -348,6 +367,9 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     toolbarRoot.style.zIndex = enable ? '40' : '25'
     toolbarSlots.forEach(slot => { slot.style.pointerEvents = value })
     inventorySlots.forEach(slot => { slot.style.pointerEvents = value })
+    if (craftingSlots) {
+      craftingSlots.forEach(slot => { slot.style.pointerEvents = value })
+    }
   }
 
   return {
