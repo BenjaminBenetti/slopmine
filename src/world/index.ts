@@ -3,6 +3,7 @@ export type { IBlock, IBlockProperties, BlockId, IWorld } from './interfaces/IBl
 export type { IChunk } from './interfaces/IChunk.ts'
 export type { IWorldCoordinate, IChunkCoordinate, ILocalCoordinate, ChunkKey } from './interfaces/ICoordinates.ts'
 export type { IBlockRegistry, IBlockRegistration } from './interfaces/IBlockRegistry.ts'
+export type { PathfindingPosition, PathfindingResult, PathfindingConfig } from './interfaces/IPathfinding.ts'
 
 // Constants and Enums
 export { BlockFace } from './interfaces/IBlock.ts'
@@ -37,3 +38,6 @@ export { OakLeavesBlock } from './blocks/types/oak_leaves/OakLeavesBlock.ts'
 
 // Block registration
 export { registerDefaultBlocks } from './blocks/registerDefaultBlocks.ts'
+
+// Pathfinding
+export { PathfindingService, type PathfindingCallback, type PathfindingServiceConfig } from './PathfindingService.ts'
