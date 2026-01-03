@@ -53,15 +53,6 @@ export class PlainsGenerator extends BiomeGenerator {
   // Flower placement grid size (smaller for more frequent patches)
   private readonly FLOWER_GRID_SIZE = 12
 
-  // Linear congruential generator constants for seeded random
-  private readonly LCG_MULTIPLIER = 1664525
-  private readonly LCG_INCREMENT = 1013904223
-  private readonly LCG_MODULUS = 2147483647
-
-  // Hash multipliers for position-based seeding
-  private readonly HASH_X_MULTIPLIER = 73856093
-  private readonly HASH_Z_MULTIPLIER = 19349663
-
   /**
    * Choose a random flower color based on a random value.
    */
@@ -78,18 +69,6 @@ export class PlainsGenerator extends BiomeGenerator {
   }
 
   /**
-   * Create a seeded random function for flower placement at a specific position.
-   */
-  private createPatchRandom(worldX: number, worldZ: number): () => number {
-    const seedOffset = worldX * this.HASH_X_MULTIPLIER + worldZ * this.HASH_Z_MULTIPLIER
-    let randomState = seedOffset
-    return () => {
-      randomState = (randomState * this.LCG_MULTIPLIER + this.LCG_INCREMENT) % this.LCG_MODULUS
-      return randomState / this.LCG_MODULUS
-    }
-  }
-
-  /**
    * Try to place a single flower patch at the specified world position.
    * Returns true if patch was placed, false otherwise.
    */
@@ -99,7 +78,7 @@ export class PlainsGenerator extends BiomeGenerator {
     patchWorldZ: number,
     patchBaseY: number
   ): void {
-    // Random flower patch parameters
+    // Random flower patch parameters (using position-based random with different salts)
     const flowerCount = 3 + Math.floor(this.positionRandom(patchWorldX, patchWorldZ, 8) * 5) // 3-7 flowers
 
     // Choose flower color based on position
@@ -112,8 +91,12 @@ export class PlainsGenerator extends BiomeGenerator {
     const centerY = BigInt(patchBaseY)
     const centerZ = BigInt(patchWorldZ)
 
-    // Create a seeded random function for this patch
-    const patchRandom = this.createPatchRandom(patchWorldX, patchWorldZ)
+    // Create a position-based random function for flower placement
+    // Use a counter to get different random values within the same patch
+    let counter = 0
+    const patchRandom = () => {
+      return this.positionRandom(patchWorldX, patchWorldZ, 10 + counter++)
+    }
 
     // Place flower patch if location is valid
     if (FlowerPatch.canPlace(world, centerX, centerY, centerZ)) {
