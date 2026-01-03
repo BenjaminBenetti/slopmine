@@ -53,6 +53,15 @@ export class PlainsGenerator extends BiomeGenerator {
   // Flower placement grid size (smaller for more frequent patches)
   private readonly FLOWER_GRID_SIZE = 12
 
+  // Linear congruential generator constants for seeded random
+  private readonly LCG_MULTIPLIER = 1664525
+  private readonly LCG_INCREMENT = 1013904223
+  private readonly LCG_MODULUS = 2147483647
+
+  // Hash multipliers for position-based seeding
+  private readonly HASH_X_MULTIPLIER = 73856093
+  private readonly HASH_Z_MULTIPLIER = 19349663
+
   /**
    * Choose a random flower color based on a random value.
    */
@@ -72,11 +81,43 @@ export class PlainsGenerator extends BiomeGenerator {
    * Create a seeded random function for flower placement at a specific position.
    */
   private createPatchRandom(worldX: number, worldZ: number): () => number {
-    const seedOffset = worldX * 73856093 + worldZ * 19349663
+    const seedOffset = worldX * this.HASH_X_MULTIPLIER + worldZ * this.HASH_Z_MULTIPLIER
     let randomState = seedOffset
     return () => {
-      randomState = (randomState * 1664525 + 1013904223) % 2147483647
-      return randomState / 2147483647
+      randomState = (randomState * this.LCG_MULTIPLIER + this.LCG_INCREMENT) % this.LCG_MODULUS
+      return randomState / this.LCG_MODULUS
+    }
+  }
+
+  /**
+   * Try to place a single flower patch at the specified world position.
+   * Returns true if patch was placed, false otherwise.
+   */
+  private tryPlaceFlowerPatch(
+    world: WorldManager,
+    patchWorldX: number,
+    patchWorldZ: number,
+    patchBaseY: number
+  ): void {
+    // Random flower patch parameters
+    const flowerCount = 3 + Math.floor(this.positionRandom(patchWorldX, patchWorldZ, 8) * 5) // 3-7 flowers
+
+    // Choose flower color based on position
+    const colorChoice = this.positionRandom(patchWorldX, patchWorldZ, 9)
+    const flowerType = this.chooseFlowerColor(colorChoice)
+
+    const params: FlowerPatchParams = { flowerCount, flowerType }
+
+    const centerX = BigInt(patchWorldX)
+    const centerY = BigInt(patchBaseY)
+    const centerZ = BigInt(patchWorldZ)
+
+    // Create a seeded random function for this patch
+    const patchRandom = this.createPatchRandom(patchWorldX, patchWorldZ)
+
+    // Place flower patch if location is valid
+    if (FlowerPatch.canPlace(world, centerX, centerY, centerZ)) {
+      FlowerPatch.place(world, centerX, centerY, centerZ, params, patchRandom)
     }
   }
 
@@ -278,26 +319,8 @@ export class PlainsGenerator extends BiomeGenerator {
         // Only place patch if its base is within this sub-chunk
         if (patchBaseY < minSubY || patchBaseY > maxSubY) continue
 
-        // Random flower patch parameters
-        const flowerCount = 3 + Math.floor(this.positionRandom(patchWorldX, patchWorldZ, 8) * 5) // 3-7 flowers
-
-        // Choose flower color based on position
-        const colorChoice = this.positionRandom(patchWorldX, patchWorldZ, 9)
-        const flowerType = this.chooseFlowerColor(colorChoice)
-
-        const params: FlowerPatchParams = { flowerCount, flowerType }
-
-        const centerX = BigInt(patchWorldX)
-        const centerY = BigInt(patchBaseY)
-        const centerZ = BigInt(patchWorldZ)
-
-        // Create a seeded random function for this patch
-        const patchRandom = this.createPatchRandom(patchWorldX, patchWorldZ)
-
-        // Place flower patch if location is valid
-        if (FlowerPatch.canPlace(world, centerX, centerY, centerZ)) {
-          FlowerPatch.place(world, centerX, centerY, centerZ, params, patchRandom)
-        }
+        // Try to place flower patch
+        this.tryPlaceFlowerPatch(world, patchWorldX, patchWorldZ, patchBaseY)
       }
     }
 
@@ -343,26 +366,8 @@ export class PlainsGenerator extends BiomeGenerator {
         // Get ground height at patch position
         const groundHeight = this.getHeightAt(patchWorldX, patchWorldZ)
 
-        // Random flower patch parameters
-        const flowerCount = 3 + Math.floor(this.positionRandom(patchWorldX, patchWorldZ, 8) * 5) // 3-7 flowers
-
-        // Choose flower color based on position
-        const colorChoice = this.positionRandom(patchWorldX, patchWorldZ, 9)
-        const flowerType = this.chooseFlowerColor(colorChoice)
-
-        const params: FlowerPatchParams = { flowerCount, flowerType }
-
-        const centerX = BigInt(patchWorldX)
-        const centerY = BigInt(groundHeight + 1)
-        const centerZ = BigInt(patchWorldZ)
-
-        // Create a seeded random function for this patch
-        const patchRandom = this.createPatchRandom(patchWorldX, patchWorldZ)
-
-        // Place flower patch if location is valid
-        if (FlowerPatch.canPlace(world, centerX, centerY, centerZ)) {
-          FlowerPatch.place(world, centerX, centerY, centerZ, params, patchRandom)
-        }
+        // Try to place flower patch
+        this.tryPlaceFlowerPatch(world, patchWorldX, patchWorldZ, groundHeight + 1)
       }
     }
 
