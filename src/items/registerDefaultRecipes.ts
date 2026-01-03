@@ -1,7 +1,7 @@
 import { RecipeRegistry } from './RecipeRegistry.ts'
 import { WoodPickaxeItem } from './tools/pickaxe/WoodPickaxeItem.ts'
-import { IronPickaxeItem } from './tools/pickaxe/IronPickaxeItem.ts'
 import { WoodAxeItem } from './tools/axe/WoodAxeItem.ts'
+import { WoodShovelItem } from './tools/shovel/WoodShovelItem.ts'
 
 /**
  * Register all default item recipes.
@@ -17,17 +17,17 @@ export function registerDefaultRecipes(): void {
     registry.register(woodPickaxeRecipe)
   }
 
-  // Iron Pickaxe
-  const ironPickaxe = new IronPickaxeItem()
-  const ironPickaxeRecipe = ironPickaxe.getRecipe()
-  if (ironPickaxeRecipe) {
-    registry.register(ironPickaxeRecipe)
-  }
-
   // Wood Axe
   const woodAxe = new WoodAxeItem()
   const woodAxeRecipe = woodAxe.getRecipe()
   if (woodAxeRecipe) {
     registry.register(woodAxeRecipe)
+  }
+
+  // Wood Shovel
+  const woodShovel = new WoodShovelItem()
+  const woodShovelRecipe = woodShovel.getRecipe()
+  if (woodShovelRecipe) {
+    registry.register(woodShovelRecipe)
   }
 }
