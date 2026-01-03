@@ -52,6 +52,8 @@ export class PlainsGenerator extends BiomeGenerator {
   private readonly TREE_GRID_SIZE = 8
   // Flower placement grid size (smaller for more frequent patches)
   private readonly FLOWER_GRID_SIZE = 12
+  // Probability of flower patch spawning per grid cell
+  private readonly FLOWER_SPAWN_PROBABILITY = 0.3
 
   /**
    * Choose a random flower color based on a random value.
@@ -291,9 +293,8 @@ export class PlainsGenerator extends BiomeGenerator {
 
         // Probability check for flower patch placement
         const patchChance = this.positionRandom(patchWorldX, patchWorldZ, 7)
-        const threshold = 0.3 // 30% chance per grid cell
 
-        if (patchChance > threshold) continue
+        if (patchChance > this.FLOWER_SPAWN_PROBABILITY) continue
 
         // Get ground height at patch position
         const groundHeight = this.getHeightAt(patchWorldX, patchWorldZ)
@@ -342,9 +343,8 @@ export class PlainsGenerator extends BiomeGenerator {
 
         // Probability check for flower patch placement
         const patchChance = this.positionRandom(patchWorldX, patchWorldZ, 7)
-        const threshold = 0.3 // 30% chance per grid cell
 
-        if (patchChance > threshold) continue
+        if (patchChance > this.FLOWER_SPAWN_PROBABILITY) continue
 
         // Get ground height at patch position
         const groundHeight = this.getHeightAt(patchWorldX, patchWorldZ)
