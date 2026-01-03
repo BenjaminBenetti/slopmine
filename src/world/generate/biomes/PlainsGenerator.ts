@@ -53,6 +53,33 @@ export class PlainsGenerator extends BiomeGenerator {
   // Flower placement grid size (smaller for more frequent patches)
   private readonly FLOWER_GRID_SIZE = 12
 
+  /**
+   * Choose a random flower color based on a random value.
+   */
+  private chooseFlowerColor(random: number): BlockIds.RED_FLOWER | BlockIds.YELLOW_FLOWER | BlockIds.BLUE_FLOWER | BlockIds.PINK_FLOWER {
+    if (random < 0.25) {
+      return BlockIds.RED_FLOWER
+    } else if (random < 0.5) {
+      return BlockIds.YELLOW_FLOWER
+    } else if (random < 0.75) {
+      return BlockIds.BLUE_FLOWER
+    } else {
+      return BlockIds.PINK_FLOWER
+    }
+  }
+
+  /**
+   * Create a seeded random function for flower placement at a specific position.
+   */
+  private createPatchRandom(worldX: number, worldZ: number): () => number {
+    const seedOffset = worldX * 73856093 + worldZ * 19349663
+    let randomState = seedOffset
+    return () => {
+      randomState = (randomState * 1664525 + 1013904223) % 2147483647
+      return randomState / 2147483647
+    }
+  }
+
   protected override async generateDecorations(
     chunk: Chunk,
     world: WorldManager
@@ -256,16 +283,7 @@ export class PlainsGenerator extends BiomeGenerator {
 
         // Choose flower color based on position
         const colorChoice = this.positionRandom(patchWorldX, patchWorldZ, 9)
-        let flowerType: BlockIds.RED_FLOWER | BlockIds.YELLOW_FLOWER | BlockIds.BLUE_FLOWER | BlockIds.PINK_FLOWER
-        if (colorChoice < 0.25) {
-          flowerType = BlockIds.RED_FLOWER
-        } else if (colorChoice < 0.5) {
-          flowerType = BlockIds.YELLOW_FLOWER
-        } else if (colorChoice < 0.75) {
-          flowerType = BlockIds.BLUE_FLOWER
-        } else {
-          flowerType = BlockIds.PINK_FLOWER
-        }
+        const flowerType = this.chooseFlowerColor(colorChoice)
 
         const params: FlowerPatchParams = { flowerCount, flowerType }
 
@@ -274,12 +292,7 @@ export class PlainsGenerator extends BiomeGenerator {
         const centerZ = BigInt(patchWorldZ)
 
         // Create a seeded random function for this patch
-        const seedOffset = patchWorldX * 73856093 + patchWorldZ * 19349663
-        let randomState = seedOffset
-        const patchRandom = () => {
-          randomState = (randomState * 1664525 + 1013904223) % 2147483647
-          return randomState / 2147483647
-        }
+        const patchRandom = this.createPatchRandom(patchWorldX, patchWorldZ)
 
         // Place flower patch if location is valid
         if (FlowerPatch.canPlace(world, centerX, centerY, centerZ)) {
@@ -335,16 +348,7 @@ export class PlainsGenerator extends BiomeGenerator {
 
         // Choose flower color based on position
         const colorChoice = this.positionRandom(patchWorldX, patchWorldZ, 9)
-        let flowerType: BlockIds.RED_FLOWER | BlockIds.YELLOW_FLOWER | BlockIds.BLUE_FLOWER | BlockIds.PINK_FLOWER
-        if (colorChoice < 0.25) {
-          flowerType = BlockIds.RED_FLOWER
-        } else if (colorChoice < 0.5) {
-          flowerType = BlockIds.YELLOW_FLOWER
-        } else if (colorChoice < 0.75) {
-          flowerType = BlockIds.BLUE_FLOWER
-        } else {
-          flowerType = BlockIds.PINK_FLOWER
-        }
+        const flowerType = this.chooseFlowerColor(colorChoice)
 
         const params: FlowerPatchParams = { flowerCount, flowerType }
 
@@ -353,12 +357,7 @@ export class PlainsGenerator extends BiomeGenerator {
         const centerZ = BigInt(patchWorldZ)
 
         // Create a seeded random function for this patch
-        const seedOffset = patchWorldX * 73856093 + patchWorldZ * 19349663
-        let randomState = seedOffset
-        const patchRandom = () => {
-          randomState = (randomState * 1664525 + 1013904223) % 2147483647
-          return randomState / 2147483647
-        }
+        const patchRandom = this.createPatchRandom(patchWorldX, patchWorldZ)
 
         // Place flower patch if location is valid
         if (FlowerPatch.canPlace(world, centerX, centerY, centerZ)) {
