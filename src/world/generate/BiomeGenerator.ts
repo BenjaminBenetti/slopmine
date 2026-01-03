@@ -14,48 +14,126 @@ import { SkylightPropagator } from '../lighting/SkylightPropagator.ts'
  * Configuration for cave generation within a biome.
  */
 export interface CaveSettings {
-  /** Enable/disable caves for this biome */
+  /**
+   * Turns cave generation on or off for this specific biome.
+   * If set to `true`, caves will generate; if `false`, no caves will appear in this biome.
+   */
   readonly enabled: boolean
 
-  /** Noise scale for spaghetti tunnels (lower = longer tunnels, 0.02 typical) */
+  /**
+   * Controls how often and long the 'spaghetti-like' cave tunnels appear.
+   * A lower value (e.g., 0.01) creates longer, more winding tunnels, while a higher value creates shorter, more frequent ones.
+   */
   readonly frequency: number
-  /** Carving threshold (lower = more caves, 0.02 typical) */
+  /**
+   * Determines how much of the rock is carved away to form caves.
+   * A lower value (e.g., 0.01) results in larger and more numerous caves, making the underground feel more open.
+   * A higher value makes caves smaller and less frequent, leading to a more solid underground.
+   */
   readonly threshold: number
-  /** Minimum Y level where caves can generate */
+  /**
+   * The lowest point in the world where these caves can begin to form.
+   * Caves will not generate below this Y-level, leaving the deep underground mostly solid.
+   */
   readonly minY: number
-  /** Maximum Y level where caves can generate */
+  /**
+   * The highest point in the world where these caves can reach.
+   * Caves will not generate above this Y-level, ensuring that the surface and sky remain undisturbed by cave openings (unless `entrancesEnabled` is on).
+   */
   readonly maxY: number
 
-  /** Number of distinct cave layers (1-4 typical) */
+  /**
+   * The number of distinct horizontal layers of caves that will generate.
+   * For example, a value of `1` creates a single main cave system, while `3` creates multiple distinct levels of caves stacked vertically.
+   */
   readonly layerCount: number
-  /** Vertical spacing between layer centers */
+  /**
+   * The vertical distance between the centers of each cave layer.
+   * A larger value will create more space between cave layers, making them feel more distinct.
+   * A smaller value will make layers closer, potentially merging them into larger, more complex systems.
+   */
   readonly layerSpacing: number
-  /** Center Y level for layer distribution */
+  /**
+   * The central Y-level around which the cave layers are distributed.
+   * This acts as the anchor point for all cave layers, influencing their overall vertical position in the world.
+   */
   readonly layerPeakY: number
 
-  /** Enable large chambers (cheese caves) */
+  /**
+   * Toggles the generation of large, open cavern-like areas, often referred to as 'cheese caves'.
+   * If `true`, these expansive chambers will appear alongside the regular tunnels.
+   */
   readonly cheeseEnabled: boolean
-  /** Noise scale for chambers (lower = larger chambers, 0.008 typical) */
+  /**
+   * Controls the size and frequency of the large 'cheese caves'.
+   * A lower value (e.g., 0.005) will create massive, sprawling chambers, while a higher value will result in smaller, more numerous ones.
+   */
   readonly cheeseFrequency: number
-  /** Threshold for chamber carving (higher = fewer chambers, 0.6 typical) */
+  /**
+   * Adjusts how much rock is removed to create the large 'cheese caves'.
+   * A higher value (e.g., 0.7) will make these chambers less common and more confined, while a lower value will make them more prevalent and vast.
+   */
   readonly cheeseThreshold: number
 
-  /** Allow natural cave openings at surface */
+  /**
+   * Determines if caves can have openings that reach the surface of the world.
+   * If `true`, you might find natural entrances to cave systems on the landscape.
+   */
   readonly entrancesEnabled: boolean
-  /** Minimum width of cave entrances in blocks */
+  /**
+   * Sets the minimum size for a cave entrance that reaches the surface.
+   * A larger value ensures that surface entrances are always wide and easily noticeable.
+   */
   readonly entranceMinWidth: number
 }
 
 export interface BiomeProperties {
+  /** The unique name of this biome, used for identification. */
   readonly name: string
+  /**
+   * The block type that will form the very top layer of the terrain in this biome.
+   * For example, this might be `dirt` or `sand`.
+   */
   readonly surfaceBlock: BlockId
+  /**
+   * The block type found directly beneath the surface block in this biome.
+   * For example, this could be `dirt` below grass, or `sandstone` below sand.
+   */
   readonly subsurfaceBlock: BlockId
+  /**
+   * How many blocks deep the `subsurfaceBlock` layer extends before hitting the base block.
+   * A higher value means a thicker layer of subsurface material.
+   */
   readonly subsurfaceDepth: number
+  /**
+   * The primary block type that makes up the bulk of the terrain underneath the surface and subsurface layers.
+   * This is typically `stone` in most biomes.
+   */
   readonly baseBlock: BlockId
+  /**
+   * Controls the intensity of height variations in the biome's terrain.
+   * A higher amplitude creates more dramatic hills and valleys, while a lower value results in flatter terrain.
+   */
   readonly heightAmplitude: number
+  /**
+   * Shifts the entire terrain up or down from the standard sea level.
+   * A positive offset raises the biome, creating elevated plateaus; a negative offset lowers it, forming depressions.
+   */
   readonly heightOffset: number
+  /**
+   * Determines how many trees (or other large vegetation features) will attempt to generate in each chunk within this biome.
+   * A higher density value means more trees will be scattered across the landscape.
+   */
   readonly treeDensity: number
+  /**
+   * A list of special geographical or structural elements (like custom rock formations, small ponds, or unique structures) that can appear in this biome.
+   * These features are added on top of the base terrain.
+   */
   readonly features: Feature[]
+  /**
+   * Optional settings specifically for how caves generate within this biome.
+   * If not provided, default or no cave generation rules will apply.
+   */
   readonly caves?: CaveSettings
 }
 
