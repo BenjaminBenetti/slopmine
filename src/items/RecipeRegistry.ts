@@ -1,4 +1,5 @@
 import type { IRecipe } from './IRecipe.ts'
+import type { IItem } from './Item.ts'
 
 /**
  * Central registry for all crafting recipes.
