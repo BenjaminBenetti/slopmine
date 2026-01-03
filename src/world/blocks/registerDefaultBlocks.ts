@@ -5,6 +5,10 @@ import { DirtBlock } from './types/dirt/DirtBlock.ts'
 import { GrassBlock } from './types/grass/GrassBlock.ts'
 import { OakLogBlock } from './types/oak_log/OakLogBlock.ts'
 import { OakLeavesBlock } from './types/oak_leaves/OakLeavesBlock.ts'
+import { RedFlowerBlock } from './types/red_flower/RedFlowerBlock.ts'
+import { YellowFlowerBlock } from './types/yellow_flower/YellowFlowerBlock.ts'
+import { BlueFlowerBlock } from './types/blue_flower/BlueFlowerBlock.ts'
+import { PinkFlowerBlock } from './types/pink_flower/PinkFlowerBlock.ts'
 
 /**
  * Register all default block types.
@@ -79,5 +83,61 @@ export function registerDefaultBlocks(): void {
       lightBlocking: 1,
     },
     factory: () => new OakLeavesBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.RED_FLOWER,
+      name: 'red_flower',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: false,
+      hardness: 0.0,
+      lightLevel: 0,
+      lightBlocking: 0,
+    },
+    factory: () => new RedFlowerBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.YELLOW_FLOWER,
+      name: 'yellow_flower',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: false,
+      hardness: 0.0,
+      lightLevel: 0,
+      lightBlocking: 0,
+    },
+    factory: () => new YellowFlowerBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.BLUE_FLOWER,
+      name: 'blue_flower',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: false,
+      hardness: 0.0,
+      lightLevel: 0,
+      lightBlocking: 0,
+    },
+    factory: () => new BlueFlowerBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.PINK_FLOWER,
+      name: 'pink_flower',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: false,
+      hardness: 0.0,
+      lightLevel: 0,
+      lightBlocking: 0,
+    },
+    factory: () => new PinkFlowerBlock(),
   })
 }

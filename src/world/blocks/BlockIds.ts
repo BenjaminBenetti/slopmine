@@ -9,4 +9,8 @@ export enum BlockIds {
   GRASS = 3,
   OAK_LOG = 4,
   OAK_LEAVES = 5,
+  RED_FLOWER = 6,
+  YELLOW_FLOWER = 7,
+  BLUE_FLOWER = 8,
+  PINK_FLOWER = 9,
 }
