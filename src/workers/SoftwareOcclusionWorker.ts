@@ -6,10 +6,14 @@
  * candidate sub-chunks against the depth buffer.
  */
 
-// Depth buffer resolution (512x256 = 131,072 pixels)
-const DEPTH_WIDTH = 512
-const DEPTH_HEIGHT = 256
+// Depth buffer resolution
+const DEPTH_WIDTH = 256
+const DEPTH_HEIGHT = 128
 const depthBuffer = new Float32Array(DEPTH_WIDTH * DEPTH_HEIGHT)
+
+// Depth bias to reduce flickering on borderline cases
+// Higher values = more conservative (fewer false occlusions, but less culling)
+const DEPTH_BIAS = 0.002
 
 // Request/Response types
 interface SubChunkBounds {
@@ -164,7 +168,11 @@ function rasterizeOccluder(projected: ProjectedAABB): void {
  * Test if a candidate is visible (not fully occluded).
  * Uses conservative approach: visible if ANY sample point passes depth test.
  */
-function testVisibility(projected: ProjectedAABB): boolean {
+function testVisibility(
+  projected: ProjectedAABB,
+  bounds: SubChunkBounds,
+  vpMatrix: Float32Array
+): boolean {
   // If behind camera, must be visible (conservative)
   if (projected.behindCamera) return true
 
@@ -189,23 +197,61 @@ function testVisibility(projected: ProjectedAABB): boolean {
   const xMid = Math.floor((x0 + x1) / 2)
   const yMid = Math.floor((y0 + y1) / 2)
 
-  // Sample 5 points: 4 corners + center
+  // Sample 9 points: 4 corners + center + 4 edge midpoints
   const samples = [
     [x0, y0],
     [x1, y0],
     [x0, y1],
     [x1, y1],
     [xMid, yMid],
+    [xMid, y0],
+    [xMid, y1],
+    [x0, yMid],
+    [x1, yMid],
   ]
 
-  // Use max depth (farthest point) for conservative testing
-  const candidateDepth = projected.maxDepth
+  // Use min depth (closest point) for conservative testing
+  // If the closest point of the chunk is in front of the occluder, it's visible
+  const candidateDepth = projected.minDepth
 
   for (const [x, y] of samples) {
     const bufferDepth = depthBuffer[y * DEPTH_WIDTH + x]
-    // If candidate's farthest point is in front of depth buffer, it's visible
-    if (candidateDepth < bufferDepth) {
+    // If candidate's closest point is in front of (or near) depth buffer, it's visible
+    if (candidateDepth < bufferDepth + DEPTH_BIAS) {
       return true
+    }
+  }
+
+  // Test the 3D center point with its actual depth
+  const centerX = (bounds.minX + bounds.maxX) * 0.5
+  const centerY = (bounds.minY + bounds.maxY) * 0.5
+  const centerZ = (bounds.minZ + bounds.maxZ) * 0.5
+
+  // Project the center point
+  const clipX =
+    vpMatrix[0] * centerX + vpMatrix[4] * centerY + vpMatrix[8] * centerZ + vpMatrix[12]
+  const clipY =
+    vpMatrix[1] * centerX + vpMatrix[5] * centerY + vpMatrix[9] * centerZ + vpMatrix[13]
+  const clipZ =
+    vpMatrix[2] * centerX + vpMatrix[6] * centerY + vpMatrix[10] * centerZ + vpMatrix[14]
+  const clipW =
+    vpMatrix[3] * centerX + vpMatrix[7] * centerY + vpMatrix[11] * centerZ + vpMatrix[15]
+
+  if (clipW > 0.001) {
+    const ndcX = clipX / clipW
+    const ndcY = clipY / clipW
+    const ndcZ = clipZ / clipW
+
+    const screenX = Math.floor((ndcX * 0.5 + 0.5) * DEPTH_WIDTH)
+    const screenY = Math.floor((1.0 - (ndcY * 0.5 + 0.5)) * DEPTH_HEIGHT)
+    const centerDepth = ndcZ * 0.5 + 0.5
+
+    // Check if center point is on screen and visible
+    if (screenX >= 0 && screenX < DEPTH_WIDTH && screenY >= 0 && screenY < DEPTH_HEIGHT) {
+      const bufferDepth = depthBuffer[screenY * DEPTH_WIDTH + screenX]
+      if (centerDepth < bufferDepth + DEPTH_BIAS) {
+        return true
+      }
     }
   }
 
@@ -242,7 +288,7 @@ function processOcclusionRequest(request: OcclusionRequest): OcclusionResponse {
   const occludedIds: string[] = []
   for (const candidate of candidates) {
     const projected = projectAABB(candidate, viewProjectionMatrix)
-    if (!testVisibility(projected)) {
+    if (!testVisibility(projected, candidate, viewProjectionMatrix)) {
       occludedIds.push(candidate.id)
     }
   }

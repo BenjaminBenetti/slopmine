@@ -6,7 +6,7 @@ import type { IChunkCoordinate } from './ICoordinates.ts'
  */
 export const CHUNK_SIZE_X = 32
 export const CHUNK_SIZE_Z = 32
-export const CHUNK_HEIGHT = 1024
+export const CHUNK_HEIGHT = 512
 
 /**
  * Total blocks in a chunk for array sizing.
