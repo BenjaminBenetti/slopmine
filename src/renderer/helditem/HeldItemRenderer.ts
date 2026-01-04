@@ -46,11 +46,30 @@ const SWING_CONFIG: SwingAnimationConfig = {
   returnSpeed: 10,
 }
 
+// More dramatic swing for tools (pickaxe, shovel, axe)
+const TOOL_SWING_CONFIG: SwingAnimationConfig = {
+  duration: 0.45,
+  forwardAmplitude: 0.12,
+  verticalAmplitude: 0.15,
+  rotationAmplitude: Math.PI / 4,
+  returnSpeed: 12,
+}
+
 /**
  * Determines the type of item for rendering purposes.
  */
 function isBlockItem(item: IItem): boolean {
   return item.id.endsWith('_block')
+}
+
+function isToolItem(item: IItem): boolean {
+  return (
+    item.id.endsWith('_pickaxe') ||
+    item.id.endsWith('_shovel') ||
+    item.id.endsWith('_axe') ||
+    item.id.endsWith('_sword') ||
+    item.id.endsWith('_hoe')
+  )
 }
 
 /**
@@ -247,12 +266,24 @@ export class HeldItemRenderer {
   }
 
   /**
+   * Get the swing config for the current item.
+   */
+  private getSwingConfig(): SwingAnimationConfig {
+    if (this.currentItem && isToolItem(this.currentItem)) {
+      return TOOL_SWING_CONFIG
+    }
+    return SWING_CONFIG
+  }
+
+  /**
    * Update the swing animation state.
    */
   private updateSwingAnimation(deltaTime: number): void {
+    const config = this.getSwingConfig()
+
     if (this.isMining) {
       // Advance swing phase (loops continuously)
-      const swingSpeed = (1 / SWING_CONFIG.duration) * Math.PI * 2
+      const swingSpeed = (1 / config.duration) * Math.PI * 2
       this.swingPhase += deltaTime * swingSpeed
 
       // Keep phase in [0, 2π] range to prevent float overflow
@@ -268,25 +299,25 @@ export class HeldItemRenderer {
       // Forward/backward motion (z-axis): moves toward target then back
       // Uses a modified sine that peaks at the strike point
       const forwardProgress = Math.sin(t)
-      this.swingOffset.z = forwardProgress * SWING_CONFIG.forwardAmplitude
+      this.swingOffset.z = forwardProgress * config.forwardAmplitude
 
       // Vertical arc motion (y-axis): slight downward arc during strike
       // Negative sine so it goes down during the forward swing
       const verticalProgress = -Math.sin(t) * Math.abs(Math.sin(t * 0.5))
-      this.swingOffset.y = verticalProgress * SWING_CONFIG.verticalAmplitude
+      this.swingOffset.y = verticalProgress * config.verticalAmplitude
 
       // Slight horizontal shift during swing for more natural motion
       this.swingOffset.x = Math.sin(t * 0.5) * 0.01
 
       // Rotation: tilt the item as if striking
       // X rotation: pitch forward during strike
-      this.swingRotation.x = Math.sin(t) * SWING_CONFIG.rotationAmplitude
+      this.swingRotation.x = Math.sin(t) * config.rotationAmplitude
 
       // Z rotation: slight roll for natural wrist motion
-      this.swingRotation.z = Math.sin(t * 0.5) * (SWING_CONFIG.rotationAmplitude * 0.3)
+      this.swingRotation.z = Math.sin(t * 0.5) * (config.rotationAmplitude * 0.3)
     } else {
       // Not mining - smoothly return to idle
-      const returnFactor = 1 - Math.exp(-deltaTime * SWING_CONFIG.returnSpeed)
+      const returnFactor = 1 - Math.exp(-deltaTime * config.returnSpeed)
 
       // Lerp offset back to zero
       this.swingOffset.x *= 1 - returnFactor
