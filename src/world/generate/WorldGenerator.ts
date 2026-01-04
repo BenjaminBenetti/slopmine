@@ -8,6 +8,7 @@ import { BiomeGenerator } from './BiomeGenerator.ts'
 import { PlainsGenerator } from './biomes/PlainsGenerator.ts'
 import { GrassyHillsGenerator } from './biomes/GrassyHillsGenerator.ts'
 import { CliffFeature } from './features/CliffFeature.ts'
+import { EntranceGenerator } from './caves/EntranceGenerator.ts'
 import type { WorkerBiomeConfig, FeatureConfig } from '../../workers/ChunkGenerationWorker.ts'
 
 interface QueuedSubChunk {
@@ -40,11 +41,16 @@ export class WorldGenerator {
   private playerWorldY: number = 0 // Player's world Y position
   private initialized: boolean = false
 
+  // Entrance generation (runs on main thread after sub-chunks are ready)
+  private readonly entranceGenerator: EntranceGenerator
+  private readonly entrancesGenerated: Set<string> = new Set() // "x,z" keys
+
   constructor(world: WorldManager, config?: Partial<IGenerationConfig>) {
     this.world = world
     this.config = new GenerationConfig(config)
     this.generator = this.createGenerator()
     this.workerBiomeConfig = this.createWorkerBiomeConfig()
+    this.entranceGenerator = new EntranceGenerator(this.config.seed)
   }
 
   private createGenerator(): BiomeGenerator {
@@ -371,6 +377,9 @@ export class WorldGenerator {
         await this.generator.generateSubChunkDecorations(subChunk, this.world)
       }
 
+      // Generate cave entrances (once per chunk column)
+      await this.tryGenerateEntrances(coordinate)
+
       this.generatedSubChunks.add(key)
     } catch (error) {
       console.error(`Failed to generate sub-chunk ${key}:`, error)
@@ -379,4 +388,73 @@ export class WorldGenerator {
     }
   }
 
+  /**
+   * Try to generate cave entrances for the chunk column containing this sub-chunk.
+   * Uses noise-based prediction to find guaranteed cave locations.
+   * Only runs once per chunk column, and only if caves are enabled.
+   */
+  private async tryGenerateEntrances(coordinate: ISubChunkCoordinate): Promise<void> {
+    const caves = this.workerBiomeConfig.caves
+    if (!caves?.enabled || !caves.entrancesEnabled) {
+      return
+    }
+
+    // Create a key for this chunk column
+    const columnKey = `${coordinate.x},${coordinate.z}`
+
+    // Only generate entrances once per column
+    if (this.entrancesGenerated.has(columnKey)) {
+      return
+    }
+
+    // Mark as generated (do this before generating to prevent duplicates)
+    this.entrancesGenerated.add(columnKey)
+
+    // Track affected sub-chunks for batched remeshing
+    const affectedSubChunks = new Set<string>()
+
+    // World block setter that directly modifies chunk columns (no mesh/lighting triggers)
+    const worldBlockSetter = (worldX: number, worldY: number, worldZ: number, blockId: number) => {
+      // Calculate chunk coordinates
+      const chunkX = BigInt(Math.floor(worldX / 32))
+      const chunkZ = BigInt(Math.floor(worldZ / 32))
+      const localX = ((worldX % 32) + 32) % 32
+      const localZ = ((worldZ % 32) + 32) % 32
+
+      // Get or skip if chunk column doesn't exist (don't create new chunks)
+      const targetColumn = this.world.getChunkColumn({ x: chunkX, z: chunkZ })
+      if (!targetColumn) {
+        return
+      }
+
+      // Set block directly on chunk column (no mesh/lighting cascade)
+      targetColumn.setBlockId(localX, worldY, localZ, blockId)
+
+      // Track affected sub-chunk for later remeshing
+      const subY = Math.floor(worldY / SUB_CHUNK_HEIGHT)
+      affectedSubChunks.add(`${chunkX},${chunkZ},${subY}`)
+    }
+
+    // Find entrance locations using noise prediction (guaranteed to find caves)
+    const entrances = this.entranceGenerator.findEntranceLocations(
+      coordinate.x,
+      coordinate.z,
+      caves,
+      (worldX, worldZ) => this.generator.getHeightAt(worldX, worldZ)
+    )
+
+    // Carve all entrances
+    for (const entrance of entrances) {
+      this.entranceGenerator.carveEntrance(entrance, worldBlockSetter)
+    }
+
+    // Batch remesh all affected sub-chunks once
+    for (const key of affectedSubChunks) {
+      const [x, z, subY] = key.split(',').map(Number)
+      const subChunk = this.world.getSubChunk({ x: BigInt(x), z: BigInt(z), subY })
+      if (subChunk) {
+        this.world.queueSubChunkForMeshing(subChunk)
+      }
+    }
+  }
 }

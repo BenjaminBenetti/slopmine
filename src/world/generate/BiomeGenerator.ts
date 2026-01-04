@@ -85,6 +85,11 @@ export interface CaveSettings {
    * A larger value ensures that surface entrances are always wide and easily noticeable.
    */
   readonly entranceMinWidth: number
+  /**
+   * Controls how rare cave entrances are.
+   * A lower value (e.g., 0.3) makes entrances more common, while a higher value (e.g., 0.8) makes them rare.
+   */
+  readonly entranceThreshold?: number
 }
 
 export interface BiomeProperties {

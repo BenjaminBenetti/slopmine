@@ -6,9 +6,9 @@
  * candidate sub-chunks against the depth buffer.
  */
 
-// Depth buffer resolution (256x144 = 36,864 pixels)
-const DEPTH_WIDTH = 256
-const DEPTH_HEIGHT = 144
+// Depth buffer resolution (512x256 = 131,072 pixels)
+const DEPTH_WIDTH = 512
+const DEPTH_HEIGHT = 256
 const depthBuffer = new Float32Array(DEPTH_WIDTH * DEPTH_HEIGHT)
 
 // Request/Response types

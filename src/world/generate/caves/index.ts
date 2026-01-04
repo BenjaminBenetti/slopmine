@@ -1,4 +1,5 @@
 export { CaveCarver } from './CaveCarver.ts'
 export { SpaghettiCarver } from './SpaghettiCarver.ts'
 export { CheeseCarver } from './CheeseCarver.ts'
-export { EntranceDetector } from './EntranceDetector.ts'
+export { EntranceGenerator } from './EntranceGenerator.ts'
+export { CavePredictionService } from './CavePredictionService.ts'

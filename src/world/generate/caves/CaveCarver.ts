@@ -4,23 +4,21 @@ import type { CaveSettings } from '../BiomeGenerator.ts'
 import type { FrameBudget } from '../../../core/FrameBudget.ts'
 import { SpaghettiCarver } from './SpaghettiCarver.ts'
 import { CheeseCarver } from './CheeseCarver.ts'
-import { EntranceDetector } from './EntranceDetector.ts'
 
 export type HeightGetter = (worldX: number, worldZ: number) => number
 
 /**
  * Main orchestrator for cave generation.
- * Coordinates spaghetti tunnels, cheese chambers, and entrance generation.
+ * Coordinates spaghetti tunnels and cheese chambers.
+ * Note: Entrance generation is handled separately by EntranceGenerator in WorldGenerator.
  */
 export class CaveCarver {
   private readonly spaghettiCarver: SpaghettiCarver
   private readonly cheeseCarver: CheeseCarver
-  private readonly entranceDetector: EntranceDetector
 
   constructor(seed: number) {
     this.spaghettiCarver = new SpaghettiCarver(seed)
     this.cheeseCarver = new CheeseCarver(seed + 1000)
-    this.entranceDetector = new EntranceDetector(seed + 2000)
   }
 
   /**
@@ -40,10 +38,8 @@ export class CaveCarver {
       await this.cheeseCarver.carve(chunk, settings, getHeightAt, frameBudget)
     }
 
-    // Third pass: generate entrances from surface down to caves
-    if (settings.entrancesEnabled) {
-      this.entranceDetector.generateEntrances(chunk, settings, getHeightAt)
-    }
+    // Note: Entrance generation is handled separately by WorldGenerator
+    // using noise-based prediction (EntranceGenerator)
   }
 
   /**

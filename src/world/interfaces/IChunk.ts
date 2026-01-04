@@ -17,8 +17,8 @@ export const CHUNK_VOLUME = CHUNK_SIZE_X * CHUNK_SIZE_Z * CHUNK_HEIGHT
  * Sub-chunk dimensions for vertical chunking.
  * Each column is divided into 8 sub-chunks of 128 blocks height.
  */
-export const SUB_CHUNK_HEIGHT = 64
-export const SUB_CHUNK_COUNT = 16 // CHUNK_HEIGHT / SUB_CHUNK_HEIGHT
+export const SUB_CHUNK_HEIGHT = 32
+export const SUB_CHUNK_COUNT = 32 // CHUNK_HEIGHT / SUB_CHUNK_HEIGHT
 export const SUB_CHUNK_VOLUME = CHUNK_SIZE_X * CHUNK_SIZE_Z * SUB_CHUNK_HEIGHT // 65,536
 
 /**

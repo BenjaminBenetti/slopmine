@@ -13,6 +13,7 @@ import type { SubChunkOpacityCache } from '../renderer/SubChunkOpacityCache.ts'
 import ChunkMeshWorker from '../workers/ChunkMeshWorker.ts?worker'
 import type { SubChunkMeshRequest, SubChunkMeshResponse } from '../workers/ChunkMeshWorker.ts'
 import { SubChunk } from './chunks/SubChunk.ts'
+import { ChunkColumn } from './chunks/ChunkColumn.ts'
 import { SUB_CHUNK_HEIGHT } from './interfaces/IChunk.ts'
 import type {
   SubChunkGenerationRequest,
@@ -652,6 +653,13 @@ export class WorldManager {
    */
   getSubChunk(coordinate: ISubChunkCoordinate): SubChunk | undefined {
     return this.chunkManager.getSubChunk(coordinate)
+  }
+
+  /**
+   * Get a chunk column at the given coordinates.
+   */
+  getChunkColumn(coordinate: IChunkCoordinate): ChunkColumn | undefined {
+    return this.chunkManager.getColumn(coordinate)
   }
 
   /**

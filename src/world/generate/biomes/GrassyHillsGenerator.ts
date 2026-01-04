@@ -44,6 +44,7 @@ export class GrassyHillsGenerator extends BiomeGenerator {
       cheeseThreshold: 0.82,  // higher threshold for smaller, rarer chambers
       entrancesEnabled: true,
       entranceMinWidth: 10,
+      entranceThreshold: 0.4,  // lower = more common entrances
     },
   }
 
