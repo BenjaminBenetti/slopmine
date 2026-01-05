@@ -5,9 +5,8 @@ import type { IPlayerState } from './PlayerState.ts'
 import { BlockRaycaster, type IBlockRaycastHit } from './BlockRaycaster.ts'
 import { MiningOverlay } from '../renderer/MiningOverlay.ts'
 import { BlockIds } from '../world/blocks/BlockIds.ts'
-
-/** Base mining time for hardness 1.0 blocks (in seconds) */
-const BASE_MINING_TIME = 5.0
+import { calculateMiningDamage } from './MiningDamage.ts'
+import { hasToolStats, HAND_STATS } from '../items/interfaces/IToolStats.ts'
 
 /** Maximum reach distance for block interaction */
 const MAX_REACH_DISTANCE = 5
@@ -29,7 +28,6 @@ interface IMiningProgress {
  */
 export interface IBlockInteractionConfig {
   maxReachDistance?: number
-  miningSpeedMultiplier?: number
   /** Called after items are collected from a broken block */
   onItemsCollected?: () => void
 }
@@ -47,7 +45,6 @@ export class BlockInteraction {
   private readonly domElement: HTMLElement
 
   private readonly maxReachDistance: number
-  private readonly miningSpeedMultiplier: number
   private readonly onItemsCollected?: () => void
 
   private isMouseDown = false
@@ -67,7 +64,6 @@ export class BlockInteraction {
     this.domElement = domElement
 
     this.maxReachDistance = config.maxReachDistance ?? MAX_REACH_DISTANCE
-    this.miningSpeedMultiplier = config.miningSpeedMultiplier ?? 1.0
     this.onItemsCollected = config.onItemsCollected
 
     this.raycaster = new BlockRaycaster(worldManager)
@@ -177,8 +173,19 @@ export class BlockInteraction {
   }
 
   private startMining(hit: IBlockRaycastHit): void {
-    const hardness = hit.block.properties.hardness
-    const requiredTime = hardness * BASE_MINING_TIME / this.miningSpeedMultiplier
+    // Get currently held item's tool stats
+    const selectedIndex = this.playerState.inventory.toolbar.selectedIndex
+    const heldItem = this.playerState.inventory.toolbar.getItem(selectedIndex)
+    const toolStats = heldItem && hasToolStats(heldItem) ? heldItem.toolStats : HAND_STATS
+
+    // Calculate mining result based on tool vs block
+    const miningResult = calculateMiningDamage(hit.block, toolStats)
+
+    // Cannot mine this block with current tool
+    if (!miningResult.canMine) {
+      this.currentMining = null
+      return
+    }
 
     this.currentMining = {
       worldX: hit.worldX,
@@ -186,7 +193,7 @@ export class BlockInteraction {
       worldZ: hit.worldZ,
       blockId: hit.blockId,
       progress: 0,
-      requiredTime,
+      requiredTime: miningResult.miningTime,
     }
 
     // Show overlay at block position

@@ -6,6 +6,8 @@ import { PickaxeItem } from './PickaxeItem.ts'
 export class WoodPickaxeItem extends PickaxeItem {
   readonly id = 'wood_pickaxe'
   readonly name = 'wood_pickaxe'
+  protected readonly baseDamage = 1
+  protected readonly tier = 1
 
   override get displayName(): string {
     return 'Wood Pickaxe'

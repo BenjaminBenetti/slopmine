@@ -141,6 +141,8 @@ export class AirBlock extends Block {
     hardness: 0,
     lightLevel: 0,
     lightBlocking: 0,
+    demolitionForceRequired: 0,
+    tags: [],
   }
 
   getCollisionBox(): THREE.Box3 | null {

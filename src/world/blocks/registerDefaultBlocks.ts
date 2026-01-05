@@ -1,5 +1,6 @@
 import { registerBlock } from './BlockRegistry.ts'
 import { BlockIds } from './BlockIds.ts'
+import { BlockTags } from './tags/BlockTags.ts'
 import { StoneBlock } from './types/stone/StoneBlock.ts'
 import { DirtBlock } from './types/dirt/DirtBlock.ts'
 import { GrassBlock } from './types/grass/GrassBlock.ts'
@@ -21,6 +22,8 @@ export function registerDefaultBlocks(): void {
       hardness: 1.5,
       lightLevel: 0,
       lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.STONE],
     },
     factory: () => new StoneBlock(),
   })
@@ -35,6 +38,8 @@ export function registerDefaultBlocks(): void {
       hardness: 0.5,
       lightLevel: 0,
       lightBlocking: 15,
+      demolitionForceRequired: 0,
+      tags: [BlockTags.DIRT],
     },
     factory: () => new DirtBlock(),
   })
@@ -49,6 +54,8 @@ export function registerDefaultBlocks(): void {
       hardness: 0.6,
       lightLevel: 0,
       lightBlocking: 15,
+      demolitionForceRequired: 0,
+      tags: [BlockTags.DIRT],
     },
     factory: () => new GrassBlock(),
   })
@@ -63,6 +70,8 @@ export function registerDefaultBlocks(): void {
       hardness: 2.0,
       lightLevel: 0,
       lightBlocking: 15,
+      demolitionForceRequired: 0,
+      tags: [BlockTags.WOOD],
     },
     factory: () => new OakLogBlock(),
   })
@@ -77,6 +86,8 @@ export function registerDefaultBlocks(): void {
       hardness: 0.2,
       lightLevel: 0,
       lightBlocking: 1,
+      demolitionForceRequired: 0,
+      tags: [BlockTags.LEAVES],
     },
     factory: () => new OakLeavesBlock(),
   })

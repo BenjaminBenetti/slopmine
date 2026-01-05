@@ -3,6 +3,7 @@ import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { OakLogBlockItem } from '../../../../items/blocks/oak_log/OakLogBlockItem.ts'
 import oakLogTexUrl from './assets/oak-log.webp'
@@ -24,6 +25,8 @@ export class OakLogBlock extends SolidBlock {
     hardness: 1.5,
     lightLevel: 0,
     lightBlocking: 15,
+    demolitionForceRequired: 0,
+    tags: [BlockTags.WOOD],
   }
 
   protected getMaterials(): THREE.Material[] {

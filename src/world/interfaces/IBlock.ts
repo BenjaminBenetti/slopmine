@@ -31,6 +31,10 @@ export interface IBlockProperties {
   readonly hardness: number
   readonly lightLevel: number
   readonly lightBlocking: number
+  /** Minimum demolition force required to mine this block (0 = hand-minable) */
+  readonly demolitionForceRequired: number
+  /** Tags for tool effectiveness matching (e.g., 'stone', 'wood', 'dirt') */
+  readonly tags: ReadonlyArray<string>
 }
 
 /**

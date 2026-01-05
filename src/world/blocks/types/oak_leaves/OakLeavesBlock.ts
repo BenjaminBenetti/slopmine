@@ -3,6 +3,7 @@ import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { OakLeavesBlockItem } from '../../../../items/blocks/oak_leaves/OakLeavesBlockItem.ts'
 import oakLeavesTexUrl from './assets/oak-leaves.webp'
@@ -26,6 +27,8 @@ export class OakLeavesBlock extends TransparentBlock {
     hardness: 0.05,
     lightLevel: 0,
     lightBlocking: 1,
+    demolitionForceRequired: 0,
+    tags: [BlockTags.LEAVES],
   }
 
   protected getMaterials(): THREE.Material {
