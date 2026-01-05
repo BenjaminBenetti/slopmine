@@ -7,7 +7,7 @@ export class SteelAxeItem extends AxeItem {
   readonly id = 'steel_axe'
   readonly name = 'steel_axe'
   protected readonly baseDamage = 3
-  protected readonly tier = 3
+  protected readonly tier = 4
 
   override get displayName(): string {
     return 'Steel Axe'

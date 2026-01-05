@@ -1,4 +1,7 @@
 import { GameLoop } from './core/GameLoop.ts'
+import { TaskScheduler } from './core/TaskScheduler.ts'
+import { TaskPriority } from './core/interfaces/ITask.ts'
+import { BudgetAwareTask } from './core/BudgetAwareTask.ts'
 import { Renderer } from './renderer/Renderer.ts'
 import { SubChunkOpacityCache } from './renderer/SubChunkOpacityCache.ts'
 import { WorldLighting } from './renderer/WorldLighting.ts'
@@ -253,6 +256,96 @@ let frameCpuStart = 0
 let lastTickCount = 0
 let lastFrameTime = 0
 
+// Create task scheduler with adaptive budgeting
+const scheduler = new TaskScheduler({
+  budgetRatio: 0.25,        // Use 25% of frame time for updates
+  minBudgetMs: 1,           // Floor (prevents starvation)
+  maxBudgetMs: 8,           // Ceiling (prevents runaway at low FPS)
+  adaptationRate: 0.1,      // Smoothing factor for rolling average
+  collectMetrics: true,
+})
+
+// Register CRITICAL tasks (always run every frame)
+scheduler.createTask({
+  id: 'camera-controls',
+  priority: TaskPriority.CRITICAL,
+  update: (dt) => cameraControls.update(dt),
+})
+
+scheduler.createTask({
+  id: 'physics',
+  priority: TaskPriority.CRITICAL,
+  update: (dt) => physicsEngine.update(dt),
+})
+
+scheduler.createTask({
+  id: 'block-interaction',
+  priority: TaskPriority.CRITICAL,
+  update: (dt) => blockInteraction.update(dt),
+})
+
+// Register HIGH priority tasks (can be skipped briefly without visual issues)
+scheduler.createTask({
+  id: 'shadow-camera',
+  priority: TaskPriority.NORMAL,
+  update: () => lighting.updateShadowTarget(renderer.camera.position),
+})
+
+scheduler.createTask({
+  id: 'skybox',
+  priority: TaskPriority.NORMAL,
+  update: () => skybox.update(renderer.camera),
+})
+
+scheduler.createTask({
+  id: 'held-item',
+  priority: TaskPriority.NORMAL,
+  update: (dt) => {
+    heldItemRenderer.setWalking(cameraControls.isWalking())
+    heldItemRenderer.setMining(blockInteraction.isMining())
+    if (playerState.inventory.toolbar.selectedIndex !== lastSelectedIndex) {
+      lastSelectedIndex = playerState.inventory.toolbar.selectedIndex
+      updateHeldItem()
+    }
+    heldItemRenderer.update(dt)
+  },
+})
+
+scheduler.createTask({
+  id: 'lighting-queue',
+  priority: TaskPriority.NORMAL,
+  update: () =>
+    world.updateLightingQueue(renderer.camera.position.x, renderer.camera.position.z),
+})
+
+// Queue management tasks 
+scheduler.createTask({
+  id: 'world-generation-queue',
+  priority: TaskPriority.NORMAL,
+  update: () =>
+    worldGenerator.updateQueue(renderer.camera.position.x, renderer.camera.position.z),
+})
+
+// Register NORMAL priority tasks (background work, budget-aware)
+scheduler.registerTask(
+  new BudgetAwareTask({
+    id: 'world-generation',
+    priority: TaskPriority.NORMAL,
+    maxUnitsPerFrame: 4,
+    doWork: () => worldGenerator.processNextSubChunk(),
+  })
+)
+
+// Register LOW priority tasks (lowest priority background work, budget-aware)
+scheduler.registerTask(
+  new BudgetAwareTask({
+    id: 'background-lighting',
+    priority: TaskPriority.LOW,
+    maxUnitsPerFrame: 4,
+    doWork: () => world.processNextLightingColumn(),
+  })
+)
+
 /**
  * Transition from loading to playing state.
  * Shows UI elements and enables player controls.
@@ -269,7 +362,12 @@ const gameLoop = new GameLoop({
   update(deltaTime: number) {
     frameCpuStart = performance.now()
 
-    // During loading, only update world generation
+    // Report previous frame time for adaptive budgeting
+    if (lastFrameTime > 0) {
+      scheduler.reportFrameTime(lastFrameTime)
+    }
+
+    // During loading, only update world generation (bypass scheduler)
     if (isLoading) {
       // Update world generation from spawn position
       worldGenerator.update(spawnPosition.x, spawnPosition.z, spawnPosition.y)
@@ -286,34 +384,8 @@ const gameLoop = new GameLoop({
       return
     }
 
-    // Normal gameplay updates
-    cameraControls.update(deltaTime)
-    physicsEngine.update(deltaTime)
-    blockInteraction.update(deltaTime)
-
-    // Update world generation based on camera position
-    worldGenerator.update(
-      renderer.camera.position.x,
-      renderer.camera.position.z
-    )
-
-    // Update world systems (background lighting correction, etc)
-    world.update(renderer.camera.position.x, renderer.camera.position.z)
-
-    // Update shadow camera to follow player
-    lighting.updateShadowTarget(renderer.camera.position)
-
-    // Keep skybox centered on camera so player can never leave it
-    skybox.update(renderer.camera)
-
-    // Update held item (walking bob + mining swing + selection change detection)
-    heldItemRenderer.setWalking(cameraControls.isWalking())
-    heldItemRenderer.setMining(blockInteraction.isMining())
-    if (playerState.inventory.toolbar.selectedIndex !== lastSelectedIndex) {
-      lastSelectedIndex = playerState.inventory.toolbar.selectedIndex
-      updateHeldItem()
-    }
-    heldItemRenderer.update(deltaTime)
+    // Normal gameplay - use task scheduler with adaptive budget management
+    scheduler.update(deltaTime)
   },
   render() {
     renderer.render()
@@ -328,6 +400,17 @@ const gameLoop = new GameLoop({
     fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
     fpsCounter.setLightingStats(world.getBackgroundLightingStats())
     fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
+    // Add scheduler stats for debug display
+    const schedulerMetrics = scheduler.getMetrics()
+    if (schedulerMetrics) {
+      fpsCounter.setSchedulerStats({
+        tasksExecuted: schedulerMetrics.tasksExecuted,
+        tasksSkipped: schedulerMetrics.tasksSkipped,
+        budgetUsedMs: schedulerMetrics.frameTimeMs,
+        currentBudgetMs: scheduler.getCurrentBudget(),
+        avgFrameTimeMs: scheduler.getAverageFrameTime(),
+      })
+    }
     fpsCounter.update({
       deltaTime: lastFrameTime / 1000,
       cpuTime,

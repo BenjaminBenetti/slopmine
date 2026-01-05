@@ -21,6 +21,14 @@ export interface OcclusionStats {
   occludedCount: number
 }
 
+export interface SchedulerStats {
+  tasksExecuted: number
+  tasksSkipped: number
+  budgetUsedMs: number
+  currentBudgetMs: number
+  avgFrameTimeMs: number
+}
+
 export interface FpsCounterUI {
   readonly element: HTMLDivElement
   update(metrics: FrameMetrics): void
@@ -28,6 +36,7 @@ export interface FpsCounterUI {
   setPlayerPosition(x: number, y: number, z: number): void
   setLightingStats(stats: LightingStats): void
   setOcclusionStats(stats: OcclusionStats): void
+  setSchedulerStats(stats: SchedulerStats): void
   show(): void
   hide(): void
   toggle(): boolean
@@ -78,6 +87,7 @@ export function createFpsCounterUI(
   let playerZ = 0
   let lightingStats: LightingStats | null = null
   let occlusionStats: OcclusionStats | null = null
+  let schedulerStats: SchedulerStats | null = null
 
   // Target frame budget for 60 FPS
   const frameBudgetMs = 16.67
@@ -120,6 +130,12 @@ export function createFpsCounterUI(
           lines.push(`Occlusion: ${occlusionStats.occludedCount}/${occlusionStats.candidateCount} culled (${cullPercent}%)`)
           lines.push(`Occluders: ${occlusionStats.occluderCount}`)
         }
+        if (schedulerStats) {
+          const total = schedulerStats.tasksExecuted + schedulerStats.tasksSkipped
+          const skipColor = schedulerStats.tasksSkipped > 0 ? '#ffaa00' : '#00ff00'
+          lines.push(`Tasks: ${schedulerStats.tasksExecuted}/${total} <span style="color:${skipColor}">(${schedulerStats.tasksSkipped} skipped)</span>`)
+          lines.push(`Budget: ${schedulerStats.budgetUsedMs.toFixed(2)}/${schedulerStats.currentBudgetMs.toFixed(1)}ms`)
+        }
         el.innerHTML = lines.join('<br>')
 
         frameCount = 0
@@ -146,6 +162,10 @@ export function createFpsCounterUI(
 
     setOcclusionStats(stats: OcclusionStats): void {
       occlusionStats = stats
+    },
+
+    setSchedulerStats(stats: SchedulerStats): void {
+      schedulerStats = stats
     },
 
     show(): void {

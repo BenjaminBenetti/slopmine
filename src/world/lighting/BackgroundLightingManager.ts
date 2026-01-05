@@ -264,6 +264,19 @@ export class BackgroundLightingManager {
    * Call this each frame to process queued columns.
    */
   update(): void {
+    this.updateQueue()
+    // Process up to columnsPerUpdate columns
+    for (let i = 0; i < this.config.columnsPerUpdate; i++) {
+      if (!this.processNextColumn()) break
+    }
+  }
+
+  /**
+   * Update the lighting queue (move pending columns, process edge propagation).
+   * Does NOT process columns - use processNextColumn() for that.
+   * Call this every frame to keep the queue up to date.
+   */
+  updateQueue(): void {
     if (!this.config.enabled) return
     if (!this.getColumn || !this.queueSubChunkForMeshing) return
 
@@ -273,19 +286,25 @@ export class BackgroundLightingManager {
       this.columnQueue.push(key)
     }
 
-    // Process edge propagation first (spreads light across chunk borders)
+    // Process edge propagation (spreads light across chunk borders)
     this.processEdgePropagation()
+  }
 
-    if (this.columnQueue.length === 0) return
+  /**
+   * Process a single column from the queue.
+   * Used by the task scheduler for budget-aware processing.
+   * @returns true if a column was processed (more work may remain), false if no work done
+   */
+  processNextColumn(): boolean {
+    if (!this.config.enabled) return false
+    if (!this.getColumn || !this.queueSubChunkForMeshing) return false
+    if (this.columnQueue.length === 0) return false
 
-    // Process up to columnsPerUpdate columns
-    // Use random selection to avoid ordering dependencies between neighbor chunks
-    let processed = 0
-    let attempts = 0
-    const maxAttempts = this.columnQueue.length * 2 // Prevent infinite loop
     const now = Date.now()
+    let attempts = 0
+    const maxAttempts = this.columnQueue.length
 
-    while (processed < this.config.columnsPerUpdate && attempts < maxAttempts && this.columnQueue.length > 0) {
+    while (attempts < maxAttempts) {
       attempts++
 
       // Pick a random index from the queue
@@ -349,12 +368,21 @@ export class BackgroundLightingManager {
       if (this.sendColumnToWorker(column, key)) {
         this.columnQueue.splice(randomIndex, 1)
         this.columnQueueSet.delete(key)
-        processed++
+        return true // Successfully processed one column
       } else {
-        // All workers busy - stop trying this frame, will retry next update
-        break
+        // All workers busy - stop trying
+        return false
       }
     }
+
+    return false // No valid column found after all attempts
+  }
+
+  /**
+   * Check if there is lighting work pending.
+   */
+  hasWorkPending(): boolean {
+    return this.columnQueue.length > 0 || this.pendingAddQueue.length > 0 || this.edgePropagationQueue.size > 0
   }
 
   /**

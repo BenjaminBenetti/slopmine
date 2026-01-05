@@ -100,6 +100,16 @@ export class WorldGenerator {
    * @param playerY - Player world Y position
    */
   update(playerX: number, playerZ: number, playerY: number = 0): void {
+    this.updateQueue(playerX, playerZ, playerY)
+    this.processSubChunkQueue()
+  }
+
+  /**
+   * Update the generation queue based on player position.
+   * Does NOT process the queue - use processNextSubChunk() for that.
+   * Call this every frame to keep the queue up to date.
+   */
+  updateQueue(playerX: number, playerZ: number, playerY: number = 0): void {
     // Convert to chunk coordinates
     const playerChunk = worldToChunk({
       x: BigInt(Math.floor(playerX)),
@@ -128,9 +138,6 @@ export class WorldGenerator {
       this.updateSubChunkQueue()
       this.unloadDistantChunks()
     }
-
-    // Process sub-chunk generation queue
-    this.processSubChunkQueue()
   }
 
   /**
@@ -341,6 +348,36 @@ export class WorldGenerator {
       this.generateSubChunk(queued.coordinate, key)
       started++
     }
+  }
+
+  /**
+   * Process a single sub-chunk from the queue.
+   * Used by the task scheduler for budget-aware processing.
+   * @returns true if more work remains in the queue
+   */
+  processNextSubChunk(): boolean {
+    if (this.subChunkQueue.length === 0) return false
+
+    const queued = this.subChunkQueue.shift()
+    if (!queued) return this.subChunkQueue.length > 0
+
+    const key = createSubChunkKey(
+      queued.coordinate.x,
+      queued.coordinate.z,
+      queued.coordinate.subY
+    )
+
+    // Skip if already generating
+    if (this.generatingSubChunks.has(key)) {
+      return this.subChunkQueue.length > 0
+    }
+
+    this.generatingSubChunks.add(key)
+
+    // Start async generation (fire-and-forget)
+    this.generateSubChunk(queued.coordinate, key)
+
+    return this.subChunkQueue.length > 0
   }
 
   /**

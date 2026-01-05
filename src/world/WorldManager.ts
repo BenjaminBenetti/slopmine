@@ -509,6 +509,31 @@ export class WorldManager {
   }
 
   /**
+   * Update the lighting queue (does NOT process columns).
+   * Call this every frame to keep the queue up to date.
+   */
+  updateLightingQueue(playerX: number, playerZ: number): void {
+    this.backgroundLightingManager.setPlayerPosition(playerX, playerZ)
+    this.backgroundLightingManager.updateQueue()
+  }
+
+  /**
+   * Process a single lighting column.
+   * Used by the task scheduler for budget-aware processing.
+   * @returns true if work was done (more may remain), false if no work
+   */
+  processNextLightingColumn(): boolean {
+    return this.backgroundLightingManager.processNextColumn()
+  }
+
+  /**
+   * Check if there is lighting work pending.
+   */
+  hasLightingWorkPending(): boolean {
+    return this.backgroundLightingManager.hasWorkPending()
+  }
+
+  /**
    * Get background lighting statistics for debug display.
    */
   getBackgroundLightingStats(): {
