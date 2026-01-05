@@ -5,6 +5,7 @@
 export const ItemTags = {
   WOOD: 'wood',
   STONE: 'stone',
+  METAL: 'metal',
 } as const
 
 export type ItemTag = (typeof ItemTags)[keyof typeof ItemTags]

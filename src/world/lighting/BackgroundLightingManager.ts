@@ -35,7 +35,7 @@ export interface BackgroundLightingConfig {
 const DEFAULT_CONFIG: BackgroundLightingConfig = {
   columnsPerUpdate: 20,
   reprocessCooldown: 60000, // 1 minute
-  nearbyReprocessCooldown: 10000, // 30 seconds
+  nearbyReprocessCooldown: 10000, // 10 seconds
   nearbyDistance: 4,
   maxDistance: 8,
   enabled: true,
@@ -330,14 +330,14 @@ export class BackgroundLightingManager {
       const isNearby = distance <= this.config.nearbyDistance
       const baseCooldown = isNearby ? this.config.nearbyReprocessCooldown : this.config.reprocessCooldown
 
-      // Add jitter to long-range cooldowns to stagger reprocessing
-      // Use chunk coordinates to create deterministic jitter (0-50% of cooldown)
-      let cooldown = baseCooldown
-      if (!isNearby) {
-        const jitterSeed = (chunkX * 73856093) ^ (chunkZ * 19349663)
-        const jitterPercent = (Math.abs(jitterSeed) % 50) / 100 // 0-50%
-        cooldown = baseCooldown + baseCooldown * jitterPercent
-      }
+      // Add jitter to stagger reprocessing (deterministic based on chunk coords)
+      // Nearby chunks use higher jitter (0-100%) to spread across full window
+      // Far chunks use lower jitter (0-50%) for less variation
+      const jitterSeed = (chunkX * 73856093) ^ (chunkZ * 19349663)
+      const jitterPercent = isNearby
+        ? (Math.abs(jitterSeed) % 100) / 100
+        : (Math.abs(jitterSeed) % 50) / 100
+      const cooldown = baseCooldown + baseCooldown * jitterPercent
 
       // Check if this column was recently processed
       const lastProcessed = this.processedColumns.get(key)
@@ -599,15 +599,14 @@ export class BackgroundLightingManager {
       // Skip if beyond max distance
       if (distance > this.config.maxDistance) continue
 
-      // Check cooldown (with jitter for long-range)
+      // Check cooldown (with jitter for staggering)
       const isNearby = distance <= this.config.nearbyDistance
       const baseCooldown = isNearby ? this.config.nearbyReprocessCooldown : this.config.reprocessCooldown
-      let cooldown = baseCooldown
-      if (!isNearby) {
-        const jitterSeed = (chunkX * 73856093) ^ (chunkZ * 19349663)
-        const jitterPercent = (Math.abs(jitterSeed) % 50) / 100
-        cooldown = baseCooldown + baseCooldown * jitterPercent
-      }
+      const jitterSeed = (chunkX * 73856093) ^ (chunkZ * 19349663)
+      const jitterPercent = isNearby
+        ? (Math.abs(jitterSeed) % 100) / 100
+        : (Math.abs(jitterSeed) % 50) / 100
+      const cooldown = baseCooldown + baseCooldown * jitterPercent
       const lastProcessed = this.processedColumns.get(key)
       if (lastProcessed && now - lastProcessed < cooldown) continue
 

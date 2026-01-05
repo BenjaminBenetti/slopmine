@@ -552,22 +552,23 @@ export class SkylightPropagator {
           const blockId = subChunk.getBlockId(x, y, z)
 
           if (blockId === BlockIds.AIR) {
-            // Store as 0-15 (divide by scale)
-            subChunk.setSkylight(x, y, z, Math.floor(skylight / LIGHT_SCALE))
+            // Store as 0-15, but preserve existing light if higher (from neighbors)
+            const newLight = Math.floor(skylight / LIGHT_SCALE)
+            const existingLight = subChunk.getSkylight(x, y, z)
+            subChunk.setSkylight(x, y, z, Math.max(newLight, existingLight))
           } else {
             const block = getBlock(blockId)
             const blocking = block.properties.lightBlocking
 
             // Reduce light based on block's light blocking (scaled)
             skylight = Math.max(0, skylight - blocking * LIGHT_SCALE)
-            subChunk.setSkylight(x, y, z, Math.floor(skylight / LIGHT_SCALE))
+            const newLight = Math.floor(skylight / LIGHT_SCALE)
+            const existingLight = subChunk.getSkylight(x, y, z)
+            subChunk.setSkylight(x, y, z, Math.max(newLight, existingLight))
 
-            // If fully opaque, no more light below
+            // If fully opaque, no more sky light below
+            // But don't zero out existing light (could be from neighbors)
             if (blocking >= 15) {
-              // Fill rest of column with 0
-              for (let yy = y - 1; yy >= 0; yy--) {
-                subChunk.setSkylight(x, yy, z, 0)
-              }
               break
             }
           }

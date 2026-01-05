@@ -6,6 +6,11 @@ import { DirtBlock } from './types/dirt/DirtBlock.ts'
 import { GrassBlock } from './types/grass/GrassBlock.ts'
 import { OakLogBlock } from './types/oak_log/OakLogBlock.ts'
 import { OakLeavesBlock } from './types/oak_leaves/OakLeavesBlock.ts'
+import { IronBlockBlock } from './types/iron_block/IronBlockBlock.ts'
+import { CopperBlockBlock } from './types/copper_block/CopperBlockBlock.ts'
+import { CoalBlockBlock } from './types/coal_block/CoalBlockBlock.ts'
+import { GoldBlockBlock } from './types/gold_block/GoldBlockBlock.ts'
+import { DiamondBlockBlock } from './types/diamond_block/DiamondBlockBlock.ts'
 
 /**
  * Register all default block types.
@@ -90,5 +95,85 @@ export function registerDefaultBlocks(): void {
       tags: [BlockTags.LEAVES],
     },
     factory: () => new OakLeavesBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.IRON_BLOCK,
+      name: 'iron_block',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 5.0,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.METAL],
+    },
+    factory: () => new IronBlockBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.COPPER_BLOCK,
+      name: 'copper_block',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 3.0,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.METAL],
+    },
+    factory: () => new CopperBlockBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.COAL_BLOCK,
+      name: 'coal_block',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 5.0,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.STONE],
+    },
+    factory: () => new CoalBlockBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.GOLD_BLOCK,
+      name: 'gold_block',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 3.0,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.METAL],
+    },
+    factory: () => new GoldBlockBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.DIAMOND_BLOCK,
+      name: 'diamond_block',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 5.0,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.METAL],
+    },
+    factory: () => new DiamondBlockBlock(),
   })
 }

@@ -9,4 +9,9 @@ export enum BlockIds {
   GRASS = 3,
   OAK_LOG = 4,
   OAK_LEAVES = 5,
+  IRON_BLOCK = 6,
+  COPPER_BLOCK = 7,
+  COAL_BLOCK = 8,
+  GOLD_BLOCK = 9,
+  DIAMOND_BLOCK = 10,
 }

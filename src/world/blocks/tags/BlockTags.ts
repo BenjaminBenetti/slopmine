@@ -7,6 +7,7 @@ export const BlockTags = {
   WOOD: 'wood',
   DIRT: 'dirt',
   LEAVES: 'leaves',
+  METAL: 'metal',
 } as const
 
 export type BlockTag = (typeof BlockTags)[keyof typeof BlockTags]
