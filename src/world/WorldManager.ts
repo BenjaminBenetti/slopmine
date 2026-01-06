@@ -75,7 +75,7 @@ export class WorldManager {
 
     // Initialize background lighting manager
     this.backgroundLightingManager = new BackgroundLightingManager({
-      columnsPerUpdate: 2, // Process 2 columns per frame
+      columnsPerUpdate: 1, // Process 1 column per frame to reduce frame time impact
       reprocessCooldown: 60000, // Re-check columns every 60 seconds
     })
     this.backgroundLightingManager.setCallbacks(

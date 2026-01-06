@@ -35,7 +35,7 @@ export interface BackgroundLightingConfig {
 const DEFAULT_CONFIG: BackgroundLightingConfig = {
   columnsPerUpdate: 20,
   reprocessCooldown: 60000, // 1 minute
-  nearbyReprocessCooldown: 10000, // 10 seconds
+  nearbyReprocessCooldown: 1000, // 1 minute
   nearbyDistance: 4,
   maxDistance: 8,
   enabled: true,
@@ -60,6 +60,10 @@ export class BackgroundLightingManager {
 
   // Frame budget for edge propagation (in milliseconds)
   private readonly EDGE_PROPAGATION_BUDGET_MS = 2
+
+  // Cooldown for edge propagation to prevent cascading re-queueing
+  private readonly recentlyPropagated: Map<ChunkKey, number> = new Map()
+  private readonly PROPAGATION_COOLDOWN_MS = 500
 
   // Player position for priority processing (in chunk coordinates)
   private playerChunkX = 0
@@ -210,6 +214,7 @@ export class BackgroundLightingManager {
 
   /**
    * Serialize sub-chunks from a column for worker transfer.
+   * Must copy arrays since SubChunk needs to retain its data after transfer.
    */
   private serializeSubChunks(column: ChunkColumn): SubChunkData[] {
     const subChunks: SubChunkData[] = []
@@ -498,19 +503,45 @@ export class BackgroundLightingManager {
 
   /**
    * Queue neighboring columns for edge light propagation.
+   * Uses cooldown to prevent cascading re-queueing which causes frame drops.
    */
   private queueNeighborsForEdgePropagation(coord: IChunkCoordinate): void {
+    const now = Date.now()
+
+    // Clean old cooldown entries periodically
+    if (this.recentlyPropagated.size > 100) {
+      for (const [key, time] of this.recentlyPropagated) {
+        if (now - time > this.PROPAGATION_COOLDOWN_MS) {
+          this.recentlyPropagated.delete(key)
+        }
+      }
+    }
+
     const neighbors = [
       createChunkKey(coord.x + 1n, coord.z),
       createChunkKey(coord.x - 1n, coord.z),
       createChunkKey(coord.x, coord.z + 1n),
       createChunkKey(coord.x, coord.z - 1n),
     ]
+
     for (const neighborKey of neighbors) {
+      // Skip if recently propagated (prevents cascading)
+      const lastTime = this.recentlyPropagated.get(neighborKey)
+      if (lastTime && now - lastTime < this.PROPAGATION_COOLDOWN_MS) {
+        continue
+      }
+
       this.edgePropagationQueue.add(neighborKey)
+      this.recentlyPropagated.set(neighborKey, now)
     }
+
     // Also add the source column itself (it may receive light from neighbors)
-    this.edgePropagationQueue.add(createChunkKey(coord.x, coord.z))
+    const sourceKey = createChunkKey(coord.x, coord.z)
+    const sourceLastTime = this.recentlyPropagated.get(sourceKey)
+    if (!sourceLastTime || now - sourceLastTime >= this.PROPAGATION_COOLDOWN_MS) {
+      this.edgePropagationQueue.add(sourceKey)
+      this.recentlyPropagated.set(sourceKey, now)
+    }
   }
 
   /**
