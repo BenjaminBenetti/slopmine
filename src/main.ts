@@ -23,6 +23,7 @@ import { createSettingsMenuUI } from './ui/SettingsMenu.ts'
 import { createFpsCounterUI } from './ui/FpsCounter.ts'
 import { createLoadingScreenUI } from './ui/LoadingScreen.ts'
 import { ChunkWireframeManager } from './renderer/ChunkWireframeManager.ts'
+import { OreWireframeManager } from './renderer/OreWireframeManager.ts'
 import { DebugManager } from './ui/DebugManager.ts'
 import {
   WorldManager,
@@ -130,6 +131,10 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
     // Apply new resolution immediately
     renderer.setResolution(preset)
   },
+  onFramerateLimitChange: (limit) => {
+    // Apply new framerate limit immediately
+    gameLoop.setTargetFps(limit)
+  },
 })
 
 const seaLevel = worldGenerator.getConfig().seaLevel
@@ -159,11 +164,13 @@ renderer.camera.position.set(
 // Set the scene for rendering
 world.setScene(renderer.scene)
 
-// Debug visualization system (FPS counter + chunk wireframes)
+// Debug visualization system (FPS counter + chunk wireframes + ore wireframes)
 const wireframeManager = new ChunkWireframeManager(renderer.scene)
+const oreWireframeManager = new OreWireframeManager(renderer.scene)
 const debugManager = new DebugManager({
   fpsCounter,
   wireframeManager,
+  oreWireframeManager,
 })
 debugManager.restoreFromStorage()
 
@@ -173,6 +180,12 @@ world.onSubChunkMeshAdded((coord) => {
 })
 world.onSubChunkMeshRemoved((coord) => {
   wireframeManager.removeSubChunk(coord)
+  oreWireframeManager.removeOresForSubChunk(coord)
+})
+
+// Add ore wireframes when ores are generated
+world.onOrePositionsGenerated((coord, positions) => {
+  oreWireframeManager.addOresForSubChunk(coord, positions)
 })
 
 // Highlight wireframes when columns are being lit
@@ -420,7 +433,7 @@ const gameLoop = new GameLoop({
 }, (metrics) => {
   lastTickCount = metrics.tickCount
   lastFrameTime = metrics.frameTime
-})
+}, graphicsSettings.framerateLimit)
 
 // Settings input handler - shows/hides settings based on pointer lock state
 // Created after gameLoop so we can control pause state

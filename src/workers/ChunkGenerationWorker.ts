@@ -12,6 +12,7 @@ import { SimplexNoise } from '../world/generate/SimplexNoise.ts'
 import { CaveCarver } from '../world/generate/caves/CaveCarver.ts'
 import { SkylightPropagator } from '../world/lighting/SkylightPropagator.ts'
 import { CliffFeature, type CliffFeatureSettings } from '../world/generate/features/CliffFeature.ts'
+import { OreFeature, type OreFeatureSettings, type OrePosition } from '../world/generate/features/OreFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
@@ -28,6 +29,7 @@ registerDefaultBlocks()
  */
 export type FeatureConfig =
   | { type: 'cliff'; settings: CliffFeatureSettings }
+  | { type: 'ore'; settings: OreFeatureSettings }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -111,6 +113,7 @@ export interface SubChunkGenerationResponse {
   lightData: Uint8Array
   hasTerrainAbove: boolean // True if terrain extends above this sub-chunk
   maxSolidY: number // Highest solid block world Y in this sub-chunk (-1 if empty)
+  orePositions: OrePosition[] // Debug: positions of all ore blocks placed
 }
 
 /**
@@ -132,6 +135,8 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
     switch (config.type) {
       case 'cliff':
         return new CliffFeature(config.settings)
+      case 'ore':
+        return new OreFeature(config.settings)
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }
@@ -447,6 +452,49 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   // Phase 3: Apply provisional skylight
   applyProvisionalSkylight(subChunk, noise, seaLevel, minWorldY, maxWorldY, biomeConfig)
 
+  // Phase 4: Apply ore features and collect positions
+  const orePositions: OrePosition[] = []
+  const features = createFeatures(biomeConfig.features)
+
+  // Create feature context for this sub-chunk
+  const featureContext: FeatureContext = {
+    chunk: subChunk,
+    world: null, // Workers don't have access to world
+    noise,
+    config: { seed, seaLevel, biome: biomeConfig.name as 'plains' | 'grassy-hills', chunkDistance: 8 },
+    biomeProperties: {
+      name: biomeConfig.name,
+      surfaceBlock: biomeConfig.surfaceBlock,
+      subsurfaceBlock: biomeConfig.subsurfaceBlock,
+      subsurfaceDepth: biomeConfig.subsurfaceDepth,
+      baseBlock: biomeConfig.baseBlock,
+      heightAmplitude: biomeConfig.heightAmplitude,
+      heightOffset: biomeConfig.heightOffset,
+      treeDensity: biomeConfig.treeDensity,
+      features: [],
+      caves: biomeConfig.caves,
+    },
+    getBaseHeightAt: getHeight,
+  }
+
+  // Apply ore features and collect positions
+  for (const feature of features) {
+    if (feature instanceof OreFeature) {
+      // Check if ore Y range overlaps with this sub-chunk
+      const oreMinY = feature.settings.minY
+      const oreMaxY = feature.settings.maxY
+      if (oreMaxY >= minWorldY && oreMinY <= maxWorldY) {
+        const positions = feature.scanWithPositions(featureContext)
+        // Filter to only positions within this sub-chunk's Y range
+        for (const pos of positions) {
+          if (pos.y >= minWorldY && pos.y <= maxWorldY) {
+            orePositions.push(pos)
+          }
+        }
+      }
+    }
+  }
+
   return {
     type: 'subchunk-result',
     chunkX,
@@ -456,6 +504,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     lightData: subChunk.getLightData(),
     hasTerrainAbove,
     maxSolidY,
+    orePositions,
   }
 }
 

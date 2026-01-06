@@ -21,6 +21,7 @@ import type {
   SubChunkGenerationError,
   WorkerBiomeConfig,
 } from '../workers/ChunkGenerationWorker.ts'
+import type { OrePosition } from './generate/features/OreFeature.ts'
 import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
 
 /**
@@ -35,6 +36,7 @@ export class WorldManager {
   private readonly subChunkMeshes: Map<SubChunkKey, ChunkMesh> = new Map()
   private readonly subChunkMeshAddedCallbacks: Array<(coord: ISubChunkCoordinate) => void> = []
   private readonly subChunkMeshRemovedCallbacks: Array<(coord: ISubChunkCoordinate) => void> = []
+  private readonly orePositionCallbacks: Array<(coord: ISubChunkCoordinate, positions: OrePosition[]) => void> = []
 
   // Web Worker pool for mesh building
   private readonly meshWorkers: Worker[] = []
@@ -154,7 +156,7 @@ export class WorldManager {
 
   /**
    * Generate sub-chunk terrain using worker, returns promise.
-   * Handles terrain, caves, and lighting for a 64-height slice.
+   * Handles terrain, caves, lighting, and ores for a 64-height slice.
    */
   async generateSubChunkInWorker(
     coordinate: ISubChunkCoordinate,
@@ -163,7 +165,7 @@ export class WorldManager {
     minWorldY: number,
     maxWorldY: number,
     biomeConfig: WorkerBiomeConfig
-  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array }> {
+  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; orePositions: OrePosition[] }> {
     const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
 
     // Pre-allocate buffers (will be transferred to worker)
@@ -187,9 +189,16 @@ export class WorldManager {
     return new Promise((resolve, reject) => {
       this.subChunkCallbackMap.set(subChunkKey, {
         resolve: (response) => {
+          // Emit ore position callbacks
+          if (response.orePositions.length > 0) {
+            for (const callback of this.orePositionCallbacks) {
+              callback(coordinate, response.orePositions)
+            }
+          }
           resolve({
             blocks: response.blocks,
             lightData: response.lightData,
+            orePositions: response.orePositions,
           })
         },
         reject,
@@ -866,6 +875,21 @@ export class WorldManager {
       const index = this.subChunkMeshRemovedCallbacks.indexOf(callback)
       if (index !== -1) {
         this.subChunkMeshRemovedCallbacks.splice(index, 1)
+      }
+    }
+  }
+
+  /**
+   * Register a callback for when ore positions are generated for a sub-chunk.
+   * Used for debug visualization.
+   * Returns an unsubscribe function.
+   */
+  onOrePositionsGenerated(callback: (coord: ISubChunkCoordinate, positions: OrePosition[]) => void): () => void {
+    this.orePositionCallbacks.push(callback)
+    return () => {
+      const index = this.orePositionCallbacks.indexOf(callback)
+      if (index !== -1) {
+        this.orePositionCallbacks.splice(index, 1)
       }
     }
   }

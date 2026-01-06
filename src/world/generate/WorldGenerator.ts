@@ -8,6 +8,7 @@ import { BiomeGenerator } from './BiomeGenerator.ts'
 import { PlainsGenerator } from './biomes/PlainsGenerator.ts'
 import { GrassyHillsGenerator } from './biomes/GrassyHillsGenerator.ts'
 import { CliffFeature } from './features/CliffFeature.ts'
+import { OreFeature } from './features/OreFeature.ts'
 import { EntranceGenerator } from './caves/EntranceGenerator.ts'
 import type { WorkerBiomeConfig, FeatureConfig } from '../../workers/ChunkGenerationWorker.ts'
 
@@ -73,6 +74,9 @@ export class WorldGenerator {
     const features: FeatureConfig[] = props.features.map(feature => {
       if (feature instanceof CliffFeature) {
         return { type: 'cliff', settings: feature.settings }
+      }
+      if (feature instanceof OreFeature) {
+        return { type: 'ore', settings: feature.settings }
       }
       throw new Error(`Unknown feature type: ${feature.constructor.name}`)
     })

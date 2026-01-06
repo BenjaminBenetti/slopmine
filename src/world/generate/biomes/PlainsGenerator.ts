@@ -1,6 +1,7 @@
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
+import { OreFeature } from '../features/OreFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -28,6 +29,61 @@ export class PlainsGenerator extends BiomeGenerator {
         threshold: 0.6,
         maxHeight: 2,
         block: BlockIds.STONE,
+      }),
+      // Common ores - coal spawns near surface
+      new OreFeature({
+        blockId: BlockIds.COAL_BLOCK,
+        frequency: 20,
+        veinSize: 12,
+        minY: 0,
+        maxY: 128,
+        peakY: 58,
+        ySpread: 16,
+        replaceableBlocks: [BlockIds.STONE],
+      }),
+      // Iron spawns mid-level
+      new OreFeature({
+        blockId: BlockIds.IRON_BLOCK,
+        frequency: 12,
+        veinSize: 8,
+        minY: 0,
+        maxY: 64,
+        peakY: 32,
+        ySpread: 16,
+        replaceableBlocks: [BlockIds.STONE],
+      }),
+      // Copper spawns similar to iron but slightly higher
+      new OreFeature({
+        blockId: BlockIds.COPPER_BLOCK,
+        frequency: 10,
+        veinSize: 10,
+        minY: 0,
+        maxY: 80,
+        peakY: 48,
+        ySpread: 20,
+        replaceableBlocks: [BlockIds.STONE],
+      }),
+      // Gold spawns deep and rarely
+      new OreFeature({
+        blockId: BlockIds.GOLD_BLOCK,
+        frequency: 4,
+        veinSize: 6,
+        minY: 0,
+        maxY: 32,
+        peakY: 12,
+        ySpread: 8,
+        replaceableBlocks: [BlockIds.STONE],
+      }),
+      // Diamond spawns very deep and very rarely
+      new OreFeature({
+        blockId: BlockIds.DIAMOND_BLOCK,
+        frequency: 2,
+        veinSize: 4,
+        minY: 0,
+        maxY: 16,
+        peakY: 8,
+        ySpread: 4,
+        replaceableBlocks: [BlockIds.STONE],
       }),
     ],
     caves: {

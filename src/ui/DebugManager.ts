@@ -1,10 +1,12 @@
 import type { FpsCounterUI } from './FpsCounter.ts'
 import type { ChunkWireframeManager } from '../renderer/ChunkWireframeManager.ts'
+import type { OreWireframeManager } from '../renderer/OreWireframeManager.ts'
 import { DebugMode, DEBUG_MODE_STORAGE_KEY, getNextDebugMode } from './DebugMode.ts'
 
 export interface DebugManagerDeps {
   fpsCounter: FpsCounterUI
   wireframeManager: ChunkWireframeManager
+  oreWireframeManager?: OreWireframeManager
 }
 
 /**
@@ -15,10 +17,12 @@ export class DebugManager {
   private mode: DebugMode = DebugMode.OFF
   private readonly fpsCounter: FpsCounterUI
   private readonly wireframeManager: ChunkWireframeManager
+  private readonly oreWireframeManager?: OreWireframeManager
 
   constructor(deps: DebugManagerDeps) {
     this.fpsCounter = deps.fpsCounter
     this.wireframeManager = deps.wireframeManager
+    this.oreWireframeManager = deps.oreWireframeManager
   }
 
   /**
@@ -60,7 +64,9 @@ export class DebugManager {
     }
 
     // Update wireframe visibility
-    this.wireframeManager.setVisible(mode === DebugMode.FPS_AND_WIREFRAMES)
+    const showWireframes = mode === DebugMode.FPS_AND_WIREFRAMES
+    this.wireframeManager.setVisible(showWireframes)
+    this.oreWireframeManager?.setVisible(showWireframes)
   }
 
   /**

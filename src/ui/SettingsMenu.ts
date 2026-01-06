@@ -1,5 +1,5 @@
 import type { GenerationConfig } from '../world/generate/GenerationConfig.ts'
-import type { GraphicsSettings, ResolutionPreset } from '../settings/index.ts'
+import type { GraphicsSettings, ResolutionPreset, FramerateLimit } from '../settings/index.ts'
 
 export type SettingsPage = 'main' | 'config'
 
@@ -10,6 +10,8 @@ export interface SettingsMenuUIOptions {
   onChunkDistanceChange?: (value: number) => void
   /** Called when resolution setting changes */
   onResolutionChange?: (preset: ResolutionPreset) => void
+  /** Called when framerate limit setting changes */
+  onFramerateLimitChange?: (limit: FramerateLimit) => void
 }
 
 export interface SettingsMenuUI {
@@ -262,6 +264,57 @@ export function createSettingsMenuUI(
     resolutionContainer.appendChild(resolutionLabel)
     resolutionContainer.appendChild(resolutionSelect)
     panel.appendChild(resolutionContainer)
+
+    // FPS Limit dropdown
+    const fpsContainer = document.createElement('div')
+    fpsContainer.style.marginBottom = '1.5rem'
+    fpsContainer.style.display = 'flex'
+    fpsContainer.style.alignItems = 'center'
+    fpsContainer.style.justifyContent = 'space-between'
+
+    const fpsLabel = document.createElement('label')
+    fpsLabel.textContent = 'FPS Limit'
+    fpsLabel.style.fontSize = '0.9rem'
+    fpsLabel.htmlFor = 'fps-limit-select'
+
+    const fpsSelect = document.createElement('select')
+    fpsSelect.id = 'fps-limit-select'
+    fpsSelect.style.padding = '0.4rem 0.6rem'
+    fpsSelect.style.background = 'rgba(50, 50, 50, 0.9)'
+    fpsSelect.style.border = '2px solid rgba(255, 255, 255, 0.3)'
+    fpsSelect.style.borderRadius = '4px'
+    fpsSelect.style.color = 'rgba(255, 255, 255, 0.9)'
+    fpsSelect.style.fontSize = '0.9rem'
+    fpsSelect.style.cursor = 'pointer'
+
+    const fpsOptions: { value: FramerateLimit; label: string }[] = [
+      { value: 30, label: '30 FPS' },
+      { value: 60, label: '60 FPS' },
+      { value: 80, label: '80 FPS' },
+      { value: 120, label: '120 FPS' },
+      { value: 240, label: '240 FPS' },
+    ]
+
+    for (const opt of fpsOptions) {
+      const option = document.createElement('option')
+      option.value = String(opt.value)
+      option.textContent = opt.label
+      option.style.background = 'rgba(30, 30, 30, 1)'
+      if (opt.value === graphicsSettings.framerateLimit) {
+        option.selected = true
+      }
+      fpsSelect.appendChild(option)
+    }
+
+    fpsSelect.addEventListener('change', () => {
+      const limit = parseInt(fpsSelect.value, 10) as FramerateLimit
+      graphicsSettings.framerateLimit = limit
+      options.onFramerateLimitChange?.(limit)
+    })
+
+    fpsContainer.appendChild(fpsLabel)
+    fpsContainer.appendChild(fpsSelect)
+    panel.appendChild(fpsContainer)
 
     // Culling toggle
     const cullingContainer = document.createElement('div')

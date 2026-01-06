@@ -20,20 +20,24 @@ export class GenerationConfig {
   private config: IGenerationConfig
 
   constructor(overrides?: Partial<IGenerationConfig>) {
-    this.config = this.load(overrides)
+    const { config, wasStored } = this.load(overrides)
+    this.config = config
+    if (!wasStored) {
+      this.save()
+    }
   }
 
-  private load(overrides?: Partial<IGenerationConfig>): IGenerationConfig {
+  private load(overrides?: Partial<IGenerationConfig>): { config: IGenerationConfig; wasStored: boolean } {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
         const parsed = JSON.parse(stored) as Partial<IGenerationConfig>
-        return { ...DEFAULT_CONFIG, ...parsed, ...overrides }
+        return { config: { ...DEFAULT_CONFIG, ...parsed, ...overrides }, wasStored: true }
       }
     } catch (e) {
       console.warn('Failed to load world config:', e)
     }
-    return { ...DEFAULT_CONFIG, ...overrides }
+    return { config: { ...DEFAULT_CONFIG, ...overrides }, wasStored: false }
   }
 
   save(): void {

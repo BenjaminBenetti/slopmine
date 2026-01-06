@@ -15,15 +15,25 @@ export class GameLoop {
   private static readonly MAX_UPDATES_PER_FRAME = 10
 
   private lastTime = 0
+  private lastRenderTime = 0
   private accumulator = 0
   private running = false
   private _paused = false
   private callback: GameLoopCallback
   private onMetrics?: (metrics: GameLoopMetrics) => void
+  private targetFps: number
+  private targetFrameMs: number
 
-  constructor(callback: GameLoopCallback, onMetrics?: (metrics: GameLoopMetrics) => void) {
+  constructor(callback: GameLoopCallback, onMetrics?: (metrics: GameLoopMetrics) => void, targetFps = 60) {
     this.callback = callback
     this.onMetrics = onMetrics
+    this.targetFps = targetFps
+    this.targetFrameMs = 1000 / targetFps
+  }
+
+  setTargetFps(fps: number): void {
+    this.targetFps = fps
+    this.targetFrameMs = 1000 / fps
   }
 
   /** When paused, updates are skipped but rendering continues */
@@ -44,6 +54,7 @@ export class GameLoop {
     if (this.running) return
     this.running = true
     this.lastTime = performance.now()
+    this.lastRenderTime = this.lastTime
     this.accumulator = 0
     this.loop()
   }
@@ -81,6 +92,13 @@ export class GameLoop {
 
     this.callback.render()
     this.onMetrics?.({ tickCount, frameTime })
+
+    // Spin to enforce framerate limit - never skip frames, just pace them
+    const frameEnd = this.lastRenderTime + this.targetFrameMs
+    while (performance.now() < frameEnd) {
+      // Busy wait to consume remaining frame time
+    }
+    this.lastRenderTime = performance.now()
 
     requestAnimationFrame(this.loop)
   }

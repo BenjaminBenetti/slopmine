@@ -1,15 +1,18 @@
 const STORAGE_KEY = 'slopmine:graphicsSettings'
 
 export type ResolutionPreset = '720p' | '1080p' | '1440p' | '4k' | 'native'
+export type FramerateLimit = 30 | 60 | 80 | 120 | 240
 
 export interface IGraphicsSettings {
   cullingEnabled: boolean
   resolutionPreset: ResolutionPreset
+  framerateLimit: FramerateLimit
 }
 
 const DEFAULT_SETTINGS: IGraphicsSettings = {
   cullingEnabled: true,
   resolutionPreset: 'native',
+  framerateLimit: 60,
 }
 
 export class GraphicsSettings {
@@ -34,6 +37,15 @@ export class GraphicsSettings {
 
   set resolutionPreset(value: ResolutionPreset) {
     this.settings.resolutionPreset = value
+    this.save()
+  }
+
+  get framerateLimit(): FramerateLimit {
+    return this.settings.framerateLimit
+  }
+
+  set framerateLimit(value: FramerateLimit) {
+    this.settings.framerateLimit = value
     this.save()
   }
 
