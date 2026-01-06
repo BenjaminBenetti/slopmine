@@ -35,8 +35,8 @@ export interface BackgroundLightingConfig {
 const DEFAULT_CONFIG: BackgroundLightingConfig = {
   columnsPerUpdate: 20,
   reprocessCooldown: 60000, // 1 minute
-  nearbyReprocessCooldown: 1000, // 1 minute
-  nearbyDistance: 4,
+  nearbyReprocessCooldown: 5000, // 5 seconds
+  nearbyDistance: 2,
   maxDistance: 8,
   enabled: true,
 }
@@ -54,6 +54,9 @@ export class BackgroundLightingManager {
   // Pending queue - columns waiting to be added to main queue (throttled to 1/frame)
   private readonly pendingAddQueue: ChunkKey[] = []
 
+  // High-priority queue for block changes when workers are busy
+  private readonly blockChangeQueue: BlockChangeLightingRequest[] = []
+
   // Edge propagation queue - columns needing light from neighbors
   private readonly edgePropagationQueue: Set<ChunkKey> = new Set()
   private readonly skylightPropagator = new SkylightPropagator()
@@ -69,6 +72,14 @@ export class BackgroundLightingManager {
   private playerChunkX = 0
   private playerChunkZ = 0
 
+  // Pre-allocated stats object to avoid GC pressure
+  private readonly statsResult = { queued: 0, processing: 0 }
+  private statsLastUpdate = 0
+  private readonly STATS_UPDATE_INTERVAL_MS = 500 // Only recalculate stats every 500ms
+
+  // Pre-allocated transfer array to avoid flatMap allocation (max 16 sub-chunks * 2 buffers)
+  private readonly transfersPool: ArrayBuffer[] = []
+
   // Callbacks for when lighting is updated
   private readonly onSubChunkLightingUpdated: Array<(coord: ISubChunkCoordinate) => void> = []
 
@@ -77,7 +88,7 @@ export class BackgroundLightingManager {
 
   // Reference to get columns and queue remeshing
   private getColumn: ((coord: IChunkCoordinate) => ChunkColumn | undefined) | null = null
-  private queueSubChunkForMeshing: ((subChunk: SubChunk) => void) | null = null
+  private queueSubChunkForMeshing: ((subChunk: SubChunk, priority?: 'high' | 'normal') => void) | null = null
 
   constructor(config: Partial<BackgroundLightingConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -92,6 +103,8 @@ export class BackgroundLightingManager {
       worker.onmessage = (event: MessageEvent<LightingResponse | LightingError>) => {
         this.workerBusy[i] = false
         this.handleWorkerResult(event.data)
+        // Process any queued block changes immediately (high priority)
+        this.processBlockChangeQueue()
       }
 
       this.workers.push(worker)
@@ -105,7 +118,7 @@ export class BackgroundLightingManager {
    */
   setCallbacks(
     getColumn: (coord: IChunkCoordinate) => ChunkColumn | undefined,
-    queueSubChunkForMeshing: (subChunk: SubChunk) => void
+    queueSubChunkForMeshing: (subChunk: SubChunk, priority?: 'high' | 'normal') => void
   ): void {
     this.getColumn = getColumn
     this.queueSubChunkForMeshing = queueSubChunkForMeshing
@@ -198,18 +211,51 @@ export class BackgroundLightingManager {
 
     // Find an available worker for high-priority block change
     const workerIndex = this.getAvailableWorker()
-    if (workerIndex === -1) return // All workers busy, background will catch it
+    if (workerIndex === -1) {
+      // All workers busy - queue for later processing
+      this.blockChangeQueue.push(request)
+      return
+    }
 
     // Track this as a pending column update
     this.pendingColumns.set(key, column)
 
-    // Transfer buffers to worker
+    // Transfer buffers to worker (reuse pool to avoid flatMap allocation)
     this.workerBusy[workerIndex] = true
-    const transfers = subChunks.flatMap((sc) => [
-      sc.blocks.buffer as ArrayBuffer,
-      sc.lightData.buffer as ArrayBuffer,
-    ])
-    this.workers[workerIndex].postMessage(request, transfers)
+    this.transfersPool.length = 0
+    for (const sc of subChunks) {
+      this.transfersPool.push(sc.blocks.buffer as ArrayBuffer, sc.lightData.buffer as ArrayBuffer)
+    }
+    this.workers[workerIndex].postMessage(request, this.transfersPool)
+  }
+
+  /**
+   * Process queued block changes when workers become available.
+   * Called after a worker finishes to immediately process high-priority block changes.
+   */
+  private processBlockChangeQueue(): void {
+    while (this.blockChangeQueue.length > 0) {
+      const workerIndex = this.getAvailableWorker()
+      if (workerIndex === -1) break // No more available workers
+
+      const request = this.blockChangeQueue.shift()!
+      const key = createChunkKey(BigInt(request.chunkX), BigInt(request.chunkZ))
+
+      // Skip if column is already being processed
+      if (this.pendingColumns.has(key)) continue
+
+      // Get column reference for pendingColumns tracking
+      const column = this.getColumn?.({ x: BigInt(request.chunkX), z: BigInt(request.chunkZ) })
+      if (!column) continue
+
+      this.pendingColumns.set(key, column)
+      this.workerBusy[workerIndex] = true
+      this.transfersPool.length = 0
+      for (const sc of request.subChunks) {
+        this.transfersPool.push(sc.blocks.buffer as ArrayBuffer, sc.lightData.buffer as ArrayBuffer)
+      }
+      this.workers[workerIndex].postMessage(request, this.transfersPool)
+    }
   }
 
   /**
@@ -425,8 +471,12 @@ export class BackgroundLightingManager {
     // Only mark as pending AFTER we confirmed a worker is available
     this.pendingColumns.set(key, column)
     this.workerBusy[workerIndex] = true
-    const transfers = subChunks.flatMap((sc) => [sc.blocks.buffer as ArrayBuffer, sc.lightData.buffer as ArrayBuffer])
-    this.workers[workerIndex].postMessage(request, transfers)
+    // Reuse pool to avoid flatMap allocation
+    this.transfersPool.length = 0
+    for (const sc of subChunks) {
+      this.transfersPool.push(sc.blocks.buffer as ArrayBuffer, sc.lightData.buffer as ArrayBuffer)
+    }
+    this.workers[workerIndex].postMessage(request, this.transfersPool)
 
     return true
   }
@@ -481,9 +531,9 @@ export class BackgroundLightingManager {
       const currentLightData = subChunk.getLightData()
       currentLightData.set(updated.lightData)
 
-      // Queue for remeshing
+      // Queue for remeshing with high priority (player action)
       if (this.queueSubChunkForMeshing) {
-        this.queueSubChunkForMeshing(subChunk)
+        this.queueSubChunkForMeshing(subChunk, 'high')
       }
 
       // Notify listeners
@@ -612,33 +662,39 @@ export class BackgroundLightingManager {
 
   /**
    * Get statistics about the background lighting system.
+   * Caches results and only recalculates periodically to avoid per-frame overhead.
    */
   getStats(): {
     queued: number
     processing: number
   } {
-    // Count columns that are actually ready to process
-    // (within distance, not on cooldown, not already pending)
     const now = Date.now()
-    let readyCount = 0
 
+    // Always update processing count (cheap)
+    this.statsResult.processing = this.pendingColumns.size
+
+    // Only recalculate queued count periodically (expensive)
+    if (now - this.statsLastUpdate < this.STATS_UPDATE_INTERVAL_MS) {
+      return this.statsResult
+    }
+    this.statsLastUpdate = now
+
+    // Count columns that are actually ready to process
+    let readyCount = 0
     for (const key of this.columnQueue) {
-      // Skip if already pending
       if (this.pendingColumns.has(key)) continue
 
-      // Parse coordinates and check distance
-      const [xStr, zStr] = key.split(',')
-      const chunkX = Number(xStr)
-      const chunkZ = Number(zStr)
+      const commaIdx = key.indexOf(',')
+      const chunkX = Number(key.slice(0, commaIdx))
+      const chunkZ = Number(key.slice(commaIdx + 1))
       const dx = chunkX - this.playerChunkX
       const dz = chunkZ - this.playerChunkZ
-      const distance = Math.sqrt(dx * dx + dz * dz)
+      const distSq = dx * dx + dz * dz
+      const maxDistSq = this.config.maxDistance * this.config.maxDistance
 
-      // Skip if beyond max distance
-      if (distance > this.config.maxDistance) continue
+      if (distSq > maxDistSq) continue
 
-      // Check cooldown (with jitter for staggering)
-      const isNearby = distance <= this.config.nearbyDistance
+      const isNearby = distSq <= this.config.nearbyDistance * this.config.nearbyDistance
       const baseCooldown = isNearby ? this.config.nearbyReprocessCooldown : this.config.reprocessCooldown
       const jitterSeed = (chunkX * 73856093) ^ (chunkZ * 19349663)
       const jitterPercent = isNearby
@@ -651,10 +707,8 @@ export class BackgroundLightingManager {
       readyCount++
     }
 
-    return {
-      queued: readyCount,
-      processing: this.pendingColumns.size,
-    }
+    this.statsResult.queued = readyCount
+    return this.statsResult
   }
 
   /**

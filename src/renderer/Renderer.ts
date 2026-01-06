@@ -23,6 +23,10 @@ export class Renderer {
   private graphicsSettings: GraphicsSettings | null = null
   private currentResolutionPreset: ResolutionPreset = 'native'
 
+  // Pre-allocated to avoid per-frame GC pressure
+  private readonly tempSize = new THREE.Vector2()
+  private readonly renderResolution = { width: 0, height: 0 }
+
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setSize(window.innerWidth, window.innerHeight)
@@ -99,12 +103,11 @@ export class Renderer {
    * Get the current internal render resolution in pixels.
    */
   getRenderResolution(): { width: number; height: number } {
-    const size = this.renderer.getSize(new THREE.Vector2())
+    this.renderer.getSize(this.tempSize)
     const pixelRatio = this.renderer.getPixelRatio()
-    return {
-      width: Math.round(size.x * pixelRatio),
-      height: Math.round(size.y * pixelRatio),
-    }
+    this.renderResolution.width = Math.round(this.tempSize.x * pixelRatio)
+    this.renderResolution.height = Math.round(this.tempSize.y * pixelRatio)
+    return this.renderResolution
   }
 
   /**

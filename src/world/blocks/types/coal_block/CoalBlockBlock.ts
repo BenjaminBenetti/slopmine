@@ -18,7 +18,7 @@ export class CoalBlockBlock extends SolidBlock {
     isOpaque: true,
     isSolid: true,
     isLiquid: false,
-    hardness: 5.0,
+    hardness: 1.5,
     lightLevel: 0,
     lightBlocking: 15,
     demolitionForceRequired: 1,

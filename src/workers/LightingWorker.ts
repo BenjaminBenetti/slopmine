@@ -128,6 +128,15 @@ function processBlockChangeRequest(
     // (some may have been affected through propagation)
     const updatedSubChunks: LightingResponse['updatedSubChunks'] = []
 
+    // Calculate which sub-chunk contains the block change and Y boundary info
+    const SUB_CHUNK_HEIGHT = 64
+    const blockChangeSubY = Math.floor(localY / SUB_CHUNK_HEIGHT)
+    const localSubY = localY % SUB_CHUNK_HEIGHT
+
+    // Check if block is at Y boundary (needs adjacent sub-chunk remeshed too)
+    const isAtBottomOfSubChunk = localSubY === 0
+    const isAtTopOfSubChunk = localSubY === SUB_CHUNK_HEIGHT - 1
+
     for (const sc of subChunks) {
       const workerSubChunk = workerSubChunks.get(sc.subY)!
       const newLightData = workerSubChunk.getLightData()
@@ -140,6 +149,21 @@ function processBlockChangeRequest(
           changed = true
           break
         }
+      }
+
+      // Force changed=true for the sub-chunk containing the block change
+      // (block data changed even if light didn't, so it needs remeshing)
+      if (sc.subY === blockChangeSubY) {
+        changed = true
+      }
+
+      // Also force changed=true for adjacent sub-chunks at Y boundaries
+      // (their faces are now exposed even if light didn't change)
+      if (isAtBottomOfSubChunk && sc.subY === blockChangeSubY - 1) {
+        changed = true
+      }
+      if (isAtTopOfSubChunk && sc.subY === blockChangeSubY + 1) {
+        changed = true
       }
 
       updatedSubChunks.push({

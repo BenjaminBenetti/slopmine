@@ -296,6 +296,20 @@ let frameCpuStart = 0
 let lastTickCount = 0
 let lastFrameTime = 0
 
+// Pre-allocated objects for render loop to avoid GC pressure
+const schedulerStatsParam = {
+  tasksExecuted: 0,
+  tasksSkipped: 0,
+  budgetUsedMs: 0,
+  currentBudgetMs: 0,
+  avgFrameTimeMs: 0,
+}
+const fpsUpdateParam = {
+  deltaTime: 0,
+  cpuTime: 0,
+  tickCount: 0,
+}
+
 // Create task scheduler with adaptive budgeting
 const scheduler = new TaskScheduler({
   budgetRatio: 0.25,        // Use 25% of frame time for updates
@@ -413,6 +427,9 @@ const gameLoop = new GameLoop({
       worldGenerator.update(spawnPosition.x, spawnPosition.z, spawnPosition.y)
       world.update(spawnPosition.x, spawnPosition.z)
 
+      // Process mesh results (throttled to prevent GPU flooding)
+      world.processPendingMeshResults()
+
       // Update loading progress
       const chunksLoaded = worldGenerator.getGeneratedChunkColumnCount()
       loadingScreen.setProgress(chunksLoaded, requiredChunks)
@@ -426,6 +443,9 @@ const gameLoop = new GameLoop({
 
     // Normal gameplay - use task scheduler with adaptive budget management
     scheduler.update(deltaTime)
+
+    // Process mesh results (throttled to prevent GPU flooding)
+    world.processPendingMeshResults()
   },
   render() {
     renderer.render()
@@ -440,22 +460,21 @@ const gameLoop = new GameLoop({
     fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
     fpsCounter.setLightingStats(world.getBackgroundLightingStats())
     fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
-    // Add scheduler stats for debug display
+    // Add scheduler stats for debug display (reuse pre-allocated object)
     const schedulerMetrics = scheduler.getMetrics()
     if (schedulerMetrics) {
-      fpsCounter.setSchedulerStats({
-        tasksExecuted: schedulerMetrics.tasksExecuted,
-        tasksSkipped: schedulerMetrics.tasksSkipped,
-        budgetUsedMs: schedulerMetrics.frameTimeMs,
-        currentBudgetMs: scheduler.getCurrentBudget(),
-        avgFrameTimeMs: scheduler.getAverageFrameTime(),
-      })
+      schedulerStatsParam.tasksExecuted = schedulerMetrics.tasksExecuted
+      schedulerStatsParam.tasksSkipped = schedulerMetrics.tasksSkipped
+      schedulerStatsParam.budgetUsedMs = schedulerMetrics.frameTimeMs
+      schedulerStatsParam.currentBudgetMs = scheduler.getCurrentBudget()
+      schedulerStatsParam.avgFrameTimeMs = scheduler.getAverageFrameTime()
+      fpsCounter.setSchedulerStats(schedulerStatsParam)
     }
-    fpsCounter.update({
-      deltaTime: lastFrameTime / 1000,
-      cpuTime,
-      tickCount: lastTickCount,
-    })
+    // Update FPS counter (reuse pre-allocated object)
+    fpsUpdateParam.deltaTime = lastFrameTime / 1000
+    fpsUpdateParam.cpuTime = cpuTime
+    fpsUpdateParam.tickCount = lastTickCount
+    fpsCounter.update(fpsUpdateParam)
   },
 }, (metrics) => {
   lastTickCount = metrics.tickCount

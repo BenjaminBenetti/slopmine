@@ -27,6 +27,12 @@ class SimpleTask implements ITask {
 
   private readonly updateFn: (deltaTime: number) => void
 
+  // Pre-allocated result to avoid per-frame GC pressure
+  private readonly result: ITaskResult = {
+    completed: true,
+    elapsedMs: 0,
+  }
+
   constructor(config: ITaskConfig) {
     this.id = config.id
     this.priority = config.priority
@@ -36,10 +42,8 @@ class SimpleTask implements ITask {
   execute(deltaTime: number, _remainingBudgetMs: number): ITaskResult {
     const start = performance.now()
     this.updateFn(deltaTime)
-    return {
-      completed: true,
-      elapsedMs: performance.now() - start,
-    }
+    this.result.elapsedMs = performance.now() - start
+    return this.result
   }
 }
 
@@ -73,7 +77,16 @@ export class TaskScheduler {
 
   // Metrics tracking
   private readonly taskMetrics: Map<string, ITaskMetrics> = new Map()
-  private frameMetrics: ISchedulerMetrics | null = null
+  // Pre-allocated to avoid per-frame GC pressure
+  private readonly frameMetrics: ISchedulerMetrics = {
+    frameTimeMs: 0,
+    criticalTimeMs: 0,
+    backgroundTimeMs: 0,
+    tasksSkipped: 0,
+    tasksExecuted: 0,
+    remainingBudgetMs: 0,
+    tasks: new Map(),
+  }
 
   constructor(config: TaskSchedulerConfig = {}) {
     this.budgetRatio = config.budgetRatio ?? 0.25 // 25% of frame time
@@ -249,17 +262,15 @@ export class TaskScheduler {
       }
     }
 
-    // Store frame metrics
+    // Update pre-allocated frame metrics (mutate in place to avoid allocation)
     if (this.collectMetrics) {
-      this.frameMetrics = {
-        frameTimeMs: performance.now() - this.frameStartTime,
-        criticalTimeMs: criticalTime,
-        backgroundTimeMs: backgroundTime,
-        tasksSkipped,
-        tasksExecuted,
-        remainingBudgetMs: Math.max(0, this.currentBudgetMs - this.getElapsedMs()),
-        tasks: new Map(this.taskMetrics),
-      }
+      this.frameMetrics.frameTimeMs = performance.now() - this.frameStartTime
+      this.frameMetrics.criticalTimeMs = criticalTime
+      this.frameMetrics.backgroundTimeMs = backgroundTime
+      this.frameMetrics.tasksSkipped = tasksSkipped
+      this.frameMetrics.tasksExecuted = tasksExecuted
+      this.frameMetrics.remainingBudgetMs = Math.max(0, this.currentBudgetMs - this.getElapsedMs())
+      this.frameMetrics.tasks = this.taskMetrics // Direct reference - callers should not modify
     }
   }
 

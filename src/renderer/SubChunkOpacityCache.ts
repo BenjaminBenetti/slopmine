@@ -37,9 +37,10 @@ export class SubChunkOpacityCache {
 
   /**
    * Get all opaque sub-chunk keys.
+   * Returns the Set directly to avoid per-frame array allocation.
    */
-  getOpaqueSubChunks(): SubChunkKey[] {
-    return Array.from(this.opaqueSubChunks)
+  getOpaqueSubChunks(): ReadonlySet<SubChunkKey> {
+    return this.opaqueSubChunks
   }
 
   /**

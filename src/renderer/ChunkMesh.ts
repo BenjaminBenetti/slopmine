@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { BlockId } from '../world/interfaces/IBlock.ts'
-import type { IChunkCoordinate } from '../world/interfaces/ICoordinates.ts'
+import type { IChunkCoordinate, SubChunkKey } from '../world/interfaces/ICoordinates.ts'
+import { createSubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
 
 /**
@@ -16,10 +17,16 @@ export class ChunkMesh {
   readonly chunkCoordinate: IChunkCoordinate
   /** Sub-chunk Y index (0-15), or null for legacy full-chunk meshes */
   readonly subY: number | null
+  /** Cached sub-chunk key to avoid per-frame string allocation */
+  readonly subChunkKey: SubChunkKey | null
 
   constructor(chunkCoordinate: IChunkCoordinate, subY: number | null = null) {
     this.chunkCoordinate = chunkCoordinate
     this.subY = subY
+    // Pre-compute key once at construction to avoid per-frame allocation
+    this.subChunkKey = subY !== null
+      ? createSubChunkKey(chunkCoordinate.x, chunkCoordinate.z, subY)
+      : null
   }
 
   /**

@@ -9,6 +9,26 @@ import { EPSILON } from '../constants.ts'
  * Uses a swept AABB approach with axis-by-axis resolution.
  */
 export class CollisionDetector {
+  // Pre-allocated to avoid per-frame GC pressure
+  private readonly tempOffset = new THREE.Vector3()
+  private readonly tempMovement = new THREE.Vector3()
+  private readonly tempCombinedMin = new THREE.Vector3()
+  private readonly tempCombinedMax = new THREE.Vector3()
+  // Pre-allocated AABBs for broad-phase
+  private readonly combinedAABB = new AABB(new THREE.Vector3(), new THREE.Vector3())
+  private readonly sweptAABB = new AABB(new THREE.Vector3(), new THREE.Vector3())
+  // Pre-allocated AABB array for currentAABBs - resized as needed
+  private currentAABBsPool: AABB[] = []
+  // Pre-allocated collision result to avoid per-frame GC pressure
+  private readonly collisionResult: ICollisionResult = {
+    position: new THREE.Vector3(),
+    velocity: new THREE.Vector3(),
+    collidedX: false,
+    collidedY: false,
+    collidedZ: false,
+    hitGround: false,
+  }
+
   constructor(private readonly world: IPhysicsWorld) {}
 
   /**
@@ -33,76 +53,97 @@ export class CollisionDetector {
     velocity: THREE.Vector3,
     deltaTime: number
   ): ICollisionResult {
-    const result: ICollisionResult = {
-      position: new THREE.Vector3(),
-      velocity: velocity.clone(),
-      collidedX: false,
-      collidedY: false,
-      collidedZ: false,
-      hitGround: false,
-    }
+    // Reset pre-allocated result
+    const result = this.collisionResult
+    result.position.set(0, 0, 0)
+    result.velocity.copy(velocity)
+    result.collidedX = false
+    result.collidedY = false
+    result.collidedZ = false
+    result.hitGround = false
 
     if (aabbs.length === 0) {
       return result
     }
 
-    // Calculate desired movement this frame
-    const movement = velocity.clone().multiplyScalar(deltaTime)
+    // Calculate desired movement this frame using pre-allocated vector
+    this.tempMovement.copy(velocity).multiplyScalar(deltaTime)
 
-    // Get the swept AABB region for broad-phase (use first AABB expanded to cover all)
-    let combinedMin = aabbs[0].min.clone()
-    let combinedMax = aabbs[0].max.clone()
+    // Get the swept AABB region for broad-phase using pre-allocated AABBs
+    this.combinedAABB.min.copy(aabbs[0].min)
+    this.combinedAABB.max.copy(aabbs[0].max)
     for (const aabb of aabbs) {
-      combinedMin.min(aabb.min)
-      combinedMax.max(aabb.max)
+      this.combinedAABB.min.min(aabb.min)
+      this.combinedAABB.max.max(aabb.max)
     }
-    const combinedAABB = new AABB(combinedMin, combinedMax)
-    const sweptAABB = combinedAABB.expandByVelocity(movement)
+    // Expand by velocity in-place into sweptAABB
+    this.sweptAABB.min.copy(this.combinedAABB.min)
+    this.sweptAABB.max.copy(this.combinedAABB.max)
+    if (this.tempMovement.x < 0) this.sweptAABB.min.x += this.tempMovement.x
+    else this.sweptAABB.max.x += this.tempMovement.x
+    if (this.tempMovement.y < 0) this.sweptAABB.min.y += this.tempMovement.y
+    else this.sweptAABB.max.y += this.tempMovement.y
+    if (this.tempMovement.z < 0) this.sweptAABB.min.z += this.tempMovement.z
+    else this.sweptAABB.max.z += this.tempMovement.z
 
     // Query all potentially colliding blocks
-    const blockAABBs = this.world.getBlockCollisions(sweptAABB)
+    const blockAABBs = this.world.getBlockCollisions(this.sweptAABB)
 
-    // Track current position of all AABBs
-    let currentAABBs = aabbs.map((a) => a.clone())
+    // Track current position of all AABBs - reuse pool to avoid allocation
+    while (this.currentAABBsPool.length < aabbs.length) {
+      this.currentAABBsPool.push(new AABB(new THREE.Vector3(), new THREE.Vector3()))
+    }
+    // Use pool directly with length tracking instead of slice() which allocates
+    const currentAABBsLength = aabbs.length
+    for (let i = 0; i < currentAABBsLength; i++) {
+      this.currentAABBsPool[i].min.copy(aabbs[i].min)
+      this.currentAABBsPool[i].max.copy(aabbs[i].max)
+    }
 
     // Y-axis (most important for gravity/ground)
-    const yMove = this.resolveAxisMulti(currentAABBs, movement.y, 'y', blockAABBs)
+    const yMove = this.resolveAxisMultiPooled(currentAABBsLength, this.tempMovement.y, 'y', blockAABBs)
     if (Math.abs(yMove) > EPSILON) {
-      const offset = new THREE.Vector3(0, yMove, 0)
-      currentAABBs = currentAABBs.map((a) => a.translate(offset))
+      this.tempOffset.set(0, yMove, 0)
+      for (let i = 0; i < currentAABBsLength; i++) {
+        this.currentAABBsPool[i].translateInPlace(this.tempOffset)
+      }
     }
-    if (Math.abs(yMove) < Math.abs(movement.y) - EPSILON) {
+    if (Math.abs(yMove) < Math.abs(this.tempMovement.y) - EPSILON) {
       result.collidedY = true
       result.velocity.y = 0
-      if (movement.y < 0) {
+      if (this.tempMovement.y < 0) {
         result.hitGround = true
       }
     }
 
     // X-axis
-    const xMove = this.resolveAxisMulti(currentAABBs, movement.x, 'x', blockAABBs)
+    const xMove = this.resolveAxisMultiPooled(currentAABBsLength, this.tempMovement.x, 'x', blockAABBs)
     if (Math.abs(xMove) > EPSILON) {
-      const offset = new THREE.Vector3(xMove, 0, 0)
-      currentAABBs = currentAABBs.map((a) => a.translate(offset))
+      this.tempOffset.set(xMove, 0, 0)
+      for (let i = 0; i < currentAABBsLength; i++) {
+        this.currentAABBsPool[i].translateInPlace(this.tempOffset)
+      }
     }
-    if (Math.abs(xMove) < Math.abs(movement.x) - EPSILON) {
+    if (Math.abs(xMove) < Math.abs(this.tempMovement.x) - EPSILON) {
       result.collidedX = true
       result.velocity.x = 0
     }
 
     // Z-axis
-    const zMove = this.resolveAxisMulti(currentAABBs, movement.z, 'z', blockAABBs)
+    const zMove = this.resolveAxisMultiPooled(currentAABBsLength, this.tempMovement.z, 'z', blockAABBs)
     if (Math.abs(zMove) > EPSILON) {
-      const offset = new THREE.Vector3(0, 0, zMove)
-      currentAABBs = currentAABBs.map((a) => a.translate(offset))
+      this.tempOffset.set(0, 0, zMove)
+      for (let i = 0; i < currentAABBsLength; i++) {
+        this.currentAABBsPool[i].translateInPlace(this.tempOffset)
+      }
     }
-    if (Math.abs(zMove) < Math.abs(movement.z) - EPSILON) {
+    if (Math.abs(zMove) < Math.abs(this.tempMovement.z) - EPSILON) {
       result.collidedZ = true
       result.velocity.z = 0
     }
 
-    // Extract final position from first AABB center-bottom
-    result.position = currentAABBs[0].getCenterBottom()
+    // Extract final position from first AABB center-bottom (into pre-allocated vector)
+    this.currentAABBsPool[0].getCenterBottomInto(result.position)
 
     return result
   }
@@ -125,6 +166,32 @@ export class CollisionDetector {
     for (const aabb of aabbs) {
       const move = this.resolveAxis(aabb, distance, axis, blockAABBs)
       // Take the smallest magnitude movement (most restrictive)
+      if (distance > 0) {
+        minMove = Math.min(minMove, move)
+      } else {
+        minMove = Math.max(minMove, move)
+      }
+    }
+
+    return minMove
+  }
+
+  /**
+   * Resolve movement using the pre-allocated AABB pool (avoids array allocation).
+   */
+  private resolveAxisMultiPooled(
+    count: number,
+    distance: number,
+    axis: 'x' | 'y' | 'z',
+    blockAABBs: AABB[]
+  ): number {
+    if (Math.abs(distance) < EPSILON) return 0
+
+    let minMove = distance
+
+    // Check each player AABB from pool and take the most restrictive result
+    for (let i = 0; i < count; i++) {
+      const move = this.resolveAxis(this.currentAABBsPool[i], distance, axis, blockAABBs)
       if (distance > 0) {
         minMove = Math.min(minMove, move)
       } else {
@@ -166,16 +233,22 @@ export class CollisionDetector {
     axis: 'x' | 'y' | 'z',
     block: AABB
   ): number {
-    // Determine the other two axes
-    const axes: Array<'x' | 'y' | 'z'> = ['x', 'y', 'z']
-    const otherAxes = axes.filter((a) => a !== axis) as [
-      'x' | 'y' | 'z',
-      'x' | 'y' | 'z',
-    ]
+    // Determine the other two axes (inline to avoid filter allocation)
+    let a1: 'x' | 'y' | 'z'
+    let a2: 'x' | 'y' | 'z'
+    if (axis === 'x') {
+      a1 = 'y'
+      a2 = 'z'
+    } else if (axis === 'y') {
+      a1 = 'x'
+      a2 = 'z'
+    } else {
+      a1 = 'x'
+      a2 = 'y'
+    }
 
     // Check if there's overlap on the other two axes
     // Use strict inequality (<, >) to handle edge-touching cases correctly
-    const [a1, a2] = otherAxes
     if (
       aabb.max[a1] < block.min[a1] ||
       aabb.min[a1] > block.max[a1] ||

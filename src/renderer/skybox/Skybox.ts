@@ -17,6 +17,8 @@ export class Skybox {
   private readonly skyRadius: number
   /** Local sun direction (before applying camera offset) */
   private sunDirection = new THREE.Vector3(0, 1, 0)
+  /** Pre-allocated for update() to avoid GC pressure */
+  private readonly tempSunPos = new THREE.Vector3()
 
   constructor(options: SkyboxOptions = {}) {
     const {
@@ -169,12 +171,12 @@ export class Skybox {
     this.skyMesh.position.copy(cameraPos)
     this.cloudGroup.position.copy(cameraPos)
 
-    // Position sun relative to camera
-    const sunPos = this.sunDirection
-      .clone()
+    // Position sun relative to camera (using pre-allocated vector)
+    this.tempSunPos
+      .copy(this.sunDirection)
       .multiplyScalar(this.skyRadius * 0.95)
       .add(cameraPos)
-    this.sunMesh.position.copy(sunPos)
+    this.sunMesh.position.copy(this.tempSunPos)
     // Make sun face the camera
     this.sunMesh.lookAt(cameraPos)
   }

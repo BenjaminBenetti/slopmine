@@ -30,6 +30,13 @@ export class BudgetAwareTask implements ITask {
 
   private skipCount = 0
 
+  // Pre-allocated result to avoid per-frame GC pressure
+  private readonly result: ITaskResult = {
+    completed: false,
+    elapsedMs: 0,
+    workUnits: 0,
+  }
+
   constructor(config: BudgetAwareTaskConfig) {
     this.id = config.id
     this.priority = config.priority
@@ -66,11 +73,10 @@ export class BudgetAwareTask implements ITask {
       this.measuredUnitTimeMs = this.measuredUnitTimeMs * (1 - alpha) + unitTime * alpha
     }
 
-    return {
-      completed: !hasMoreWork,
-      elapsedMs: performance.now() - start,
-      workUnits,
-    }
+    this.result.completed = !hasMoreWork
+    this.result.elapsedMs = performance.now() - start
+    this.result.workUnits = workUnits
+    return this.result
   }
 
   onSkipped(): void {

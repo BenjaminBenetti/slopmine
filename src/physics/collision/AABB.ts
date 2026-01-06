@@ -97,6 +97,15 @@ export class AABB {
   }
 
   /**
+   * Translate this AABB in place (mutates this instance).
+   */
+  translateInPlace(offset: THREE.Vector3): this {
+    this.min.add(offset)
+    this.max.add(offset)
+    return this
+  }
+
+  /**
    * Get the center-bottom position (feet position) of this AABB.
    */
   getCenterBottom(): THREE.Vector3 {
@@ -105,5 +114,17 @@ export class AABB {
       this.min.y,
       (this.min.z + this.max.z) / 2
     )
+  }
+
+  /**
+   * Get the center-bottom position into an existing vector (avoids allocation).
+   */
+  getCenterBottomInto(target: THREE.Vector3): THREE.Vector3 {
+    target.set(
+      (this.min.x + this.max.x) / 2,
+      this.min.y,
+      (this.min.z + this.max.z) / 2
+    )
+    return target
   }
 }

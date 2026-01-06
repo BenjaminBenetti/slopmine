@@ -42,13 +42,27 @@ export class WorldManager {
   private readonly meshWorkers: Worker[] = []
   private readonly prioritySubChunkQueue: SubChunk[] = [] // High priority (player interactions)
   private readonly subChunkWorkerQueue: SubChunk[] = [] // Normal priority (background updates)
+  // Sets for O(1) queue membership checks (mirrors queues above)
+  private readonly prioritySubChunkSet: Set<SubChunk> = new Set()
+  private readonly subChunkWorkerSet: Set<SubChunk> = new Set()
   private readonly pendingSubChunks: Map<SubChunkKey, SubChunk> = new Map()
   private readonly WORKER_COUNT = Math.min(navigator.hardwareConcurrency || 4, 4)
   private readonly MAX_BACKGROUND_MESH_JOBS_PER_FRAME = 2
 
+  // Mesh result throttling to prevent GPU command buffer flooding
+  private readonly pendingMeshResults: SubChunkMeshResponse[] = []
+  private readonly MAX_MESH_RESULTS_PER_FRAME = 4
+
   // Cache of opaque block IDs for worker visibility checks
   private opaqueBlockIds: number[] = []
   private opaqueBlockIdSet: Set<number> = new Set()
+
+  // Pre-allocated boundary layer buffers to avoid per-mesh allocation
+  // 2 for blocks (posY, negY), 2 for lights (posY, negY)
+  private readonly boundaryBlockPosY = new Uint16Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
+  private readonly boundaryBlockNegY = new Uint16Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
+  private readonly boundaryLightPosY = new Uint8Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
+  private readonly boundaryLightNegY = new Uint8Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
 
   // Opacity cache for software occlusion culling
   private opacityCache: SubChunkOpacityCache | null = null
@@ -287,6 +301,7 @@ export class WorldManager {
       if (!worker) break
 
       const subChunk = this.prioritySubChunkQueue.shift()!
+      this.prioritySubChunkSet.delete(subChunk) // Keep Set in sync
       this.sendSubChunkToWorker(subChunk, worker)
     }
 
@@ -297,6 +312,7 @@ export class WorldManager {
       if (!worker) break
 
       const subChunk = this.subChunkWorkerQueue.shift()!
+      this.subChunkWorkerSet.delete(subChunk) // Keep Set in sync
       this.sendSubChunkToWorker(subChunk, worker)
       backgroundJobsSent++
     }
@@ -304,8 +320,31 @@ export class WorldManager {
 
   /**
    * Handle sub-chunk mesh result from worker.
+   * Queues the result for throttled processing to prevent GPU command buffer flooding.
    */
   private handleSubChunkMeshResult(result: SubChunkMeshResponse): void {
+    this.pendingMeshResults.push(result)
+  }
+
+  /**
+   * Process pending mesh results with throttling.
+   * Call this once per frame from the update loop.
+   * Limits GPU buffer uploads to prevent compositor blocking.
+   */
+  processPendingMeshResults(): void {
+    let processed = 0
+
+    while (this.pendingMeshResults.length > 0 && processed < this.MAX_MESH_RESULTS_PER_FRAME) {
+      const result = this.pendingMeshResults.shift()!
+      this.processSingleMeshResult(result)
+      processed++
+    }
+  }
+
+  /**
+   * Process a single mesh result from worker.
+   */
+  private processSingleMeshResult(result: SubChunkMeshResponse): void {
     if (!this.scene) return
 
     const subChunkKey = createSubChunkKey(BigInt(result.chunkX), BigInt(result.chunkZ), result.subY)
@@ -523,15 +562,17 @@ export class WorldManager {
       subChunk.coordinate.subY
     )
 
-    // Don't queue if already pending or in queue
+    // Don't queue if already pending or in queue (O(1) Set lookups)
     if (this.pendingSubChunks.has(subChunkKey)) return
-    if (this.prioritySubChunkQueue.includes(subChunk)) return
-    if (this.subChunkWorkerQueue.includes(subChunk)) return
+    if (this.prioritySubChunkSet.has(subChunk)) return
+    if (this.subChunkWorkerSet.has(subChunk)) return
 
     if (priority === 'high') {
       this.prioritySubChunkQueue.push(subChunk)
+      this.prioritySubChunkSet.add(subChunk) // Keep Set in sync
     } else {
       this.subChunkWorkerQueue.push(subChunk)
+      this.subChunkWorkerSet.add(subChunk) // Keep Set in sync
     }
     this.processSubChunkWorkerQueue()
   }
@@ -659,15 +700,15 @@ export class WorldManager {
 
     const changed = column.setBlockId(local.x, local.y, local.z, blockId)
     if (changed) {
-      // Find the affected sub-chunk and queue for remeshing with high priority
-      // (player block changes should be visible immediately)
       const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
+
+      // Immediately queue mesh rebuild with high priority for responsive feedback
       const subChunk = column.getSubChunk(subY)
       if (subChunk) {
-        this.queueSubChunkForMeshing(subChunk, 'high')
+        // this.queueSubChunkForMeshing(subChunk, 'high')
       }
 
-      // Queue lighting update to worker - will remesh affected sub-chunks via callback
+      // Also queue lighting update - will remesh again with correct lighting
       this.backgroundLightingManager.queueBlockChange(
         column,
         local.x,
@@ -677,23 +718,12 @@ export class WorldManager {
       )
 
       // Mark horizontal neighbor sub-chunks dirty if on chunk edge
-      this.markSubChunkNeighborsDirtyIfEdge(chunkCoord, local.x, local.z, subY)
+      // Also trigger lighting updates for neighboring columns
+      this.markSubChunkNeighborsDirtyIfEdge(chunkCoord, local.x, local.y, local.z, subY, wasBlockRemoved)
 
-      // Mark vertical neighbor sub-chunks dirty if on sub-chunk Y boundary
-      const localSubY = local.y % SUB_CHUNK_HEIGHT
-      if (localSubY === 0 && subY > 0) {
-        // Bottom of sub-chunk, mark sub-chunk below
-        const belowSubChunk = column.getSubChunk(subY - 1)
-        if (belowSubChunk) {
-          this.queueSubChunkForMeshing(belowSubChunk)
-        }
-      } else if (localSubY === SUB_CHUNK_HEIGHT - 1 && subY < 15) {
-        // Top of sub-chunk, mark sub-chunk above
-        const aboveSubChunk = column.getSubChunk(subY + 1)
-        if (aboveSubChunk) {
-          this.queueSubChunkForMeshing(aboveSubChunk)
-        }
-      }
+      // Note: Vertical neighbor sub-chunks at Y boundaries are handled by the
+      // lighting worker callback - it marks them as changed so they get remeshed
+      // with correct lighting data (avoiding race condition with stale light)
     }
 
     return changed
@@ -936,50 +966,80 @@ export class WorldManager {
   private markSubChunkNeighborsDirtyIfEdge(
     chunkCoord: IChunkCoordinate,
     localX: number,
+    localY: number,
     localZ: number,
-    subY: number
+    subY: number,
+    wasBlockRemoved: boolean
   ): void {
     if (localX === 0) {
-      const neighborCoord: ISubChunkCoordinate = {
-        x: chunkCoord.x - 1n,
-        z: chunkCoord.z,
-        subY,
-      }
-      const neighbor = this.chunkManager.getSubChunk(neighborCoord)
-      if (neighbor) {
-        this.queueSubChunkForMeshing(neighbor)
+      const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x - 1n, z: chunkCoord.z }
+      const neighborColumn = this.chunkManager.getColumn(neighborChunkCoord)
+      if (neighborColumn) {
+        const neighborSubChunk = neighborColumn.getSubChunk(subY)
+        if (neighborSubChunk) {
+          this.queueSubChunkForMeshing(neighborSubChunk)
+        }
+        // Also update lighting in neighbor column (affected block is at opposite edge)
+        this.backgroundLightingManager.queueBlockChange(
+          neighborColumn,
+          CHUNK_SIZE_X - 1, // opposite edge
+          localY,
+          localZ,
+          wasBlockRemoved
+        )
       }
     } else if (localX === CHUNK_SIZE_X - 1) {
-      const neighborCoord: ISubChunkCoordinate = {
-        x: chunkCoord.x + 1n,
-        z: chunkCoord.z,
-        subY,
-      }
-      const neighbor = this.chunkManager.getSubChunk(neighborCoord)
-      if (neighbor) {
-        this.queueSubChunkForMeshing(neighbor)
+      const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x + 1n, z: chunkCoord.z }
+      const neighborColumn = this.chunkManager.getColumn(neighborChunkCoord)
+      if (neighborColumn) {
+        const neighborSubChunk = neighborColumn.getSubChunk(subY)
+        if (neighborSubChunk) {
+          this.queueSubChunkForMeshing(neighborSubChunk)
+        }
+        // Also update lighting in neighbor column (affected block is at opposite edge)
+        this.backgroundLightingManager.queueBlockChange(
+          neighborColumn,
+          0, // opposite edge
+          localY,
+          localZ,
+          wasBlockRemoved
+        )
       }
     }
 
     if (localZ === 0) {
-      const neighborCoord: ISubChunkCoordinate = {
-        x: chunkCoord.x,
-        z: chunkCoord.z - 1n,
-        subY,
-      }
-      const neighbor = this.chunkManager.getSubChunk(neighborCoord)
-      if (neighbor) {
-        this.queueSubChunkForMeshing(neighbor)
+      const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x, z: chunkCoord.z - 1n }
+      const neighborColumn = this.chunkManager.getColumn(neighborChunkCoord)
+      if (neighborColumn) {
+        const neighborSubChunk = neighborColumn.getSubChunk(subY)
+        if (neighborSubChunk) {
+          this.queueSubChunkForMeshing(neighborSubChunk)
+        }
+        // Also update lighting in neighbor column (affected block is at opposite edge)
+        this.backgroundLightingManager.queueBlockChange(
+          neighborColumn,
+          localX,
+          localY,
+          CHUNK_SIZE_Z - 1, // opposite edge
+          wasBlockRemoved
+        )
       }
     } else if (localZ === CHUNK_SIZE_Z - 1) {
-      const neighborCoord: ISubChunkCoordinate = {
-        x: chunkCoord.x,
-        z: chunkCoord.z + 1n,
-        subY,
-      }
-      const neighbor = this.chunkManager.getSubChunk(neighborCoord)
-      if (neighbor) {
-        this.queueSubChunkForMeshing(neighbor)
+      const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x, z: chunkCoord.z + 1n }
+      const neighborColumn = this.chunkManager.getColumn(neighborChunkCoord)
+      if (neighborColumn) {
+        const neighborSubChunk = neighborColumn.getSubChunk(subY)
+        if (neighborSubChunk) {
+          this.queueSubChunkForMeshing(neighborSubChunk)
+        }
+        // Also update lighting in neighbor column (affected block is at opposite edge)
+        this.backgroundLightingManager.queueBlockChange(
+          neighborColumn,
+          localX,
+          localY,
+          0, // opposite edge
+          wasBlockRemoved
+        )
       }
     }
   }

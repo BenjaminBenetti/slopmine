@@ -45,6 +45,11 @@ export class FirstPersonCameraControls implements CameraControls {
   private physicsBody: IPhysicsBody | null = null
   private physicsEngine: PhysicsEngine | null = null
 
+  // Pre-allocated vectors to avoid per-frame GC pressure
+  private readonly tempDirection = new THREE.Vector3()
+  private readonly tempForward = new THREE.Vector3()
+  private readonly tempRight = new THREE.Vector3()
+
   constructor(
     camera: THREE.PerspectiveCamera,
     domElement: HTMLElement,
@@ -184,25 +189,25 @@ export class FirstPersonCameraControls implements CameraControls {
       return
     }
 
-    // Calculate horizontal movement direction based on yaw
-    const direction = new THREE.Vector3()
-    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
-    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw))
+    // Calculate horizontal movement direction based on yaw using pre-allocated vectors
+    this.tempDirection.set(0, 0, 0)
+    this.tempForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
+    this.tempRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw))
 
-    if (this.moveForward) direction.add(forward)
-    if (this.moveBackward) direction.sub(forward)
-    if (this.moveLeft) direction.sub(right)
-    if (this.moveRight) direction.add(right)
+    if (this.moveForward) this.tempDirection.add(this.tempForward)
+    if (this.moveBackward) this.tempDirection.sub(this.tempForward)
+    if (this.moveLeft) this.tempDirection.sub(this.tempRight)
+    if (this.moveRight) this.tempDirection.add(this.tempRight)
 
     // Normalize and apply movement speed to horizontal velocity
-    if (direction.lengthSq() > 0) {
-      direction.normalize()
-      direction.multiplyScalar(this.movementSpeed)
+    if (this.tempDirection.lengthSq() > 0) {
+      this.tempDirection.normalize()
+      this.tempDirection.multiplyScalar(this.movementSpeed)
     }
 
     // Set horizontal velocity (physics handles vertical via gravity)
-    this.physicsBody.velocity.x = direction.x
-    this.physicsBody.velocity.z = direction.z
+    this.physicsBody.velocity.x = this.tempDirection.x
+    this.physicsBody.velocity.z = this.tempDirection.z
 
     // Handle jump
     if (this.jumpPressed) {
@@ -222,23 +227,20 @@ export class FirstPersonCameraControls implements CameraControls {
    * Fallback noclip movement when physics not connected.
    */
   private updateNoclip(deltaTime: number): void {
-    const direction = new THREE.Vector3()
-    const forward = new THREE.Vector3()
-    const right = new THREE.Vector3()
+    // Use pre-allocated vectors
+    this.tempDirection.set(0, 0, 0)
+    this.tempForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
+    this.tempRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw))
 
-    // Forward/right based on yaw (horizontal rotation only)
-    forward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
-    right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw))
+    if (this.moveForward) this.tempDirection.add(this.tempForward)
+    if (this.moveBackward) this.tempDirection.sub(this.tempForward)
+    if (this.moveLeft) this.tempDirection.sub(this.tempRight)
+    if (this.moveRight) this.tempDirection.add(this.tempRight)
 
-    if (this.moveForward) direction.add(forward)
-    if (this.moveBackward) direction.sub(forward)
-    if (this.moveLeft) direction.sub(right)
-    if (this.moveRight) direction.add(right)
-
-    if (direction.lengthSq() > 0) {
-      direction.normalize()
-      direction.multiplyScalar(this.movementSpeed * deltaTime)
-      this.camera.position.add(direction)
+    if (this.tempDirection.lengthSq() > 0) {
+      this.tempDirection.normalize()
+      this.tempDirection.multiplyScalar(this.movementSpeed * deltaTime)
+      this.camera.position.add(this.tempDirection)
     }
   }
 

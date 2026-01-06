@@ -28,6 +28,10 @@ export class ChunkWireframeManager {
   private frameCount = 0
   private readonly UPDATE_INTERVAL = 60
 
+  // Pre-allocated Maps to avoid per-update allocation
+  private readonly chunkVisibilityMap: Map<ChunkKey, boolean> = new Map()
+  private readonly subChunkVisibilityMap: Map<SubChunkKey, boolean> = new Map()
+
   constructor(scene: THREE.Scene) {
     this.scene = scene
 
@@ -181,42 +185,44 @@ export class ChunkWireframeManager {
       }
     }
 
-    // Build maps of chunk and sub-chunk visibility
-    const chunkVisibilityMap = new Map<ChunkKey, boolean>()
-    const subChunkVisibilityMap = new Map<SubChunkKey, boolean>()
+    // Clear and reuse pre-allocated maps to avoid per-update allocation
+    this.chunkVisibilityMap.clear()
+    this.subChunkVisibilityMap.clear()
 
     for (const chunkMesh of chunkMeshes) {
       const coord = chunkMesh.chunkCoordinate
       const isVisible = chunkMesh.getGroup().visible
 
-      if (chunkMesh.subY !== null) {
+      // Use cached key to avoid string allocation
+      if (chunkMesh.subChunkKey !== null) {
         // Sub-chunk mesh
-        const key = createSubChunkKey(coord.x, coord.z, chunkMesh.subY)
-        subChunkVisibilityMap.set(key, isVisible)
+        this.subChunkVisibilityMap.set(chunkMesh.subChunkKey, isVisible)
       } else {
         // Legacy full-chunk mesh
         const key = createChunkKey(coord.x, coord.z)
-        chunkVisibilityMap.set(key, isVisible)
+        this.chunkVisibilityMap.set(key, isVisible)
       }
     }
 
     // Update legacy chunk wireframe materials
     for (const [key, wireframe] of this.wireframes) {
-      const isChunkVisible = chunkVisibilityMap.get(key) ?? false
+      const isChunkVisible = this.chunkVisibilityMap.get(key) ?? false
       wireframe.material = isChunkVisible ? this.visibleMaterial : this.culledMaterial
     }
 
     // Update sub-chunk wireframe materials
     for (const [key, wireframe] of this.subChunkWireframes) {
       // Check if this sub-chunk's column is being lit
-      const [xStr, zStr] = key.split(',')
-      const chunkKey = `${xStr},${zStr}` as ChunkKey
+      // Parse key directly to avoid string split allocation (key format: "x,z,subY")
+      const firstComma = key.indexOf(',')
+      const secondComma = key.indexOf(',', firstComma + 1)
+      const chunkKey = key.substring(0, secondComma) as ChunkKey
       const isLighting = this.lightingHighlights.has(chunkKey)
 
       if (isLighting) {
         wireframe.material = this.lightingMaterial
       } else {
-        const isVisible = subChunkVisibilityMap.get(key) ?? false
+        const isVisible = this.subChunkVisibilityMap.get(key) ?? false
         wireframe.material = isVisible ? this.visibleMaterial : this.culledMaterial
       }
     }

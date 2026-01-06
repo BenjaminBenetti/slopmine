@@ -23,6 +23,8 @@ export class GameLoop {
   private onMetrics?: (metrics: GameLoopMetrics) => void
   private targetFps: number
   private targetFrameMs: number
+  // Pre-allocated metrics object to avoid per-frame GC pressure
+  private readonly metricsResult: GameLoopMetrics = { tickCount: 0, frameTime: 0 }
 
   constructor(callback: GameLoopCallback, onMetrics?: (metrics: GameLoopMetrics) => void, targetFps = 60) {
     this.callback = callback
@@ -67,8 +69,20 @@ export class GameLoop {
     if (!this.running) return
 
     const currentTime = performance.now()
+
+    // Non-blocking frame rate limiting for high refresh rate monitors
+    // Check if enough time has passed since last render
+    const timeSinceLastRender = currentTime - this.lastRenderTime
+    if (timeSinceLastRender < this.targetFrameMs) {
+      // Not time to render yet - request another frame and return immediately
+      // This keeps the main thread responsive (no busy-wait blocking)
+      requestAnimationFrame(this.loop)
+      return
+    }
+
     const frameTime = currentTime - this.lastTime
     this.lastTime = currentTime
+    this.lastRenderTime = currentTime
 
     let tickCount = 0
 
@@ -91,14 +105,10 @@ export class GameLoop {
     }
 
     this.callback.render()
-    this.onMetrics?.({ tickCount, frameTime })
-
-    // Spin to enforce framerate limit - never skip frames, just pace them
-    const frameEnd = this.lastRenderTime + this.targetFrameMs
-    while (performance.now() < frameEnd) {
-      // Busy wait to consume remaining frame time
-    }
-    this.lastRenderTime = performance.now()
+    // Update pre-allocated metrics object to avoid allocation
+    this.metricsResult.tickCount = tickCount
+    this.metricsResult.frameTime = frameTime
+    this.onMetrics?.(this.metricsResult)
 
     requestAnimationFrame(this.loop)
   }

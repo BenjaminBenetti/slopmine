@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { ChunkMesh } from './ChunkMesh.ts'
 import type { SubChunkOpacityCache } from './SubChunkOpacityCache.ts'
-import { createSubChunkKey, parseSubChunkKey, type SubChunkKey } from '../world/interfaces/ICoordinates.ts'
+import { parseSubChunkKey, type SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 
 // Types matching the worker
@@ -49,12 +49,29 @@ export interface SoftwareOcclusionStats {
  */
 export class SoftwareOcclusionCuller {
   private readonly worker: Worker
-  private pendingResult: Set<string> | null = null
+  // Pre-allocated Set to avoid per-frame allocation - cleared and repopulated on each result
+  private readonly occludedSet = new Set<string>()
+  private hasResult = false
   private frameId = 0
   private lastStats: SoftwareOcclusionStats = {
     occluderCount: 0,
     candidateCount: 0,
     occludedCount: 0,
+  }
+
+  // Pre-allocated objects to avoid per-frame GC pressure
+  private readonly vpMatrix = new THREE.Matrix4()
+  // Pre-allocated arrays and map for updateVisibility (cleared each frame)
+  private readonly candidatesPool: SubChunkBounds[] = []
+  private readonly occludersPool: SubChunkBounds[] = []
+  private readonly meshMap = new Map<SubChunkKey, ChunkMesh>()
+  // Pre-allocated request object to avoid per-frame GC pressure
+  private readonly occlusionRequest: OcclusionRequest = {
+    type: 'occlusion',
+    frameId: 0,
+    viewProjectionMatrix: new Float32Array(16),
+    occluders: [],
+    candidates: [],
   }
 
   constructor() {
@@ -66,8 +83,16 @@ export class SoftwareOcclusionCuller {
 
   private handleResult(event: MessageEvent<OcclusionResponse>): void {
     if (event.data.type === 'result') {
-      this.pendingResult = new Set(event.data.occludedIds)
-      this.lastStats = event.data.stats
+      // Clear and repopulate pre-allocated Set (avoids allocation)
+      this.occludedSet.clear()
+      for (const id of event.data.occludedIds) {
+        this.occludedSet.add(id)
+      }
+      this.hasResult = true
+      // Copy stats in place to avoid replacing the object
+      this.lastStats.occluderCount = event.data.stats.occluderCount
+      this.lastStats.candidateCount = event.data.stats.candidateCount
+      this.lastStats.occludedCount = event.data.stats.occludedCount
     }
   }
 
@@ -87,8 +112,9 @@ export class SoftwareOcclusionCuller {
     chunkMeshes: Iterable<ChunkMesh>,
     opacityCache: SubChunkOpacityCache
   ): void {
-    const candidates: SubChunkBounds[] = []
-    const meshMap = new Map<SubChunkKey, ChunkMesh>()
+    // Clear pools from previous frame (reuse arrays to avoid allocation)
+    let candidateCount = 0
+    this.meshMap.clear()
 
     // Collect sub-chunks that passed frustum culling
     for (const chunkMesh of chunkMeshes) {
@@ -96,67 +122,81 @@ export class SoftwareOcclusionCuller {
       if (!group.visible) continue
 
       // Only process sub-chunks, not legacy full-height chunks
-      if (chunkMesh.subY === null) continue
+      // Use cached key to avoid per-frame string allocation
+      const id = chunkMesh.subChunkKey
+      if (id === null) continue
 
-      const coord = chunkMesh.chunkCoordinate
-      const id = createSubChunkKey(coord.x, coord.z, chunkMesh.subY)
-      const bounds = this.getSubChunkBounds(chunkMesh)
+      // Reuse or create SubChunkBounds object in pool
+      if (candidateCount >= this.candidatesPool.length) {
+        this.candidatesPool.push({ id: '', minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 })
+      }
+      const bounds = this.candidatesPool[candidateCount]
+      this.getSubChunkBoundsInto(chunkMesh, bounds)
+      bounds.id = id
+      candidateCount++
 
-      candidates.push({ id, ...bounds })
-      meshMap.set(id, chunkMesh)
+      this.meshMap.set(id, chunkMesh)
     }
 
     // Apply previous frame's occlusion results
-    if (this.pendingResult) {
-      for (const [id, mesh] of meshMap) {
-        if (this.pendingResult.has(id)) {
+    if (this.hasResult) {
+      for (const [id, mesh] of this.meshMap) {
+        if (this.occludedSet.has(id)) {
           mesh.getGroup().visible = false
         }
       }
     }
 
-    // Build occluder list from opacity cache
-    // Opaque sub-chunks may not have meshes (they're fully buried), so compute bounds from coordinates
-    const occluders: SubChunkBounds[] = []
+    // Build occluder list from opacity cache (reuse pool)
+    let occluderCount = 0
     for (const opaqueKey of opacityCache.getOpaqueSubChunks()) {
-      occluders.push(this.getSubChunkBoundsFromKey(opaqueKey))
+      if (occluderCount >= this.occludersPool.length) {
+        this.occludersPool.push({ id: '', minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 })
+      }
+      this.getSubChunkBoundsFromKeyInto(opaqueKey, this.occludersPool[occluderCount])
+      occluderCount++
     }
 
     // Dispatch this frame's work to worker
-    this.dispatchRequest(camera, occluders, candidates)
+    // Set array lengths to avoid slice() allocation - arrays will be serialized with only valid elements
+    this.occludersPool.length = occluderCount
+    this.candidatesPool.length = candidateCount
+    this.dispatchRequest(camera, this.occludersPool, this.candidatesPool)
   }
 
-  private getSubChunkBounds(mesh: ChunkMesh): Omit<SubChunkBounds, 'id'> {
+  /**
+   * Write sub-chunk bounds into an existing object (avoids allocation).
+   */
+  private getSubChunkBoundsInto(mesh: ChunkMesh, target: SubChunkBounds): void {
     const coord = mesh.chunkCoordinate
     const worldX = Number(coord.x) * CHUNK_SIZE_X
     const worldZ = Number(coord.z) * CHUNK_SIZE_Z
     const worldY = mesh.subY! * SUB_CHUNK_HEIGHT
 
-    return {
-      minX: worldX,
-      minY: worldY,
-      minZ: worldZ,
-      maxX: worldX + CHUNK_SIZE_X,
-      maxY: worldY + SUB_CHUNK_HEIGHT,
-      maxZ: worldZ + CHUNK_SIZE_Z,
-    }
+    target.minX = worldX
+    target.minY = worldY
+    target.minZ = worldZ
+    target.maxX = worldX + CHUNK_SIZE_X
+    target.maxY = worldY + SUB_CHUNK_HEIGHT
+    target.maxZ = worldZ + CHUNK_SIZE_Z
   }
 
-  private getSubChunkBoundsFromKey(key: SubChunkKey): SubChunkBounds {
+  /**
+   * Write sub-chunk bounds from key into an existing object (avoids allocation).
+   */
+  private getSubChunkBoundsFromKeyInto(key: SubChunkKey, target: SubChunkBounds): void {
     const coord = parseSubChunkKey(key)
     const worldX = Number(coord.x) * CHUNK_SIZE_X
     const worldZ = Number(coord.z) * CHUNK_SIZE_Z
     const worldY = coord.subY * SUB_CHUNK_HEIGHT
 
-    return {
-      id: key,
-      minX: worldX,
-      minY: worldY,
-      minZ: worldZ,
-      maxX: worldX + CHUNK_SIZE_X,
-      maxY: worldY + SUB_CHUNK_HEIGHT,
-      maxZ: worldZ + CHUNK_SIZE_Z,
-    }
+    target.id = key
+    target.minX = worldX
+    target.minY = worldY
+    target.minZ = worldZ
+    target.maxX = worldX + CHUNK_SIZE_X
+    target.maxY = worldY + SUB_CHUNK_HEIGHT
+    target.maxZ = worldZ + CHUNK_SIZE_Z
   }
 
   private dispatchRequest(
@@ -166,20 +206,19 @@ export class SoftwareOcclusionCuller {
   ): void {
     this.frameId++
 
-    // Compute view-projection matrix
+    // Compute view-projection matrix using pre-allocated objects
     camera.updateMatrixWorld()
-    const vpMatrix = new THREE.Matrix4()
-    vpMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    this.vpMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
 
-    const request: OcclusionRequest = {
-      type: 'occlusion',
-      frameId: this.frameId,
-      viewProjectionMatrix: new Float32Array(vpMatrix.elements),
-      occluders,
-      candidates,
-    }
+    // Copy matrix elements to pre-allocated array in request
+    this.occlusionRequest.viewProjectionMatrix.set(this.vpMatrix.elements)
 
-    this.worker.postMessage(request)
+    // Update pre-allocated request object
+    this.occlusionRequest.frameId = this.frameId
+    this.occlusionRequest.occluders = occluders
+    this.occlusionRequest.candidates = candidates
+
+    this.worker.postMessage(this.occlusionRequest)
   }
 
   dispose(): void {

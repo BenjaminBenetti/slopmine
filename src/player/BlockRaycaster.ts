@@ -33,6 +33,37 @@ export class BlockRaycaster {
   private readonly worldManager: WorldManager
   private readonly direction = new THREE.Vector3()
   private readonly origin = new THREE.Vector3()
+  // Pre-allocated hit result to avoid per-frame GC pressure
+  private readonly hitResult: IBlockRaycastHit = {
+    worldX: 0n,
+    worldY: 0n,
+    worldZ: 0n,
+    blockId: BlockIds.AIR,
+    block: null as unknown as IBlock,
+    face: 0,
+    distance: 0,
+    point: new THREE.Vector3(),
+  }
+
+  // BigInt cache to avoid allocations in DDA loop
+  private static readonly BIGINT_CACHE_MIN = -64
+  private static readonly BIGINT_CACHE_MAX = 320
+  private static readonly BIGINT_CACHE_OFFSET = -BlockRaycaster.BIGINT_CACHE_MIN
+  private static readonly bigIntCache: bigint[] = (() => {
+    const cache: bigint[] = []
+    for (let i = BlockRaycaster.BIGINT_CACHE_MIN; i <= BlockRaycaster.BIGINT_CACHE_MAX; i++) {
+      cache[i + BlockRaycaster.BIGINT_CACHE_OFFSET] = BigInt(i)
+    }
+    return cache
+  })()
+
+  private static getBigInt(n: number): bigint {
+    const idx = n + BlockRaycaster.BIGINT_CACHE_OFFSET
+    if (idx >= 0 && idx < BlockRaycaster.bigIntCache.length) {
+      return BlockRaycaster.bigIntCache[idx]
+    }
+    return BigInt(n)
+  }
 
   constructor(worldManager: WorldManager) {
     this.worldManager = worldManager
@@ -99,29 +130,32 @@ export class BlockRaycaster {
     // DDA loop
     while (distance < maxDistance) {
       // Check if current voxel contains a solid block
-      const blockId = this.worldManager.getBlockId(BigInt(x), BigInt(y), BigInt(z))
+      // Use cached BigInt to avoid allocations in hot loop
+      const bx = BlockRaycaster.getBigInt(x)
+      const by = BlockRaycaster.getBigInt(y)
+      const bz = BlockRaycaster.getBigInt(z)
+      const blockId = this.worldManager.getBlockId(bx, by, bz)
 
       if (blockId !== BlockIds.AIR) {
-        const block = this.worldManager.getBlock(BigInt(x), BigInt(y), BigInt(z))
+        const block = this.worldManager.getBlock(bx, by, bz)
 
         if (block.properties.isSolid) {
-          // Calculate exact hit point
-          const point = new THREE.Vector3(
+          // Update pre-allocated hit result to avoid allocation
+          this.hitResult.worldX = bx
+          this.hitResult.worldY = by
+          this.hitResult.worldZ = bz
+          this.hitResult.blockId = blockId
+          this.hitResult.block = block
+          this.hitResult.face = lastFace
+          this.hitResult.distance = distance
+          // Update hit point in-place
+          this.hitResult.point.set(
             origin.x + direction.x * distance,
             origin.y + direction.y * distance,
             origin.z + direction.z * distance
           )
 
-          return {
-            worldX: BigInt(x),
-            worldY: BigInt(y),
-            worldZ: BigInt(z),
-            blockId,
-            block,
-            face: lastFace,
-            distance,
-            point,
-          }
+          return this.hitResult
         }
       }
 

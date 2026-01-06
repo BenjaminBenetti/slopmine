@@ -8,6 +8,12 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../w
 // Block ID for air (invisible)
 const AIR = 0
 
+// Pre-allocated data structures to avoid per-mesh allocation
+// These are cleared and reused between mesh requests
+const reusableOpaqueSet = new Set<number>()
+const reusableBlockPositions = new Map<number, number[]>()
+const reusableBlockLights = new Map<number, number[]>()
+
 /**
  * Calculate array index for local coordinates (full chunk).
  * Memory layout: Y-major (y * SIZE_X * SIZE_Z + z * SIZE_X + x)
@@ -258,12 +264,18 @@ function getBlockRenderLight(
 function processChunk(request: ChunkMeshRequest): ChunkMeshResponse {
   const { chunkX, chunkZ, blocks, lightData, neighbors, neighborLights, opaqueBlockIds } = request
 
-  // Create set of opaque block IDs for fast lookup
-  const opaqueSet = new Set(opaqueBlockIds)
+  // Clear and repopulate reusable set (avoids allocation)
+  reusableOpaqueSet.clear()
+  for (const id of opaqueBlockIds) {
+    reusableOpaqueSet.add(id)
+  }
+  const opaqueSet = reusableOpaqueSet
 
-  // Collect visible blocks by type
-  const blockPositions = new Map<number, number[]>()
-  const blockLights = new Map<number, number[]>()
+  // Clear and reuse maps (avoids allocation)
+  reusableBlockPositions.clear()
+  reusableBlockLights.clear()
+  const blockPositions = reusableBlockPositions
+  const blockLights = reusableBlockLights
 
   // World offset for this chunk
   const worldOffsetX = chunkX * CHUNK_SIZE_X
@@ -494,10 +506,18 @@ function getSubChunkBlockRenderLight(
 function processSubChunk(request: SubChunkMeshRequest): SubChunkMeshResponse {
   const { chunkX, chunkZ, subY, minWorldY, blocks, lightData, neighbors, neighborLights, opaqueBlockIds } = request
 
-  const opaqueSet = new Set(opaqueBlockIds)
+  // Clear and repopulate reusable set (avoids allocation)
+  reusableOpaqueSet.clear()
+  for (const id of opaqueBlockIds) {
+    reusableOpaqueSet.add(id)
+  }
+  const opaqueSet = reusableOpaqueSet
 
-  const blockPositions = new Map<number, number[]>()
-  const blockLights = new Map<number, number[]>()
+  // Clear and reuse maps (avoids allocation)
+  reusableBlockPositions.clear()
+  reusableBlockLights.clear()
+  const blockPositions = reusableBlockPositions
+  const blockLights = reusableBlockLights
 
   // World offset for this sub-chunk
   const worldOffsetX = chunkX * CHUNK_SIZE_X
