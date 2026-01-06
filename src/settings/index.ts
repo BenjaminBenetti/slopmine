@@ -1,1 +1,1 @@
-export { GraphicsSettings, type IGraphicsSettings, type ResolutionPreset, type FramerateLimit } from './GraphicsSettings.ts'
+export { GraphicsSettings, type IGraphicsSettings, type ResolutionPreset, type FramerateLimit, type ShadowMapSize } from './GraphicsSettings.ts'

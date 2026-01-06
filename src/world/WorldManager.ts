@@ -40,9 +40,11 @@ export class WorldManager {
 
   // Web Worker pool for mesh building
   private readonly meshWorkers: Worker[] = []
-  private readonly subChunkWorkerQueue: SubChunk[] = []
+  private readonly prioritySubChunkQueue: SubChunk[] = [] // High priority (player interactions)
+  private readonly subChunkWorkerQueue: SubChunk[] = [] // Normal priority (background updates)
   private readonly pendingSubChunks: Map<SubChunkKey, SubChunk> = new Map()
   private readonly WORKER_COUNT = Math.min(navigator.hardwareConcurrency || 4, 4)
+  private readonly MAX_BACKGROUND_MESH_JOBS_PER_FRAME = 2
 
   // Cache of opaque block IDs for worker visibility checks
   private opaqueBlockIds: number[] = []
@@ -268,14 +270,28 @@ export class WorldManager {
 
   /**
    * Process the sub-chunk worker queue.
+   * Priority queue items are always processed immediately.
+   * Background queue items are limited per frame to prevent spikes.
    */
   private processSubChunkWorkerQueue(): void {
-    while (this.subChunkWorkerQueue.length > 0) {
+    // Always process all high-priority items (player interactions)
+    while (this.prioritySubChunkQueue.length > 0) {
+      const worker = this.getIdleWorker()
+      if (!worker) break
+
+      const subChunk = this.prioritySubChunkQueue.shift()!
+      this.sendSubChunkToWorker(subChunk, worker)
+    }
+
+    // Process limited background items to prevent frame spikes
+    let backgroundJobsSent = 0
+    while (this.subChunkWorkerQueue.length > 0 && backgroundJobsSent < this.MAX_BACKGROUND_MESH_JOBS_PER_FRAME) {
       const worker = this.getIdleWorker()
       if (!worker) break
 
       const subChunk = this.subChunkWorkerQueue.shift()!
       this.sendSubChunkToWorker(subChunk, worker)
+      backgroundJobsSent++
     }
   }
 
@@ -490,8 +506,10 @@ export class WorldManager {
 
   /**
    * Queue a sub-chunk for background meshing via Web Worker.
+   * @param subChunk The sub-chunk to mesh
+   * @param priority 'high' for player interactions (immediate), 'normal' for background (throttled)
    */
-  queueSubChunkForMeshing(subChunk: SubChunk): void {
+  queueSubChunkForMeshing(subChunk: SubChunk, priority: 'high' | 'normal' = 'normal'): void {
     const subChunkKey = createSubChunkKey(
       subChunk.coordinate.x,
       subChunk.coordinate.z,
@@ -500,9 +518,14 @@ export class WorldManager {
 
     // Don't queue if already pending or in queue
     if (this.pendingSubChunks.has(subChunkKey)) return
+    if (this.prioritySubChunkQueue.includes(subChunk)) return
     if (this.subChunkWorkerQueue.includes(subChunk)) return
 
-    this.subChunkWorkerQueue.push(subChunk)
+    if (priority === 'high') {
+      this.prioritySubChunkQueue.push(subChunk)
+    } else {
+      this.subChunkWorkerQueue.push(subChunk)
+    }
     this.processSubChunkWorkerQueue()
   }
 
@@ -629,11 +652,12 @@ export class WorldManager {
 
     const changed = column.setBlockId(local.x, local.y, local.z, blockId)
     if (changed) {
-      // Find the affected sub-chunk and queue for remeshing
+      // Find the affected sub-chunk and queue for remeshing with high priority
+      // (player block changes should be visible immediately)
       const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
       const subChunk = column.getSubChunk(subY)
       if (subChunk) {
-        this.queueSubChunkForMeshing(subChunk)
+        this.queueSubChunkForMeshing(subChunk, 'high')
       }
 
       // Queue lighting update to worker - will remesh affected sub-chunks via callback
@@ -814,24 +838,17 @@ export class WorldManager {
   }
 
   /**
-   * Get all loaded chunks.
+   * Get all loaded chunk columns.
    */
-  getLoadedChunks(): Chunk[] {
-    return this.chunkManager.getLoadedChunks()
+  getLoadedColumns(): ChunkColumn[] {
+    return this.chunkManager.getLoadedColumns()
   }
 
   /**
-   * Get all dirty chunks.
+   * Get the number of loaded columns.
    */
-  getDirtyChunks(): Chunk[] {
-    return this.chunkManager.getDirtyChunks()
-  }
-
-  /**
-   * Get the number of loaded chunks.
-   */
-  getLoadedChunkCount(): number {
-    return this.chunkManager.getLoadedChunkCount()
+  getLoadedColumnCount(): number {
+    return this.chunkManager.getLoadedColumnCount()
   }
 
   /**

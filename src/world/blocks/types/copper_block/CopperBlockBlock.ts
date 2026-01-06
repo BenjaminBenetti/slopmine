@@ -5,7 +5,7 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
-import { CopperBlockItem } from '../../../../items/blocks/copper_block/CopperBlockItem.ts'
+import { CopperOreItem } from '../../../../items/ores/copper/CopperOreItem.ts'
 import copperBlockTexUrl from './assets/copper_block.webp'
 
 const copperBlockTexture = loadBlockTexture(copperBlockTexUrl)
@@ -30,6 +30,12 @@ export class CopperBlockBlock extends SolidBlock {
   }
 
   getDrops(): IItem[] {
-    return [new CopperBlockItem()]
+    // Drop 2-3 copper ore
+    const count = 2 + Math.floor(Math.random() * 2)
+    const drops: IItem[] = []
+    for (let i = 0; i < count; i++) {
+      drops.push(new CopperOreItem())
+    }
+    return drops
   }
 }

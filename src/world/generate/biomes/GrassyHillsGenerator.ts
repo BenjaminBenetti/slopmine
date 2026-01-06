@@ -33,7 +33,7 @@ export class GrassyHillsGenerator extends BiomeGenerator {
       // Common ores - coal spawns high and frequently
       new OreFeature({
         blockId: BlockIds.COAL_BLOCK,
-        frequency: 20,
+        frequency: 40,
         veinSize: 12,
         minY: 0,
         maxY: 128,

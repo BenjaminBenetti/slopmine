@@ -70,7 +70,7 @@ export class GenerationConfig {
   }
 
   getUnloadDistance(): number {
-    return Math.ceil(this.config.chunkDistance * 1.5)
+    return this.config.chunkDistance
   }
 
   reset(newSeed?: number): void {

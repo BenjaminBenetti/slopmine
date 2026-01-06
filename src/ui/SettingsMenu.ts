@@ -1,5 +1,5 @@
 import type { GenerationConfig } from '../world/generate/GenerationConfig.ts'
-import type { GraphicsSettings, ResolutionPreset, FramerateLimit } from '../settings/index.ts'
+import type { GraphicsSettings, ResolutionPreset, FramerateLimit, ShadowMapSize } from '../settings/index.ts'
 
 export type SettingsPage = 'main' | 'config'
 
@@ -12,6 +12,10 @@ export interface SettingsMenuUIOptions {
   onResolutionChange?: (preset: ResolutionPreset) => void
   /** Called when framerate limit setting changes */
   onFramerateLimitChange?: (limit: FramerateLimit) => void
+  /** Called when shadows enabled setting changes */
+  onShadowsEnabledChange?: (enabled: boolean) => void
+  /** Called when shadow map size setting changes */
+  onShadowMapSizeChange?: (size: ShadowMapSize) => void
 }
 
 export interface SettingsMenuUI {
@@ -346,6 +350,88 @@ export function createSettingsMenuUI(
     cullingContainer.appendChild(cullingLabel)
     cullingContainer.appendChild(cullingToggle)
     panel.appendChild(cullingContainer)
+
+    // Shadows toggle
+    const shadowsContainer = document.createElement('div')
+    shadowsContainer.style.marginBottom = '1.5rem'
+    shadowsContainer.style.display = 'flex'
+    shadowsContainer.style.alignItems = 'center'
+    shadowsContainer.style.justifyContent = 'space-between'
+
+    const shadowsLabel = document.createElement('label')
+    shadowsLabel.textContent = 'Shadows'
+    shadowsLabel.style.fontSize = '0.9rem'
+    shadowsLabel.style.cursor = 'pointer'
+    shadowsLabel.htmlFor = 'shadows-toggle'
+
+    const shadowsToggle = document.createElement('input')
+    shadowsToggle.type = 'checkbox'
+    shadowsToggle.id = 'shadows-toggle'
+    shadowsToggle.checked = graphicsSettings.shadowsEnabled
+    shadowsToggle.style.width = '18px'
+    shadowsToggle.style.height = '18px'
+    shadowsToggle.style.cursor = 'pointer'
+    shadowsToggle.style.accentColor = 'rgba(100, 180, 255, 0.9)'
+
+    shadowsContainer.appendChild(shadowsLabel)
+    shadowsContainer.appendChild(shadowsToggle)
+    panel.appendChild(shadowsContainer)
+
+    // Shadow Quality dropdown (only visible when shadows enabled)
+    const shadowQualityContainer = document.createElement('div')
+    shadowQualityContainer.style.marginBottom = '1.5rem'
+    shadowQualityContainer.style.display = graphicsSettings.shadowsEnabled ? 'flex' : 'none'
+    shadowQualityContainer.style.alignItems = 'center'
+    shadowQualityContainer.style.justifyContent = 'space-between'
+
+    const shadowQualityLabel = document.createElement('label')
+    shadowQualityLabel.textContent = 'Shadow Quality'
+    shadowQualityLabel.style.fontSize = '0.9rem'
+    shadowQualityLabel.htmlFor = 'shadow-quality-select'
+
+    const shadowQualitySelect = document.createElement('select')
+    shadowQualitySelect.id = 'shadow-quality-select'
+    shadowQualitySelect.style.padding = '0.4rem 0.6rem'
+    shadowQualitySelect.style.background = 'rgba(50, 50, 50, 0.9)'
+    shadowQualitySelect.style.border = '2px solid rgba(255, 255, 255, 0.3)'
+    shadowQualitySelect.style.borderRadius = '4px'
+    shadowQualitySelect.style.color = 'rgba(255, 255, 255, 0.9)'
+    shadowQualitySelect.style.fontSize = '0.9rem'
+    shadowQualitySelect.style.cursor = 'pointer'
+
+    const shadowQualityOptions: { value: ShadowMapSize; label: string }[] = [
+      { value: 1024, label: 'Low' },
+      { value: 2048, label: 'Medium' },
+      { value: 4096, label: 'High' },
+      { value: 8192, label: 'Ultra' },
+    ]
+
+    for (const opt of shadowQualityOptions) {
+      const option = document.createElement('option')
+      option.value = String(opt.value)
+      option.textContent = opt.label
+      option.style.background = 'rgba(30, 30, 30, 1)'
+      if (opt.value === graphicsSettings.shadowMapSize) {
+        option.selected = true
+      }
+      shadowQualitySelect.appendChild(option)
+    }
+
+    shadowsToggle.addEventListener('change', () => {
+      graphicsSettings.shadowsEnabled = shadowsToggle.checked
+      shadowQualityContainer.style.display = shadowsToggle.checked ? 'flex' : 'none'
+      options.onShadowsEnabledChange?.(shadowsToggle.checked)
+    })
+
+    shadowQualitySelect.addEventListener('change', () => {
+      const size = parseInt(shadowQualitySelect.value, 10) as ShadowMapSize
+      graphicsSettings.shadowMapSize = size
+      options.onShadowMapSizeChange?.(size)
+    })
+
+    shadowQualityContainer.appendChild(shadowQualityLabel)
+    shadowQualityContainer.appendChild(shadowQualitySelect)
+    panel.appendChild(shadowQualityContainer)
 
     const backBtn = createButton('Back', () => {
       renderMainMenu()

@@ -2,17 +2,22 @@ const STORAGE_KEY = 'slopmine:graphicsSettings'
 
 export type ResolutionPreset = '720p' | '1080p' | '1440p' | '4k' | 'native'
 export type FramerateLimit = 30 | 60 | 80 | 120 | 240
+export type ShadowMapSize = 1024 | 2048 | 4096 | 8192
 
 export interface IGraphicsSettings {
   cullingEnabled: boolean
   resolutionPreset: ResolutionPreset
   framerateLimit: FramerateLimit
+  shadowsEnabled: boolean
+  shadowMapSize: ShadowMapSize
 }
 
 const DEFAULT_SETTINGS: IGraphicsSettings = {
   cullingEnabled: true,
   resolutionPreset: 'native',
   framerateLimit: 60,
+  shadowsEnabled: true,
+  shadowMapSize: 4096,
 }
 
 export class GraphicsSettings {
@@ -46,6 +51,24 @@ export class GraphicsSettings {
 
   set framerateLimit(value: FramerateLimit) {
     this.settings.framerateLimit = value
+    this.save()
+  }
+
+  get shadowsEnabled(): boolean {
+    return this.settings.shadowsEnabled
+  }
+
+  set shadowsEnabled(value: boolean) {
+    this.settings.shadowsEnabled = value
+    this.save()
+  }
+
+  get shadowMapSize(): ShadowMapSize {
+    return this.settings.shadowMapSize
+  }
+
+  set shadowMapSize(value: ShadowMapSize) {
+    this.settings.shadowMapSize = value
     this.save()
   }
 

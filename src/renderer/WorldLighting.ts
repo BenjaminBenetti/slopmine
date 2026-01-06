@@ -94,6 +94,21 @@ export class WorldLighting {
     )
   }
 
+  setShadowsEnabled(enabled: boolean): void {
+    this.sun.castShadow = enabled
+  }
+
+  setShadowMapSize(size: number): void {
+    this.sun.shadow.mapSize.width = size
+    this.sun.shadow.mapSize.height = size
+
+    // Dispose existing shadow map to force regeneration
+    if (this.sun.shadow.map) {
+      this.sun.shadow.map.dispose()
+      this.sun.shadow.map = null
+    }
+  }
+
   addTo(scene: THREE.Scene): void {
     scene.add(this.ambient)
     scene.add(this.sun)

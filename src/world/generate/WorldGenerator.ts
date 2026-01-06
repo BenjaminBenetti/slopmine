@@ -186,30 +186,41 @@ export class WorldGenerator {
   }
 
   /**
-   * Unload columns beyond the unload distance.
-   * Removes all sub-chunks in the column.
+   * Unload sub-chunks beyond the 3D spherical unload distance.
+   * Columns are fully unloaded when horizontally too far.
+   * Individual sub-chunks are cleared when vertically too far.
    */
   private unloadDistantChunks(): void {
     const unloadDistance = this.config.getUnloadDistance()
-    const unloadDistanceBig = BigInt(unloadDistance)
 
-    const loadedChunks = this.world.getLoadedChunks()
+    const loadedColumns = this.world.getLoadedColumns()
 
-    for (const chunk of loadedChunks) {
-      const dx = chunk.coordinate.x - this.playerChunkX
-      const dz = chunk.coordinate.z - this.playerChunkZ
+    for (const column of loadedColumns) {
+      const dx = Number(column.coordinate.x - this.playerChunkX)
+      const dz = Number(column.coordinate.z - this.playerChunkZ)
+      const horizontalDist = Math.sqrt(dx * dx + dz * dz)
 
-      // Use Chebyshev distance (max of abs values)
-      const absDx = dx < 0n ? -dx : dx
-      const absDz = dz < 0n ? -dz : dz
-      const maxDist = absDx > absDz ? absDx : absDz
-
-      if (maxDist > unloadDistanceBig) {
-        this.world.unloadChunk(chunk.coordinate)
+      // If horizontally beyond unload distance, unload entire column
+      if (horizontalDist > unloadDistance) {
+        this.world.unloadChunk(column.coordinate)
 
         // Clear all sub-chunk keys for this column
         for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
-          const subKey = createSubChunkKey(chunk.coordinate.x, chunk.coordinate.z, subY)
+          const subKey = createSubChunkKey(column.coordinate.x, column.coordinate.z, subY)
+          this.generatedSubChunks.delete(subKey)
+          this.generatingSubChunks.delete(subKey)
+        }
+        continue
+      }
+
+      // Check each sub-chunk's 3D distance
+      for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
+        const dy = subY - this.playerSubY
+        const dist3D = Math.sqrt(dx * dx + dz * dz + dy * dy)
+
+        if (dist3D > unloadDistance) {
+          // Clear generated flag so it can be re-queued when player moves
+          const subKey = createSubChunkKey(column.coordinate.x, column.coordinate.z, subY)
           this.generatedSubChunks.delete(subKey)
           this.generatingSubChunks.delete(subKey)
         }
@@ -294,13 +305,19 @@ export class WorldGenerator {
     const centerX = this.playerChunkX
     const centerZ = this.playerChunkZ
 
-    // Generate sub-chunks in all columns within distance
+    // Generate sub-chunks in a sphere around the player
     for (const coord of this.spiralCoordinates(distance)) {
       const chunkX = centerX + BigInt(coord.dx)
       const chunkZ = centerZ + BigInt(coord.dz)
 
-      // For each column, queue all sub-chunks
+      // For each column, only queue sub-chunks within 3D spherical distance
       for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
+        const dy = subY - this.playerSubY
+
+        // Check 3D spherical distance - skip sub-chunks outside the sphere
+        const dist3D = Math.sqrt(coord.dx * coord.dx + coord.dz * coord.dz + dy * dy)
+        if (dist3D > distance) continue
+
         const subCoord: ISubChunkCoordinate = {
           x: chunkX,
           z: chunkZ,

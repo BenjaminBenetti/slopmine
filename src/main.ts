@@ -135,6 +135,15 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
     // Apply new framerate limit immediately
     gameLoop.setTargetFps(limit)
   },
+  onShadowsEnabledChange: (enabled) => {
+    // Apply shadow toggle to both renderer and lighting
+    renderer.setShadowsEnabled(enabled)
+    lighting.setShadowsEnabled(enabled)
+  },
+  onShadowMapSizeChange: (size) => {
+    // Apply new shadow map size
+    lighting.setShadowMapSize(size)
+  },
 })
 
 const seaLevel = worldGenerator.getConfig().seaLevel
@@ -210,9 +219,15 @@ renderer.setOpacityCache(opacityCache)
 renderer.setChunkMeshSource(() => world.getChunkMeshes())
 
 
-// Add world lighting (sun at 10am)
-const lighting = new WorldLighting({ timeOfDay: 10 })
+// Add world lighting (sun at 10am) with settings-based shadow map size
+const lighting = new WorldLighting({
+  timeOfDay: 10,
+  shadowMapSize: graphicsSettings.shadowMapSize,
+})
 lighting.addTo(renderer.scene)
+
+// Apply initial shadow state from settings
+lighting.setShadowsEnabled(graphicsSettings.shadowsEnabled)
 
 // Add skybox with sun positioned to match the directional light
 const skybox = new Skybox()

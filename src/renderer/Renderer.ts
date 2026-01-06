@@ -88,6 +88,14 @@ export class Renderer {
   }
 
   /**
+   * Enable or disable shadow rendering.
+   */
+  setShadowsEnabled(enabled: boolean): void {
+    this.renderer.shadowMap.enabled = enabled
+    this.renderer.shadowMap.needsUpdate = true
+  }
+
+  /**
    * Get the current internal render resolution in pixels.
    */
   getRenderResolution(): { width: number; height: number } {
@@ -127,6 +135,8 @@ export class Renderer {
     this.graphicsSettings = settings
     // Apply the saved resolution preset
     this.setResolution(settings.resolutionPreset)
+    // Apply shadow setting
+    this.setShadowsEnabled(settings.shadowsEnabled)
   }
 
   render(): void {

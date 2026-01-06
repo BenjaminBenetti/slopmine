@@ -83,21 +83,6 @@ export class ChunkManager {
     }
   }
 
-  /**
-   * Get all loaded chunks.
-   * @deprecated Use getLoadedColumns instead
-   */
-  getLoadedChunks(): Chunk[] {
-    return Array.from(this.chunks.values())
-  }
-
-  /**
-   * Get all dirty chunks that need remeshing.
-   * @deprecated Use getDirtySubChunks instead
-   */
-  getDirtyChunks(): Chunk[] {
-    return this.getLoadedChunks().filter(chunk => chunk.isDirty())
-  }
 
   /**
    * Get chunks within a radius of a center point.

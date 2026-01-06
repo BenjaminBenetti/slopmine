@@ -5,7 +5,7 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
-import { CoalBlockItem } from '../../../../items/blocks/coal_block/CoalBlockItem.ts'
+import { CoalItem } from '../../../../items/ores/coal/CoalItem.ts'
 import coalBlockTexUrl from './assets/coal_block.webp'
 
 const coalBlockTexture = loadBlockTexture(coalBlockTexUrl)
@@ -30,6 +30,12 @@ export class CoalBlockBlock extends SolidBlock {
   }
 
   getDrops(): IItem[] {
-    return [new CoalBlockItem()]
+    // Drop 1-3 coal
+    const count = 1 + Math.floor(Math.random() * 3)
+    const drops: IItem[] = []
+    for (let i = 0; i < count; i++) {
+      drops.push(new CoalItem())
+    }
+    return drops
   }
 }

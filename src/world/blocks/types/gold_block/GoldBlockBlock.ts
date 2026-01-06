@@ -5,7 +5,7 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
-import { GoldBlockItem } from '../../../../items/blocks/gold_block/GoldBlockItem.ts'
+import { GoldOreItem } from '../../../../items/ores/gold/GoldOreItem.ts'
 import goldBlockTexUrl from './assets/gold_block.webp'
 
 const goldBlockTexture = loadBlockTexture(goldBlockTexUrl)
@@ -30,6 +30,12 @@ export class GoldBlockBlock extends SolidBlock {
   }
 
   getDrops(): IItem[] {
-    return [new GoldBlockItem()]
+    // Drop 1-2 gold ore
+    const count = 1 + Math.floor(Math.random() * 2)
+    const drops: IItem[] = []
+    for (let i = 0; i < count; i++) {
+      drops.push(new GoldOreItem())
+    }
+    return drops
   }
 }

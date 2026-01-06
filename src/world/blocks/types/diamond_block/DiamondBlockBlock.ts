@@ -5,7 +5,7 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
-import { DiamondBlockItem } from '../../../../items/blocks/diamond_block/DiamondBlockItem.ts'
+import { DiamondItem } from '../../../../items/ores/diamond/DiamondItem.ts'
 import diamondBlockTexUrl from './assets/diamond_block.webp'
 
 const diamondBlockTexture = loadBlockTexture(diamondBlockTexUrl)
@@ -30,6 +30,7 @@ export class DiamondBlockBlock extends SolidBlock {
   }
 
   getDrops(): IItem[] {
-    return [new DiamondBlockItem()]
+    // Diamond always drops exactly 1
+    return [new DiamondItem()]
   }
 }

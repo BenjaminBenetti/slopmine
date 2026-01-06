@@ -5,7 +5,7 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
-import { IronBlockItem } from '../../../../items/blocks/iron_block/IronBlockItem.ts'
+import { IronOreItem } from '../../../../items/ores/iron/IronOreItem.ts'
 import ironBlockTexUrl from './assets/iron_block.webp'
 
 const ironBlockTexture = loadBlockTexture(ironBlockTexUrl)
@@ -30,6 +30,12 @@ export class IronBlockBlock extends SolidBlock {
   }
 
   getDrops(): IItem[] {
-    return [new IronBlockItem()]
+    // Drop 1-2 iron ore
+    const count = 1 + Math.floor(Math.random() * 2)
+    const drops: IItem[] = []
+    for (let i = 0; i < count; i++) {
+      drops.push(new IronOreItem())
+    }
+    return drops
   }
 }
