@@ -11,7 +11,7 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState, SUB_CHUNK_VOLUME 
 import { ChunkMesh } from '../renderer/ChunkMesh.ts'
 import type { SubChunkOpacityCache } from '../renderer/SubChunkOpacityCache.ts'
 import ChunkMeshWorker from '../workers/ChunkMeshWorker.ts?worker'
-import type { SubChunkMeshRequest, SubChunkMeshResponse } from '../workers/ChunkMeshWorker.ts'
+import type { SubChunkMeshRequest, SubChunkMeshResponse, SubChunkMeshError } from '../workers/ChunkMeshWorker.ts'
 import { SubChunk } from './chunks/SubChunk.ts'
 import { ChunkColumn } from './chunks/ChunkColumn.ts'
 import { SUB_CHUNK_HEIGHT } from './interfaces/IChunk.ts'
@@ -130,8 +130,21 @@ export class WorldManager {
     // Mesh workers (for sub-chunk meshing)
     for (let i = 0; i < this.WORKER_COUNT; i++) {
       const worker = new ChunkMeshWorker()
-      worker.onmessage = (event: MessageEvent<SubChunkMeshResponse>) => {
+      worker.onmessage = (event: MessageEvent<SubChunkMeshResponse | SubChunkMeshError>) => {
+        if (event.data.type === 'subchunk-mesh-error') {
+          // Clean up the stuck entry so chunk can be re-queued
+          const key = createSubChunkKey(BigInt(event.data.chunkX), BigInt(event.data.chunkZ), event.data.subY)
+          this.pendingSubChunks.delete(key)
+          console.warn(`Mesh worker error for chunk ${event.data.chunkX},${event.data.chunkZ} subY=${event.data.subY}:`, event.data.error)
+          return
+        }
         this.handleSubChunkMeshResult(event.data)
+      }
+      worker.onerror = (error) => {
+        console.error('Mesh worker error:', error)
+        // Clear pending subchunks to prevent permanent stuck state
+        this.pendingSubChunks.clear()
+        this.processSubChunkWorkerQueue()
       }
       this.meshWorkers.push(worker)
     }

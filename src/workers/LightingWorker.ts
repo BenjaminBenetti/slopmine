@@ -343,17 +343,27 @@ function processNextRequest(): void {
   isProcessing = true
   let result: LightingResponse | LightingError
 
-  if (request.type === 'update-block-lighting') {
-    result = processBlockChangeRequest(request)
-  } else {
-    result = processLightingRequest(request)
-  }
+  try {
+    if (request.type === 'update-block-lighting') {
+      result = processBlockChangeRequest(request)
+    } else {
+      result = processLightingRequest(request)
+    }
 
-  if (result.type === 'lighting-result') {
-    const transfer = result.updatedSubChunks.map((sc) => sc.lightData.buffer)
-    self.postMessage(result, { transfer })
-  } else {
-    self.postMessage(result)
+    if (result.type === 'lighting-result') {
+      const transfer = result.updatedSubChunks.map((sc) => sc.lightData.buffer)
+      self.postMessage(result, { transfer })
+    } else {
+      self.postMessage(result)
+    }
+  } catch (error) {
+    // Send error response so main thread can clean up pending state
+    self.postMessage({
+      type: 'lighting-error',
+      chunkX: request.chunkX,
+      chunkZ: request.chunkZ,
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 
   // Process next request on next tick to allow new messages to arrive

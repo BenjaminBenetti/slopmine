@@ -174,6 +174,17 @@ export interface SubChunkMeshResponse {
 }
 
 /**
+ * Error response from sub-chunk mesh worker.
+ */
+export interface SubChunkMeshError {
+  type: 'subchunk-mesh-error'
+  chunkX: number
+  chunkZ: number
+  subY: number
+  error: string
+}
+
+/**
  * Get combined light level from light data (max of skylight and blocklight).
  */
 function getLightLevelAt(lightData: Uint8Array, x: number, y: number, z: number): number {
@@ -578,21 +589,33 @@ function processSubChunk(request: SubChunkMeshRequest): SubChunkMeshResponse {
 self.onmessage = (event: MessageEvent<ChunkMeshRequest | SubChunkMeshRequest>) => {
   const data = event.data
 
-  let result: ChunkMeshResponse | SubChunkMeshResponse
-  if (data.type === 'subchunk-mesh') {
-    result = processSubChunk(data)
-  } else {
-    result = processChunk(data)
-  }
+  try {
+    let result: ChunkMeshResponse | SubChunkMeshResponse
+    if (data.type === 'subchunk-mesh') {
+      result = processSubChunk(data)
+    } else {
+      result = processChunk(data)
+    }
 
-  // Collect transferable arrays
-  const transfer: Transferable[] = []
-  for (const [, positions] of result.visibleBlocks) {
-    transfer.push(positions.buffer)
-  }
-  for (const [, lights] of result.lightLevels) {
-    transfer.push(lights.buffer)
-  }
+    // Collect transferable arrays
+    const transfer: Transferable[] = []
+    for (const [, positions] of result.visibleBlocks) {
+      transfer.push(positions.buffer)
+    }
+    for (const [, lights] of result.lightLevels) {
+      transfer.push(lights.buffer)
+    }
 
-  self.postMessage(result, { transfer })
+    self.postMessage(result, { transfer })
+  } catch (error) {
+    // Send error response so main thread can clean up pending state
+    const errorResponse: SubChunkMeshError = {
+      type: 'subchunk-mesh-error',
+      chunkX: data.chunkX,
+      chunkZ: data.chunkZ,
+      subY: 'subY' in data ? data.subY : 0,
+      error: error instanceof Error ? error.message : String(error),
+    }
+    self.postMessage(errorResponse)
+  }
 }

@@ -107,6 +107,14 @@ export class BackgroundLightingManager {
         this.processBlockChangeQueue()
       }
 
+      worker.onerror = (error) => {
+        console.error('Lighting worker error:', error)
+        this.workerBusy[i] = false
+        // Clear pending columns to prevent permanent stuck state
+        // The columns will be re-queued for background lighting eventually
+        this.pendingColumns.clear()
+      }
+
       this.workers.push(worker)
       this.workerBusy.push(false)
     }
