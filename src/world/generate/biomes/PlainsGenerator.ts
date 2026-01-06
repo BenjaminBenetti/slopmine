@@ -136,6 +136,8 @@ export class PlainsGenerator extends BiomeGenerator {
     const minSubY = Number(coord.subY) * SUB_CHUNK_HEIGHT
     const maxSubY = minSubY + SUB_CHUNK_HEIGHT - 1
 
+    let treesPlaced = 0
+
     // Check each cell in a grid pattern for potential tree positions
     for (let localX = 0; localX < CHUNK_SIZE_X; localX += gridSize) {
       for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ += gridSize) {
@@ -184,11 +186,17 @@ export class PlainsGenerator extends BiomeGenerator {
         // Place tree if location is valid
         if (OakTree.canPlace(world, baseX, baseY, baseZ, params)) {
           OakTree.place(world, baseX, baseY, baseZ, params)
+          treesPlaced++
+
+          // Yield every 2 trees to prevent frame blocking
+          if (treesPlaced % 2 === 0) {
+            await this.yieldToEventLoop()
+          }
         }
       }
     }
 
-    // Yield to event loop after tree generation
+    // Final yield after tree generation
     await this.yieldToEventLoop()
   }
 
@@ -203,6 +211,8 @@ export class PlainsGenerator extends BiomeGenerator {
     const coord = chunk.coordinate
     const treeDensity = this.properties.treeDensity
     const gridSize = this.TREE_GRID_SIZE
+
+    let treesPlaced = 0
 
     // Check each cell in a grid pattern for potential tree positions
     for (let localX = 0; localX < CHUNK_SIZE_X; localX += gridSize) {
@@ -248,11 +258,17 @@ export class PlainsGenerator extends BiomeGenerator {
         // Place tree if location is valid
         if (OakTree.canPlace(world, baseX, baseY, baseZ, params)) {
           OakTree.place(world, baseX, baseY, baseZ, params)
+          treesPlaced++
+
+          // Yield every 2 trees to prevent frame blocking
+          if (treesPlaced % 2 === 0) {
+            await this.yieldToEventLoop()
+          }
         }
       }
     }
 
-    // Yield to event loop after tree generation
+    // Final yield after tree generation
     await this.yieldToEventLoop()
   }
 }

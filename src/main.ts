@@ -42,6 +42,11 @@ import {
   PLAYER_DEPTH,
   EYE_HEIGHT,
 } from './physics/index.ts'
+import {
+  StonePickaxeItem,
+  StoneShovelItem,
+  StoneAxeItem,
+} from './items/tools/index.ts'
 
 // Initialize world system
 registerDefaultBlocks()
@@ -55,6 +60,13 @@ renderer.setGraphicsSettings(graphicsSettings)
 
 // Player state (including toolbar/inventory)
 const playerState = new PlayerState(10)
+
+// Give player stone tools in dev mode
+if (import.meta.env.DEV) {
+  playerState.addItem(new StonePickaxeItem())
+  playerState.addItem(new StoneAxeItem())
+  playerState.addItem(new StoneShovelItem())
+}
 
 // Loading screen (shown until initial chunks are generated)
 const loadingScreen = createLoadingScreenUI()

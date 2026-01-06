@@ -167,7 +167,7 @@ export class WorldManager {
     minWorldY: number,
     maxWorldY: number,
     biomeConfig: WorkerBiomeConfig
-  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; orePositions: OrePosition[] }> {
+  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; orePositions: OrePosition[]; isFullyOpaque: boolean }> {
     const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
 
     // Pre-allocate buffers (will be transferred to worker)
@@ -201,6 +201,7 @@ export class WorldManager {
             blocks: response.blocks,
             lightData: response.lightData,
             orePositions: response.orePositions,
+            isFullyOpaque: response.isFullyOpaque,
           })
         },
         reject,
@@ -219,11 +220,13 @@ export class WorldManager {
   /**
    * Apply worker-generated data to a sub-chunk.
    * Creates the sub-chunk and ChunkColumn if necessary.
+   * @param isFullyOpaque - Opacity computed in worker (avoids main thread computation)
    */
   async applySubChunkData(
     coordinate: ISubChunkCoordinate,
     blocks: Uint16Array,
-    lightData: Uint8Array
+    lightData: Uint8Array,
+    isFullyOpaque?: boolean
   ): Promise<void> {
     // Get or create the chunk column
     const chunkCoord: IChunkCoordinate = { x: coordinate.x, z: coordinate.z }
@@ -239,8 +242,12 @@ export class WorldManager {
     // Apply the block and light data
     subChunk.applyWorkerData(blocks, lightData)
 
-    // Compute opacity for software occlusion culling
-    subChunk.computeOpacity(this.opaqueBlockIdSet)
+    // Use worker-provided opacity or compute on main thread as fallback
+    if (isFullyOpaque !== undefined) {
+      subChunk.setOpacity(isFullyOpaque)
+    } else {
+      subChunk.computeOpacity(this.opaqueBlockIdSet)
+    }
     if (this.opacityCache) {
       this.opacityCache.updateSubChunk(coordinate, subChunk.isFullyOpaque)
     }

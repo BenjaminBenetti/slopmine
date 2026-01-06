@@ -422,11 +422,12 @@ export class WorldGenerator {
         this.workerBiomeConfig
       )
 
-      // Apply results to the sub-chunk
+      // Apply results to the sub-chunk (pass worker-computed opacity to avoid main thread work)
       await this.world.applySubChunkData(
         coordinate,
         workerResult.blocks,
-        workerResult.lightData
+        workerResult.lightData,
+        workerResult.isFullyOpaque
       )
 
       // Generate decorations (trees, etc) for this sub-chunk

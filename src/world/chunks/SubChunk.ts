@@ -249,6 +249,13 @@ export class SubChunk {
   }
 
   /**
+   * Set the opacity value directly (used when worker pre-computed it).
+   */
+  setOpacity(isFullyOpaque: boolean): void {
+    this._isFullyOpaque = isFullyOpaque
+  }
+
+  /**
    * Apply bulk data from worker generation result.
    */
   applyWorkerData(blocks: Uint16Array, lightData: Uint8Array): void {

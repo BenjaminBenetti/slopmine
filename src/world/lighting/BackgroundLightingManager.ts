@@ -58,6 +58,9 @@ export class BackgroundLightingManager {
   private readonly edgePropagationQueue: Set<ChunkKey> = new Set()
   private readonly skylightPropagator = new SkylightPropagator()
 
+  // Frame budget for edge propagation (in milliseconds)
+  private readonly EDGE_PROPAGATION_BUDGET_MS = 2
+
   // Player position for priority processing (in chunk coordinates)
   private playerChunkX = 0
   private playerChunkZ = 0
@@ -512,16 +515,20 @@ export class BackgroundLightingManager {
 
   /**
    * Process edge propagation - spread light across chunk borders.
-   * Runs on main thread (fast, only processes edge blocks).
+   * Runs on main thread with a time budget to prevent frame spikes.
    */
   private processEdgePropagation(): void {
     if (!this.getColumn || !this.queueSubChunkForMeshing) return
     if (this.edgePropagationQueue.size === 0) return
 
-    // Process up to 5 columns per frame
-    const keysToProcess = Array.from(this.edgePropagationQueue).slice(0, 5)
+    const startTime = performance.now()
 
-    for (const key of keysToProcess) {
+    for (const key of this.edgePropagationQueue) {
+      // Check budget before processing each column
+      if (performance.now() - startTime > this.EDGE_PROPAGATION_BUDGET_MS) {
+        break // Continue next frame
+      }
+
       this.edgePropagationQueue.delete(key)
 
       // Parse the key to get coordinates

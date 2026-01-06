@@ -17,6 +17,7 @@ import { Feature, type FeatureContext } from '../world/generate/features/Feature
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
 import { registerDefaultBlocks } from '../world/blocks/registerDefaultBlocks.ts'
+import { getBlock } from '../world/blocks/BlockRegistry.ts'
 import type { CaveSettings } from '../world/generate/BiomeGenerator.ts'
 import type { IGenerationConfig } from '../world/generate/GenerationConfig.ts'
 import type { BlockId } from '../world/interfaces/IBlock.ts'
@@ -114,6 +115,7 @@ export interface SubChunkGenerationResponse {
   hasTerrainAbove: boolean // True if terrain extends above this sub-chunk
   maxSolidY: number // Highest solid block world Y in this sub-chunk (-1 if empty)
   orePositions: OrePosition[] // Debug: positions of all ore blocks placed
+  isFullyOpaque: boolean // True if ALL blocks in this sub-chunk are opaque (for occlusion culling)
 }
 
 /**
@@ -495,16 +497,28 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     }
   }
 
+  // Phase 5: Compute opacity for occlusion culling (done in worker to avoid main thread work)
+  const blockData = subChunk.getBlockData()
+  let isFullyOpaque = true
+  for (let i = 0; i < blockData.length; i++) {
+    const block = getBlock(blockData[i])
+    if (!block.properties.isOpaque) {
+      isFullyOpaque = false
+      break
+    }
+  }
+
   return {
     type: 'subchunk-result',
     chunkX,
     chunkZ,
     subY,
-    blocks: subChunk.getBlockData(),
+    blocks: blockData,
     lightData: subChunk.getLightData(),
     hasTerrainAbove,
     maxSolidY,
     orePositions,
+    isFullyOpaque,
   }
 }
 
