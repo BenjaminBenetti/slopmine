@@ -520,7 +520,9 @@ export class BackgroundLightingManager {
       this.columnQueueSet.add(key)
     }
 
-    // Apply updated light data
+    // First pass: Apply ALL light data before queueing any meshes
+    // (meshes need neighbor light data, so all light must be updated first)
+    const changedSubChunks: SubChunk[] = []
     for (const updated of result.updatedSubChunks) {
       if (!updated.changed) continue
 
@@ -531,7 +533,12 @@ export class BackgroundLightingManager {
       const currentLightData = subChunk.getLightData()
       currentLightData.set(updated.lightData)
 
-      // Queue for remeshing with high priority (player action)
+      changedSubChunks.push(subChunk)
+    }
+
+    // Second pass: Queue all changed sub-chunks for remeshing
+    // (now all neighbor light data is correct)
+    for (const subChunk of changedSubChunks) {
       if (this.queueSubChunkForMeshing) {
         this.queueSubChunkForMeshing(subChunk, 'high')
       }
@@ -540,7 +547,7 @@ export class BackgroundLightingManager {
       const coord: ISubChunkCoordinate = {
         x: column.coordinate.x,
         z: column.coordinate.z,
-        subY: updated.subY,
+        subY: subChunk.coordinate.subY,
       }
       for (const callback of this.onSubChunkLightingUpdated) {
         callback(coord)

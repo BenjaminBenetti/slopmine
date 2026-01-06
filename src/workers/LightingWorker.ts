@@ -116,13 +116,16 @@ function processBlockChangeRequest(
     const column = createColumnWrapper(workerSubChunks)
 
     // Use the same lighting update logic as block mining
-    const affectedSubChunks = skylightPropagator.updateSubChunkLightingAt(
+    const affectedSubChunksList = skylightPropagator.updateSubChunkLightingAt(
       column,
       localX,
       localY,
       localZ,
       wasBlockRemoved
     )
+
+    // Convert to Set for O(1) lookup
+    const affectedSubChunksSet = new Set(affectedSubChunksList)
 
     // Build response with updated light data for ALL sub-chunks
     // (some may have been affected through propagation)
@@ -154,6 +157,11 @@ function processBlockChangeRequest(
       // Force changed=true for the sub-chunk containing the block change
       // (block data changed even if light didn't, so it needs remeshing)
       if (sc.subY === blockChangeSubY) {
+        changed = true
+      }
+
+      // Force changed=true for sub-chunks affected by light propagation
+      if (affectedSubChunksSet.has(sc.subY)) {
         changed = true
       }
 
