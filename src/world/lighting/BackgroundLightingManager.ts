@@ -16,6 +16,7 @@ import type {
   SubChunkData,
 } from '../../workers/LightingWorker.ts'
 import { SkylightPropagator } from './SkylightPropagator.ts'
+import { SUB_CHUNK_HEIGHT } from '../interfaces/IChunk.ts'
 
 export interface BackgroundLightingConfig {
   /** How many columns to process per update cycle (default: 1) */
@@ -56,6 +57,9 @@ export class BackgroundLightingManager {
 
   // High-priority queue for block changes when workers are busy
   private readonly blockChangeQueue: BlockChangeLightingRequest[] = []
+
+  // Pending force remesh sub-chunks (for when block change requests are skipped due to pending column)
+  private readonly pendingForceRemesh: Map<ChunkKey, Set<number>> = new Map()
 
   // Edge propagation queue - columns needing light from neighbors
   private readonly edgePropagationQueue: Set<ChunkKey> = new Set()
@@ -197,9 +201,18 @@ export class BackgroundLightingManager {
     const coord = column.coordinate
     const key = createChunkKey(coord.x, coord.z)
 
-    // If there's already a pending request for this column, skip
-    // The background correction will handle any additional changes
+    // Calculate which sub-chunk contains the block change
+    const subY = Math.floor(localY / SUB_CHUNK_HEIGHT)
+
+    // If there's already a pending request for this column, store the subY
+    // for forced remeshing when the pending request completes
     if (this.pendingColumns.has(key)) {
+      let pending = this.pendingForceRemesh.get(key)
+      if (!pending) {
+        pending = new Set()
+        this.pendingForceRemesh.set(key, pending)
+      }
+      pending.add(subY)
       return
     }
 
@@ -215,6 +228,7 @@ export class BackgroundLightingManager {
       localZ,
       wasBlockRemoved,
       subChunks,
+      forceRemeshSubY: subY,
     }
 
     // Find an available worker for high-priority block change
@@ -309,6 +323,9 @@ export class BackgroundLightingManager {
     // Remove from pending and processed tracking
     this.pendingColumns.delete(key)
     this.processedColumns.delete(key)
+
+    // Clean up pending force remesh entries
+    this.pendingForceRemesh.delete(key)
   }
 
   /**
@@ -546,9 +563,11 @@ export class BackgroundLightingManager {
 
     // Second pass: Queue all changed sub-chunks for remeshing
     // (now all neighbor light data is correct)
+    const queuedSubYs = new Set<number>()
     for (const subChunk of changedSubChunks) {
       if (this.queueSubChunkForMeshing) {
         this.queueSubChunkForMeshing(subChunk, 'high')
+        queuedSubYs.add(subChunk.coordinate.subY)
       }
 
       // Notify listeners
@@ -559,6 +578,34 @@ export class BackgroundLightingManager {
       }
       for (const callback of this.onSubChunkLightingUpdated) {
         callback(coord)
+      }
+    }
+
+    // Third pass: Force remesh for sub-chunks that had block changes
+    // (even if lighting didn't change, block data did)
+    const forceRemeshSubYs = new Set<number>()
+
+    // From response (direct block change request)
+    if (result.forceRemeshSubY !== undefined) {
+      forceRemeshSubYs.add(result.forceRemeshSubY)
+    }
+
+    // From pending map (block changes that were skipped due to pending column)
+    const pendingForce = this.pendingForceRemesh.get(key)
+    if (pendingForce) {
+      for (const subY of pendingForce) {
+        forceRemeshSubYs.add(subY)
+      }
+      this.pendingForceRemesh.delete(key)
+    }
+
+    // Force remesh these sub-chunks if not already queued by lighting pass
+    for (const subY of forceRemeshSubYs) {
+      if (!queuedSubYs.has(subY)) {
+        const subChunk = column.getSubChunk(subY)
+        if (subChunk && this.queueSubChunkForMeshing) {
+          this.queueSubChunkForMeshing(subChunk, 'high')
+        }
       }
     }
 

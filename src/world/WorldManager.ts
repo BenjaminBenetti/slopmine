@@ -718,7 +718,7 @@ export class WorldManager {
       // Immediately queue mesh rebuild with high priority for responsive feedback
       const subChunk = column.getSubChunk(subY)
       if (subChunk) {
-        // this.queueSubChunkForMeshing(subChunk, 'high')
+        // this.queueSubChunkForMeshing(subChunk, 'high') <--- THIS IS THE TREE ISSUE
       }
 
       // Also queue lighting update - will remesh again with correct lighting

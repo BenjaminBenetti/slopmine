@@ -45,6 +45,7 @@ export interface BlockChangeLightingRequest {
   localZ: number
   wasBlockRemoved: boolean
   subChunks: SubChunkData[]
+  forceRemeshSubY: number // Always remesh this sub-chunk regardless of lighting changes
 }
 
 /**
@@ -60,6 +61,8 @@ export interface LightingResponse {
     lightData: Uint8Array
     changed: boolean
   }>
+  /** Sub-chunk that must be remeshed regardless of lighting changes (from block change request) */
+  forceRemeshSubY?: number
 }
 
 /**
@@ -186,6 +189,7 @@ function processBlockChangeRequest(
       chunkX,
       chunkZ,
       updatedSubChunks,
+      forceRemeshSubY: request.forceRemeshSubY,
     }
   } catch (error) {
     return {
