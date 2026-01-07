@@ -58,10 +58,19 @@ import { BlockRaycaster } from './player/BlockRaycaster.ts'
 import type { ForgeBlockState } from './world/blocks/types/forge/ForgeBlockState.ts'
 import { ForgeBlockItem } from './items/blocks/forge/ForgeBlockItem.ts'
 import { recipeRegistry } from './crafting/RecipeRegistry.ts'
+import {
+  PersistenceManager,
+  initializeItemRegistry,
+  serializeInventory,
+  deserializeInventory,
+} from './persistence/index.ts'
 
 // Initialize world system
 registerDefaultBlocks()
 registerDefaultRecipes()
+
+// Initialize item registry for persistence deserialization
+initializeItemRegistry()
 
 // Initialize block tick manager (for forge smelting, etc.)
 const blockTickManager = new BlockTickManager()
@@ -184,6 +193,71 @@ toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
 const world = new WorldManager()
 const worldGenerator = new WorldGenerator(world)
 
+// Create persistence manager and initialize asynchronously
+const persistenceManager = new PersistenceManager()
+
+// Connect persistence to world systems
+world.setPersistenceManager(persistenceManager)
+worldGenerator.setPersistenceManager(persistenceManager)
+
+// Initialize persistence and load saved data (async)
+persistenceManager.initialize().then(async () => {
+  // Request persistent storage from main thread (more reliable than from worker)
+  let persisted = false
+  if (navigator.storage?.persist) {
+    persisted = await navigator.storage.persist()
+  }
+  console.log(`Storage persistence: ${persisted ? 'granted' : 'best-effort'}`)
+
+  // Load saved inventory if exists
+  const savedInventory = await persistenceManager.loadInventory()
+  if (savedInventory) {
+    deserializeInventory(
+      savedInventory,
+      playerState.inventory.toolbar,
+      playerState.inventory.inventory
+    )
+    toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
+    console.log('Loaded saved inventory')
+  }
+
+  // Load saved player position if exists
+  const savedMetadata = await persistenceManager.loadMetadata()
+  if (savedMetadata?.playerPosition) {
+    const pos = savedMetadata.playerPosition
+    playerBody.position.set(pos.x, pos.y, pos.z)
+    renderer.camera.position.set(pos.x, pos.y + EYE_HEIGHT, pos.z)
+    spawnPosition.set(pos.x, pos.y, pos.z)
+    console.log(`Loaded saved position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`)
+  }
+
+  // Start auto-save (every 5 minutes)
+  persistenceManager.startAutoSave(() => ({
+    inventory: serializeInventory(playerState.inventory),
+    chunkProvider: world,
+    playerPosition: {
+      x: playerBody.position.x,
+      y: playerBody.position.y,
+      z: playerBody.position.z,
+    },
+  }))
+}).catch((error) => {
+  console.error('Failed to initialize persistence:', error)
+})
+
+// Safety save on page unload
+window.addEventListener('beforeunload', () => {
+  persistenceManager.saveBeforeUnload(
+    serializeInventory(playerState.inventory),
+    world,
+    {
+      x: playerBody.position.x,
+      y: playerBody.position.y,
+      z: playerBody.position.z,
+    }
+  )
+})
+
 // Calculate required chunks for loading (25% of total chunks for current distance)
 const chunkDistance = worldGenerator.getConfig().chunkDistance
 const totalChunks = (2 * chunkDistance + 1) ** 2
@@ -216,6 +290,23 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
   onShadowMapSizeChange: (size) => {
     // Apply new shadow map size
     lighting.setShadowMapSize(size)
+  },
+  onSave: async () => {
+    // Manual save triggered from pause menu
+    await persistenceManager.saveAll(
+      serializeInventory(playerState.inventory),
+      world,
+      {
+        x: playerBody.position.x,
+        y: playerBody.position.y,
+        z: playerBody.position.z,
+      }
+    )
+  },
+  onNewGame: async () => {
+    // Clear all saved data and reload the page for fresh start
+    await persistenceManager.clearAll()
+    window.location.reload()
   },
 })
 

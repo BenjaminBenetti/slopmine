@@ -23,12 +23,14 @@ import type {
 } from '../workers/ChunkGenerationWorker.ts'
 import type { OrePosition } from './generate/features/OreFeature.ts'
 import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
+import type { PersistenceManager, IModifiedChunkProvider } from '../persistence/PersistenceManager.ts'
 
 /**
  * Main world coordinator.
  * Provides high-level API for world access and modification.
+ * Implements IModifiedChunkProvider for persistence integration.
  */
-export class WorldManager {
+export class WorldManager implements IModifiedChunkProvider {
   private readonly chunkManager: ChunkManager
   private readonly blockRegistry: BlockRegistry
   private scene: THREE.Scene | null = null
@@ -72,6 +74,9 @@ export class WorldManager {
 
   // Background lighting manager for all lighting updates (generation and block changes)
   private readonly backgroundLightingManager: BackgroundLightingManager
+
+  // Persistence manager for saving/loading world data
+  private persistenceManager: PersistenceManager | null = null
 
   // Web Worker pool for chunk generation (terrain, caves, lighting)
   private readonly generationWorkers: Worker[] = []
@@ -124,6 +129,51 @@ export class WorldManager {
    */
   getOpacityCache(): SubChunkOpacityCache | null {
     return this.opacityCache
+  }
+
+  /**
+   * Set the persistence manager for saving/loading world data.
+   */
+  setPersistenceManager(manager: PersistenceManager): void {
+    this.persistenceManager = manager
+  }
+
+  /**
+   * Get all loaded sub-chunks for persistence (implements IModifiedChunkProvider).
+   * Returns all loaded sub-chunks since terrain generation isn't fully deterministic.
+   */
+  getModifiedSubChunks(): Array<{
+    coordinate: ISubChunkCoordinate
+    blocks: Uint16Array
+    lightData: Uint8Array
+  }> {
+    const chunks: Array<{
+      coordinate: ISubChunkCoordinate
+      blocks: Uint16Array
+      lightData: Uint8Array
+    }> = []
+
+    for (const subChunk of this.chunkManager.getLoadedSubChunks()) {
+      chunks.push({
+        coordinate: subChunk.coordinate,
+        blocks: subChunk.getBlockData(),
+        lightData: subChunk.getLightData(),
+      })
+    }
+
+    return chunks
+  }
+
+  /**
+   * Clear modified flags on all sub-chunks (implements IModifiedChunkProvider).
+   * Called after successful save.
+   */
+  clearModifiedFlags(): void {
+    for (const subChunk of this.chunkManager.getLoadedSubChunks()) {
+      if (subChunk.isModifiedByPlayer()) {
+        subChunk.clearModifiedByPlayer()
+      }
+    }
   }
 
   /**
@@ -770,6 +820,10 @@ export class WorldManager {
       const subChunk = column.getSubChunk(subY)
       if (subChunk) {
         // this.queueSubChunkForMeshing(subChunk, 'high') <--- THIS IS THE TREE ISSUE
+
+        // Mark as modified by player for persistence
+        subChunk.markModifiedByPlayer()
+        this.persistenceManager?.markSubChunkModified(subChunk.coordinate)
       }
 
       // Also queue lighting update - will remesh again with correct lighting
@@ -975,8 +1029,25 @@ export class WorldManager {
 
   /**
    * Unload a column and remove all its sub-chunk meshes.
+   * Saves all sub-chunks before unloading (terrain gen isn't deterministic).
    */
   unloadChunk(coordinate: IChunkCoordinate): void {
+    // Save all sub-chunks before unloading (fire and forget)
+    const column = this.chunkManager.getColumn(coordinate)
+    if (column && this.persistenceManager) {
+      for (let subY = 0; subY < 16; subY++) {
+        const subChunk = column.getSubChunk(subY)
+        if (subChunk) {
+          // Save this sub-chunk before it's unloaded
+          this.persistenceManager.saveSubChunk(
+            subChunk.coordinate,
+            subChunk.getBlockData(),
+            subChunk.getLightData()
+          ).catch(err => console.error('Failed to save sub-chunk on unload:', err))
+        }
+      }
+    }
+
     // Remove all sub-chunk meshes for this column
     for (let subY = 0; subY < 16; subY++) {
       const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, subY)

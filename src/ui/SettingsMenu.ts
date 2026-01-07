@@ -16,6 +16,10 @@ export interface SettingsMenuUIOptions {
   onShadowsEnabledChange?: (enabled: boolean) => void
   /** Called when shadow map size setting changes */
   onShadowMapSizeChange?: (size: ShadowMapSize) => void
+  /** Called when the user clicks "Save Game" - returns a promise that resolves when save is complete */
+  onSave?: () => Promise<void>
+  /** Called when the user confirms "New Game" - should clear saved data and reload */
+  onNewGame?: () => Promise<void>
 }
 
 export interface SettingsMenuUI {
@@ -114,6 +118,52 @@ export function createSettingsMenuUI(
     })
     panel.appendChild(newGameBtn)
 
+    // Save Game button (only shown if onSave callback is provided)
+    if (options.onSave) {
+      let isSaving = false
+      const saveBtn = createButton('Save Game', async () => {
+        if (isSaving) return
+        isSaving = true
+        const originalText = saveBtn.textContent
+        saveBtn.textContent = 'Saving...'
+        saveBtn.style.opacity = '0.7'
+        saveBtn.style.cursor = 'wait'
+
+        try {
+          await options.onSave!()
+          saveBtn.textContent = 'Saved!'
+          saveBtn.style.background = 'rgba(40, 100, 40, 0.9)'
+          saveBtn.style.borderColor = 'rgba(100, 200, 100, 0.5)'
+
+          // Reset after 1.5 seconds
+          setTimeout(() => {
+            saveBtn.textContent = originalText
+            saveBtn.style.background = 'rgba(50, 50, 50, 0.9)'
+            saveBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+            saveBtn.style.opacity = '1'
+            saveBtn.style.cursor = 'pointer'
+            isSaving = false
+          }, 1500)
+        } catch (error) {
+          console.error('Save failed:', error)
+          saveBtn.textContent = 'Save Failed'
+          saveBtn.style.background = 'rgba(120, 40, 40, 0.9)'
+          saveBtn.style.borderColor = 'rgba(255, 100, 100, 0.5)'
+
+          // Reset after 2 seconds
+          setTimeout(() => {
+            saveBtn.textContent = originalText
+            saveBtn.style.background = 'rgba(50, 50, 50, 0.9)'
+            saveBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+            saveBtn.style.opacity = '1'
+            saveBtn.style.cursor = 'pointer'
+            isSaving = false
+          }, 2000)
+        }
+      })
+      panel.appendChild(saveBtn)
+    }
+
     const settingsBtn = createButton('Settings', () => {
       renderConfigPage()
     })
@@ -145,9 +195,28 @@ export function createSettingsMenuUI(
     warning.style.color = 'rgba(255, 200, 200, 0.9)'
     panel.appendChild(warning)
 
-    const confirmBtn = createButton('Start New World', () => {
-      config.regenerateSeed()
-      window.location.reload()
+    let isStarting = false
+    const confirmBtn = createButton('Start New World', async () => {
+      if (isStarting) return
+      isStarting = true
+      confirmBtn.textContent = 'Starting...'
+      confirmBtn.style.opacity = '0.7'
+      confirmBtn.style.cursor = 'wait'
+
+      try {
+        // Clear saved data if callback provided
+        if (options.onNewGame) {
+          await options.onNewGame()
+        } else {
+          // Fallback: just regenerate seed and reload
+          config.regenerateSeed()
+          window.location.reload()
+        }
+      } catch (error) {
+        console.error('Failed to start new game:', error)
+        confirmBtn.textContent = 'Failed!'
+        isStarting = false
+      }
     })
     confirmBtn.style.background = 'rgba(120, 40, 40, 0.9)'
     confirmBtn.style.borderColor = 'rgba(255, 100, 100, 0.5)'

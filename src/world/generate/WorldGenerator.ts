@@ -11,6 +11,7 @@ import { CliffFeature } from './features/CliffFeature.ts'
 import { OreFeature } from './features/OreFeature.ts'
 import { EntranceGenerator } from './caves/EntranceGenerator.ts'
 import type { WorkerBiomeConfig, FeatureConfig } from '../../workers/ChunkGenerationWorker.ts'
+import type { PersistenceManager } from '../../persistence/PersistenceManager.ts'
 
 interface QueuedSubChunk {
   coordinate: ISubChunkCoordinate
@@ -45,6 +46,9 @@ export class WorldGenerator {
   // Entrance generation (runs on main thread after sub-chunks are ready)
   private readonly entranceGenerator: EntranceGenerator
   private readonly entrancesGenerated: Set<string> = new Set() // "x,z" keys
+
+  // Persistence manager for loading saved chunks
+  private persistenceManager: PersistenceManager | null = null
 
   constructor(world: WorldManager, config?: Partial<IGenerationConfig>) {
     this.world = world
@@ -236,6 +240,13 @@ export class WorldGenerator {
   }
 
   /**
+   * Set the persistence manager for loading saved chunks.
+   */
+  setPersistenceManager(manager: PersistenceManager): void {
+    this.persistenceManager = manager
+  }
+
+  /**
    * Force regeneration of all sub-chunks (e.g., after seed change).
    */
   reset(): void {
@@ -403,12 +414,28 @@ export class WorldGenerator {
 
   /**
    * Generate a single sub-chunk using worker for heavy computation.
+   * First checks persistence for saved data.
    */
   private async generateSubChunk(
     coordinate: ISubChunkCoordinate,
     key: SubChunkKey
   ): Promise<void> {
     try {
+      // Check persistence first - load from storage if available
+      if (this.persistenceManager) {
+        const savedData = await this.persistenceManager.loadSubChunk(coordinate)
+        if (savedData) {
+          // Apply saved data instead of generating
+          await this.world.applySubChunkData(
+            coordinate,
+            savedData.blocks,
+            savedData.lightData
+          )
+          this.generatedSubChunks.add(key)
+          return
+        }
+      }
+
       const minWorldY = coordinate.subY * SUB_CHUNK_HEIGHT
       const maxWorldY = minWorldY + SUB_CHUNK_HEIGHT - 1
 

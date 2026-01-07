@@ -15,6 +15,7 @@ export class SubChunk {
   private _state: ChunkState = ChunkState.UNLOADED
   private _dirty = false
   private _isFullyOpaque = false
+  private _modifiedByPlayer = false
 
   /**
    * Block data stored as flat Uint16Array.
@@ -90,6 +91,29 @@ export class SubChunk {
 
   clearDirty(): void {
     this._dirty = false
+  }
+
+  /**
+   * Mark this sub-chunk as modified by player action.
+   * Used for persistence - only player-modified chunks are saved.
+   */
+  markModifiedByPlayer(): void {
+    this._modifiedByPlayer = true
+    this._dirty = true
+  }
+
+  /**
+   * Check if this sub-chunk was modified by player action.
+   */
+  isModifiedByPlayer(): boolean {
+    return this._modifiedByPlayer
+  }
+
+  /**
+   * Clear the player modification flag (after saving).
+   */
+  clearModifiedByPlayer(): void {
+    this._modifiedByPlayer = false
   }
 
   getBlockData(): Uint16Array {
