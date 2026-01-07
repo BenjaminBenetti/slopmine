@@ -15,7 +15,7 @@ export interface IGraphicsSettings {
 const DEFAULT_SETTINGS: IGraphicsSettings = {
   cullingEnabled: true,
   resolutionPreset: 'native',
-  framerateLimit: 60,
+  framerateLimit: 240,
   shadowsEnabled: true,
   shadowMapSize: 4096,
 }

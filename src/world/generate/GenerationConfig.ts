@@ -11,7 +11,7 @@ export interface IGenerationConfig {
 
 const DEFAULT_CONFIG: IGenerationConfig = {
   seed: Date.now(),
-  chunkDistance: 4,
+  chunkDistance: 8,
   seaLevel: 64,
   biome: 'grassy-hills',
 }
