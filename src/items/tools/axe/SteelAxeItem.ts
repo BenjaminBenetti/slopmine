@@ -6,8 +6,9 @@ import { AxeItem } from './AxeItem.ts'
 export class SteelAxeItem extends AxeItem {
   readonly id = 'steel_axe'
   readonly name = 'steel_axe'
-  protected readonly baseDamage = 3
+  protected readonly baseDamage = 1.5
   protected readonly tier = 4
+  protected readonly woodMultiplier = 8.0
 
   override get displayName(): string {
     return 'Steel Axe'

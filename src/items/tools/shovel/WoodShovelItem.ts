@@ -6,8 +6,9 @@ import { ShovelItem } from './ShovelItem.ts'
 export class WoodShovelItem extends ShovelItem {
   readonly id = 'wood_shovel'
   readonly name = 'wood_shovel'
-  protected readonly baseDamage = 1
+  protected readonly baseDamage = 0.5
   protected readonly tier = 1
+  protected readonly dirtMultiplier = 8.0
 
   override get displayName(): string {
     return 'Wood Shovel'

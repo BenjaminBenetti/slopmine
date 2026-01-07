@@ -43,14 +43,14 @@ import {
   EYE_HEIGHT,
 } from './physics/index.ts'
 import {
-  StonePickaxeItem,
-  StoneShovelItem,
-  StoneAxeItem,
+  DiamondPickaxeItem,
+  DiamondShovelItem,
+  DiamondAxeItem,
 } from './items/tools/index.ts'
 import { BlockTickManager } from './world/blockstate/BlockTickManager.ts'
 import { setForgeBlockTickManager } from './world/blocks/types/forge/ForgeBlock.ts'
 import { smeltingRegistry } from './smelting/index.ts'
-import { IronBarItem, GoldBarItem, CopperBarItem } from './items/bars/index.ts'
+import { IronBarItem, GoldBarItem, CopperBarItem, SteelBarItem } from './items/bars/index.ts'
 import { blockUIRegistry, createForgeUI } from './ui/blockui/index.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
 import { BlockInteractionHandler } from './player/BlockInteractionHandler.ts'
@@ -92,6 +92,14 @@ smeltingRegistry.register({
   resultCount: 1,
   smeltTime: 8,
 })
+smeltingRegistry.register({
+  id: 'smelt_iron_bar',
+  name: 'Steel Bar',
+  inputId: 'iron_bar',
+  createResult: () => new SteelBarItem(),
+  resultCount: 1,
+  smeltTime: 30, // 30 seconds - requires high heat to convert iron to steel
+})
 
 // Register forge crafting recipe (4 stone -> 1 forge)
 recipeRegistry.register({
@@ -114,11 +122,11 @@ renderer.setGraphicsSettings(graphicsSettings)
 // Player state (including toolbar/inventory)
 const playerState = new PlayerState(10)
 
-// Give player stone tools in dev mode
+// Give player diamond tools in dev mode
 if (import.meta.env.DEV) {
-  playerState.addItem(new StonePickaxeItem())
-  playerState.addItem(new StoneAxeItem())
-  playerState.addItem(new StoneShovelItem())
+  playerState.addItem(new DiamondPickaxeItem())
+  playerState.addItem(new DiamondAxeItem())
+  playerState.addItem(new DiamondShovelItem())
 }
 
 // Loading screen (shown until initial chunks are generated)

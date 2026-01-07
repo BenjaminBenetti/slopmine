@@ -22,7 +22,7 @@ export class CopperBlockBlock extends SolidBlock {
     lightLevel: 0,
     lightBlocking: 15,
     demolitionForceRequired: 1,
-    tags: [BlockTags.METAL],
+    tags: [BlockTags.STONE, BlockTags.METAL],
   }
 
   protected getMaterials(): THREE.Material {

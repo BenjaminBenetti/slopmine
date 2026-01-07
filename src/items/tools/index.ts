@@ -6,6 +6,7 @@ export { WoodPickaxeItem } from './pickaxe/WoodPickaxeItem.ts'
 export { StonePickaxeItem } from './pickaxe/StonePickaxeItem.ts'
 export { IronPickaxeItem } from './pickaxe/IronPickaxeItem.ts'
 export { SteelPickaxeItem } from './pickaxe/SteelPickaxeItem.ts'
+export { DiamondPickaxeItem } from './pickaxe/DiamondPickaxeItem.ts'
 
 // Shovel
 export { ShovelItem } from './shovel/ShovelItem.ts'
@@ -13,6 +14,7 @@ export { WoodShovelItem } from './shovel/WoodShovelItem.ts'
 export { StoneShovelItem } from './shovel/StoneShovelItem.ts'
 export { IronShovelItem } from './shovel/IronShovelItem.ts'
 export { SteelShovelItem } from './shovel/SteelShovelItem.ts'
+export { DiamondShovelItem } from './shovel/DiamondShovelItem.ts'
 
 // Axe
 export { AxeItem } from './axe/AxeItem.ts'
@@ -20,3 +22,4 @@ export { WoodAxeItem } from './axe/WoodAxeItem.ts'
 export { StoneAxeItem } from './axe/StoneAxeItem.ts'
 export { IronAxeItem } from './axe/IronAxeItem.ts'
 export { SteelAxeItem } from './axe/SteelAxeItem.ts'
+export { DiamondAxeItem } from './axe/DiamondAxeItem.ts'
