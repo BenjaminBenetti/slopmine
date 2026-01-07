@@ -319,9 +319,16 @@ export class SkylightPropagator {
           const sourceLight = sourceChunk.getSkylight(sourceX, y, z)
           if (sourceLight > 0) {
             const internalLight = sourceLight * LIGHT_SCALE
-            // Try to propagate into target
+            // Get target block's light blocking property
+            const blockId = targetChunk.getBlockId(targetX, y, z)
+            const block = getBlock(blockId)
+            const blocking = block.properties.lightBlocking
+
+            // Try to propagate into target, accounting for target block's light blocking
             const targetLight = targetChunk.getSkylight(targetX, y, z)
-            const newInternalLight = internalLight - 1 // Decrease by 1 crossing boundary
+            const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
+            if (newInternalLight <= 0) continue
+
             const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
 
             if (newStoredLight > targetLight) {
@@ -340,9 +347,16 @@ export class SkylightPropagator {
           const sourceLight = sourceChunk.getSkylight(x, y, sourceZ)
           if (sourceLight > 0) {
             const internalLight = sourceLight * LIGHT_SCALE
-            // Try to propagate into target
+            // Get target block's light blocking property
+            const blockId = targetChunk.getBlockId(x, y, targetZ)
+            const block = getBlock(blockId)
+            const blocking = block.properties.lightBlocking
+
+            // Try to propagate into target, accounting for target block's light blocking
             const targetLight = targetChunk.getSkylight(x, y, targetZ)
-            const newInternalLight = internalLight - 1 // Decrease by 1 crossing boundary
+            const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
+            if (newInternalLight <= 0) continue
+
             const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
 
             if (newStoredLight > targetLight) {
@@ -394,9 +408,16 @@ export class SkylightPropagator {
           const sourceLight = sourceSubChunk.getSkylight(sourceX, y, z)
           if (sourceLight > 0) {
             const internalLight = sourceLight * LIGHT_SCALE
-            // Try to propagate into target
+            // Get target block's light blocking property
+            const blockId = targetSubChunk.getBlockId(targetX, y, z)
+            const block = getBlock(blockId)
+            const blocking = block.properties.lightBlocking
+
+            // Try to propagate into target, accounting for target block's light blocking
             const targetLight = targetSubChunk.getSkylight(targetX, y, z)
-            const newInternalLight = internalLight - 1 // Decrease by 1 crossing boundary
+            const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
+            if (newInternalLight <= 0) continue
+
             const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
 
             if (newStoredLight > targetLight) {
@@ -415,9 +436,16 @@ export class SkylightPropagator {
           const sourceLight = sourceSubChunk.getSkylight(x, y, sourceZ)
           if (sourceLight > 0) {
             const internalLight = sourceLight * LIGHT_SCALE
-            // Try to propagate into target
+            // Get target block's light blocking property
+            const blockId = targetSubChunk.getBlockId(x, y, targetZ)
+            const block = getBlock(blockId)
+            const blocking = block.properties.lightBlocking
+
+            // Try to propagate into target, accounting for target block's light blocking
             const targetLight = targetSubChunk.getSkylight(x, y, targetZ)
-            const newInternalLight = internalLight - 1 // Decrease by 1 crossing boundary
+            const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
+            if (newInternalLight <= 0) continue
+
             const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
 
             if (newStoredLight > targetLight) {
@@ -448,7 +476,9 @@ export class SkylightPropagator {
    *
    * @param subChunk The sub-chunk to light
    * @param aboveLight Optional light values from the bottom layer of the sub-chunk above.
-   *                   If not provided and subY < 15, assumes full sky light at top.
+   *                   If not provided and subY < 15, defaults to 0 (dark) to prevent
+   *                   underground sections from incorrectly receiving full sunlight
+   *                   during partial updates.
    */
   propagateSubChunk(subChunk: ISubChunkData, aboveLight?: BoundaryLight): void {
     // Phase 1: Initialize columns from top down
@@ -543,8 +573,11 @@ export class SkylightPropagator {
           // Topmost sub-chunk: start with full sky light
           skylight = INTERNAL_MAX_LIGHT
         } else {
-          // Sub-chunk without above data: assume full light (will be corrected when above generates)
-          skylight = INTERNAL_MAX_LIGHT
+          // Sub-chunk without above data: default to 0 (dark) to prevent
+          // underground sections from incorrectly receiving full sunlight
+          // during partial updates. Existing light values from initial
+          // generation will be preserved via the Math.max() below.
+          skylight = 0
         }
 
         // Scan from top of sub-chunk down
@@ -794,7 +827,12 @@ export class SkylightPropagator {
     // Check all sub-chunks above
     for (let subY = startSubY + 1; subY < 16; subY++) {
       const subChunk = column.getSubChunk(subY)
-      if (!subChunk) continue // Ungenerated sub-chunk, assume sky access
+      if (!subChunk) {
+        // Ungenerated sub-chunk above - cannot determine sky access.
+        // Return false (no sky access) to prevent caves from lighting up incorrectly.
+        // When the upper sub-chunk generates, propagateFromAbove will push light down.
+        return false
+      }
 
       for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
         const blockId = subChunk.getBlockId(localX, y, localZ)
@@ -1090,8 +1128,16 @@ export class SkylightPropagator {
           const sourceLight = sourceSubChunk.getSkylight(sourceX, y, z)
           if (sourceLight > 0) {
             const internalLight = sourceLight * LIGHT_SCALE
+            // Get target block's light blocking property
+            const blockId = targetSubChunk.getBlockId(targetX, y, z)
+            const block = getBlock(blockId)
+            const blocking = block.properties.lightBlocking
+
+            // Try to propagate into target, accounting for target block's light blocking
             const targetLight = targetSubChunk.getSkylight(targetX, y, z)
-            const newInternalLight = internalLight - 1
+            const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
+            if (newInternalLight <= 0) continue
+
             const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
 
             if (newStoredLight > targetLight) {
@@ -1110,8 +1156,16 @@ export class SkylightPropagator {
           const sourceLight = sourceSubChunk.getSkylight(x, y, sourceZ)
           if (sourceLight > 0) {
             const internalLight = sourceLight * LIGHT_SCALE
+            // Get target block's light blocking property
+            const blockId = targetSubChunk.getBlockId(x, y, targetZ)
+            const block = getBlock(blockId)
+            const blocking = block.properties.lightBlocking
+
+            // Try to propagate into target, accounting for target block's light blocking
             const targetLight = targetSubChunk.getSkylight(x, y, targetZ)
-            const newInternalLight = internalLight - 1
+            const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
+            if (newInternalLight <= 0) continue
+
             const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
 
             if (newStoredLight > targetLight) {
