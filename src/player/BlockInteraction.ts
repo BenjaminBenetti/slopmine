@@ -242,6 +242,11 @@ export class BlockInteraction {
       this.onItemsCollected?.()
     }
 
+    // Call the block's onBreak hook if it exists (before removing the block)
+    if (block.onBreak) {
+      block.onBreak(this.worldManager, worldX, worldY, worldZ)
+    }
+
     // Set block to air (automatically queues affected sub-chunk for remeshing)
     this.worldManager.setBlock(worldX, worldY, worldZ, BlockIds.AIR)
 

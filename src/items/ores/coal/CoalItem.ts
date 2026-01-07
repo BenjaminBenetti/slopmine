@@ -18,6 +18,6 @@ export class CoalItem extends Item {
   }
 
   override get tags(): ReadonlyArray<string> {
-    return [ItemTags.ORE]
+    return [ItemTags.ORE, ItemTags.FUEL]
   }
 }

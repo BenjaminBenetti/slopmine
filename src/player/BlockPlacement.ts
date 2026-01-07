@@ -116,6 +116,11 @@ export class BlockPlacement {
     // Place the block
     this.worldManager.setBlock(placePos.x, placePos.y, placePos.z, blockId)
 
+    // Call the block's onPlace hook if it exists
+    if (block.onPlace) {
+      block.onPlace(this.worldManager, placePos.x, placePos.y, placePos.z)
+    }
+
     // Decrease item stack count
     if (stack.count <= 1) {
       this.playerState.inventory.toolbar.clearSlot(selectedIndex)

@@ -8,6 +8,12 @@ import { createCraftingPanelUI, type CraftingPanelUI } from '../ui/CraftingPanel
 import type { IRecipe } from '../crafting/RecipeRegistry.ts'
 
 export interface InventoryInput {
+  /** The crafting panel root element, for hiding when block UIs are open */
+  readonly craftingPanelRoot: HTMLElement
+  /** Check if a block UI handler has control */
+  readonly isBlockUIActive: boolean
+  /** Set block UI active state (called by BlockInteractionHandler) */
+  setBlockUIActive(active: boolean): void
   dispose(): void
 }
 
@@ -33,6 +39,26 @@ export class InventoryInputHandler implements InventoryInput {
   private readonly craftingPanel: CraftingPanelUI
 
   private pointerLocked = false
+  private blockUIActive = false
+
+  /** Expose crafting panel root for BlockInteractionHandler */
+  get craftingPanelRoot(): HTMLElement {
+    return this.craftingPanel.root
+  }
+
+  /** Check if block UI has control of the inventory overlay */
+  get isBlockUIActive(): boolean {
+    return this.blockUIActive
+  }
+
+  /** Set block UI active state */
+  setBlockUIActive(active: boolean): void {
+    this.blockUIActive = active
+    if (active) {
+      // Disable our drag-drop when block UI takes over
+      this.dragDrop.disable()
+    }
+  }
 
   constructor(
     domElement: HTMLElement,
@@ -112,10 +138,13 @@ export class InventoryInputHandler implements InventoryInput {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
-	    // Ignore input completely when the game is not focused on the canvas
-	    // and the inventory is not open. Once the inventory is open we still
-	    // want ESC / 'I' to work even though pointer lock has been released.
-	    if (!this.pointerLocked && !this.inventoryUI.isOpen) return
+    // Don't handle input when block UI has control
+    if (this.blockUIActive) return
+
+    // Ignore input completely when the game is not focused on the canvas
+    // and the inventory is not open. Once the inventory is open we still
+    // want ESC / 'I' to work even though pointer lock has been released.
+    if (!this.pointerLocked && !this.inventoryUI.isOpen) return
 
     // Avoid conflicting with browser/system shortcuts
     if (event.altKey || event.ctrlKey || event.metaKey) return

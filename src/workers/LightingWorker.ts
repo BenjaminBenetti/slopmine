@@ -6,9 +6,11 @@
 
 import { WorkerSubChunk } from './WorkerSubChunk.ts'
 import { SkylightPropagator, type BoundaryLight } from '../world/lighting/SkylightPropagator.ts'
+import { BlocklightPropagator, type BlocklightBoundary } from '../world/lighting/BlocklightPropagator.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT, SUB_CHUNK_VOLUME } from '../world/interfaces/IChunk.ts'
 import { registerDefaultBlocks } from '../world/blocks/registerDefaultBlocks.ts'
 import { BlockIds } from '../world/blocks/BlockIds.ts'
+import { getBlock } from '../world/blocks/BlockRegistry.ts'
 
 // Initialize block registry in worker context
 registerDefaultBlocks()
@@ -76,6 +78,7 @@ export interface LightingError {
 }
 
 const skylightPropagator = new SkylightPropagator()
+const blocklightPropagator = new BlocklightPropagator()
 
 /**
  * Create a column-like wrapper from a Map of WorkerSubChunks.
@@ -127,17 +130,48 @@ function processBlockChangeRequest(
       wasBlockRemoved
     )
 
+    // Handle blocklight changes
+    const blockChangeSubY = Math.floor(localY / SUB_CHUNK_HEIGHT)
+    const localSubY = localY % SUB_CHUNK_HEIGHT
+    const subChunk = workerSubChunks.get(blockChangeSubY)
+
+    if (subChunk) {
+      const blockId = subChunk.getBlockId(localX, localSubY, localZ)
+      const block = getBlock(blockId)
+
+      if (wasBlockRemoved) {
+        // If we removed a light source, clear and recalculate blocklight
+        const oldBlocklight = subChunk.getBlocklight(localX, localSubY, localZ)
+        if (oldBlocklight > 0) {
+          blocklightPropagator.clearAndRecalculate(subChunk, localX, localSubY, localZ, oldBlocklight)
+        }
+        // Also propagate blocklight INTO the newly exposed space from neighbors
+        // (e.g., mining a stone block near a torch should let torch light flow in)
+        blocklightPropagator.propagateIntoExposedBlock(subChunk, localX, localSubY, localZ)
+      } else if (block.properties.lightLevel > 0) {
+        // A light source was placed - propagate from it
+        subChunk.setBlocklight(localX, localSubY, localZ, block.properties.lightLevel)
+        // Re-run propagation for this sub-chunk to spread the new light
+        blocklightPropagator.propagateSubChunk(subChunk)
+      }
+    }
+
+    // Propagate any light that exists at chunk edges inward
+    // This handles light that came from neighboring chunks (via edge propagation on main thread)
+    // and ensures it spreads fully into this chunk
+    for (const sc of subChunks) {
+      const workerSubChunk = workerSubChunks.get(sc.subY)
+      if (workerSubChunk) {
+        blocklightPropagator.propagateFromEdges(workerSubChunk)
+      }
+    }
+
     // Convert to Set for O(1) lookup
     const affectedSubChunksSet = new Set(affectedSubChunksList)
 
     // Build response with updated light data for ALL sub-chunks
     // (some may have been affected through propagation)
     const updatedSubChunks: LightingResponse['updatedSubChunks'] = []
-
-    // Calculate which sub-chunk contains the block change and Y boundary info
-    const SUB_CHUNK_HEIGHT = 64
-    const blockChangeSubY = Math.floor(localY / SUB_CHUNK_HEIGHT)
-    const localSubY = localY % SUB_CHUNK_HEIGHT
 
     // Check if block is at Y boundary (needs adjacent sub-chunk remeshed too)
     const isAtBottomOfSubChunk = localSubY === 0
@@ -289,6 +323,44 @@ function processLightingRequest(request: LightingRequest): LightingResponse | Li
 
       // Get boundary for next sub-chunk below
       aboveBoundaryLight = skylightPropagator.getBottomBoundaryLight(workerSubChunk)
+    }
+
+    // Blocklight propagation: find light-emitting blocks and propagate
+    // Process all sub-chunks to find and propagate blocklight
+    for (const sc of subChunks) {
+      const workerSubChunk = workerSubChunks.get(sc.subY)!
+      blocklightPropagator.propagateSubChunk(workerSubChunk)
+    }
+
+    // Propagate blocklight across sub-chunk Y boundaries
+    // Process from bottom to top, then top to bottom for complete coverage
+    const sortedBySubY = [...subChunks].sort((a, b) => a.subY - b.subY)
+    let belowBoundaryLight: BlocklightBoundary | undefined
+
+    // Bottom to top pass
+    for (const sc of sortedBySubY) {
+      const workerSubChunk = workerSubChunks.get(sc.subY)!
+      if (belowBoundaryLight) {
+        blocklightPropagator.propagateFromBelow(workerSubChunk, belowBoundaryLight)
+      }
+      belowBoundaryLight = blocklightPropagator.getTopBoundaryLight(workerSubChunk)
+    }
+
+    // Top to bottom pass
+    let aboveBlocklight: BlocklightBoundary | undefined
+    for (const sc of sortedSubChunks) {
+      const workerSubChunk = workerSubChunks.get(sc.subY)!
+      if (aboveBlocklight) {
+        blocklightPropagator.propagateFromAbove(workerSubChunk, aboveBlocklight)
+      }
+      aboveBlocklight = blocklightPropagator.getBottomBoundaryLight(workerSubChunk)
+    }
+
+    // Propagate any light at chunk horizontal edges inward
+    // This handles light that came from neighboring chunks (via edge propagation on main thread)
+    for (const sc of subChunks) {
+      const workerSubChunk = workerSubChunks.get(sc.subY)!
+      blocklightPropagator.propagateFromEdges(workerSubChunk)
     }
 
     // Build response with updated light data

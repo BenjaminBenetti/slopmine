@@ -14,4 +14,6 @@ export enum BlockIds {
   COAL_BLOCK = 8,
   GOLD_BLOCK = 9,
   DIAMOND_BLOCK = 10,
+  TORCH = 11,
+  FORGE = 12,
 }

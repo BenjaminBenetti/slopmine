@@ -64,7 +64,7 @@ export function createToolbarUI(
     label.textContent = String((i + 1) % 10)
     label.style.position = 'absolute'
     label.style.bottom = '2px'
-    label.style.right = '4px'
+    label.style.left = '4px'
     label.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
     label.style.fontSize = '0.55rem'
     label.style.color = 'rgba(255, 255, 255, 0.7)'

@@ -47,10 +47,63 @@ import {
   StoneShovelItem,
   StoneAxeItem,
 } from './items/tools/index.ts'
+import { BlockTickManager } from './world/blockstate/BlockTickManager.ts'
+import { setForgeBlockTickManager } from './world/blocks/types/forge/ForgeBlock.ts'
+import { smeltingRegistry } from './smelting/index.ts'
+import { IronBarItem, GoldBarItem, CopperBarItem } from './items/bars/index.ts'
+import { blockUIRegistry, createForgeUI } from './ui/blockui/index.ts'
+import { BlockIds } from './world/blocks/BlockIds.ts'
+import { BlockInteractionHandler } from './player/BlockInteractionHandler.ts'
+import { BlockRaycaster } from './player/BlockRaycaster.ts'
+import type { ForgeBlockState } from './world/blocks/types/forge/ForgeBlockState.ts'
+import { ForgeBlockItem } from './items/blocks/forge/ForgeBlockItem.ts'
+import { recipeRegistry } from './crafting/RecipeRegistry.ts'
 
 // Initialize world system
 registerDefaultBlocks()
 registerDefaultRecipes()
+
+// Initialize block tick manager (for forge smelting, etc.)
+const blockTickManager = new BlockTickManager()
+setForgeBlockTickManager(blockTickManager)
+
+// Register smelting recipes
+smeltingRegistry.register({
+  id: 'smelt_iron_ore',
+  name: 'Iron Bar',
+  inputId: 'iron_ore',
+  createResult: () => new IronBarItem(),
+  resultCount: 1,
+  smeltTime: 10,
+})
+smeltingRegistry.register({
+  id: 'smelt_gold_ore',
+  name: 'Gold Bar',
+  inputId: 'gold_ore',
+  createResult: () => new GoldBarItem(),
+  resultCount: 1,
+  smeltTime: 12,
+})
+smeltingRegistry.register({
+  id: 'smelt_copper_ore',
+  name: 'Copper Bar',
+  inputId: 'copper_ore',
+  createResult: () => new CopperBarItem(),
+  resultCount: 1,
+  smeltTime: 8,
+})
+
+// Register forge crafting recipe (4 stone -> 1 forge)
+recipeRegistry.register({
+  id: 'craft_forge',
+  name: 'Forge',
+  ingredients: [{ itemId: 'stone_block', count: 4 }],
+  createResult: () => new ForgeBlockItem(),
+  resultCount: 1,
+})
+
+// Register block UI for forge
+blockUIRegistry.register(BlockIds.FORGE, (state) => createForgeUI(state as ForgeBlockState))
 
 const renderer = new Renderer()
 
@@ -292,6 +345,28 @@ const blockPlacement = new BlockPlacement(
   }
 )
 
+// Block raycaster for E-key interaction
+const blockRaycaster = new BlockRaycaster(world)
+
+// Block UI interaction handler (E-key to open forge, etc.)
+const blockInteractionHandler = new BlockInteractionHandler({
+  domElement: renderer.renderer.domElement,
+  camera: renderer.camera,
+  worldManager: world,
+  raycaster: blockRaycaster,
+  inventoryUI,
+  inventoryInputHandler: inventoryInput,
+  toolbarUI,
+  cameraControls,
+  playerState,
+  inventoryState: playerState.inventory.inventory,
+  toolbarState: playerState.inventory.toolbar,
+  onStateChanged: () => {
+    toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
+    updateHeldItem()
+  },
+})
+
 let frameCpuStart = 0
 let lastTickCount = 0
 let lastFrameTime = 0
@@ -336,6 +411,16 @@ scheduler.createTask({
   id: 'block-interaction',
   priority: TaskPriority.CRITICAL,
   update: (dt) => blockInteraction.update(dt),
+})
+
+// Register block tick manager (for forge smelting, etc.)
+scheduler.registerTask(blockTickManager)
+
+// Update block UI when open
+scheduler.createTask({
+  id: 'block-ui-update',
+  priority: TaskPriority.NORMAL,
+  update: () => blockInteractionHandler.update(),
 })
 
 // Register HIGH priority tasks (can be skipped briefly without visual issues)
@@ -492,7 +577,7 @@ const gameLoop = new GameLoop({
 const settingsInput = new SettingsInputHandler({
   domElement: renderer.renderer.domElement,
   cameraControls,
-  isInventoryOpen: () => inventoryUI.isOpen,
+  isInventoryOpen: () => inventoryUI.isOpen || blockInteractionHandler.isOpen,
   openSettingsUI: () => settingsUI.open(),
   closeSettingsUI: () => settingsUI.close(),
   setGamePaused: (paused) => { gameLoop.paused = paused },

@@ -11,6 +11,8 @@ import { CopperBlockBlock } from './types/copper_block/CopperBlockBlock.ts'
 import { CoalBlockBlock } from './types/coal_block/CoalBlockBlock.ts'
 import { GoldBlockBlock } from './types/gold_block/GoldBlockBlock.ts'
 import { DiamondBlockBlock } from './types/diamond_block/DiamondBlockBlock.ts'
+import { TorchBlock } from './types/torch/TorchBlock.ts'
+import { ForgeBlock } from './types/forge/ForgeBlock.ts'
 
 /**
  * Register all default block types.
@@ -175,5 +177,37 @@ export function registerDefaultBlocks(): void {
       tags: [BlockTags.METAL],
     },
     factory: () => new DiamondBlockBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.TORCH,
+      name: 'torch',
+      isOpaque: false,
+      isSolid: false, // No collision - players can walk through
+      isLiquid: false,
+      hardness: 0,
+      lightLevel: 14,
+      lightBlocking: 0,
+      demolitionForceRequired: 0,
+      tags: [],
+    },
+    factory: () => new TorchBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.FORGE,
+      name: 'forge',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 3.5,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.STONE],
+    },
+    factory: () => new ForgeBlock(),
   })
 }

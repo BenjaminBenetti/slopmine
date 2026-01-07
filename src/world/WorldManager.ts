@@ -46,6 +46,9 @@ export class WorldManager {
   private readonly prioritySubChunkSet: Set<SubChunk> = new Set()
   private readonly subChunkWorkerSet: Set<SubChunk> = new Set()
   private readonly pendingSubChunks: Map<SubChunkKey, SubChunk> = new Map()
+  // Track sub-chunks that need re-meshing after their current worker job finishes
+  // (handles race condition where lighting update arrives while mesh is being built)
+  private readonly pendingRemeshSet: Set<SubChunkKey> = new Set()
   private readonly WORKER_COUNT = Math.min(navigator.hardwareConcurrency || 4, 4)
   private readonly MAX_BACKGROUND_MESH_JOBS_PER_FRAME = 2
 
@@ -94,7 +97,7 @@ export class WorldManager {
     })
     this.backgroundLightingManager.setCallbacks(
       (coord) => this.chunkManager.getColumn(coord),
-      (subChunk) => this.queueSubChunkForMeshing(subChunk)
+      (subChunk, priority, forceRequeue) => this.queueSubChunkForMeshing(subChunk, priority, forceRequeue)
     )
   }
 
@@ -135,6 +138,7 @@ export class WorldManager {
           // Clean up the stuck entry so chunk can be re-queued
           const key = createSubChunkKey(BigInt(event.data.chunkX), BigInt(event.data.chunkZ), event.data.subY)
           this.pendingSubChunks.delete(key)
+          this.pendingRemeshSet.delete(key)
           console.warn(`Mesh worker error for chunk ${event.data.chunkX},${event.data.chunkZ} subY=${event.data.subY}:`, event.data.error)
           return
         }
@@ -144,6 +148,7 @@ export class WorldManager {
         console.error('Mesh worker error:', error)
         // Clear pending subchunks to prevent permanent stuck state
         this.pendingSubChunks.clear()
+        this.pendingRemeshSet.clear()
         this.processSubChunkWorkerQueue()
       }
       this.meshWorkers.push(worker)
@@ -364,6 +369,17 @@ export class WorldManager {
     const subChunk = this.pendingSubChunks.get(subChunkKey)
     this.pendingSubChunks.delete(subChunkKey)
 
+    // Check if this sub-chunk needs to be re-meshed with updated data
+    // (happens when lighting update arrived while mesh was being built)
+    if (this.pendingRemeshSet.has(subChunkKey)) {
+      this.pendingRemeshSet.delete(subChunkKey)
+      // Re-queue for meshing with latest light data
+      if (subChunk) {
+        this.queueSubChunkForMeshing(subChunk, 'high')
+      }
+      // Still process this result to show something, but it will be replaced
+    }
+
     if (!subChunk) return
 
     // Remove existing mesh for this sub-chunk
@@ -568,17 +584,52 @@ export class WorldManager {
    * @param subChunk The sub-chunk to mesh
    * @param priority 'high' for player interactions (immediate), 'normal' for background (throttled)
    */
-  queueSubChunkForMeshing(subChunk: SubChunk, priority: 'high' | 'normal' = 'normal'): void {
+  queueSubChunkForMeshing(
+    subChunk: SubChunk,
+    priority: 'high' | 'normal' = 'normal',
+    forceRequeue: boolean = false
+  ): void {
     const subChunkKey = createSubChunkKey(
       subChunk.coordinate.x,
       subChunk.coordinate.z,
       subChunk.coordinate.subY
     )
 
-    // Don't queue if already pending or in queue (O(1) Set lookups)
-    if (this.pendingSubChunks.has(subChunkKey)) return
-    if (this.prioritySubChunkSet.has(subChunk)) return
-    if (this.subChunkWorkerSet.has(subChunk)) return
+    // Handle force requeue - remove from existing queues to re-add with updated data
+    if (forceRequeue) {
+      // Remove from priority queue if present
+      if (this.prioritySubChunkSet.has(subChunk)) {
+        const priorityIdx = this.prioritySubChunkQueue.indexOf(subChunk)
+        if (priorityIdx !== -1) {
+          this.prioritySubChunkQueue.splice(priorityIdx, 1)
+        }
+        this.prioritySubChunkSet.delete(subChunk)
+      }
+      // Remove from normal queue if present
+      if (this.subChunkWorkerSet.has(subChunk)) {
+        const normalIdx = this.subChunkWorkerQueue.indexOf(subChunk)
+        if (normalIdx !== -1) {
+          this.subChunkWorkerQueue.splice(normalIdx, 1)
+        }
+        this.subChunkWorkerSet.delete(subChunk)
+      }
+    }
+
+    // Don't queue if already pending (worker is processing) or in queue
+    // Skip these checks if forceRequeue already removed from queues
+    if (this.pendingSubChunks.has(subChunkKey)) {
+      // Sub-chunk is currently being processed by worker
+      if (forceRequeue) {
+        // Mark for re-mesh after worker finishes (handles race where lighting
+        // update arrives while mesh is being built with stale light data)
+        this.pendingRemeshSet.add(subChunkKey)
+      }
+      return
+    }
+    if (!forceRequeue) {
+      if (this.prioritySubChunkSet.has(subChunk)) return
+      if (this.subChunkWorkerSet.has(subChunk)) return
+    }
 
     if (priority === 'high') {
       this.prioritySubChunkQueue.push(subChunk)
@@ -1013,14 +1064,19 @@ export class WorldManager {
         if (neighborSubChunk) {
           this.queueSubChunkForMeshing(neighborSubChunk)
         }
-        // Also update lighting in neighbor column (affected block is at opposite edge)
-        this.backgroundLightingManager.queueBlockChange(
-          neighborColumn,
-          CHUNK_SIZE_X - 1, // opposite edge
-          localY,
-          localZ,
-          wasBlockRemoved
-        )
+        // Only queue lighting update for neighbor when block is REMOVED
+        // For block placement, cross-chunk lighting is handled by propagateToNeighborsImmediately
+        // Queueing the neighbor here would cause a race condition where the worker
+        // overwrites propagated light with stale data
+        if (wasBlockRemoved) {
+          this.backgroundLightingManager.queueBlockChange(
+            neighborColumn,
+            CHUNK_SIZE_X - 1, // opposite edge
+            localY,
+            localZ,
+            wasBlockRemoved
+          )
+        }
       }
     } else if (localX === CHUNK_SIZE_X - 1) {
       const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x + 1n, z: chunkCoord.z }
@@ -1030,14 +1086,16 @@ export class WorldManager {
         if (neighborSubChunk) {
           this.queueSubChunkForMeshing(neighborSubChunk)
         }
-        // Also update lighting in neighbor column (affected block is at opposite edge)
-        this.backgroundLightingManager.queueBlockChange(
-          neighborColumn,
-          0, // opposite edge
-          localY,
-          localZ,
-          wasBlockRemoved
-        )
+        // Only queue lighting update for neighbor when block is REMOVED
+        if (wasBlockRemoved) {
+          this.backgroundLightingManager.queueBlockChange(
+            neighborColumn,
+            0, // opposite edge
+            localY,
+            localZ,
+            wasBlockRemoved
+          )
+        }
       }
     }
 
@@ -1049,14 +1107,16 @@ export class WorldManager {
         if (neighborSubChunk) {
           this.queueSubChunkForMeshing(neighborSubChunk)
         }
-        // Also update lighting in neighbor column (affected block is at opposite edge)
-        this.backgroundLightingManager.queueBlockChange(
-          neighborColumn,
-          localX,
-          localY,
-          CHUNK_SIZE_Z - 1, // opposite edge
-          wasBlockRemoved
-        )
+        // Only queue lighting update for neighbor when block is REMOVED
+        if (wasBlockRemoved) {
+          this.backgroundLightingManager.queueBlockChange(
+            neighborColumn,
+            localX,
+            localY,
+            CHUNK_SIZE_Z - 1, // opposite edge
+            wasBlockRemoved
+          )
+        }
       }
     } else if (localZ === CHUNK_SIZE_Z - 1) {
       const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x, z: chunkCoord.z + 1n }
@@ -1066,14 +1126,16 @@ export class WorldManager {
         if (neighborSubChunk) {
           this.queueSubChunkForMeshing(neighborSubChunk)
         }
-        // Also update lighting in neighbor column (affected block is at opposite edge)
-        this.backgroundLightingManager.queueBlockChange(
-          neighborColumn,
-          localX,
-          localY,
-          0, // opposite edge
-          wasBlockRemoved
-        )
+        // Only queue lighting update for neighbor when block is REMOVED
+        if (wasBlockRemoved) {
+          this.backgroundLightingManager.queueBlockChange(
+            neighborColumn,
+            localX,
+            localY,
+            0, // opposite edge
+            wasBlockRemoved
+          )
+        }
       }
     }
   }

@@ -16,6 +16,7 @@ import type {
   SubChunkData,
 } from '../../workers/LightingWorker.ts'
 import { SkylightPropagator } from './SkylightPropagator.ts'
+import { BlocklightPropagator } from './BlocklightPropagator.ts'
 import { SUB_CHUNK_HEIGHT } from '../interfaces/IChunk.ts'
 
 export interface BackgroundLightingConfig {
@@ -64,6 +65,7 @@ export class BackgroundLightingManager {
   // Edge propagation queue - columns needing light from neighbors
   private readonly edgePropagationQueue: Set<ChunkKey> = new Set()
   private readonly skylightPropagator = new SkylightPropagator()
+  private readonly blocklightPropagator = new BlocklightPropagator()
 
   // Frame budget for edge propagation (in milliseconds)
   private readonly EDGE_PROPAGATION_BUDGET_MS = 2
@@ -92,7 +94,7 @@ export class BackgroundLightingManager {
 
   // Reference to get columns and queue remeshing
   private getColumn: ((coord: IChunkCoordinate) => ChunkColumn | undefined) | null = null
-  private queueSubChunkForMeshing: ((subChunk: SubChunk, priority?: 'high' | 'normal') => void) | null = null
+  private queueSubChunkForMeshing: ((subChunk: SubChunk, priority?: 'high' | 'normal', forceRequeue?: boolean) => void) | null = null
 
   constructor(config: Partial<BackgroundLightingConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -130,7 +132,7 @@ export class BackgroundLightingManager {
    */
   setCallbacks(
     getColumn: (coord: IChunkCoordinate) => ChunkColumn | undefined,
-    queueSubChunkForMeshing: (subChunk: SubChunk, priority?: 'high' | 'normal') => void
+    queueSubChunkForMeshing: (subChunk: SubChunk, priority?: 'high' | 'normal', forceRequeue?: boolean) => void
   ): void {
     this.getColumn = getColumn
     this.queueSubChunkForMeshing = queueSubChunkForMeshing
@@ -609,8 +611,64 @@ export class BackgroundLightingManager {
       }
     }
 
+    // For block changes (forceRemeshSubY present), do immediate edge propagation
+    // This ensures torch light spreads to neighbors instantly, not after background update
+    if (result.forceRemeshSubY !== undefined) {
+      this.propagateToNeighborsImmediately(column.coordinate)
+    }
+
     // Queue neighbors for edge propagation to spread light across chunk borders
     this.queueNeighborsForEdgePropagation(column.coordinate)
+  }
+
+  /**
+   * Immediately propagate light to all 4 neighboring chunks.
+   * Used after block changes to ensure instant light updates across chunk borders.
+   */
+  private propagateToNeighborsImmediately(coord: IChunkCoordinate): void {
+    if (!this.getColumn || !this.queueSubChunkForMeshing) return
+
+    const sourceColumn = this.getColumn(coord)
+    if (!sourceColumn) return
+
+    const neighborDirs: Array<{ dx: bigint; dz: bigint; dir: 'posX' | 'negX' | 'posZ' | 'negZ' }> = [
+      { dx: 1n, dz: 0n, dir: 'negX' },  // neighbor at +X receives from our +X edge (their -X)
+      { dx: -1n, dz: 0n, dir: 'posX' }, // neighbor at -X receives from our -X edge (their +X)
+      { dx: 0n, dz: 1n, dir: 'negZ' },  // neighbor at +Z receives from our +Z edge (their -Z)
+      { dx: 0n, dz: -1n, dir: 'posZ' }, // neighbor at -Z receives from our -Z edge (their +Z)
+    ]
+
+    for (const { dx, dz, dir } of neighborDirs) {
+      const neighborCoord: IChunkCoordinate = { x: coord.x + dx, z: coord.z + dz }
+      const neighborColumn = this.getColumn(neighborCoord)
+      if (!neighborColumn) continue
+
+      // Propagate from source to neighbor for each sub-chunk
+      for (let subY = 0; subY < 16; subY++) {
+        const sourceSub = sourceColumn.getSubChunk(subY)
+        const targetSub = neighborColumn.getSubChunk(subY)
+        if (!sourceSub || !targetSub) continue
+
+        // Propagate skylight
+        const skylightChanged = this.skylightPropagator.propagateFromNeighborSubChunk(
+          targetSub,
+          sourceSub,
+          dir
+        )
+
+        // Propagate blocklight
+        const blocklightChanged = this.blocklightPropagator.propagateFromNeighborSubChunk(
+          targetSub,
+          sourceSub,
+          dir
+        )
+
+        if (skylightChanged || blocklightChanged) {
+          // Force requeue to ensure mesh uses updated light data from edge propagation
+          this.queueSubChunkForMeshing(targetSub, 'high', true)
+        }
+      }
+    }
   }
 
   /**
@@ -702,12 +760,21 @@ export class BackgroundLightingManager {
           const sourceSub = neighborColumn.getSubChunk(subY)
           if (!targetSub || !sourceSub) continue
 
-          const changed = this.skylightPropagator.propagateFromNeighborSubChunk(
+          // Propagate skylight
+          const skylightChanged = this.skylightPropagator.propagateFromNeighborSubChunk(
             targetSub,
             sourceSub,
             dir
           )
-          if (changed) {
+
+          // Propagate blocklight
+          const blocklightChanged = this.blocklightPropagator.propagateFromNeighborSubChunk(
+            targetSub,
+            sourceSub,
+            dir
+          )
+
+          if (skylightChanged || blocklightChanged) {
             this.queueSubChunkForMeshing(targetSub)
             columnChanged = true
           }

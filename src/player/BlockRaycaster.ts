@@ -139,7 +139,8 @@ export class BlockRaycaster {
       if (blockId !== BlockIds.AIR) {
         const block = this.worldManager.getBlock(bx, by, bz)
 
-        if (block.properties.isSolid) {
+        // Target any non-air, non-liquid block (solids + torches, flowers, etc.)
+        if (!block.properties.isLiquid) {
           // Update pre-allocated hit result to avoid allocation
           this.hitResult.worldX = bx
           this.hitResult.worldY = by
