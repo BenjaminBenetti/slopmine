@@ -37,7 +37,7 @@ export interface BackgroundLightingConfig {
 const DEFAULT_CONFIG: BackgroundLightingConfig = {
   columnsPerUpdate: 20,
   reprocessCooldown: 60000, // 1 minute
-  nearbyReprocessCooldown: 5000, // 5 seconds
+  nearbyReprocessCooldown: 2500, // 2.5 seconds
   nearbyDistance: 2,
   maxDistance: 8,
   enabled: true,
@@ -656,14 +656,22 @@ export class BackgroundLightingManager {
           dir
         )
 
-        // Propagate blocklight
-        const blocklightChanged = this.blocklightPropagator.propagateFromNeighborSubChunk(
+        // Clear blocklight that may have come from a now-removed source in neighbor
+        // (handles torch removal across chunk boundaries)
+        const blocklightCleared = this.blocklightPropagator.clearFromNeighborSubChunk(
           targetSub,
           sourceSub,
           dir
         )
 
-        if (skylightChanged || blocklightChanged) {
+        // Propagate blocklight from neighbor (handles torch placement)
+        const blocklightPropagated = this.blocklightPropagator.propagateFromNeighborSubChunk(
+          targetSub,
+          sourceSub,
+          dir
+        )
+
+        if (skylightChanged || blocklightCleared || blocklightPropagated) {
           // Force requeue to ensure mesh uses updated light data from edge propagation
           this.queueSubChunkForMeshing(targetSub, 'high', true)
         }

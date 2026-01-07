@@ -461,4 +461,107 @@ export class BlocklightPropagator {
     // Repropagate from remaining light sources
     this.processQueue(subChunk, relightQueue)
   }
+
+  /**
+   * Clear blocklight at a chunk boundary that may have come from a neighbor chunk.
+   * Used when a light source is removed in the neighboring chunk.
+   * Uses BFS to clear light that could have propagated from the neighbor.
+   *
+   * @param targetSubChunk The sub-chunk to clear light from
+   * @param sourceSubChunk The neighboring sub-chunk (light source was removed here)
+   * @param direction Which edge of target faces source: 'posX' | 'negX' | 'posZ' | 'negZ'
+   * @returns true if any light values changed
+   */
+  clearFromNeighborSubChunk(
+    targetSubChunk: ISubChunkData,
+    sourceSubChunk: ISubChunkData,
+    direction: 'posX' | 'negX' | 'posZ' | 'negZ'
+  ): boolean {
+    const clearQueue: LightNode[] = []
+    const relightQueue: LightNode[] = []
+    let changed = false
+
+    let sourceX: number, targetX: number
+    let sourceZ: number, targetZ: number
+
+    // Find edge positions where target has light but source no longer supports it
+    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
+      if (direction === 'posX' || direction === 'negX') {
+        sourceX = direction === 'posX' ? 0 : CHUNK_SIZE_X - 1
+        targetX = direction === 'posX' ? CHUNK_SIZE_X - 1 : 0
+
+        for (let z = 0; z < CHUNK_SIZE_Z; z++) {
+          const sourceLight = sourceSubChunk.getBlocklight(sourceX, y, z)
+          const targetLight = targetSubChunk.getBlocklight(targetX, y, z)
+
+          // Only clear if source is completely dark but target has light
+          // This handles the case where a light source was removed in the source chunk
+          // We don't clear if source still has light, because:
+          // 1. The target's light might come from target's own sources (not from source)
+          // 2. If targetLight > sourceLight, it definitely didn't come from source
+          if (targetLight > 0 && sourceLight === 0) {
+            // Clear this edge position and queue for BFS clearing
+            targetSubChunk.setBlocklight(targetX, y, z, 0)
+            clearQueue.push({ x: targetX, y, z, level: targetLight })
+            changed = true
+          }
+        }
+      } else {
+        sourceZ = direction === 'posZ' ? 0 : CHUNK_SIZE_Z - 1
+        targetZ = direction === 'posZ' ? CHUNK_SIZE_Z - 1 : 0
+
+        for (let x = 0; x < CHUNK_SIZE_X; x++) {
+          const sourceLight = sourceSubChunk.getBlocklight(x, y, sourceZ)
+          const targetLight = targetSubChunk.getBlocklight(x, y, targetZ)
+
+          // Only clear if source is completely dark but target has light
+          if (targetLight > 0 && sourceLight === 0) {
+            targetSubChunk.setBlocklight(x, y, targetZ, 0)
+            clearQueue.push({ x, y, z: targetZ, level: targetLight })
+            changed = true
+          }
+        }
+      }
+    }
+
+    // BFS to clear light that propagated from the edge
+    let head = 0
+    while (head < clearQueue.length) {
+      const node = clearQueue[head++]
+
+      const neighbors = [
+        { nx: node.x - 1, ny: node.y, nz: node.z },
+        { nx: node.x + 1, ny: node.y, nz: node.z },
+        { nx: node.x, ny: node.y - 1, nz: node.z },
+        { nx: node.x, ny: node.y + 1, nz: node.z },
+        { nx: node.x, ny: node.y, nz: node.z - 1 },
+        { nx: node.x, ny: node.y, nz: node.z + 1 },
+      ]
+
+      for (const { nx, ny, nz } of neighbors) {
+        if (nx < 0 || nx >= CHUNK_SIZE_X) continue
+        if (nz < 0 || nz >= CHUNK_SIZE_Z) continue
+        if (ny < 0 || ny >= SUB_CHUNK_HEIGHT) continue
+
+        const neighborLight = targetSubChunk.getBlocklight(nx, ny, nz)
+
+        if (neighborLight > 0 && neighborLight < node.level) {
+          // This light could have come from the cleared edge - clear it
+          targetSubChunk.setBlocklight(nx, ny, nz, 0)
+          clearQueue.push({ x: nx, y: ny, z: nz, level: neighborLight })
+          changed = true
+        } else if (neighborLight >= node.level) {
+          // This light came from another source - add to relight queue
+          relightQueue.push({ x: nx, y: ny, z: nz, level: neighborLight })
+        }
+      }
+    }
+
+    // Re-propagate from remaining light sources
+    if (relightQueue.length > 0) {
+      this.processQueue(targetSubChunk, relightQueue)
+    }
+
+    return changed
+  }
 }
