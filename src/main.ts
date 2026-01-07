@@ -361,6 +361,12 @@ scheduler.createTask({
       lastSelectedIndex = playerState.inventory.toolbar.selectedIndex
       updateHeldItem()
     }
+
+    // Update held item lighting based on surrounding block light level
+    const camPos = renderer.camera.position
+    const lightLevel = world.getLightLevelAtWorld(camPos.x, camPos.y, camPos.z)
+    heldItemRenderer.setLightLevel(lightLevel)
+
     heldItemRenderer.update(dt)
   },
 })

@@ -789,6 +789,27 @@ export class WorldManager {
   }
 
   /**
+   * Get the light level at a world position (float coordinates).
+   * Returns combined light level (0-15) based on skylight and blocklight.
+   * Returns 15 (full light) if the chunk is not loaded.
+   */
+  getLightLevelAtWorld(x: number, y: number, z: number): number {
+    const world: IWorldCoordinate = {
+      x: BigInt(Math.floor(x)),
+      y: BigInt(Math.floor(y)),
+      z: BigInt(Math.floor(z)),
+    }
+    const chunkCoord = worldToChunk(world)
+    const column = this.chunkManager.getColumn(chunkCoord)
+    if (!column) {
+      return 15 // Default to full light if chunk not loaded
+    }
+
+    const local = worldToLocal(world)
+    return column.getLightLevel(local.x, local.y, local.z)
+  }
+
+  /**
    * Check if a chunk is loaded.
    */
   isChunkLoaded(coordinate: IChunkCoordinate): boolean {

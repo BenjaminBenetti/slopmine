@@ -83,6 +83,10 @@ export class HeldItemRenderer {
   private readonly overlayCamera: THREE.PerspectiveCamera
   private readonly mainRenderer: THREE.WebGLRenderer
 
+  // Lighting for the overlay scene
+  private readonly ambientLight: THREE.AmbientLight
+  private readonly directionalLight: THREE.DirectionalLight
+
   private currentMesh: THREE.Object3D | null = null
   private currentItem: IItem | null = null
 
@@ -123,6 +127,10 @@ export class HeldItemRenderer {
     )
     this.overlayCamera.position.set(0, 0, 0)
 
+    // Initialize lights (assigned in setupLighting)
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+    this.directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+
     // Add lighting to overlay scene
     this.setupLighting()
 
@@ -140,13 +148,26 @@ export class HeldItemRenderer {
    */
   private setupLighting(): void {
     // Ambient light for base visibility
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6)
-    this.overlayScene.add(ambient)
+    this.overlayScene.add(this.ambientLight)
 
     // Directional light from upper-left-front
-    const directional = new THREE.DirectionalLight(0xffffff, 0.8)
-    directional.position.set(-1, 1, 1)
-    this.overlayScene.add(directional)
+    this.directionalLight.position.set(-1, 1, 1)
+    this.overlayScene.add(this.directionalLight)
+  }
+
+  /**
+   * Update lighting intensity based on surrounding block light level.
+   * @param level Light level from 0-15 (same as block lighting)
+   */
+  setLightLevel(level: number): void {
+    // Use same brightness formula as block rendering for visual consistency
+    const minBrightness = 0.02
+    const normalized = level / 15
+    const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
+
+    // Scale base intensities by brightness
+    this.ambientLight.intensity = 0.6 * brightness
+    this.directionalLight.intensity = 0.8 * brightness
   }
 
   /**
