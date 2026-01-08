@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { ChunkMesh } from './ChunkMesh.ts'
+import type { IChunkMesh } from './ChunkMesh.ts'
 import type { SubChunkOpacityCache } from './SubChunkOpacityCache.ts'
 import { parseSubChunkKey, type SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
@@ -64,7 +64,7 @@ export class SoftwareOcclusionCuller {
   // Pre-allocated arrays and map for updateVisibility (cleared each frame)
   private readonly candidatesPool: SubChunkBounds[] = []
   private readonly occludersPool: SubChunkBounds[] = []
-  private readonly meshMap = new Map<SubChunkKey, ChunkMesh>()
+  private readonly meshMap = new Map<SubChunkKey, IChunkMesh>()
   // Pre-allocated request object to avoid per-frame GC pressure
   private readonly occlusionRequest: OcclusionRequest = {
     type: 'occlusion',
@@ -109,7 +109,7 @@ export class SoftwareOcclusionCuller {
    */
   updateVisibility(
     camera: THREE.PerspectiveCamera,
-    chunkMeshes: Iterable<ChunkMesh>,
+    chunkMeshes: Iterable<IChunkMesh>,
     opacityCache: SubChunkOpacityCache
   ): void {
     // Clear pools from previous frame (reuse arrays to avoid allocation)
@@ -167,7 +167,7 @@ export class SoftwareOcclusionCuller {
   /**
    * Write sub-chunk bounds into an existing object (avoids allocation).
    */
-  private getSubChunkBoundsInto(mesh: ChunkMesh, target: SubChunkBounds): void {
+  private getSubChunkBoundsInto(mesh: IChunkMesh, target: SubChunkBounds): void {
     const coord = mesh.chunkCoordinate
     const worldX = Number(coord.x) * CHUNK_SIZE_X
     const worldZ = Number(coord.z) * CHUNK_SIZE_Z

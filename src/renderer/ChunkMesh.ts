@@ -5,10 +5,24 @@ import { createSubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
 
 /**
+ * Common interface for chunk mesh types (ChunkMesh, GreedyChunkMesh).
+ * Used by renderer for frustum culling and wireframe visualization.
+ */
+export interface IChunkMesh {
+  readonly chunkCoordinate: IChunkCoordinate
+  readonly subY: number | null
+  readonly subChunkKey: SubChunkKey | null
+  getGroup(): THREE.Group
+  addToScene(scene: THREE.Scene): void
+  removeFromScene(scene: THREE.Scene): void
+  dispose(): void
+}
+
+/**
  * Manages InstancedMesh objects for a single chunk or sub-chunk.
  * One InstancedMesh per block type for efficient batched rendering.
  */
-export class ChunkMesh {
+export class ChunkMesh implements IChunkMesh {
   private readonly instancedMeshes: Map<BlockId, THREE.InstancedMesh> = new Map()
   private readonly blockPositions: Map<BlockId, number[]> = new Map()
   private readonly blockLights: Map<BlockId, number[]> = new Map()

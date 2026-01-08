@@ -64,6 +64,11 @@ export class TorchBlock extends TransparentBlock {
     return true
   }
 
+  isGreedyMeshable(): boolean {
+    // Torch has custom geometry - cannot be greedy-meshed
+    return false
+  }
+
   getDrops(): IItem[] {
     return [new TorchBlockItem()]
   }

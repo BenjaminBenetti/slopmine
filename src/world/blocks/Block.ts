@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { IBlock, IBlockProperties, BlockFace, IWorld } from '../interfaces/IBlock.ts'
 import { BlockIds } from './BlockIds.ts'
+import { TextureId } from './FaceTextureRegistry.ts'
 
 /**
  * Shared geometry cache for reusable block shapes.
@@ -93,6 +94,14 @@ export abstract class Block implements IBlock {
     if (neighbor.properties.isOpaque) {
       return false
     }
+    return true
+  }
+
+  /**
+   * Default: most blocks can be greedy-meshed.
+   * Override to return false for custom geometry blocks.
+   */
+  isGreedyMeshable(): boolean {
     return true
   }
 

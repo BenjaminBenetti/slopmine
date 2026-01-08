@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { FrustumCuller } from './FrustumCuller.ts'
 import { SoftwareOcclusionCuller, type SoftwareOcclusionStats } from './SoftwareOcclusionCuller.ts'
-import type { ChunkMesh } from './ChunkMesh.ts'
+import type { IChunkMesh } from './ChunkMesh.ts'
 import type { SubChunkOpacityCache } from './SubChunkOpacityCache.ts'
 import type { GraphicsSettings, ResolutionPreset } from '../settings/index.ts'
 
@@ -18,7 +18,7 @@ export class Renderer {
   readonly camera: THREE.PerspectiveCamera
   private readonly frustumCuller = new FrustumCuller()
   private readonly softwareOcclusionCuller = new SoftwareOcclusionCuller()
-  private chunkMeshSource: (() => Iterable<ChunkMesh>) | null = null
+  private chunkMeshSource: (() => Iterable<IChunkMesh>) | null = null
   private opacityCache: SubChunkOpacityCache | null = null
   private graphicsSettings: GraphicsSettings | null = null
   private currentResolutionPreset: ResolutionPreset = 'native'
@@ -113,7 +113,7 @@ export class Renderer {
   /**
    * Set the chunk mesh source for frustum culling.
    */
-  setChunkMeshSource(source: () => Iterable<ChunkMesh>): void {
+  setChunkMeshSource(source: () => Iterable<IChunkMesh>): void {
     this.chunkMeshSource = source
   }
 

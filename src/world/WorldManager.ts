@@ -8,10 +8,12 @@ import { BlockRegistry, getBlock } from './blocks/BlockRegistry.ts'
 import { Chunk } from './chunks/Chunk.ts'
 import { BlockIds } from './blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState, SUB_CHUNK_VOLUME } from './interfaces/IChunk.ts'
-import { ChunkMesh } from '../renderer/ChunkMesh.ts'
+import { ChunkMesh, type IChunkMesh } from '../renderer/ChunkMesh.ts'
+import { GreedyChunkMesh } from '../renderer/GreedyChunkMesh.ts'
 import type { SubChunkOpacityCache } from '../renderer/SubChunkOpacityCache.ts'
-import ChunkMeshWorker from '../workers/ChunkMeshWorker.ts?worker'
-import type { SubChunkMeshRequest, SubChunkMeshResponse, SubChunkMeshError } from '../workers/ChunkMeshWorker.ts'
+import GreedyMeshWorker from '../workers/GreedyMeshWorker.ts?worker'
+import type { GreedyMeshRequest, GreedyMeshResponse, GreedyMeshError } from '../workers/GreedyMeshWorker.ts'
+import { buildFaceTextureMap } from './blocks/FaceTextureRegistry.ts'
 import { SubChunk } from './chunks/SubChunk.ts'
 import { ChunkColumn } from './chunks/ChunkColumn.ts'
 import { SUB_CHUNK_HEIGHT } from './interfaces/IChunk.ts'
@@ -35,7 +37,7 @@ export class WorldManager implements IModifiedChunkProvider {
   private readonly blockRegistry: BlockRegistry
   private scene: THREE.Scene | null = null
   private readonly chunkMeshes: Map<ChunkKey, ChunkMesh> = new Map()
-  private readonly subChunkMeshes: Map<SubChunkKey, ChunkMesh> = new Map()
+  private readonly subChunkMeshes: Map<SubChunkKey, GreedyChunkMesh> = new Map()
   private readonly subChunkMeshAddedCallbacks: Array<(coord: ISubChunkCoordinate) => void> = []
   private readonly subChunkMeshRemovedCallbacks: Array<(coord: ISubChunkCoordinate) => void> = []
   private readonly orePositionCallbacks: Array<(coord: ISubChunkCoordinate, positions: OrePosition[]) => void> = []
@@ -55,12 +57,17 @@ export class WorldManager implements IModifiedChunkProvider {
   private readonly MAX_BACKGROUND_MESH_JOBS_PER_FRAME = 2
 
   // Mesh result throttling to prevent GPU command buffer flooding
-  private readonly pendingMeshResults: SubChunkMeshResponse[] = []
-  private readonly MAX_MESH_RESULTS_PER_FRAME = 4
+  private readonly pendingMeshResults: GreedyMeshResponse[] = []
+  private readonly MAX_MESH_RESULTS_PER_FRAME = 1
 
   // Cache of opaque block IDs for worker visibility checks
   private opaqueBlockIds: number[] = []
   private opaqueBlockIdSet: Set<number> = new Set()
+
+  // Face texture map for greedy meshing (built once, sent to workers)
+  private faceTextureMapEntries: Array<[number, number]> = []
+  private nonGreedyBlockIds: number[] = []
+  private faceTextureMapSent: boolean = false
 
   // Pre-allocated boundary layer buffers to avoid per-mesh allocation
   // 2 for blocks (posY, negY), 2 for lights (posY, negY)
@@ -94,6 +101,7 @@ export class WorldManager implements IModifiedChunkProvider {
     this.blockRegistry = BlockRegistry.getInstance()
     this.initWorkers()
     this.updateOpaqueBlockIds()
+    this.buildFaceTextureMap()
 
     // Initialize background lighting manager
     this.backgroundLightingManager = new BackgroundLightingManager({
@@ -115,6 +123,24 @@ export class WorldManager implements IModifiedChunkProvider {
       .getAllBlockIds()
       .filter((id) => getBlock(id).properties.isOpaque)
     this.opaqueBlockIdSet = new Set(this.opaqueBlockIds)
+  }
+
+  /**
+   * Build the face texture map from all registered blocks.
+   * This is sent to workers for greedy meshing.
+   */
+  private buildFaceTextureMap(): void {
+    const allBlockIds = this.blockRegistry.getAllBlockIds()
+
+    // Build face texture map by querying each block
+    const map = buildFaceTextureMap(getBlock, allBlockIds)
+    this.faceTextureMapEntries = Array.from(map.entries())
+
+    // Build non-greedy block IDs list
+    this.nonGreedyBlockIds = allBlockIds.filter((id) => !getBlock(id).isGreedyMeshable())
+
+    // Reset sent flag so workers get updated map on next request
+    this.faceTextureMapSent = false
   }
 
   /**
@@ -180,22 +206,22 @@ export class WorldManager implements IModifiedChunkProvider {
    * Initialize the Web Worker pools for mesh building and chunk generation.
    */
   private initWorkers(): void {
-    // Mesh workers (for sub-chunk meshing)
+    // Mesh workers (for sub-chunk greedy meshing)
     for (let i = 0; i < this.WORKER_COUNT; i++) {
-      const worker = new ChunkMeshWorker()
-      worker.onmessage = (event: MessageEvent<SubChunkMeshResponse | SubChunkMeshError>) => {
-        if (event.data.type === 'subchunk-mesh-error') {
+      const worker = new GreedyMeshWorker()
+      worker.onmessage = (event: MessageEvent<GreedyMeshResponse | GreedyMeshError>) => {
+        if (event.data.type === 'greedy-mesh-error') {
           // Clean up the stuck entry so chunk can be re-queued
           const key = createSubChunkKey(BigInt(event.data.chunkX), BigInt(event.data.chunkZ), event.data.subY)
           this.pendingSubChunks.delete(key)
           this.pendingRemeshSet.delete(key)
-          console.warn(`Mesh worker error for chunk ${event.data.chunkX},${event.data.chunkZ} subY=${event.data.subY}:`, event.data.error)
+          console.warn(`Greedy mesh worker error for chunk ${event.data.chunkX},${event.data.chunkZ} subY=${event.data.subY}:`, event.data.error)
           return
         }
         this.handleSubChunkMeshResult(event.data)
       }
       worker.onerror = (error) => {
-        console.error('Mesh worker error:', error)
+        console.error('Greedy mesh worker error:', error)
         // Clear pending subchunks to prevent permanent stuck state
         this.pendingSubChunks.clear()
         this.pendingRemeshSet.clear()
@@ -390,7 +416,7 @@ export class WorldManager implements IModifiedChunkProvider {
    * Handle sub-chunk mesh result from worker.
    * Queues the result for throttled processing to prevent GPU command buffer flooding.
    */
-  private handleSubChunkMeshResult(result: SubChunkMeshResponse): void {
+  private handleSubChunkMeshResult(result: GreedyMeshResponse): void {
     this.pendingMeshResults.push(result)
   }
 
@@ -412,7 +438,7 @@ export class WorldManager implements IModifiedChunkProvider {
   /**
    * Process a single mesh result from worker.
    */
-  private processSingleMeshResult(result: SubChunkMeshResponse): void {
+  private processSingleMeshResult(result: GreedyMeshResponse): void {
     if (!this.scene) return
 
     const subChunkKey = createSubChunkKey(BigInt(result.chunkX), BigInt(result.chunkZ), result.subY)
@@ -435,22 +461,13 @@ export class WorldManager implements IModifiedChunkProvider {
     // Remove existing mesh for this sub-chunk
     this.removeSubChunkMesh(subChunkKey)
 
-    // Build mesh from worker result
+    // Build greedy mesh from worker result
     const chunkCoord: IChunkCoordinate = { x: subChunk.coordinate.x, z: subChunk.coordinate.z }
-    const chunkMesh = new ChunkMesh(chunkCoord, result.subY)
+    const greedyMesh = new GreedyChunkMesh(chunkCoord, result.subY)
 
-    for (let i = 0; i < result.visibleBlocks.length; i++) {
-      const [blockId, positions] = result.visibleBlocks[i]
-      const lights = result.lightLevels[i]?.[1] ?? new Uint8Array(positions.length / 3).fill(15)
-
-      for (let j = 0; j < positions.length; j += 3) {
-        chunkMesh.addBlock(blockId, positions[j], positions[j + 1], positions[j + 2], lights[j / 3])
-      }
-    }
-
-    chunkMesh.build()
-    chunkMesh.addToScene(this.scene)
-    this.subChunkMeshes.set(subChunkKey, chunkMesh)
+    greedyMesh.build(result)
+    greedyMesh.addToScene(this.scene)
+    this.subChunkMeshes.set(subChunkKey, greedyMesh)
 
     // Notify listeners
     for (const callback of this.subChunkMeshAddedCallbacks) {
@@ -462,7 +479,7 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Send a sub-chunk to a worker for mesh calculation.
+   * Send a sub-chunk to a worker for greedy mesh calculation.
    */
   private sendSubChunkToWorker(subChunk: SubChunk, worker: Worker): void {
     const coord = subChunk.coordinate
@@ -476,8 +493,8 @@ export class WorldManager implements IModifiedChunkProvider {
     const blocksCopy = new Uint16Array(subChunk.getBlockData())
     const lightCopy = new Uint8Array(subChunk.getLightData())
 
-    const request: SubChunkMeshRequest = {
-      type: 'subchunk-mesh',
+    const request: GreedyMeshRequest = {
+      type: 'greedy-mesh',
       chunkX: Number(coord.x),
       chunkZ: Number(coord.z),
       subY: coord.subY,
@@ -487,7 +504,13 @@ export class WorldManager implements IModifiedChunkProvider {
       neighbors,
       neighborLights,
       opaqueBlockIds: this.opaqueBlockIds,
+      // Send face texture map on first request to each worker
+      faceTextureMapEntries: this.faceTextureMapSent ? undefined : this.faceTextureMapEntries,
+      nonGreedyBlockIds: this.faceTextureMapSent ? undefined : this.nonGreedyBlockIds,
     }
+
+    // Mark as sent after first request (workers cache it)
+    this.faceTextureMapSent = true
 
     this.pendingSubChunks.set(subChunkKey, subChunk)
 
@@ -879,7 +902,7 @@ export class WorldManager implements IModifiedChunkProvider {
    * Get all chunk meshes for frustum culling.
    * Includes both legacy full-chunk meshes and sub-chunk meshes.
    */
-  *getChunkMeshes(): Generator<ChunkMesh> {
+  *getChunkMeshes(): Generator<IChunkMesh> {
     yield* this.chunkMeshes.values()
     yield* this.subChunkMeshes.values()
   }

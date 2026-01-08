@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { ChunkMesh } from './ChunkMesh.ts'
+import type { IChunkMesh } from './ChunkMesh.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 
 /**
@@ -16,7 +16,7 @@ export class FrustumCuller {
    * Update chunk visibility based on camera frustum.
    * Call this before each render.
    */
-  updateVisibility(camera: THREE.PerspectiveCamera, chunkMeshes: Iterable<ChunkMesh>): void {
+  updateVisibility(camera: THREE.PerspectiveCamera, chunkMeshes: Iterable<IChunkMesh>): void {
     // Build frustum from camera matrices
     camera.updateMatrixWorld()
     this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
@@ -32,7 +32,7 @@ export class FrustumCuller {
    * Calculate the world-space bounding box for a chunk or sub-chunk.
    * Sub-chunks use their Y index to determine vertical bounds.
    */
-  private getChunkBoundingBox(chunkMesh: ChunkMesh): THREE.Box3 {
+  private getChunkBoundingBox(chunkMesh: IChunkMesh): THREE.Box3 {
     const coord = chunkMesh.chunkCoordinate
     const worldX = Number(coord.x) * CHUNK_SIZE_X
     const worldZ = Number(coord.z) * CHUNK_SIZE_Z

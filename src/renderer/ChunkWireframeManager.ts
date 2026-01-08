@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import type { IChunkCoordinate, ISubChunkCoordinate } from '../world/interfaces/ICoordinates.ts'
 import { createChunkKey, createSubChunkKey, type ChunkKey, type SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
-import type { ChunkMesh } from './ChunkMesh.ts'
+import type { IChunkMesh } from './ChunkMesh.ts'
 
 /**
  * Manages debug wireframe boxes around chunk boundaries.
@@ -168,7 +168,7 @@ export class ChunkWireframeManager {
    * Update wireframe colors based on chunk mesh visibility.
    * Green = being lit, Pink = visible, Yellow = culled.
    */
-  updateColors(chunkMeshes: Iterable<ChunkMesh>): void {
+  updateColors(chunkMeshes: Iterable<IChunkMesh>): void {
     if (!this.visible) return
 
     // Only update every N frames

@@ -44,7 +44,8 @@ export interface IBlock {
   readonly properties: IBlockProperties
 
   /**
-   * Get texture coordinates/ID for a specific face.
+   * Get texture ID for a specific face (used for greedy mesh grouping).
+   * Faces with the same texture ID can be merged together.
    */
   getTextureForFace(face: BlockFace): number
 
@@ -53,6 +54,12 @@ export interface IBlock {
    * Used for face culling optimization.
    */
   shouldRenderFace(face: BlockFace, neighbor: IBlock): boolean
+
+  /**
+   * Whether this block can be greedy-meshed (merged with adjacent same-type faces).
+   * Returns false for blocks with custom geometry (torch, cross-shaped plants, etc.)
+   */
+  isGreedyMeshable(): boolean
 
   /**
    * Get the bounding box for collision (null for non-solid).
