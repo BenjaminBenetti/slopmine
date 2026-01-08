@@ -49,6 +49,80 @@ export interface WorkerBiomeConfig {
 }
 
 /**
+ * Biome blend data for smooth transitions between biomes.
+ * Contains the primary biome and adjacent biomes for height blending.
+ */
+export interface BiomeBlendData {
+  /** The primary biome for this chunk */
+  primary: WorkerBiomeConfig
+  /** Adjacent biomes for edge blending (optional, same as primary if not at edge) */
+  north?: WorkerBiomeConfig
+  south?: WorkerBiomeConfig
+  east?: WorkerBiomeConfig
+  west?: WorkerBiomeConfig
+  /** Diagonal corner biomes for proper corner blending */
+  northeast?: WorkerBiomeConfig
+  northwest?: WorkerBiomeConfig
+  southeast?: WorkerBiomeConfig
+  southwest?: WorkerBiomeConfig
+  /** Position within the 16x16 chunk biome region (0-15) */
+  chunkLocalX: number
+  chunkLocalZ: number
+}
+
+/**
+ * Size of a biome region in blocks (16 chunks × 32 blocks).
+ */
+const BIOME_REGION_SIZE_BLOCKS = 16 * 32 // 512 blocks
+
+/**
+ * Width of blend zone on each side of boundary (96 blocks).
+ */
+const BLEND_DISTANCE = 96
+
+/**
+ * Smoothstep interpolation for smoother blending.
+ */
+function smoothstep(t: number): number {
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * Linear interpolation.
+ */
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t
+}
+
+/**
+ * Calculate distance to the nearest biome boundary for a world coordinate.
+ * Returns: { distance, neighborDirection }
+ * - distance: blocks to nearest boundary (0 at boundary, up to 256 at center)
+ * - neighborDirection: -1 if closer to west/north boundary, 1 if closer to east/south
+ */
+function getDistanceToBoundary(worldCoord: number): { distance: number; neighborDirection: -1 | 1 } {
+  // Get position within region (0 to 511)
+  const posInRegion = ((worldCoord % BIOME_REGION_SIZE_BLOCKS) + BIOME_REGION_SIZE_BLOCKS) % BIOME_REGION_SIZE_BLOCKS
+
+  // Distance to west boundary (at 0) and east boundary (at 512)
+  const distToWest = posInRegion
+  const distToEast = BIOME_REGION_SIZE_BLOCKS - posInRegion
+
+  if (distToWest < distToEast) {
+    return { distance: distToWest, neighborDirection: -1 }
+  } else {
+    return { distance: distToEast, neighborDirection: 1 }
+  }
+}
+
+/**
+ * Get the biome region coordinate for a world position.
+ */
+function getRegionCoord(worldCoord: number): number {
+  return Math.floor(worldCoord / BIOME_REGION_SIZE_BLOCKS)
+}
+
+/**
  * Request sent to the chunk generation worker.
  */
 export interface ChunkGenerationRequest {
@@ -97,7 +171,7 @@ export interface SubChunkGenerationRequest {
   maxWorldY: number // subY * 64 + 63
   seed: number
   seaLevel: number
-  biomeConfig: WorkerBiomeConfig
+  biomeData: BiomeBlendData
   blocks: Uint16Array // 65,536 elements
   lightData: Uint8Array // 65,536 elements
 }
@@ -146,7 +220,7 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
 }
 
 /**
- * Generate terrain height at a world position.
+ * Generate terrain height at a world position for a single biome.
  */
 function getHeightAt(
   noise: SimplexNoise,
@@ -158,6 +232,127 @@ function getHeightAt(
   const baseNoise = noise.fractalNoise2D(worldX, worldZ, 4, 0.5, 0.01)
   const { heightAmplitude, heightOffset } = biomeConfig
   return Math.floor(seaLevel + heightOffset + baseNoise * heightAmplitude)
+}
+
+/**
+ * Get the 4 corner biomes for bilinear interpolation based on which corner we're near.
+ * Returns [primary corner, X neighbor, Z neighbor, diagonal corner]
+ */
+function getCornerBiomes(
+  biomeData: BiomeBlendData,
+  xDir: -1 | 1,
+  zDir: -1 | 1
+): [WorkerBiomeConfig, WorkerBiomeConfig, WorkerBiomeConfig, WorkerBiomeConfig] {
+  const { primary } = biomeData
+
+  // Get the 4 biomes based on which corner we're near
+  // xDir: -1 = west, 1 = east
+  // zDir: -1 = north, 1 = south
+  const xNeighbor = xDir === -1 ? (biomeData.west ?? primary) : (biomeData.east ?? primary)
+  const zNeighbor = zDir === -1 ? (biomeData.north ?? primary) : (biomeData.south ?? primary)
+
+  // Get the diagonal corner biome
+  let cornerNeighbor: WorkerBiomeConfig
+  if (xDir === 1 && zDir === -1) {
+    cornerNeighbor = biomeData.northeast ?? primary
+  } else if (xDir === -1 && zDir === -1) {
+    cornerNeighbor = biomeData.northwest ?? primary
+  } else if (xDir === 1 && zDir === 1) {
+    cornerNeighbor = biomeData.southeast ?? primary
+  } else {
+    cornerNeighbor = biomeData.southwest ?? primary
+  }
+
+  return [primary, xNeighbor, zNeighbor, cornerNeighbor]
+}
+
+/**
+ * Bilinear interpolation between 4 values.
+ * u: blend factor along X (0 = left, 1 = right)
+ * v: blend factor along Z (0 = top, 1 = bottom)
+ * Values: [topLeft, topRight, bottomLeft, bottomRight]
+ */
+function bilerp(values: [number, number, number, number], u: number, v: number): number {
+  const [tl, tr, bl, br] = values
+  const top = lerp(tl, tr, u)
+  const bottom = lerp(bl, br, u)
+  return lerp(top, bottom, v)
+}
+
+/**
+ * Generate blended terrain height at a world position.
+ * Uses bilinear interpolation at corners for seamless transitions.
+ */
+function getBlendedHeightAt(
+  noise: SimplexNoise,
+  worldX: number,
+  worldZ: number,
+  seaLevel: number,
+  biomeData: BiomeBlendData
+): number {
+  const { primary } = biomeData
+
+  // Get base noise (same for all biomes)
+  const baseNoise = noise.fractalNoise2D(worldX, worldZ, 4, 0.5, 0.01)
+
+  // Calculate distance to nearest boundary for each axis
+  const xBoundary = getDistanceToBoundary(worldX)
+  const zBoundary = getDistanceToBoundary(worldZ)
+
+  const xInBlend = xBoundary.distance < BLEND_DISTANCE
+  const zInBlend = zBoundary.distance < BLEND_DISTANCE
+
+  let blendedAmplitude: number
+  let blendedOffset: number
+
+  if (xInBlend && zInBlend) {
+    // Corner case: use bilinear interpolation between 4 biomes
+    const [b00, b10, b01, b11] = getCornerBiomes(
+      biomeData,
+      xBoundary.neighborDirection,
+      zBoundary.neighborDirection
+    )
+
+    // Blend factors: 0.5 at boundary, 0 at edge of blend zone
+    // u represents "how much toward X neighbor" (0.5 at boundary)
+    // v represents "how much toward Z neighbor" (0.5 at boundary)
+    const u = 0.5 * (1 - smoothstep(xBoundary.distance / BLEND_DISTANCE))
+    const v = 0.5 * (1 - smoothstep(zBoundary.distance / BLEND_DISTANCE))
+
+    // Bilinear interpolation of parameters
+    blendedAmplitude = bilerp(
+      [b00.heightAmplitude, b10.heightAmplitude, b01.heightAmplitude, b11.heightAmplitude],
+      u, v
+    )
+    blendedOffset = bilerp(
+      [b00.heightOffset, b10.heightOffset, b01.heightOffset, b11.heightOffset],
+      u, v
+    )
+  } else if (xInBlend) {
+    // Only X axis blending
+    const neighbor = xBoundary.neighborDirection === -1
+      ? (biomeData.west ?? primary)
+      : (biomeData.east ?? primary)
+    // t: 0.5 at boundary, 1.0 at edge of blend zone (fully primary)
+    const t = 0.5 + 0.5 * smoothstep(xBoundary.distance / BLEND_DISTANCE)
+    blendedAmplitude = lerp(neighbor.heightAmplitude, primary.heightAmplitude, t)
+    blendedOffset = lerp(neighbor.heightOffset, primary.heightOffset, t)
+  } else if (zInBlend) {
+    // Only Z axis blending
+    const neighbor = zBoundary.neighborDirection === -1
+      ? (biomeData.north ?? primary)
+      : (biomeData.south ?? primary)
+    const t = 0.5 + 0.5 * smoothstep(zBoundary.distance / BLEND_DISTANCE)
+    blendedAmplitude = lerp(neighbor.heightAmplitude, primary.heightAmplitude, t)
+    blendedOffset = lerp(neighbor.heightOffset, primary.heightOffset, t)
+  } else {
+    // No blending needed
+    blendedAmplitude = primary.heightAmplitude
+    blendedOffset = primary.heightOffset
+  }
+
+  // Compute height with blended parameters
+  return Math.floor(seaLevel + blendedOffset + baseNoise * blendedAmplitude)
 }
 
 /**
@@ -242,13 +437,13 @@ async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGene
     const workerConfig: IGenerationConfig = {
       seed,
       seaLevel,
-      biome: biomeConfig.name as 'plains' | 'grassy-hills',
       chunkDistance: 4,
     }
 
     // Create a minimal biome properties object for feature context
     const biomeProperties = {
       ...biomeConfig,
+      frequency: 1.0, // Not used in worker context
       features, // Now contains actual Feature instances
     }
 
@@ -328,7 +523,7 @@ function fillSubChunkColumn(
 }
 
 /**
- * Generate terrain for a sub-chunk.
+ * Generate terrain for a sub-chunk with biome blending.
  */
 function generateSubChunkTerrain(
   subChunk: WorkerSubChunk,
@@ -336,7 +531,7 @@ function generateSubChunkTerrain(
   seaLevel: number,
   minWorldY: number,
   maxWorldY: number,
-  biomeConfig: WorkerBiomeConfig
+  biomeData: BiomeBlendData
 ): { hasTerrainAbove: boolean; maxSolidY: number } {
   const coord = subChunk.coordinate
   let hasTerrainAbove = false
@@ -351,7 +546,9 @@ function generateSubChunkTerrain(
       const worldX = Number(worldCoord.x)
       const worldZ = Number(worldCoord.z)
 
-      const terrainHeight = getHeightAt(noise, worldX, worldZ, seaLevel, biomeConfig)
+      // Use blended height for smooth biome transitions
+      const terrainHeight = getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
+      // Use primary biome for block types (no blending for blocks)
       const result = fillSubChunkColumn(
         subChunk,
         localX,
@@ -359,7 +556,7 @@ function generateSubChunkTerrain(
         terrainHeight,
         minWorldY,
         maxWorldY,
-        biomeConfig
+        biomeData.primary
       )
 
       if (result.hasTerrainAbove) hasTerrainAbove = true
@@ -380,7 +577,7 @@ function applyProvisionalSkylight(
   seaLevel: number,
   minWorldY: number,
   maxWorldY: number,
-  biomeConfig: WorkerBiomeConfig
+  biomeData: BiomeBlendData
 ): void {
   const coord = subChunk.coordinate
 
@@ -393,7 +590,8 @@ function applyProvisionalSkylight(
       const worldX = Number(worldCoord.x)
       const worldZ = Number(worldCoord.z)
 
-      const terrainHeight = getHeightAt(noise, worldX, worldZ, seaLevel, biomeConfig)
+      // Use blended height for consistent skylight with terrain
+      const terrainHeight = getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
 
       // Apply skylight to blocks above terrain within this sub-chunk
       for (let worldY = maxWorldY; worldY >= minWorldY; worldY--) {
@@ -422,7 +620,8 @@ function applyProvisionalSkylight(
  * Generate a single sub-chunk.
  */
 async function generateSubChunk(request: SubChunkGenerationRequest): Promise<SubChunkGenerationResponse> {
-  const { chunkX, chunkZ, subY, minWorldY, maxWorldY, seed, seaLevel, biomeConfig, blocks, lightData } = request
+  const { chunkX, chunkZ, subY, minWorldY, maxWorldY, seed, seaLevel, biomeData, blocks, lightData } = request
+  const biomeConfig = biomeData.primary
 
   // Create WorkerSubChunk with the provided buffers
   const subChunk = new WorkerSubChunk(chunkX, chunkZ, subY, blocks, lightData)
@@ -430,31 +629,31 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   // Create noise generator
   const noise = new SimplexNoise(seed)
 
-  // Create height getter for caves
+  // Create height getter for caves (uses blended height for consistency)
   const getHeight = (worldX: number, worldZ: number) =>
-    getHeightAt(noise, worldX, worldZ, seaLevel, biomeConfig)
+    getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
 
-  // Phase 1: Generate terrain within this sub-chunk's Y range
+  // Phase 1: Generate terrain within this sub-chunk's Y range (with biome blending)
   const { hasTerrainAbove, maxSolidY } = generateSubChunkTerrain(
     subChunk,
     noise,
     seaLevel,
     minWorldY,
     maxWorldY,
-    biomeConfig
+    biomeData
   )
 
-  // Phase 2: Carve caves (only within this Y range)
+  // Phase 2: Carve caves (only within this Y range, uses primary biome settings)
   const caves = biomeConfig.caves
   if (caves?.enabled) {
     const caveCarver = new CaveCarver(seed)
     await caveCarver.carveSubChunk(subChunk, caves, getHeight, minWorldY, maxWorldY)
   }
 
-  // Phase 3: Apply provisional skylight
-  applyProvisionalSkylight(subChunk, noise, seaLevel, minWorldY, maxWorldY, biomeConfig)
+  // Phase 3: Apply provisional skylight (uses blended height)
+  applyProvisionalSkylight(subChunk, noise, seaLevel, minWorldY, maxWorldY, biomeData)
 
-  // Phase 4: Apply ore features and collect positions
+  // Phase 4: Apply ore features and collect positions (uses primary biome)
   const orePositions: OrePosition[] = []
   const features = createFeatures(biomeConfig.features)
 
@@ -463,9 +662,10 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     chunk: subChunk,
     world: null, // Workers don't have access to world
     noise,
-    config: { seed, seaLevel, biome: biomeConfig.name as 'plains' | 'grassy-hills', chunkDistance: 8 },
+    config: { seed, seaLevel, chunkDistance: 8 },
     biomeProperties: {
       name: biomeConfig.name,
+      frequency: 1.0, // Not used in worker context
       surfaceBlock: biomeConfig.surfaceBlock,
       subsurfaceBlock: biomeConfig.subsurfaceBlock,
       subsurfaceDepth: biomeConfig.subsurfaceDepth,

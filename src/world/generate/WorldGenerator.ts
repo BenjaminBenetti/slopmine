@@ -3,14 +3,13 @@ import type { ISubChunkCoordinate } from '../interfaces/ICoordinates.ts'
 import { createSubChunkKey, type SubChunkKey } from '../interfaces/ICoordinates.ts'
 import { worldToChunk } from '../coordinates/CoordinateUtils.ts'
 import { SUB_CHUNK_HEIGHT, SUB_CHUNK_COUNT } from '../interfaces/IChunk.ts'
-import { GenerationConfig, type IGenerationConfig } from './GenerationConfig.ts'
-import { BiomeGenerator } from './BiomeGenerator.ts'
-import { PlainsGenerator } from './biomes/PlainsGenerator.ts'
-import { GrassyHillsGenerator } from './biomes/GrassyHillsGenerator.ts'
+import { GenerationConfig, type IGenerationConfig, type BiomeType } from './GenerationConfig.ts'
+import type { BiomeGenerator } from './BiomeGenerator.ts'
+import { biomeRegistry, BIOME_REGION_SIZE } from './biomes/BiomeRegistry.ts'
 import { CliffFeature } from './features/CliffFeature.ts'
 import { OreFeature } from './features/OreFeature.ts'
 import { EntranceGenerator } from './caves/EntranceGenerator.ts'
-import type { WorkerBiomeConfig, FeatureConfig } from '../../workers/ChunkGenerationWorker.ts'
+import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../workers/ChunkGenerationWorker.ts'
 import type { PersistenceManager } from '../../persistence/PersistenceManager.ts'
 
 interface QueuedSubChunk {
@@ -28,8 +27,10 @@ interface QueuedSubChunk {
 export class WorldGenerator {
   private readonly world: WorldManager
   private readonly config: GenerationConfig
-  private readonly generator: BiomeGenerator
-  private readonly workerBiomeConfig: WorkerBiomeConfig
+
+  // Biome caches - lazily populated on demand
+  private readonly generatorCache: Map<BiomeType, BiomeGenerator> = new Map()
+  private readonly biomeConfigCache: Map<BiomeType, WorkerBiomeConfig> = new Map()
 
   // Sub-chunk queue for 3D generation
   private readonly subChunkQueue: QueuedSubChunk[] = []
@@ -53,26 +54,53 @@ export class WorldGenerator {
   constructor(world: WorldManager, config?: Partial<IGenerationConfig>) {
     this.world = world
     this.config = new GenerationConfig(config)
-    this.generator = this.createGenerator()
-    this.workerBiomeConfig = this.createWorkerBiomeConfig()
     this.entranceGenerator = new EntranceGenerator(this.config.seed)
   }
 
-  private createGenerator(): BiomeGenerator {
-    switch (this.config.biome) {
-      case 'plains':
-        return new PlainsGenerator(this.config)
-      case 'grassy-hills':
-        return new GrassyHillsGenerator(this.config)
+  /**
+   * Get the biome type for a chunk based on its biome region.
+   * Biome regions are 16x16 chunks in size.
+   */
+  private getBiomeForChunk(chunkX: number, chunkZ: number): BiomeType {
+    const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
+    return biomeRegistry.selectBiome(regionX, regionZ, this.config.seed)
+  }
+
+  /**
+   * Get or create a BiomeGenerator for a biome type.
+   */
+  private getGeneratorForBiome(biomeType: BiomeType): BiomeGenerator {
+    let generator = this.generatorCache.get(biomeType)
+    if (!generator) {
+      const registration = biomeRegistry.get(biomeType)
+      if (!registration) {
+        throw new Error(`Unknown biome type: ${biomeType}`)
+      }
+      generator = registration.createGenerator(this.config)
+      this.generatorCache.set(biomeType, generator)
     }
+    return generator
+  }
+
+  /**
+   * Get or create a WorkerBiomeConfig for a biome type.
+   */
+  private getWorkerBiomeConfig(biomeType: BiomeType): WorkerBiomeConfig {
+    let config = this.biomeConfigCache.get(biomeType)
+    if (!config) {
+      const generator = this.getGeneratorForBiome(biomeType)
+      config = this.createWorkerBiomeConfig(generator)
+      this.biomeConfigCache.set(biomeType, config)
+    }
+    return config
   }
 
   /**
    * Convert BiomeProperties to a plain object for worker communication.
    * Extracts feature settings from Feature class instances.
    */
-  private createWorkerBiomeConfig(): WorkerBiomeConfig {
-    const props = this.generator.getBiomeProperties()
+  private createWorkerBiomeConfig(generator: BiomeGenerator): WorkerBiomeConfig {
+    const props = generator.getBiomeProperties()
 
     // Convert Feature instances to serializable configs
     const features: FeatureConfig[] = props.features.map(feature => {
@@ -96,6 +124,44 @@ export class WorldGenerator {
       treeDensity: props.treeDensity,
       features,
       caves: props.caves,
+    }
+  }
+
+  /**
+   * Create BiomeBlendData for a chunk, including adjacent biome configs for blending.
+   */
+  private getBlendDataForChunk(chunkX: number, chunkZ: number): BiomeBlendData {
+    const { localX, localZ } = biomeRegistry.getLocalChunkCoords(chunkX, chunkZ)
+    const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
+
+    // Get primary biome
+    const primaryType = biomeRegistry.selectBiome(regionX, regionZ, this.config.seed)
+    const primary = this.getWorkerBiomeConfig(primaryType)
+
+    // Get adjacent biomes for blending (cardinal directions)
+    const northType = biomeRegistry.selectBiome(regionX, regionZ - 1, this.config.seed)
+    const southType = biomeRegistry.selectBiome(regionX, regionZ + 1, this.config.seed)
+    const westType = biomeRegistry.selectBiome(regionX - 1, regionZ, this.config.seed)
+    const eastType = biomeRegistry.selectBiome(regionX + 1, regionZ, this.config.seed)
+
+    // Get diagonal corner biomes for proper corner blending
+    const northeastType = biomeRegistry.selectBiome(regionX + 1, regionZ - 1, this.config.seed)
+    const northwestType = biomeRegistry.selectBiome(regionX - 1, regionZ - 1, this.config.seed)
+    const southeastType = biomeRegistry.selectBiome(regionX + 1, regionZ + 1, this.config.seed)
+    const southwestType = biomeRegistry.selectBiome(regionX - 1, regionZ + 1, this.config.seed)
+
+    return {
+      primary,
+      north: northType !== primaryType ? this.getWorkerBiomeConfig(northType) : undefined,
+      south: southType !== primaryType ? this.getWorkerBiomeConfig(southType) : undefined,
+      west: westType !== primaryType ? this.getWorkerBiomeConfig(westType) : undefined,
+      east: eastType !== primaryType ? this.getWorkerBiomeConfig(eastType) : undefined,
+      northeast: northeastType !== primaryType ? this.getWorkerBiomeConfig(northeastType) : undefined,
+      northwest: northwestType !== primaryType ? this.getWorkerBiomeConfig(northwestType) : undefined,
+      southeast: southeastType !== primaryType ? this.getWorkerBiomeConfig(southeastType) : undefined,
+      southwest: southwestType !== primaryType ? this.getWorkerBiomeConfig(southwestType) : undefined,
+      chunkLocalX: localX,
+      chunkLocalZ: localZ,
     }
   }
 
@@ -436,17 +502,22 @@ export class WorldGenerator {
         }
       }
 
+      const chunkX = Number(coordinate.x)
+      const chunkZ = Number(coordinate.z)
       const minWorldY = coordinate.subY * SUB_CHUNK_HEIGHT
       const maxWorldY = minWorldY + SUB_CHUNK_HEIGHT - 1
 
-      // Generate in worker
+      // Get biome blend data for this chunk
+      const biomeData = this.getBlendDataForChunk(chunkX, chunkZ)
+
+      // Generate in worker with biome blending
       const workerResult = await this.world.generateSubChunkInWorker(
         coordinate,
         this.config.seed,
         this.config.seaLevel,
         minWorldY,
         maxWorldY,
-        this.workerBiomeConfig
+        biomeData
       )
 
       // Apply results to the sub-chunk (pass worker-computed opacity to avoid main thread work)
@@ -457,10 +528,12 @@ export class WorldGenerator {
         workerResult.isFullyOpaque
       )
 
-      // Generate decorations (trees, etc) for this sub-chunk
+      // Generate decorations (trees, etc) for this sub-chunk using the primary biome
       const subChunk = this.world.getSubChunk(coordinate)
       if (subChunk) {
-        await this.generator.generateSubChunkDecorations(subChunk, this.world)
+        const biomeType = this.getBiomeForChunk(chunkX, chunkZ)
+        const generator = this.getGeneratorForBiome(biomeType)
+        await generator.generateSubChunkDecorations(subChunk, this.world)
       }
 
       // Generate cave entrances (once per chunk column)
@@ -480,7 +553,13 @@ export class WorldGenerator {
    * Only runs once per chunk column, and only if caves are enabled.
    */
   private async tryGenerateEntrances(coordinate: ISubChunkCoordinate): Promise<void> {
-    const caves = this.workerBiomeConfig.caves
+    const chunkX = Number(coordinate.x)
+    const chunkZ = Number(coordinate.z)
+
+    // Get the biome for this chunk to check cave settings
+    const biomeType = this.getBiomeForChunk(chunkX, chunkZ)
+    const biomeConfig = this.getWorkerBiomeConfig(biomeType)
+    const caves = biomeConfig.caves
     if (!caves?.enabled || !caves.entrancesEnabled) {
       return
     }
@@ -496,19 +575,22 @@ export class WorldGenerator {
     // Mark as generated (do this before generating to prevent duplicates)
     this.entrancesGenerated.add(columnKey)
 
+    // Get the generator for height calculations
+    const generator = this.getGeneratorForBiome(biomeType)
+
     // Track affected sub-chunks for batched remeshing
     const affectedSubChunks = new Set<string>()
 
     // World block setter that directly modifies chunk columns (no mesh/lighting triggers)
     const worldBlockSetter = (worldX: number, worldY: number, worldZ: number, blockId: number) => {
       // Calculate chunk coordinates
-      const chunkX = BigInt(Math.floor(worldX / 32))
-      const chunkZ = BigInt(Math.floor(worldZ / 32))
+      const targetChunkX = BigInt(Math.floor(worldX / 32))
+      const targetChunkZ = BigInt(Math.floor(worldZ / 32))
       const localX = ((worldX % 32) + 32) % 32
       const localZ = ((worldZ % 32) + 32) % 32
 
       // Get or skip if chunk column doesn't exist (don't create new chunks)
-      const targetColumn = this.world.getChunkColumn({ x: chunkX, z: chunkZ })
+      const targetColumn = this.world.getChunkColumn({ x: targetChunkX, z: targetChunkZ })
       if (!targetColumn) {
         return
       }
@@ -518,7 +600,7 @@ export class WorldGenerator {
 
       // Track affected sub-chunk for later remeshing
       const subY = Math.floor(worldY / SUB_CHUNK_HEIGHT)
-      affectedSubChunks.add(`${chunkX},${chunkZ},${subY}`)
+      affectedSubChunks.add(`${targetChunkX},${targetChunkZ},${subY}`)
     }
 
     // Find entrance locations using noise prediction (guaranteed to find caves)
@@ -526,7 +608,7 @@ export class WorldGenerator {
       coordinate.x,
       coordinate.z,
       caves,
-      (worldX, worldZ) => this.generator.getHeightAt(worldX, worldZ)
+      (worldX, worldZ) => generator.getHeightAt(worldX, worldZ)
     )
 
     // Carve all entrances

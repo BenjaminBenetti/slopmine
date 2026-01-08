@@ -21,7 +21,7 @@ import type {
   SubChunkGenerationRequest,
   SubChunkGenerationResponse,
   SubChunkGenerationError,
-  WorkerBiomeConfig,
+  BiomeBlendData,
 } from '../workers/ChunkGenerationWorker.ts'
 import type { OrePosition } from './generate/features/OreFeature.ts'
 import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
@@ -274,7 +274,7 @@ export class WorldManager implements IModifiedChunkProvider {
     seaLevel: number,
     minWorldY: number,
     maxWorldY: number,
-    biomeConfig: WorkerBiomeConfig
+    biomeData: BiomeBlendData
   ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; orePositions: OrePosition[]; isFullyOpaque: boolean }> {
     const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
 
@@ -291,7 +291,7 @@ export class WorldManager implements IModifiedChunkProvider {
       maxWorldY,
       seed,
       seaLevel,
-      biomeConfig,
+      biomeData,
       blocks,
       lightData,
     }
@@ -458,11 +458,16 @@ export class WorldManager implements IModifiedChunkProvider {
 
     if (!subChunk) return
 
+    // Defense-in-depth: verify chunk is still loaded before creating mesh
+    const chunkCoord: IChunkCoordinate = { x: subChunk.coordinate.x, z: subChunk.coordinate.z }
+    if (!this.chunkManager.getColumn(chunkCoord)) {
+      return // Chunk was unloaded, discard stale result
+    }
+
     // Remove existing mesh for this sub-chunk
     this.removeSubChunkMesh(subChunkKey)
 
     // Build greedy mesh from worker result
-    const chunkCoord: IChunkCoordinate = { x: subChunk.coordinate.x, z: subChunk.coordinate.z }
     const greedyMesh = new GreedyChunkMesh(chunkCoord, result.subY)
 
     greedyMesh.build(result)
@@ -1071,10 +1076,44 @@ export class WorldManager implements IModifiedChunkProvider {
       }
     }
 
-    // Remove all sub-chunk meshes for this column
+    // Clean up all pending mesh state and remove meshes for this column
     for (let subY = 0; subY < 16; subY++) {
       const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, subY)
+
+      // Remove from pending subchunks (prevents worker result from creating orphaned mesh)
+      const pendingSubChunk = this.pendingSubChunks.get(subChunkKey)
+      this.pendingSubChunks.delete(subChunkKey)
+
+      // Remove from pending remesh set
+      this.pendingRemeshSet.delete(subChunkKey)
+
+      // Remove from worker queues if present
+      if (pendingSubChunk) {
+        // Priority queue
+        if (this.prioritySubChunkSet.has(pendingSubChunk)) {
+          const idx = this.prioritySubChunkQueue.indexOf(pendingSubChunk)
+          if (idx !== -1) this.prioritySubChunkQueue.splice(idx, 1)
+          this.prioritySubChunkSet.delete(pendingSubChunk)
+        }
+        // Normal queue
+        if (this.subChunkWorkerSet.has(pendingSubChunk)) {
+          const idx = this.subChunkWorkerQueue.indexOf(pendingSubChunk)
+          if (idx !== -1) this.subChunkWorkerQueue.splice(idx, 1)
+          this.subChunkWorkerSet.delete(pendingSubChunk)
+        }
+      }
+
       this.removeSubChunkMesh(subChunkKey, true) // true = isUnloading, also clears opacity cache
+    }
+
+    // Filter out any pending mesh results for this column (prevents processing stale results)
+    const chunkX = Number(coordinate.x)
+    const chunkZ = Number(coordinate.z)
+    for (let i = this.pendingMeshResults.length - 1; i >= 0; i--) {
+      const result = this.pendingMeshResults[i]
+      if (result.chunkX === chunkX && result.chunkZ === chunkZ) {
+        this.pendingMeshResults.splice(i, 1)
+      }
     }
 
     // Remove from background lighting queue

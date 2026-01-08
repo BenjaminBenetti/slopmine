@@ -317,7 +317,8 @@ const physicsWorld = new WorldPhysicsAdapter(world)
 const physicsEngine = new PhysicsEngine(physicsWorld)
 
 // Create player physics body at spawn position (above generated terrain)
-const spawnPosition = new THREE.Vector3(0, seaLevel + 20, 0)
+// Spawn at center of biome region (256, 256) to avoid biome boundary at origin
+const spawnPosition = new THREE.Vector3(256, seaLevel + 20, 256)
 const playerBody = new PhysicsBody(
   spawnPosition,
   new THREE.Vector3(PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_DEPTH)

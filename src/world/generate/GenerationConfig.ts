@@ -6,14 +6,12 @@ export interface IGenerationConfig {
   seed: number
   chunkDistance: number
   seaLevel: number
-  biome: BiomeType
 }
 
 const DEFAULT_CONFIG: IGenerationConfig = {
   seed: Date.now(),
   chunkDistance: 8,
   seaLevel: 64,
-  biome: 'grassy-hills',
 }
 
 export class GenerationConfig {
@@ -58,10 +56,6 @@ export class GenerationConfig {
 
   get seaLevel(): number {
     return this.config.seaLevel
-  }
-
-  get biome(): BiomeType {
-    return this.config.biome
   }
 
   set chunkDistance(value: number) {

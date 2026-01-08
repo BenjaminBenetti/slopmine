@@ -15,6 +15,12 @@ export { BiomeGenerator, type BiomeProperties } from './BiomeGenerator.ts'
 // Biomes
 export { PlainsGenerator } from './biomes/PlainsGenerator.ts'
 export { GrassyHillsGenerator } from './biomes/GrassyHillsGenerator.ts'
+export {
+  BiomeRegistry,
+  biomeRegistry,
+  BIOME_REGION_SIZE,
+  type BiomeRegistration,
+} from './biomes/BiomeRegistry.ts'
 
 // Structures
 export { OakTree, type TreeParams } from './structures/OakTree.ts'

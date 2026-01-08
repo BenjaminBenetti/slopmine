@@ -16,6 +16,7 @@ import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 export class GrassyHillsGenerator extends BiomeGenerator {
   protected readonly properties: BiomeProperties = {
     name: 'grassy-hills',
+    frequency: 1.0,
     surfaceBlock: BlockIds.GRASS,
     subsurfaceBlock: BlockIds.DIRT,
     subsurfaceDepth: 4,

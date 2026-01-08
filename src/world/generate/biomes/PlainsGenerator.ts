@@ -16,6 +16,7 @@ import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 export class PlainsGenerator extends BiomeGenerator {
   protected readonly properties: BiomeProperties = {
     name: 'plains',
+    frequency: 1.0,
     surfaceBlock: BlockIds.GRASS,
     subsurfaceBlock: BlockIds.DIRT,
     subsurfaceDepth: 4,
@@ -88,18 +89,19 @@ export class PlainsGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      frequency: 0.025,      // higher = smaller/narrower tunnels
-      threshold: 0.035,      // higher = narrower (less blocks carved)
+      frequency: 0.005,
+      threshold: 0.006,       // very low - only carve the center of noise tubes for thin tunnels
       minY: 8,
-      maxY: 48,
-      layerCount: 2,
-      layerSpacing: 18,
-      layerPeakY: 28,
+      maxY: 68,               // high enough for entrances to find caves
+      layerCount: 1,
+      layerSpacing: 16,
+      layerPeakY: 32,
       cheeseEnabled: true,
-      cheeseFrequency: 0.008,
-      cheeseThreshold: 0.65,
+      cheeseFrequency: 0.003, // lower frequency for larger scattered chambers
+      cheeseThreshold: 0.82,  // higher threshold for smaller, rarer chambers
       entrancesEnabled: true,
-      entranceMinWidth: 4,
+      entranceMinWidth: 10,
+      entranceThreshold: 0.4,  // lower = more common entrances
     },
   }
 

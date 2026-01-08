@@ -96,6 +96,12 @@ export interface BiomeProperties {
   /** The unique name of this biome, used for identification. */
   readonly name: string
   /**
+   * Controls how likely this biome is to spawn relative to other biomes.
+   * Higher values mean more frequent spawning. Values are relative weights,
+   * so if all biomes have frequency 1.0, they spawn equally.
+   */
+  readonly frequency: number
+  /**
    * The block type that will form the very top layer of the terrain in this biome.
    * For example, this might be `dirt` or `sand`.
    */
