@@ -58,7 +58,7 @@ export class WorldManager implements IModifiedChunkProvider {
 
   // Mesh result throttling to prevent GPU command buffer flooding
   private readonly pendingMeshResults: GreedyMeshResponse[] = []
-  private readonly MAX_MESH_RESULTS_PER_FRAME = 1
+  private readonly MAX_MESH_RESULTS_PER_FRAME = 2
 
   // Cache of opaque block IDs for worker visibility checks
   private opaqueBlockIds: number[] = []
