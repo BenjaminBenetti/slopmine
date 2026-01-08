@@ -245,8 +245,12 @@ persistenceManager.initialize().then(async () => {
   console.error('Failed to initialize persistence:', error)
 })
 
+// Flag to skip save on unload when starting new game
+let skipSaveOnUnload = false
+
 // Safety save on page unload
 window.addEventListener('beforeunload', () => {
+  if (skipSaveOnUnload) return
   persistenceManager.saveBeforeUnload(
     serializeInventory(playerState.inventory),
     world,
@@ -304,8 +308,11 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
     )
   },
   onNewGame: async () => {
-    // Clear all saved data and reload the page for fresh start
+    // Clear all saved data and generate new seed for fresh start
     await persistenceManager.clearAll()
+    worldGenerator.getConfig().regenerateSeed()
+    // Skip beforeunload save to prevent re-saving cleared data
+    skipSaveOnUnload = true
     window.location.reload()
   },
 })
