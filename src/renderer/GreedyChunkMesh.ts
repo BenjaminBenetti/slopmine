@@ -7,9 +7,10 @@ import type { MeshGroup, GreedyMeshResponse } from '../workers/GreedyMeshWorker.
 import type { IChunkMesh } from './ChunkMesh.ts'
 import { getTextureAtlas } from './TextureAtlas.ts'
 
-// Atlas materials cache (6 opaque + 6 transparent = 12 materials total)
-let opaqueAtlasMaterials: THREE.MeshLambertMaterial[] | null = null
-let transparentAtlasMaterials: THREE.MeshLambertMaterial[] | null = null
+// Atlas materials cache (1 opaque + 1 transparent = 2 materials total)
+// Normals are stored per-vertex, so we only need one material per transparency type
+let opaqueAtlasMaterial: THREE.MeshLambertMaterial | null = null
+let transparentAtlasMaterial: THREE.MeshLambertMaterial | null = null
 
 /**
  * Initialize atlas materials if not already done.
@@ -21,44 +22,36 @@ function initAtlasMaterials(): void {
     return
   }
 
-  if (!opaqueAtlasMaterials) {
-    opaqueAtlasMaterials = []
-    for (let face = 0; face < 6; face++) {
-      const mat = new THREE.MeshLambertMaterial({
-        map: atlas.opaqueTexture,
-        vertexColors: true,
-      })
-      opaqueAtlasMaterials.push(mat)
-    }
+  if (!opaqueAtlasMaterial) {
+    opaqueAtlasMaterial = new THREE.MeshLambertMaterial({
+      map: atlas.opaqueTexture,
+      vertexColors: true,
+    })
   }
 
-  if (!transparentAtlasMaterials && atlas.transparentTexture) {
-    transparentAtlasMaterials = []
-    for (let face = 0; face < 6; face++) {
-      const mat = new THREE.MeshLambertMaterial({
-        map: atlas.transparentTexture,
-        vertexColors: true,
-        transparent: true,
-        side: THREE.DoubleSide,
-        alphaTest: 0.5,
-      })
-      transparentAtlasMaterials.push(mat)
-    }
+  if (!transparentAtlasMaterial && atlas.transparentTexture) {
+    transparentAtlasMaterial = new THREE.MeshLambertMaterial({
+      map: atlas.transparentTexture,
+      vertexColors: true,
+      transparent: true,
+      side: THREE.DoubleSide,
+      alphaTest: 0.5,
+    })
   }
 }
 
 /**
- * Get atlas material for a face direction.
+ * Get atlas material based on transparency.
  */
-function getAtlasMaterial(faceDirection: number, isTransparent: boolean): THREE.Material {
+function getAtlasMaterial(isTransparent: boolean): THREE.Material {
   initAtlasMaterials()
 
-  if (isTransparent && transparentAtlasMaterials) {
-    return transparentAtlasMaterials[faceDirection]
+  if (isTransparent && transparentAtlasMaterial) {
+    return transparentAtlasMaterial
   }
 
-  if (opaqueAtlasMaterials) {
-    return opaqueAtlasMaterials[faceDirection]
+  if (opaqueAtlasMaterial) {
+    return opaqueAtlasMaterial
   }
 
   // Fallback: create a basic material
@@ -145,8 +138,8 @@ export class GreedyChunkMesh implements IChunkMesh {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     geometry.setIndex(new THREE.BufferAttribute(meshGroup.indices, 1))
 
-    // Get atlas material for this face direction
-    const meshMaterial = getAtlasMaterial(meshGroup.faceDirection, isTransparent)
+    // Get atlas material based on transparency (normals are per-vertex)
+    const meshMaterial = getAtlasMaterial(isTransparent)
 
     const mesh = new THREE.Mesh(geometry, meshMaterial)
     mesh.frustumCulled = true

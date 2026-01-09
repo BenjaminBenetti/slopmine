@@ -131,7 +131,7 @@ export interface MeshGroup {
   blockId: number
   faceDirection: number
   vertices: Float32Array  // 11 floats per vertex: x,y,z,u,v,nx,ny,nz,r,g,b
-  indices: Uint16Array    // 6 indices per quad
+  indices: Uint16Array | Uint32Array  // 6 indices per quad (Uint32 for large meshes)
 }
 
 export interface GreedyMeshResponse {
@@ -713,8 +713,8 @@ function processSubChunk(
             continue
         }
 
-        // Group key - now group by face direction only (atlas merges all textures)
-        const groupKey = `${faceDir}_${isTransparent}`
+        // Group key - group by transparency only (normals are per-vertex, atlas merges all textures)
+        const groupKey = `${isTransparent}`
 
         // Get or create group
         let verts = groupVertices.get(groupKey)
@@ -724,7 +724,8 @@ function processSubChunk(
           inds = []
           groupVertices.set(groupKey, verts)
           groupIndices.set(groupKey, inds!)
-          groupMeta.set(groupKey, { textureId, blockId, faceDir, isTransparent })
+          // faceDir is not used for material selection anymore (normals are per-vertex)
+          groupMeta.set(groupKey, { textureId, blockId, faceDir: 0, isTransparent })
         }
 
         // Get atlas region for this texture
@@ -812,12 +813,18 @@ function processSubChunk(
     const inds = groupIndices.get(key)!
     const meta = groupMeta.get(key)!
 
+    // Use Uint32Array if vertex count exceeds Uint16 limit
+    const maxIndex = Math.max(...inds)
+    const indices = maxIndex > 65535
+      ? new Uint32Array(inds)
+      : new Uint16Array(inds)
+
     const group: MeshGroup = {
       textureId: meta.textureId,
       blockId: meta.blockId,
       faceDirection: meta.faceDir,
       vertices: new Float32Array(verts),
-      indices: new Uint16Array(inds),
+      indices,
     }
 
     if (meta.isTransparent) {
