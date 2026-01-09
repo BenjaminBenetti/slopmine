@@ -5,8 +5,13 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { CopperOreItem } from '../../../../items/ores/copper/CopperOreItem.ts'
+import { TextureId } from '../../FaceTextureRegistry.ts'
 import copperBlockTexUrl from './assets/copper_block.webp'
+
+// Register texture for atlas
+registerTextureUrl(TextureId.COPPER_BLOCK, copperBlockTexUrl)
 
 const copperBlockTexture = loadBlockTexture(copperBlockTexUrl)
 const copperBlockMaterial = new THREE.MeshLambertMaterial({ map: copperBlockTexture })
@@ -23,6 +28,10 @@ export class CopperBlockBlock extends SolidBlock {
     lightBlocking: 15,
     demolitionForceRequired: 1,
     tags: [BlockTags.STONE, BlockTags.METAL],
+  }
+
+  protected get defaultTextureId(): number {
+    return TextureId.COPPER_BLOCK
   }
 
   protected getMaterials(): THREE.Material {

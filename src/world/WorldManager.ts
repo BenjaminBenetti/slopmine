@@ -14,6 +14,7 @@ import type { SubChunkOpacityCache } from '../renderer/SubChunkOpacityCache.ts'
 import GreedyMeshWorker from '../workers/GreedyMeshWorker.ts?worker'
 import type { GreedyMeshRequest, GreedyMeshResponse, GreedyMeshError } from '../workers/GreedyMeshWorker.ts'
 import { buildFaceTextureMap } from './blocks/FaceTextureRegistry.ts'
+import { buildTextureAtlas, serializeAtlasRegions, type AtlasRegion } from '../renderer/TextureAtlas.ts'
 import { SubChunk } from './chunks/SubChunk.ts'
 import { ChunkColumn } from './chunks/ChunkColumn.ts'
 import { SUB_CHUNK_HEIGHT } from './interfaces/IChunk.ts'
@@ -66,8 +67,10 @@ export class WorldManager implements IModifiedChunkProvider {
 
   // Face texture map for greedy meshing (built once, sent to workers)
   private faceTextureMapEntries: Array<[number, number]> = []
+  private atlasRegionEntries: Array<[number, AtlasRegion]> = []
   private nonGreedyBlockIds: number[] = []
-  private faceTextureMapSent: boolean = false
+  // Track which workers have received the initialization data
+  private readonly workersInitialized: Set<number> = new Set()
 
   // Pre-allocated boundary layer buffers to avoid per-mesh allocation
   // 2 for blocks (posY, negY), 2 for lights (posY, negY)
@@ -139,8 +142,18 @@ export class WorldManager implements IModifiedChunkProvider {
     // Build non-greedy block IDs list
     this.nonGreedyBlockIds = allBlockIds.filter((id) => !getBlock(id).isGreedyMeshable())
 
-    // Reset sent flag so workers get updated map on next request
-    this.faceTextureMapSent = false
+    // Reset per-worker flags so workers get updated map on next request
+    this.workersInitialized.clear()
+  }
+
+  /**
+   * Initialize the texture atlas for reduced draw calls.
+   * Call this after blocks are registered and before rendering.
+   */
+  async initializeAtlas(): Promise<void> {
+    await buildTextureAtlas()
+    this.atlasRegionEntries = serializeAtlasRegions()
+    console.log(`Texture atlas built with ${this.atlasRegionEntries.length} regions`)
   }
 
   /**
@@ -222,10 +235,15 @@ export class WorldManager implements IModifiedChunkProvider {
       }
       worker.onerror = (error) => {
         console.error('Greedy mesh worker error:', error)
-        // Clear pending subchunks to prevent permanent stuck state
+        // Save all pending sub-chunks before clearing, then re-queue them
+        // This prevents losing mesh results from other workers that are still processing
+        const toRequeue = Array.from(this.pendingSubChunks.values())
         this.pendingSubChunks.clear()
         this.pendingRemeshSet.clear()
-        this.processSubChunkWorkerQueue()
+        // Re-queue all pending sub-chunks with high priority
+        for (const subChunk of toRequeue) {
+          this.queueSubChunkForMeshing(subChunk, 'high')
+        }
       }
       this.meshWorkers.push(worker)
     }
@@ -498,6 +516,10 @@ export class WorldManager implements IModifiedChunkProvider {
     const blocksCopy = new Uint16Array(subChunk.getBlockData())
     const lightCopy = new Uint8Array(subChunk.getLightData())
 
+    // Check if this worker needs initialization data
+    const workerIndex = this.meshWorkers.indexOf(worker)
+    const needsInit = !this.workersInitialized.has(workerIndex)
+
     const request: GreedyMeshRequest = {
       type: 'greedy-mesh',
       chunkX: Number(coord.x),
@@ -509,13 +531,16 @@ export class WorldManager implements IModifiedChunkProvider {
       neighbors,
       neighborLights,
       opaqueBlockIds: this.opaqueBlockIds,
-      // Send face texture map on first request to each worker
-      faceTextureMapEntries: this.faceTextureMapSent ? undefined : this.faceTextureMapEntries,
-      nonGreedyBlockIds: this.faceTextureMapSent ? undefined : this.nonGreedyBlockIds,
+      // Send face texture map and atlas regions on first request to each worker
+      faceTextureMapEntries: needsInit ? this.faceTextureMapEntries : undefined,
+      atlasRegionEntries: needsInit ? this.atlasRegionEntries : undefined,
+      nonGreedyBlockIds: needsInit ? this.nonGreedyBlockIds : undefined,
     }
 
-    // Mark as sent after first request (workers cache it)
-    this.faceTextureMapSent = true
+    // Mark this worker as initialized
+    if (needsInit) {
+      this.workersInitialized.add(workerIndex)
+    }
 
     this.pendingSubChunks.set(subChunkKey, subChunk)
 

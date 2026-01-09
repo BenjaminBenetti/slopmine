@@ -4,6 +4,7 @@ import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { TextureId } from '../../FaceTextureRegistry.ts'
 import { TorchBlockItem } from '../../../../items/blocks/torch/TorchBlockItem.ts'
 
 // Create torch geometry: slim post with ember cube on top
@@ -44,6 +45,10 @@ export class TorchBlock extends TransparentBlock {
     lightBlocking: 0, // Doesn't block light
     demolitionForceRequired: 0,
     tags: [],
+  }
+
+  protected get defaultTextureId(): number {
+    return TextureId.TORCH
   }
 
   protected getGeometry(): THREE.BufferGeometry {

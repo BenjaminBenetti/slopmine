@@ -5,8 +5,13 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { DiamondItem } from '../../../../items/ores/diamond/DiamondItem.ts'
+import { TextureId } from '../../FaceTextureRegistry.ts'
 import diamondBlockTexUrl from './assets/diamond_block.webp'
+
+// Register texture for atlas
+registerTextureUrl(TextureId.DIAMOND_BLOCK, diamondBlockTexUrl)
 
 const diamondBlockTexture = loadBlockTexture(diamondBlockTexUrl)
 const diamondBlockMaterial = new THREE.MeshLambertMaterial({ map: diamondBlockTexture })
@@ -23,6 +28,10 @@ export class DiamondBlockBlock extends SolidBlock {
     lightBlocking: 15,
     demolitionForceRequired: 1,
     tags: [BlockTags.STONE, BlockTags.METAL],
+  }
+
+  protected get defaultTextureId(): number {
+    return TextureId.DIAMOND_BLOCK
   }
 
   protected getMaterials(): THREE.Material {

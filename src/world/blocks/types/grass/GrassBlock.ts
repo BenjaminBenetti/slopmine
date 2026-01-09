@@ -6,10 +6,15 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { DirtBlockItem } from '../../../../items/blocks/dirt/DirtBlockItem.ts'
 import grassTexUrl from './assets/grass.webp'
 import dirtTexUrl from './assets/dirt.webp'
 import grassDirtTexUrl from './assets/grass-dirt.webp'
+
+// Register textures for atlas (DIRT is registered by DirtBlock)
+registerTextureUrl(TextureId.GRASS_TOP, grassTexUrl)
+registerTextureUrl(TextureId.GRASS_SIDE, grassDirtTexUrl)
 
 const grassTexture = loadBlockTexture(grassTexUrl)
 const dirtTexture = loadBlockTexture(dirtTexUrl)
@@ -31,6 +36,10 @@ export class GrassBlock extends SolidBlock {
     lightBlocking: 15,
     demolitionForceRequired: 0,
     tags: [BlockTags.DIRT],
+  }
+
+  protected get defaultTextureId(): number {
+    return TextureId.GRASS_SIDE
   }
 
   protected getMaterials(): THREE.Material[] {

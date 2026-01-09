@@ -5,8 +5,13 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { IronOreItem } from '../../../../items/ores/iron/IronOreItem.ts'
+import { TextureId } from '../../FaceTextureRegistry.ts'
 import ironBlockTexUrl from './assets/iron_block.webp'
+
+// Register texture for atlas
+registerTextureUrl(TextureId.IRON_BLOCK, ironBlockTexUrl)
 
 const ironBlockTexture = loadBlockTexture(ironBlockTexUrl)
 const ironBlockMaterial = new THREE.MeshLambertMaterial({ map: ironBlockTexture })
@@ -23,6 +28,10 @@ export class IronBlockBlock extends SolidBlock {
     lightBlocking: 15,
     demolitionForceRequired: 1,
     tags: [BlockTags.STONE, BlockTags.METAL],
+  }
+
+  protected get defaultTextureId(): number {
+    return TextureId.IRON_BLOCK
   }
 
   protected getMaterials(): THREE.Material {

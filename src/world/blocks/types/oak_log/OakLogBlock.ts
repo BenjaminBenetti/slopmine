@@ -6,9 +6,14 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { OakLogBlockItem } from '../../../../items/blocks/oak_log/OakLogBlockItem.ts'
 import oakLogTexUrl from './assets/oak-log.webp'
 import oakLogTopTexUrl from './assets/oak-log-top.webp'
+
+// Register textures for atlas
+registerTextureUrl(TextureId.OAK_LOG_SIDE, oakLogTexUrl)
+registerTextureUrl(TextureId.OAK_LOG_END, oakLogTopTexUrl)
 
 const oakLogTexture = loadBlockTexture(oakLogTexUrl)
 const oakLogTopTexture = loadBlockTexture(oakLogTopTexUrl)
@@ -28,6 +33,10 @@ export class OakLogBlock extends SolidBlock {
     lightBlocking: 15,
     demolitionForceRequired: 0,
     tags: [BlockTags.WOOD],
+  }
+
+  protected get defaultTextureId(): number {
+    return TextureId.OAK_LOG_SIDE
   }
 
   protected getMaterials(): THREE.Material[] {

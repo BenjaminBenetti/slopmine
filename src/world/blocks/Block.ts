@@ -45,11 +45,10 @@ export abstract class Block implements IBlock {
   abstract readonly properties: IBlockProperties
 
   /**
-   * Default texture ID - subclasses override for multi-textured blocks.
+   * Texture ID for this block. All blocks must define this.
+   * For multi-textured blocks, override getTextureForFace() instead.
    */
-  protected get defaultTextureId(): number {
-    return this.properties.id
-  }
+  protected abstract get defaultTextureId(): number
 
   /**
    * Get the block color. Override in subclasses for custom colors.
@@ -152,6 +151,10 @@ export class AirBlock extends Block {
     lightBlocking: 0,
     demolitionForceRequired: 0,
     tags: [],
+  }
+
+  protected get defaultTextureId(): number {
+    return TextureId.AIR
   }
 
   getCollisionBox(): THREE.Box3 | null {

@@ -5,8 +5,13 @@ import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { CoalItem } from '../../../../items/ores/coal/CoalItem.ts'
+import { TextureId } from '../../FaceTextureRegistry.ts'
 import coalBlockTexUrl from './assets/coal_block.webp'
+
+// Register texture for atlas
+registerTextureUrl(TextureId.COAL_BLOCK, coalBlockTexUrl)
 
 const coalBlockTexture = loadBlockTexture(coalBlockTexUrl)
 const coalBlockMaterial = new THREE.MeshLambertMaterial({ map: coalBlockTexture })
@@ -23,6 +28,10 @@ export class CoalBlockBlock extends SolidBlock {
     lightBlocking: 15,
     demolitionForceRequired: 1,
     tags: [BlockTags.STONE],
+  }
+
+  protected get defaultTextureId(): number {
+    return TextureId.COAL_BLOCK
   }
 
   protected getMaterials(): THREE.Material {

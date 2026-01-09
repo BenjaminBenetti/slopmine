@@ -20,6 +20,16 @@ const FACE_WEST = 5
 // Face texture map is populated on first request from main thread
 let faceTextureMap: Map<number, number> | null = null
 
+// Atlas region data (populated on first request)
+export interface AtlasRegion {
+  u0: number  // Left edge
+  v0: number  // Bottom edge
+  u1: number  // Right edge
+  v1: number  // Top edge
+}
+
+let atlasRegions: Map<number, AtlasRegion> | null = null
+
 // Normals for each face direction (used for vertex data)
 const FACE_NORMALS: [number, number, number][] = [
   [0, 1, 0],   // TOP (+Y)
@@ -109,6 +119,9 @@ export interface GreedyMeshRequest {
   // Face texture map entries: [[key, textureId], ...]
   // Sent once on first request, then cached in worker
   faceTextureMapEntries?: Array<[number, number]>
+  // Atlas region entries: [[textureId, {u0,v0,u1,v1}], ...]
+  // Sent once on first request, then cached in worker
+  atlasRegionEntries?: Array<[number, AtlasRegion]>
   // Non-greedy block IDs (torch, etc.)
   nonGreedyBlockIds?: number[]
 }
@@ -353,92 +366,77 @@ function greedyMerge2D(
 }
 
 /**
- * Emit quad vertices for a face.
+ * Emit a single 1x1 quad with atlas UVs.
  * Returns the vertex data (11 floats per vertex, 4 vertices).
  */
-function emitQuadVertices(
+function emitSingleQuadWithAtlasUV(
   worldX: number,
   worldY: number,
   worldZ: number,
-  quadU: number,
-  quadV: number,
-  quadW: number,
-  quadH: number,
+  localU: number,
+  localV: number,
   faceDir: number,
-  lightLevel: number
+  brightness: number,
+  atlasRegion: AtlasRegion
 ): Float32Array {
   // 4 vertices * 11 floats each = 44 floats
   const vertices = new Float32Array(44)
 
   const normal = FACE_NORMALS[faceDir]
 
-  // Calculate brightness from light level
-  const minBrightness = 0.02
-  const normalized = lightLevel / 15
-  const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
-
   // Calculate 4 corner positions based on face direction
-  // quadU, quadV are offsets in the face's 2D coordinate system
-  // quadW, quadH are the size of the quad
-
   let p0: [number, number, number]
   let p1: [number, number, number]
   let p2: [number, number, number]
   let p3: [number, number, number]
 
-  // UV coordinates tile the texture based on quad size
-  const uv0: [number, number] = [0, 0]
-  const uv1: [number, number] = [quadW, 0]
-  const uv2: [number, number] = [quadW, quadH]
-  const uv3: [number, number] = [0, quadH]
+  // Atlas UV coordinates for a 1x1 quad
+  const uv0: [number, number] = [atlasRegion.u0, atlasRegion.v0]
+  const uv1: [number, number] = [atlasRegion.u1, atlasRegion.v0]
+  const uv2: [number, number] = [atlasRegion.u1, atlasRegion.v1]
+  const uv3: [number, number] = [atlasRegion.u0, atlasRegion.v1]
 
   switch (faceDir) {
     case FACE_TOP: // +Y face
-      // u -> X, v -> Z, Y is constant at top of block
-      p0 = [worldX + quadU, worldY + 1, worldZ + quadV]
-      p1 = [worldX + quadU + quadW, worldY + 1, worldZ + quadV]
-      p2 = [worldX + quadU + quadW, worldY + 1, worldZ + quadV + quadH]
-      p3 = [worldX + quadU, worldY + 1, worldZ + quadV + quadH]
+      p0 = [worldX + localU, worldY + 1, worldZ + localV]
+      p1 = [worldX + localU + 1, worldY + 1, worldZ + localV]
+      p2 = [worldX + localU + 1, worldY + 1, worldZ + localV + 1]
+      p3 = [worldX + localU, worldY + 1, worldZ + localV + 1]
       break
 
     case FACE_BOTTOM: // -Y face
-      // u -> X, v -> Z, Y is constant at bottom of block
-      p0 = [worldX + quadU, worldY, worldZ + quadV + quadH]
-      p1 = [worldX + quadU + quadW, worldY, worldZ + quadV + quadH]
-      p2 = [worldX + quadU + quadW, worldY, worldZ + quadV]
-      p3 = [worldX + quadU, worldY, worldZ + quadV]
+      p0 = [worldX + localU, worldY, worldZ + localV + 1]
+      p1 = [worldX + localU + 1, worldY, worldZ + localV + 1]
+      p2 = [worldX + localU + 1, worldY, worldZ + localV]
+      p3 = [worldX + localU, worldY, worldZ + localV]
       break
 
     case FACE_NORTH: // -Z face
-      // u -> X, v -> Y, Z is constant
-      p0 = [worldX + quadU + quadW, worldY + quadV, worldZ]
-      p1 = [worldX + quadU, worldY + quadV, worldZ]
-      p2 = [worldX + quadU, worldY + quadV + quadH, worldZ]
-      p3 = [worldX + quadU + quadW, worldY + quadV + quadH, worldZ]
+      p0 = [worldX + localU + 1, worldY + localV, worldZ]
+      p1 = [worldX + localU, worldY + localV, worldZ]
+      p2 = [worldX + localU, worldY + localV + 1, worldZ]
+      p3 = [worldX + localU + 1, worldY + localV + 1, worldZ]
       break
 
     case FACE_SOUTH: // +Z face
-      // u -> X, v -> Y, Z is constant at far side
-      p0 = [worldX + quadU, worldY + quadV, worldZ + 1]
-      p1 = [worldX + quadU + quadW, worldY + quadV, worldZ + 1]
-      p2 = [worldX + quadU + quadW, worldY + quadV + quadH, worldZ + 1]
-      p3 = [worldX + quadU, worldY + quadV + quadH, worldZ + 1]
+      p0 = [worldX + localU, worldY + localV, worldZ + 1]
+      p1 = [worldX + localU + 1, worldY + localV, worldZ + 1]
+      p2 = [worldX + localU + 1, worldY + localV + 1, worldZ + 1]
+      p3 = [worldX + localU, worldY + localV + 1, worldZ + 1]
       break
 
     case FACE_EAST: // +X face
-      // u -> Z, v -> Y, X is constant at far side
-      p0 = [worldX + 1, worldY + quadV, worldZ + quadU]
-      p1 = [worldX + 1, worldY + quadV, worldZ + quadU + quadW]
-      p2 = [worldX + 1, worldY + quadV + quadH, worldZ + quadU + quadW]
-      p3 = [worldX + 1, worldY + quadV + quadH, worldZ + quadU]
+      p0 = [worldX + 1, worldY + localV, worldZ + localU]
+      p1 = [worldX + 1, worldY + localV, worldZ + localU + 1]
+      p2 = [worldX + 1, worldY + localV + 1, worldZ + localU + 1]
+      p3 = [worldX + 1, worldY + localV + 1, worldZ + localU]
       break
 
     case FACE_WEST: // -X face
-      // u -> Z, v -> Y, X is constant
-      p0 = [worldX, worldY + quadV, worldZ + quadU + quadW]
-      p1 = [worldX, worldY + quadV, worldZ + quadU]
-      p2 = [worldX, worldY + quadV + quadH, worldZ + quadU]
-      p3 = [worldX, worldY + quadV + quadH, worldZ + quadU + quadW]
+      p0 = [worldX, worldY + localV, worldZ + localU + 1]
+      p1 = [worldX, worldY + localV, worldZ + localU]
+      p2 = [worldX, worldY + localV + 1, worldZ + localU]
+      p3 = [worldX, worldY + localV + 1, worldZ + localU + 1]
       break
 
     default:
@@ -462,6 +460,50 @@ function emitQuadVertices(
   }
 
   return vertices
+}
+
+/**
+ * Emit all sub-quads for a merged quad with atlas UVs.
+ * For a WxH merged quad, emits W*H individual 1x1 quads.
+ * Returns array of vertex data arrays.
+ */
+function emitMergedQuadWithAtlasUVs(
+  worldX: number,
+  worldY: number,
+  worldZ: number,
+  quadU: number,
+  quadV: number,
+  quadW: number,
+  quadH: number,
+  faceDir: number,
+  lightLevel: number,
+  atlasRegion: AtlasRegion
+): Float32Array[] {
+  // Calculate brightness from light level
+  const minBrightness = 0.02
+  const normalized = lightLevel / 15
+  const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
+
+  const result: Float32Array[] = []
+
+  // Emit W*H sub-quads
+  for (let dv = 0; dv < quadH; dv++) {
+    for (let du = 0; du < quadW; du++) {
+      const subQuad = emitSingleQuadWithAtlasUV(
+        worldX,
+        worldY,
+        worldZ,
+        quadU + du,
+        quadV + dv,
+        faceDir,
+        brightness,
+        atlasRegion
+      )
+      result.push(subQuad)
+    }
+  }
+
+  return result
 }
 
 /**
@@ -671,21 +713,8 @@ function processSubChunk(
             continue
         }
 
-        // Emit vertices for this quad
-        const vertices = emitQuadVertices(
-          sliceOriginX,
-          sliceOriginY,
-          sliceOriginZ,
-          quadU,
-          quadV,
-          quadW,
-          quadH,
-          faceDir,
-          lightLevel
-        )
-
-        // Group key
-        const groupKey = `${textureId}_${faceDir}_${isTransparent}`
+        // Group key - now group by face direction only (atlas merges all textures)
+        const groupKey = `${faceDir}_${isTransparent}`
 
         // Get or create group
         let verts = groupVertices.get(groupKey)
@@ -698,24 +727,78 @@ function processSubChunk(
           groupMeta.set(groupKey, { textureId, blockId, faceDir, isTransparent })
         }
 
-        // Add vertices
-        const baseVertex = verts.length / 11
-        for (let i = 0; i < 44; i++) {
-          verts.push(vertices[i])
-        }
+        // Get atlas region for this texture
+        const atlasRegion = atlasRegions?.get(textureId)
 
-        // Add indices (two triangles per quad)
-        // NORTH and SOUTH faces need opposite winding from others
-        if (faceDir === FACE_NORTH || faceDir === FACE_SOUTH) {
-          inds!.push(
-            baseVertex, baseVertex + 1, baseVertex + 2,
-            baseVertex, baseVertex + 2, baseVertex + 3
+        if (atlasRegion) {
+          // Emit sub-quads with atlas UVs
+          const subQuads = emitMergedQuadWithAtlasUVs(
+            sliceOriginX,
+            sliceOriginY,
+            sliceOriginZ,
+            quadU,
+            quadV,
+            quadW,
+            quadH,
+            faceDir,
+            lightLevel,
+            atlasRegion
           )
+
+          // Add all sub-quads to the group
+          for (const vertices of subQuads) {
+            const baseVertex = verts.length / 11
+            for (let i = 0; i < 44; i++) {
+              verts.push(vertices[i])
+            }
+
+            // Add indices (two triangles per quad)
+            if (faceDir === FACE_NORTH || faceDir === FACE_SOUTH) {
+              inds!.push(
+                baseVertex, baseVertex + 1, baseVertex + 2,
+                baseVertex, baseVertex + 2, baseVertex + 3
+              )
+            } else {
+              inds!.push(
+                baseVertex, baseVertex + 2, baseVertex + 1,
+                baseVertex, baseVertex + 3, baseVertex + 2
+              )
+            }
+          }
         } else {
-          inds!.push(
-            baseVertex, baseVertex + 2, baseVertex + 1,
-            baseVertex, baseVertex + 3, baseVertex + 2
+          // Fallback: emit sub-quads with default 0-1 UVs (should not happen with atlas)
+          const defaultRegion: AtlasRegion = { u0: 0, v0: 0, u1: 1, v1: 1 }
+          const subQuads = emitMergedQuadWithAtlasUVs(
+            sliceOriginX,
+            sliceOriginY,
+            sliceOriginZ,
+            quadU,
+            quadV,
+            quadW,
+            quadH,
+            faceDir,
+            lightLevel,
+            defaultRegion
           )
+
+          for (const vertices of subQuads) {
+            const baseVertex = verts.length / 11
+            for (let i = 0; i < 44; i++) {
+              verts.push(vertices[i])
+            }
+
+            if (faceDir === FACE_NORTH || faceDir === FACE_SOUTH) {
+              inds!.push(
+                baseVertex, baseVertex + 1, baseVertex + 2,
+                baseVertex, baseVertex + 2, baseVertex + 3
+              )
+            } else {
+              inds!.push(
+                baseVertex, baseVertex + 2, baseVertex + 1,
+                baseVertex, baseVertex + 3, baseVertex + 2
+              )
+            }
+          }
         }
       }
     }
@@ -777,6 +860,11 @@ self.onmessage = (event: MessageEvent<GreedyMeshRequest>) => {
     // Initialize face texture map on first request
     if (data.faceTextureMapEntries && !faceTextureMap) {
       faceTextureMap = deserializeFaceTextureMap(data.faceTextureMapEntries)
+    }
+
+    // Initialize atlas regions on first request
+    if (data.atlasRegionEntries && !atlasRegions) {
+      atlasRegions = new Map(data.atlasRegionEntries)
     }
 
     // Update non-greedy block IDs if provided

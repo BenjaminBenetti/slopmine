@@ -5,60 +5,64 @@ import { createSubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
 import type { MeshGroup, GreedyMeshResponse } from '../workers/GreedyMeshWorker.ts'
 import type { IChunkMesh } from './ChunkMesh.ts'
+import { getTextureAtlas } from './TextureAtlas.ts'
 
-// Material cache to avoid cloning materials every mesh build
-// Key format: `${blockId}_${faceDirection}_${isTransparent}`
-const materialCache = new Map<string, THREE.Material>()
+// Atlas materials cache (6 opaque + 6 transparent = 12 materials total)
+let opaqueAtlasMaterials: THREE.MeshLambertMaterial[] | null = null
+let transparentAtlasMaterials: THREE.MeshLambertMaterial[] | null = null
 
 /**
- * Get or create a cached material for greedy mesh rendering.
+ * Initialize atlas materials if not already done.
  */
-function getCachedMaterial(blockId: number, faceDirection: number, isTransparent: boolean): THREE.Material {
-  const cacheKey = `${blockId}_${faceDirection}_${isTransparent}`
-
-  let cached = materialCache.get(cacheKey)
-  if (cached) return cached
-
-  const block = getBlock(blockId)
-  const blockMaterials = block.getInstanceMaterial()
-
-  // Material order in block: +X, -X, +Y, -Y, +Z, -Z
-  // Face direction order: TOP=0, BOTTOM=1, NORTH=2, SOUTH=3, EAST=4, WEST=5
-  const faceToMaterialIndex = [2, 3, 5, 4, 0, 1]
-  const materialIndex = faceToMaterialIndex[faceDirection]
-
-  let baseMaterial: THREE.Material
-  if (Array.isArray(blockMaterials)) {
-    baseMaterial = blockMaterials[materialIndex] ?? blockMaterials[0]
-  } else {
-    baseMaterial = blockMaterials
+function initAtlasMaterials(): void {
+  const atlas = getTextureAtlas()
+  if (!atlas) {
+    console.warn('TextureAtlas not ready, cannot init atlas materials')
+    return
   }
 
-  // Clone once for the cache
-  const meshMaterial = baseMaterial.clone()
-  if (meshMaterial instanceof THREE.MeshLambertMaterial || meshMaterial instanceof THREE.MeshBasicMaterial) {
-    meshMaterial.vertexColors = true
-
-    // Enable texture repeat wrapping for tiled UVs
-    if (meshMaterial.map) {
-      meshMaterial.map = meshMaterial.map.clone()
-      meshMaterial.map.wrapS = THREE.RepeatWrapping
-      meshMaterial.map.wrapT = THREE.RepeatWrapping
-      meshMaterial.map.needsUpdate = true
+  if (!opaqueAtlasMaterials) {
+    opaqueAtlasMaterials = []
+    for (let face = 0; face < 6; face++) {
+      const mat = new THREE.MeshLambertMaterial({
+        map: atlas.opaqueTexture,
+        vertexColors: true,
+      })
+      opaqueAtlasMaterials.push(mat)
     }
   }
 
-  // Set transparency settings
-  if (isTransparent) {
-    meshMaterial.transparent = true
-    meshMaterial.side = THREE.DoubleSide
-    if (meshMaterial instanceof THREE.MeshLambertMaterial) {
-      meshMaterial.alphaTest = 0.5
+  if (!transparentAtlasMaterials && atlas.transparentTexture) {
+    transparentAtlasMaterials = []
+    for (let face = 0; face < 6; face++) {
+      const mat = new THREE.MeshLambertMaterial({
+        map: atlas.transparentTexture,
+        vertexColors: true,
+        transparent: true,
+        side: THREE.DoubleSide,
+        alphaTest: 0.5,
+      })
+      transparentAtlasMaterials.push(mat)
     }
   }
+}
 
-  materialCache.set(cacheKey, meshMaterial)
-  return meshMaterial
+/**
+ * Get atlas material for a face direction.
+ */
+function getAtlasMaterial(faceDirection: number, isTransparent: boolean): THREE.Material {
+  initAtlasMaterials()
+
+  if (isTransparent && transparentAtlasMaterials) {
+    return transparentAtlasMaterials[faceDirection]
+  }
+
+  if (opaqueAtlasMaterials) {
+    return opaqueAtlasMaterials[faceDirection]
+  }
+
+  // Fallback: create a basic material
+  return new THREE.MeshLambertMaterial({ color: 0xff00ff, vertexColors: true })
 }
 
 /**
@@ -141,8 +145,8 @@ export class GreedyChunkMesh implements IChunkMesh {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     geometry.setIndex(new THREE.BufferAttribute(meshGroup.indices, 1))
 
-    // Get cached material (avoids expensive cloning on every build)
-    const meshMaterial = getCachedMaterial(meshGroup.blockId, meshGroup.faceDirection, isTransparent)
+    // Get atlas material for this face direction
+    const meshMaterial = getAtlasMaterial(meshGroup.faceDirection, isTransparent)
 
     const mesh = new THREE.Mesh(geometry, meshMaterial)
     mesh.frustumCulled = true

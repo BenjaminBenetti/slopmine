@@ -9,8 +9,13 @@ import { ForgeBlockState } from './ForgeBlockState.ts'
 import { BlockStateManager } from '../../../blockstate/BlockStateManager.ts'
 import { BlockTickManager } from '../../../blockstate/BlockTickManager.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
+import { TextureId } from '../../FaceTextureRegistry.ts'
 
 import forgeTexUrl from './assets/forge.webp'
+
+// Register texture for atlas
+registerTextureUrl(TextureId.FORGE, forgeTexUrl)
 
 const forgeTexture = loadBlockTexture(forgeTexUrl)
 const forgeMaterial = new THREE.MeshLambertMaterial({ map: forgeTexture })
@@ -48,6 +53,10 @@ export class ForgeBlock extends SolidBlock {
 
   /** Mark this block as interactable */
   readonly isInteractable = true
+
+  protected get defaultTextureId(): number {
+    return TextureId.FORGE
+  }
 
   protected getMaterials(): THREE.Material {
     return forgeMaterial

@@ -193,6 +193,9 @@ toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
 const world = new WorldManager()
 const worldGenerator = new WorldGenerator(world)
 
+// Initialize texture atlas for reduced draw calls (must complete before mesh rendering)
+await world.initializeAtlas()
+
 // Create persistence manager and initialize asynchronously
 const persistenceManager = new PersistenceManager()
 
