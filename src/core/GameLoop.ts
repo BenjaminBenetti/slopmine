@@ -72,8 +72,9 @@ export class GameLoop {
 
     // Non-blocking frame rate limiting for high refresh rate monitors
     // Check if enough time has passed since last render
+    // Use 80% threshold to avoid skipping frames due to timing jitter
     const timeSinceLastRender = currentTime - this.lastRenderTime
-    if (timeSinceLastRender < this.targetFrameMs) {
+    if (timeSinceLastRender < this.targetFrameMs * 0.8) {
       // Not time to render yet - request another frame and return immediately
       // This keeps the main thread responsive (no busy-wait blocking)
       requestAnimationFrame(this.loop)

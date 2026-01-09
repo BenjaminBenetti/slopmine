@@ -366,6 +366,7 @@ export function createSettingsMenuUI(
       { value: 80, label: '80 FPS' },
       { value: 120, label: '120 FPS' },
       { value: 240, label: '240 FPS' },
+      { value: 9999, label: 'Unlimited' },
     ]
 
     for (const opt of fpsOptions) {

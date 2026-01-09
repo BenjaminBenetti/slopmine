@@ -1,7 +1,7 @@
 const STORAGE_KEY = 'slopmine:graphicsSettings'
 
 export type ResolutionPreset = '720p' | '1080p' | '1440p' | '4k' | 'native'
-export type FramerateLimit = 30 | 60 | 80 | 120 | 240
+export type FramerateLimit = 30 | 60 | 80 | 120 | 240 | 9999
 export type ShadowMapSize = 1024 | 2048 | 4096 | 8192
 
 export interface IGraphicsSettings {
@@ -15,7 +15,7 @@ export interface IGraphicsSettings {
 const DEFAULT_SETTINGS: IGraphicsSettings = {
   cullingEnabled: false,
   resolutionPreset: 'native',
-  framerateLimit: 240,
+  framerateLimit: 9999,
   shadowsEnabled: false,
   shadowMapSize: 4096,
 }
