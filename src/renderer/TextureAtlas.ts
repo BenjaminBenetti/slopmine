@@ -164,19 +164,15 @@ async function buildAtlasTexture(
     // Draw the main texture
     ctx.drawImage(img, x, y, TEXTURE_SIZE, TEXTURE_SIZE)
 
-    // Draw padding pixels (extend edge pixels to prevent bleeding)
-    // Only for opaque textures - transparent textures don't need padding
-    // as mipmaps will be disabled
-    if (!isTransparent) {
-      // Top edge
-      ctx.drawImage(img, 0, 0, TEXTURE_SIZE, 1, x, y - PADDING, TEXTURE_SIZE, PADDING)
-      // Bottom edge
-      ctx.drawImage(img, 0, TEXTURE_SIZE - 1, TEXTURE_SIZE, 1, x, y + TEXTURE_SIZE, TEXTURE_SIZE, PADDING)
-      // Left edge
-      ctx.drawImage(img, 0, 0, 1, TEXTURE_SIZE, x - PADDING, y, PADDING, TEXTURE_SIZE)
-      // Right edge
-      ctx.drawImage(img, TEXTURE_SIZE - 1, 0, 1, TEXTURE_SIZE, x + TEXTURE_SIZE, y, PADDING, TEXTURE_SIZE)
-    }
+    // Draw padding pixels (extend edge pixels to prevent bleeding at mipmap levels)
+    // Top edge
+    ctx.drawImage(img, 0, 0, TEXTURE_SIZE, 1, x, y - PADDING, TEXTURE_SIZE, PADDING)
+    // Bottom edge
+    ctx.drawImage(img, 0, TEXTURE_SIZE - 1, TEXTURE_SIZE, 1, x, y + TEXTURE_SIZE, TEXTURE_SIZE, PADDING)
+    // Left edge
+    ctx.drawImage(img, 0, 0, 1, TEXTURE_SIZE, x - PADDING, y, PADDING, TEXTURE_SIZE)
+    // Right edge
+    ctx.drawImage(img, TEXTURE_SIZE - 1, 0, 1, TEXTURE_SIZE, x + TEXTURE_SIZE, y, PADDING, TEXTURE_SIZE)
 
     // Calculate UV region (normalized coordinates)
     // Add small inset to avoid sampling padding
@@ -198,16 +194,9 @@ async function buildAtlasTexture(
   texture.flipY = false  // Don't flip - UV coords match canvas coords directly
   texture.magFilter = THREE.NearestFilter
 
-  if (isTransparent) {
-    // For transparent textures, don't use mipmaps as they cause color bleeding
-    // at transparent pixel boundaries
-    texture.minFilter = THREE.NearestFilter
-    texture.generateMipmaps = false
-  } else {
-    texture.minFilter = THREE.NearestMipmapLinearFilter
-    texture.generateMipmaps = true
-    texture.anisotropy = getAnisotropy()
-  }
+  texture.minFilter = THREE.NearestMipmapLinearFilter
+  texture.generateMipmaps = true
+  texture.anisotropy = getAnisotropy()
 
   texture.colorSpace = THREE.SRGBColorSpace
   texture.needsUpdate = true
