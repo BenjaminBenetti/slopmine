@@ -25,7 +25,7 @@ export interface TextureAtlasResult {
 // Texture size (all textures assumed to be this size)
 const TEXTURE_SIZE = 64
 // Padding between textures to prevent bleeding at mipmap levels
-const PADDING = 8
+const PADDING = 32
 
 // Registered texture URLs
 const textureUrls = new Map<TextureId, string>()
@@ -203,8 +203,9 @@ async function buildAtlasTexture(
   texture.flipY = false  // Don't flip - UV coords match canvas coords directly
   texture.magFilter = THREE.NearestFilter
 
-  texture.minFilter = THREE.NearestFilter
-  texture.generateMipmaps = false
+  texture.minFilter = THREE.NearestMipmapLinearFilter
+  texture.generateMipmaps = true
+  texture.anisotropy = getAnisotropy()
 
   texture.colorSpace = THREE.SRGBColorSpace
   texture.needsUpdate = true
