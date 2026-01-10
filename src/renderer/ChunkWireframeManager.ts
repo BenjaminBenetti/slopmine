@@ -83,6 +83,7 @@ export class ChunkWireframeManager {
 
     wireframe.visible = this.visible
     wireframe.renderOrder = 999
+    wireframe.matrixAutoUpdate = false // Static position - skip updateMatrixWorld
 
     this.scene.add(wireframe)
     this.wireframes.set(key, wireframe)
@@ -105,6 +106,7 @@ export class ChunkWireframeManager {
 
     wireframe.visible = this.visible
     wireframe.renderOrder = 999
+    wireframe.matrixAutoUpdate = false // Static position - skip updateMatrixWorld
 
     this.scene.add(wireframe)
     this.subChunkWireframes.set(key, wireframe)

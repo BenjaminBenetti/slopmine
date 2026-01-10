@@ -41,6 +41,9 @@ export class ChunkMesh implements IChunkMesh {
     this.subChunkKey = subY !== null
       ? createSubChunkKey(chunkCoordinate.x, chunkCoordinate.z, subY)
       : null
+
+    // Chunk meshes are static - disable matrix auto-update to skip updateMatrixWorld traversal
+    this.group.matrixAutoUpdate = false
   }
 
   /**
@@ -82,6 +85,7 @@ export class ChunkMesh implements IChunkMesh {
       instancedMesh.frustumCulled = true
       instancedMesh.castShadow = true
       instancedMesh.receiveShadow = true
+      instancedMesh.matrixAutoUpdate = false // Static mesh - skip updateMatrixWorld
 
       // Get light levels for this block type
       const lights = this.blockLights.get(blockId) ?? []

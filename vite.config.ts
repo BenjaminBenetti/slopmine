@@ -9,4 +9,7 @@ export default defineConfig({
 	build: {
 		outDir: 'dist',
 	},
+	server: {
+		sourcemapIgnoreList: false
+	}
 })

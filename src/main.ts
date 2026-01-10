@@ -23,7 +23,6 @@ import { createSettingsMenuUI } from './ui/SettingsMenu.ts'
 import { createFpsCounterUI } from './ui/FpsCounter.ts'
 import { createLoadingScreenUI } from './ui/LoadingScreen.ts'
 import { ChunkWireframeManager } from './renderer/ChunkWireframeManager.ts'
-import { OreWireframeManager } from './renderer/OreWireframeManager.ts'
 import { DebugManager } from './ui/DebugManager.ts'
 import {
   WorldManager,
@@ -349,13 +348,11 @@ renderer.camera.position.set(
 world.setScene(renderer.scene)
 world.setRenderer(renderer.renderer)
 
-// Debug visualization system (FPS counter + chunk wireframes + ore wireframes)
+// Debug visualization system (FPS counter + chunk wireframes)
 const wireframeManager = new ChunkWireframeManager(renderer.scene)
-const oreWireframeManager = new OreWireframeManager(renderer.scene)
 const debugManager = new DebugManager({
   fpsCounter,
   wireframeManager,
-  oreWireframeManager,
 })
 debugManager.restoreFromStorage()
 
@@ -365,12 +362,6 @@ world.onSubChunkMeshAdded((coord) => {
 })
 world.onSubChunkMeshRemoved((coord) => {
   wireframeManager.removeSubChunk(coord)
-  oreWireframeManager.removeOresForSubChunk(coord)
-})
-
-// Add ore wireframes when ores are generated
-world.onOrePositionsGenerated((coord, positions) => {
-  oreWireframeManager.addOresForSubChunk(coord, positions)
 })
 
 // Highlight wireframes when columns are being lit
@@ -383,6 +374,11 @@ window.addEventListener('keydown', (event) => {
   if (event.ctrlKey && event.shiftKey && event.code === 'KeyP') {
     event.preventDefault()
     debugManager.cycleMode()
+  }
+  // Debug: Analyze scene with Ctrl+Shift+A
+  if (event.ctrlKey && event.shiftKey && event.code === 'KeyA') {
+    event.preventDefault()
+    renderer.debugLogSceneAnalysis()
   }
 })
 

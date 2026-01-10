@@ -75,6 +75,10 @@ export class GreedyChunkMesh implements IChunkMesh {
     this.chunkCoordinate = chunkCoordinate
     this.subY = subY
     this.subChunkKey = createSubChunkKey(chunkCoordinate.x, chunkCoordinate.z, subY)
+
+    // Chunk meshes are static - disable matrix auto-update to skip updateMatrixWorld traversal
+    // This is critical for performance as orphaned groups can accumulate in Three.js internals
+    this.group.matrixAutoUpdate = false
   }
 
   /**
@@ -145,6 +149,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     mesh.frustumCulled = true
     mesh.castShadow = true
     mesh.receiveShadow = true
+    mesh.matrixAutoUpdate = false // Static mesh - skip updateMatrixWorld
 
     // Transparent meshes render after opaque
     if (isTransparent) {
@@ -179,6 +184,7 @@ export class GreedyChunkMesh implements IChunkMesh {
       instancedMesh.frustumCulled = true
       instancedMesh.castShadow = true
       instancedMesh.receiveShadow = true
+      instancedMesh.matrixAutoUpdate = false // Static mesh - skip updateMatrixWorld
 
       const colors = new Float32Array(count * 3)
 
@@ -236,6 +242,25 @@ export class GreedyChunkMesh implements IChunkMesh {
    */
   dispose(renderer?: THREE.WebGLRenderer): void {
     for (const mesh of this.meshes) {
+      // Remove buffer attributes from WebGL cache - critical for memory cleanup
+      // Same pattern as InstancedMesh cleanup below
+      if (renderer) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const glAttributes = (renderer as any).attributes
+        if (glAttributes) {
+          const geometry = mesh.geometry
+          const position = geometry.getAttribute('position')
+          const uv = geometry.getAttribute('uv')
+          const normal = geometry.getAttribute('normal')
+          const color = geometry.getAttribute('color')
+          const index = geometry.getIndex()
+          if (position) glAttributes.remove(position)
+          if (uv) glAttributes.remove(uv)
+          if (normal) glAttributes.remove(normal)
+          if (color) glAttributes.remove(color)
+          if (index) glAttributes.remove(index)
+        }
+      }
       mesh.geometry.dispose()
       // Do NOT dispose mesh.material - it's the shared atlas material
     }

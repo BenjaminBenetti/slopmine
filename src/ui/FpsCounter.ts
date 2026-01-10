@@ -34,6 +34,7 @@ export interface RendererStats {
   triangles: number
   geometries: number
   textures: number
+  sceneObjects: number
 }
 
 export interface FpsCounterUI {
@@ -163,6 +164,9 @@ export function createFpsCounterUI(
           lines.push(`Draws: <span style="color:${drawColor}">${rendererStats.drawCalls}</span>`)
           lines.push(`Tris: ${formatCount(rendererStats.triangles)}`)
           lines.push(`Geo/Tex: ${rendererStats.geometries} / ${rendererStats.textures}`)
+          // Scene objects count - helps debug updateMatrixWorld performance
+          const objColor = rendererStats.sceneObjects < 1000 ? '#00ff00' : rendererStats.sceneObjects < 5000 ? '#ffaa00' : '#ff4444'
+          lines.push(`SceneObj: <span style="color:${objColor}">${rendererStats.sceneObjects}</span>`)
         }
         el.innerHTML = lines.join('<br>')
 

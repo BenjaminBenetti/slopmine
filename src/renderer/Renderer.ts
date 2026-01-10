@@ -134,13 +134,17 @@ export class Renderer {
   /**
    * Get three.js renderer statistics (draw calls, triangles, memory).
    */
-  getRendererStats(): { drawCalls: number; triangles: number; geometries: number; textures: number } {
+  getRendererStats(): { drawCalls: number; triangles: number; geometries: number; textures: number; sceneObjects: number } {
     const info = this.renderer.info
+    // Count total objects in scene graph (for debugging updateMatrixWorld performance)
+    let sceneObjects = 0
+    this.scene.traverse(() => { sceneObjects++ })
     return {
       drawCalls: info.render.calls,
       triangles: info.render.triangles,
       geometries: info.memory.geometries,
       textures: info.memory.textures,
+      sceneObjects,
     }
   }
 
@@ -184,5 +188,41 @@ export class Renderer {
     window.removeEventListener('resize', this.onResize)
     this.softwareOcclusionCuller.dispose()
     this.renderer.dispose()
+  }
+
+  /**
+   * Debug: Analyze scene contents to identify object accumulation.
+   * Returns breakdown of object types in the scene.
+   */
+  debugAnalyzeScene(): { total: number; byType: Record<string, number>; byDepth: Record<number, number> } {
+    const byType: Record<string, number> = {}
+    const byDepth: Record<number, number> = {}
+    let total = 0
+
+    const countObject = (obj: THREE.Object3D, depth: number) => {
+      total++
+      const type = obj.type || obj.constructor.name
+      byType[type] = (byType[type] || 0) + 1
+      byDepth[depth] = (byDepth[depth] || 0) + 1
+
+      for (const child of obj.children) {
+        countObject(child, depth + 1)
+      }
+    }
+
+    countObject(this.scene, 0)
+    return { total, byType, byDepth }
+  }
+
+  /**
+   * Debug: Log scene analysis to console.
+   */
+  debugLogSceneAnalysis(): void {
+    const analysis = this.debugAnalyzeScene()
+    console.log('=== Scene Analysis ===')
+    console.log('Total objects:', analysis.total)
+    console.log('By type:', analysis.byType)
+    console.log('By depth:', analysis.byDepth)
+    console.log('Direct scene children:', this.scene.children.length)
   }
 }

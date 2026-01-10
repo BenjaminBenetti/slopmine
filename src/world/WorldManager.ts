@@ -61,6 +61,7 @@ export class WorldManager implements IModifiedChunkProvider {
   // Mesh result throttling to prevent GPU command buffer flooding
   private readonly pendingMeshResults: GreedyMeshResponse[] = []
   private readonly MAX_MESH_RESULTS_PER_FRAME = 4
+  private readonly MESH_QUEUE_WARNING_THRESHOLD = 100
 
   // Cache of opaque block IDs for worker visibility checks
   private opaqueBlockIds: number[] = []
@@ -437,6 +438,9 @@ export class WorldManager implements IModifiedChunkProvider {
    */
   private handleSubChunkMeshResult(result: GreedyMeshResponse): void {
     this.pendingMeshResults.push(result)
+    if (this.pendingMeshResults.length > this.MESH_QUEUE_WARNING_THRESHOLD) {
+      console.error(`pendingMeshResults queue exceeded threshold: ${this.pendingMeshResults.length}`)
+    }
   }
 
   /**
