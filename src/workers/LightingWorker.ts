@@ -270,9 +270,15 @@ function processLightingRequest(request: LightingRequest): LightingResponse | Li
     for (const sc of sortedSubChunks) {
       const workerSubChunk = workerSubChunks.get(sc.subY)!
 
-      // Don't clear existing light data - preserve correct values from initial generation
-      // The propagation will enhance/fix existing lighting rather than rebuilding from scratch
-      // This matches mining behavior and avoids losing light from neighboring chunks
+      // Clear skylight data before recalculating - this fixes incorrect values from
+      // initial generation (e.g., cave air incorrectly set to 15)
+      for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
+        for (let z = 0; z < CHUNK_SIZE_Z; z++) {
+          for (let x = 0; x < CHUNK_SIZE_X; x++) {
+            workerSubChunk.setSkylight(x, y, z, 0)
+          }
+        }
+      }
 
       // Propagate skylight for this sub-chunk
       skylightPropagator.propagateSubChunk(workerSubChunk, aboveBoundaryLight)
@@ -281,25 +287,36 @@ function processLightingRequest(request: LightingRequest): LightingResponse | Li
       aboveBoundaryLight = skylightPropagator.getBottomBoundaryLight(workerSubChunk)
     }
 
-    // Sky access correction pass: fix dark air blocks that have sky access
-    // This matches the logic used in block mining to ensure consistent results
+    // Sky access correction pass: fix dark air blocks that are at the TOP of their column
+    // Only set to 15 if there's no solid block above AND we're at the highest air in this column
+    // This prevents cave interiors from being incorrectly lit to full brightness
     const column = createColumnWrapper(workerSubChunks)
     for (let x = 0; x < CHUNK_SIZE_X; x++) {
       for (let z = 0; z < CHUNK_SIZE_Z; z++) {
-        // Scan from bottom up to find dark air blocks that should be lit
+        // Find the highest solid block in this column
+        let highestSolidY = -1
+        for (const sc of [...subChunks].sort((a, b) => b.subY - a.subY)) {
+          const subChunk = workerSubChunks.get(sc.subY)!
+          for (let localY = SUB_CHUNK_HEIGHT - 1; localY >= 0; localY--) {
+            const blockId = subChunk.getBlockId(x, localY, z)
+            if (blockId !== BlockIds.AIR) {
+              highestSolidY = sc.subY * SUB_CHUNK_HEIGHT + localY
+              break
+            }
+          }
+          if (highestSolidY >= 0) break
+        }
+
+        // Only give skylight to air blocks ABOVE the highest solid
         for (const sc of subChunks) {
           const subChunk = workerSubChunks.get(sc.subY)!
           for (let localY = 0; localY < SUB_CHUNK_HEIGHT; localY++) {
+            const globalY = sc.subY * SUB_CHUNK_HEIGHT + localY
             const blockId = subChunk.getBlockId(x, localY, z)
-            const currentLight = subChunk.getSkylight(x, localY, z)
 
-            // If air block with light < 15, check if it has sky access
-            if (blockId === BlockIds.AIR && currentLight < 15) {
-              const globalY = sc.subY * SUB_CHUNK_HEIGHT + localY
-              if (SkylightPropagator.checkSubChunkSkyAccess(column, x, globalY, z)) {
-                // Has sky access but isn't at full light - set to 15
-                subChunk.setSkylight(x, localY, z, 15)
-              }
+            if (blockId === BlockIds.AIR && globalY > highestSolidY) {
+              // Air above all solid blocks - has true sky access
+              subChunk.setSkylight(x, localY, z, 15)
             }
           }
         }

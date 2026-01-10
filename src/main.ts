@@ -651,6 +651,8 @@ const gameLoop = new GameLoop({
   },
   render() {
     renderer.render()
+    // Capture renderer stats after main render but before held item (autoReset clears on next render call)
+    const rendererStats = renderer.getRendererStats()
     // Render held item on top of world
     heldItemRenderer.render()
     // Update wireframe colors based on culling (after culling runs in render)
@@ -662,6 +664,7 @@ const gameLoop = new GameLoop({
     fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
     fpsCounter.setLightingStats(world.getBackgroundLightingStats())
     fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
+    fpsCounter.setRendererStats(rendererStats)
     // Add scheduler stats for debug display (reuse pre-allocated object)
     const schedulerMetrics = scheduler.getMetrics()
     if (schedulerMetrics) {

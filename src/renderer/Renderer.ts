@@ -132,6 +132,19 @@ export class Renderer {
   }
 
   /**
+   * Get three.js renderer statistics (draw calls, triangles, memory).
+   */
+  getRendererStats(): { drawCalls: number; triangles: number; geometries: number; textures: number } {
+    const info = this.renderer.info
+    return {
+      drawCalls: info.render.calls,
+      triangles: info.render.triangles,
+      geometries: info.memory.geometries,
+      textures: info.memory.textures,
+    }
+  }
+
+  /**
    * Set graphics settings for configurable rendering options.
    */
   setGraphicsSettings(settings: GraphicsSettings): void {

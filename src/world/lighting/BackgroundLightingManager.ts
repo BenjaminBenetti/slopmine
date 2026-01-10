@@ -563,6 +563,10 @@ export class BackgroundLightingManager {
       changedSubChunks.push(subChunk)
     }
 
+    // Immediately propagate light FROM neighbors INTO this column
+    // This restores edge light that was cleared by the worker before remeshing
+    this.propagateFromNeighborsImmediately(column.coordinate)
+
     // Second pass: Queue all changed sub-chunks for remeshing
     // (now all neighbor light data is correct)
     const queuedSubYs = new Set<number>()
@@ -675,6 +679,51 @@ export class BackgroundLightingManager {
           // Force requeue to ensure mesh uses updated light data from edge propagation
           this.queueSubChunkForMeshing(targetSub, 'high', true)
         }
+      }
+    }
+  }
+
+  /**
+   * Immediately receive light FROM all 4 neighboring chunks INTO this chunk.
+   * Used after worker results to restore edge light that was cleared before remeshing.
+   */
+  private propagateFromNeighborsImmediately(coord: IChunkCoordinate): void {
+    if (!this.getColumn) return
+
+    const targetColumn = this.getColumn(coord)
+    if (!targetColumn) return
+
+    const neighborDirs: Array<{ dx: bigint; dz: bigint; dir: 'posX' | 'negX' | 'posZ' | 'negZ' }> = [
+      { dx: 1n, dz: 0n, dir: 'posX' },  // neighbor at +X → light comes from posX
+      { dx: -1n, dz: 0n, dir: 'negX' }, // neighbor at -X → light comes from negX
+      { dx: 0n, dz: 1n, dir: 'posZ' },  // neighbor at +Z → light comes from posZ
+      { dx: 0n, dz: -1n, dir: 'negZ' }, // neighbor at -Z → light comes from negZ
+    ]
+
+    for (const { dx, dz, dir } of neighborDirs) {
+      const neighborCoord: IChunkCoordinate = { x: coord.x + dx, z: coord.z + dz }
+      const neighborColumn = this.getColumn(neighborCoord)
+      if (!neighborColumn) continue
+
+      // Propagate from neighbor to target for each sub-chunk
+      for (let subY = 0; subY < 16; subY++) {
+        const targetSub = targetColumn.getSubChunk(subY)
+        const sourceSub = neighborColumn.getSubChunk(subY)
+        if (!targetSub || !sourceSub) continue
+
+        // Propagate skylight from neighbor
+        this.skylightPropagator.propagateFromNeighborSubChunk(
+          targetSub,
+          sourceSub,
+          dir
+        )
+
+        // Propagate blocklight from neighbor
+        this.blocklightPropagator.propagateFromNeighborSubChunk(
+          targetSub,
+          sourceSub,
+          dir
+        )
       }
     }
   }

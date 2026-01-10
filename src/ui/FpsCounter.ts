@@ -29,6 +29,13 @@ export interface SchedulerStats {
   avgFrameTimeMs: number
 }
 
+export interface RendererStats {
+  drawCalls: number
+  triangles: number
+  geometries: number
+  textures: number
+}
+
 export interface FpsCounterUI {
   readonly element: HTMLDivElement
   update(metrics: FrameMetrics): void
@@ -37,11 +44,25 @@ export interface FpsCounterUI {
   setLightingStats(stats: LightingStats): void
   setOcclusionStats(stats: OcclusionStats): void
   setSchedulerStats(stats: SchedulerStats): void
+  setRendererStats(stats: RendererStats): void
   show(): void
   hide(): void
   toggle(): boolean
   readonly visible: boolean
   destroy(): void
+}
+
+/**
+ * Format large numbers with K/M suffix.
+ */
+function formatCount(n: number): string {
+  if (n >= 1_000_000) {
+    return (n / 1_000_000).toFixed(1) + 'M'
+  }
+  if (n >= 1_000) {
+    return (n / 1_000).toFixed(1) + 'K'
+  }
+  return n.toString()
 }
 
 /**
@@ -88,6 +109,7 @@ export function createFpsCounterUI(
   let lightingStats: LightingStats | null = null
   let occlusionStats: OcclusionStats | null = null
   let schedulerStats: SchedulerStats | null = null
+  let rendererStats: RendererStats | null = null
 
   // Target frame budget for 60 FPS
   const frameBudgetMs = 16.67
@@ -136,6 +158,12 @@ export function createFpsCounterUI(
           lines.push(`Tasks: ${schedulerStats.tasksExecuted}/${total} <span style="color:${skipColor}">(${schedulerStats.tasksSkipped} skipped)</span>`)
           lines.push(`Budget: ${schedulerStats.budgetUsedMs.toFixed(2)}/${schedulerStats.currentBudgetMs.toFixed(1)}ms`)
         }
+        if (rendererStats) {
+          const drawColor = rendererStats.drawCalls < 200 ? '#00ff00' : rendererStats.drawCalls < 500 ? '#ffaa00' : '#ff4444'
+          lines.push(`Draws: <span style="color:${drawColor}">${rendererStats.drawCalls}</span>`)
+          lines.push(`Tris: ${formatCount(rendererStats.triangles)}`)
+          lines.push(`Geo/Tex: ${rendererStats.geometries} / ${rendererStats.textures}`)
+        }
         el.innerHTML = lines.join('<br>')
 
         frameCount = 0
@@ -166,6 +194,10 @@ export function createFpsCounterUI(
 
     setSchedulerStats(stats: SchedulerStats): void {
       schedulerStats = stats
+    },
+
+    setRendererStats(stats: RendererStats): void {
+      rendererStats = stats
     },
 
     show(): void {
