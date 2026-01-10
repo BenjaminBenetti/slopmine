@@ -25,7 +25,7 @@ export interface TextureAtlasResult {
 // Texture size (all textures assumed to be this size)
 const TEXTURE_SIZE = 64
 // Padding between textures to prevent bleeding at mipmap levels
-const PADDING = 4
+const PADDING = 8
 
 // Registered texture URLs
 const textureUrls = new Map<TextureId, string>()
@@ -173,18 +173,27 @@ async function buildAtlasTexture(
     ctx.drawImage(img, 0, 0, 1, TEXTURE_SIZE, x - PADDING, y, PADDING, TEXTURE_SIZE)
     // Right edge
     ctx.drawImage(img, TEXTURE_SIZE - 1, 0, 1, TEXTURE_SIZE, x + TEXTURE_SIZE, y, PADDING, TEXTURE_SIZE)
+    // Corner fills (extend corner pixels to prevent diagonal bleeding)
+    // Top-left corner
+    ctx.drawImage(img, 0, 0, 1, 1, x - PADDING, y - PADDING, PADDING, PADDING)
+    // Top-right corner
+    ctx.drawImage(img, TEXTURE_SIZE - 1, 0, 1, 1, x + TEXTURE_SIZE, y - PADDING, PADDING, PADDING)
+    // Bottom-left corner
+    ctx.drawImage(img, 0, TEXTURE_SIZE - 1, 1, 1, x - PADDING, y + TEXTURE_SIZE, PADDING, PADDING)
+    // Bottom-right corner
+    ctx.drawImage(img, TEXTURE_SIZE - 1, TEXTURE_SIZE - 1, 1, 1, x + TEXTURE_SIZE, y + TEXTURE_SIZE, PADDING, PADDING)
 
     // Calculate UV region (normalized coordinates)
-    // Add small inset to avoid sampling padding
-    const halfPixel = 0.5 / atlasSize
+    // Add inset to avoid sampling padding (full pixel for better mipmap safety)
+    const inset = 1.0 / atlasSize
     // With flipY = false: low V = canvas top, high V = canvas bottom
     // AtlasRegion convention: v0 = bottom of texture, v1 = top of texture
     // So v0 = high canvas Y = high V, v1 = low canvas Y = low V
     const region: AtlasRegion = {
-      u0: x / atlasSize + halfPixel,
-      v0: (y + TEXTURE_SIZE) / atlasSize - halfPixel,  // bottom of texture = high V
-      u1: (x + TEXTURE_SIZE) / atlasSize - halfPixel,
-      v1: y / atlasSize + halfPixel,  // top of texture = low V
+      u0: x / atlasSize + inset,
+      v0: (y + TEXTURE_SIZE) / atlasSize - inset,  // bottom of texture = high V
+      u1: (x + TEXTURE_SIZE) / atlasSize - inset,
+      v1: y / atlasSize + inset,  // top of texture = low V
     }
     regions.set(id, region)
   }
@@ -194,9 +203,8 @@ async function buildAtlasTexture(
   texture.flipY = false  // Don't flip - UV coords match canvas coords directly
   texture.magFilter = THREE.NearestFilter
 
-  texture.minFilter = THREE.NearestMipmapLinearFilter
-  texture.generateMipmaps = true
-  texture.anisotropy = getAnisotropy()
+  texture.minFilter = THREE.NearestFilter
+  texture.generateMipmaps = false
 
   texture.colorSpace = THREE.SRGBColorSpace
   texture.needsUpdate = true

@@ -234,21 +234,34 @@ export class GreedyChunkMesh implements IChunkMesh {
   /**
    * Dispose of all GPU resources.
    */
-  dispose(): void {
+  dispose(renderer?: THREE.WebGLRenderer): void {
     for (const mesh of this.meshes) {
       mesh.geometry.dispose()
-      if (Array.isArray(mesh.material)) {
-        mesh.material.forEach(m => m.dispose())
-      } else {
-        mesh.material.dispose()
-      }
+      // Do NOT dispose mesh.material - it's the shared atlas material
     }
     this.meshes.length = 0
 
     for (const instancedMesh of this.instancedMeshes.values()) {
+      // Remove buffer attributes from WebGL cache - critical for memory cleanup
+      // InstancedMesh instanceMatrix/instanceColor are NOT freed by dispose()
+      if (renderer) {
+        // Access internal WebGL attributes manager to properly free GPU memory
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const glAttributes = (renderer as any).attributes
+        if (glAttributes) {
+          glAttributes.remove(instancedMesh.instanceMatrix)
+          if (instancedMesh.instanceColor) {
+            glAttributes.remove(instancedMesh.instanceColor)
+          }
+        }
+      }
       instancedMesh.dispose()
+      // Note: geometry and material are shared from Block definitions
     }
     this.instancedMeshes.clear()
+
+    // Clear group children to release references
+    this.group.clear()
   }
 
   /**

@@ -37,6 +37,7 @@ export class WorldManager implements IModifiedChunkProvider {
   private readonly chunkManager: ChunkManager
   private readonly blockRegistry: BlockRegistry
   private scene: THREE.Scene | null = null
+  private renderer: THREE.WebGLRenderer | null = null
   private readonly chunkMeshes: Map<ChunkKey, ChunkMesh> = new Map()
   private readonly subChunkMeshes: Map<SubChunkKey, GreedyChunkMesh> = new Map()
   private readonly subChunkMeshAddedCallbacks: Array<(coord: ISubChunkCoordinate) => void> = []
@@ -812,7 +813,7 @@ export class WorldManager implements IModifiedChunkProvider {
       }
 
       chunkMesh.removeFromScene(this.scene)
-      chunkMesh.dispose()
+      chunkMesh.dispose(this.renderer ?? undefined)
     }
     this.subChunkMeshes.delete(subChunkKey)
 
@@ -1306,6 +1307,13 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Set the WebGL renderer for proper GPU resource cleanup.
+   */
+  setRenderer(renderer: THREE.WebGLRenderer): void {
+    this.renderer = renderer
+  }
+
+  /**
    * Clear all meshes from the scene.
    */
   private clearAllMeshes(): void {
@@ -1313,13 +1321,13 @@ export class WorldManager implements IModifiedChunkProvider {
 
     for (const chunkMesh of this.chunkMeshes.values()) {
       chunkMesh.removeFromScene(this.scene)
-      chunkMesh.dispose()
+      chunkMesh.dispose(this.renderer ?? undefined)
     }
     this.chunkMeshes.clear()
 
     for (const subChunkMesh of this.subChunkMeshes.values()) {
       subChunkMesh.removeFromScene(this.scene)
-      subChunkMesh.dispose()
+      subChunkMesh.dispose(this.renderer ?? undefined)
     }
     this.subChunkMeshes.clear()
   }

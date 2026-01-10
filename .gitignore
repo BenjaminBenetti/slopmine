@@ -30,3 +30,6 @@ npm-debug.log*
 
 # Claude 
 .claude/settings.local.json
+
+# rando
+/tmp

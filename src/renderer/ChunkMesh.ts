@@ -15,7 +15,7 @@ export interface IChunkMesh {
   getGroup(): THREE.Group
   addToScene(scene: THREE.Scene): void
   removeFromScene(scene: THREE.Scene): void
-  dispose(): void
+  dispose(renderer?: THREE.WebGLRenderer): void
 }
 
 /**
@@ -147,14 +147,30 @@ export class ChunkMesh implements IChunkMesh {
   /**
    * Dispose of all GPU resources.
    */
-  dispose(): void {
+  dispose(renderer?: THREE.WebGLRenderer): void {
     for (const instancedMesh of this.instancedMeshes.values()) {
+      // Remove buffer attributes from WebGL cache - critical for memory cleanup
+      // InstancedMesh instanceMatrix/instanceColor are NOT freed by dispose()
+      if (renderer) {
+        // Access internal WebGL attributes manager to properly free GPU memory
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const glAttributes = (renderer as any).attributes
+        if (glAttributes) {
+          glAttributes.remove(instancedMesh.instanceMatrix)
+          if (instancedMesh.instanceColor) {
+            glAttributes.remove(instancedMesh.instanceColor)
+          }
+        }
+      }
       instancedMesh.dispose()
       // Note: We don't dispose geometry (SharedGeometry) or materials (shared across blocks)
     }
     this.instancedMeshes.clear()
     this.blockPositions.clear()
     this.blockLights.clear()
+
+    // Clear group children to release references
+    this.group.clear()
   }
 
   /**

@@ -345,8 +345,9 @@ renderer.camera.position.set(
   spawnPosition.z
 )
 
-// Set the scene for rendering
+// Set the scene and renderer for rendering and proper GPU cleanup
 world.setScene(renderer.scene)
+world.setRenderer(renderer.renderer)
 
 // Debug visualization system (FPS counter + chunk wireframes + ore wireframes)
 const wireframeManager = new ChunkWireframeManager(renderer.scene)
