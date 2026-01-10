@@ -13,6 +13,7 @@ import { GoldBlockBlock } from './types/gold_block/GoldBlockBlock.ts'
 import { DiamondBlockBlock } from './types/diamond_block/DiamondBlockBlock.ts'
 import { TorchBlock } from './types/torch/TorchBlock.ts'
 import { ForgeBlock } from './types/forge/ForgeBlock.ts'
+import { WaterBlock } from './types/water/WaterBlock.ts'
 
 /**
  * Register all default block types.
@@ -209,5 +210,21 @@ export function registerDefaultBlocks(): void {
       tags: [BlockTags.STONE],
     },
     factory: () => new ForgeBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.WATER,
+      name: 'water',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 2,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new WaterBlock(),
   })
 }

@@ -3,7 +3,6 @@ import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
-import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
@@ -102,6 +101,13 @@ export class GrassyHillsGenerator extends BiomeGenerator {
       entrancesEnabled: true,
       entranceMinWidth: 10,
       entranceThreshold: 0.4,  // lower = more common entrances
+    },
+    water: {
+      enabled: true,
+      liquidBlock: BlockIds.WATER,
+      waterLevel: 238,        // Same water level as plains for consistency
+      frequency: 0.3,         // Fewer water pools in hills
+      minDepth: 3,            // Need deeper depressions in hilly terrain
     },
   }
 

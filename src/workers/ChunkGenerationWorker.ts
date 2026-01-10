@@ -13,12 +13,13 @@ import { CaveCarver } from '../world/generate/caves/CaveCarver.ts'
 import { SkylightPropagator } from '../world/lighting/SkylightPropagator.ts'
 import { CliffFeature, type CliffFeatureSettings } from '../world/generate/features/CliffFeature.ts'
 import { OreFeature, type OreFeatureSettings, type OrePosition } from '../world/generate/features/OreFeature.ts'
+import { WaterFeature } from '../world/generate/features/WaterFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
 import { registerDefaultBlocks } from '../world/blocks/registerDefaultBlocks.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
-import type { CaveSettings } from '../world/generate/BiomeGenerator.ts'
+import type { CaveSettings, WaterSettings } from '../world/generate/BiomeGenerator.ts'
 import type { IGenerationConfig } from '../world/generate/GenerationConfig.ts'
 import type { BlockId } from '../world/interfaces/IBlock.ts'
 
@@ -31,6 +32,7 @@ registerDefaultBlocks()
 export type FeatureConfig =
   | { type: 'cliff'; settings: CliffFeatureSettings }
   | { type: 'ore'; settings: OreFeatureSettings }
+  | { type: 'water'; settings: WaterSettings }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -46,6 +48,7 @@ export interface WorkerBiomeConfig {
   treeDensity: number
   features: FeatureConfig[]
   caves?: CaveSettings
+  water?: WaterSettings
 }
 
 /**
@@ -215,6 +218,8 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new CliffFeature(config.settings)
       case 'ore':
         return new OreFeature(config.settings)
+      case 'water':
+        return new WaterFeature(config.settings)
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }
@@ -661,6 +666,35 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     await caveCarver.carveSubChunk(subChunk, caves, getHeight, minWorldY, maxWorldY)
   }
 
+  // Phase 2.5: Apply water to terrain depressions (after caves, before skylight)
+  // Water only fills open-air depressions above terrain surface, not caves
+  const waterSettings = biomeConfig.water
+  if (waterSettings?.enabled) {
+    const waterFeature = new WaterFeature(waterSettings)
+    const waterContext: FeatureContext = {
+      chunk: subChunk,
+      world: null,
+      noise,
+      config: { seed, seaLevel, terrainThickness, chunkDistance: 8 },
+      biomeProperties: {
+        name: biomeConfig.name,
+        frequency: 1.0,
+        surfaceBlock: biomeConfig.surfaceBlock,
+        subsurfaceBlock: biomeConfig.subsurfaceBlock,
+        subsurfaceDepth: biomeConfig.subsurfaceDepth,
+        baseBlock: biomeConfig.baseBlock,
+        heightAmplitude: biomeConfig.heightAmplitude,
+        heightOffset: biomeConfig.heightOffset,
+        treeDensity: biomeConfig.treeDensity,
+        features: [],
+        caves: biomeConfig.caves,
+        water: biomeConfig.water,
+      },
+      getBaseHeightAt: getHeight,
+    }
+    await waterFeature.scan(waterContext)
+  }
+
   // Phase 3: Apply provisional skylight (uses blended height)
   applyProvisionalSkylight(subChunk, noise, seaLevel, minWorldY, maxWorldY, biomeData)
 
@@ -686,6 +720,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
       treeDensity: biomeConfig.treeDensity,
       features: [],
       caves: biomeConfig.caves,
+      water: biomeConfig.water,
     },
     getBaseHeightAt: getHeight,
   }

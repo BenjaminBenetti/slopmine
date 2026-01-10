@@ -23,6 +23,7 @@ export enum TextureId {
   DIAMOND_BLOCK = 12,
   TORCH = 13,        // Non-greedy, but defined
   FORGE = 14,
+  WATER = 15,        // Non-greedy, transparent liquid
 }
 
 // Cache for the face texture map
@@ -98,6 +99,7 @@ export function getFaceTextureId(
  */
 export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   11, // Torch - custom slim geometry
+  13, // Water - transparent liquid
 ])
 
 /**

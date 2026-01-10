@@ -124,6 +124,7 @@ export class WorldGenerator {
       treeDensity: props.treeDensity,
       features,
       caves: props.caves,
+      water: props.water,
     }
   }
 

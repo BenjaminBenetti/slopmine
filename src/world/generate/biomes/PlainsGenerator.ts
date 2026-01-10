@@ -3,7 +3,6 @@ import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
-import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
@@ -102,6 +101,13 @@ export class PlainsGenerator extends BiomeGenerator {
       entrancesEnabled: true,
       entranceMinWidth: 10,
       entranceThreshold: 0.4,  // lower = more common entrances
+    },
+    water: {
+      enabled: true,
+      liquidBlock: BlockIds.WATER,
+      waterLevel: 238,        // 2 blocks below seaLevel (240) for natural shores
+      frequency: 0.4,         // Moderate water pools (0=none, 1=everywhere)
+      minDepth: 2,            // Only fill depressions at least 2 blocks deep
     },
   }
 

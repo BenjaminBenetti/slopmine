@@ -11,6 +11,46 @@ import { CaveCarver } from './caves/CaveCarver.ts'
 import { SkylightPropagator } from '../lighting/SkylightPropagator.ts'
 
 /**
+ * Configuration for water/liquid generation within a biome.
+ */
+export interface WaterSettings {
+  /**
+   * Turns water generation on or off for this specific biome.
+   * If set to `false`, no water will appear in this biome.
+   */
+  readonly enabled: boolean
+
+  /**
+   * The block ID to use for water in this biome.
+   * Allows for different liquid types (e.g., water, swamp water, lava in future).
+   */
+  readonly liquidBlock: BlockId
+
+  /**
+   * The Y level at which water surfaces will appear.
+   * Water fills any terrain depression below this level.
+   * Typically set slightly below seaLevel for natural-looking shores.
+   */
+  readonly waterLevel: number
+
+  /**
+   * Controls how common water pools are in the biome.
+   * Uses noise to create distinct water regions rather than random per-block.
+   * 0.0 = very rare pools, 0.5 = moderate, 1.0 = water everywhere terrain allows.
+   * The noise creates natural-looking pool boundaries.
+   */
+  readonly frequency: number
+
+  /**
+   * Minimum depth of depression required for water to spawn.
+   * Water only appears where (waterLevel - terrainHeight) >= minDepth.
+   * Higher values = fewer, deeper pools. Lower values = more shallow puddles.
+   * Example: minDepth=2 means terrain must be at least 2 blocks below waterLevel.
+   */
+  readonly minDepth: number
+}
+
+/**
  * Configuration for cave generation within a biome.
  */
 export interface CaveSettings {
@@ -146,6 +186,12 @@ export interface BiomeProperties {
    * If not provided, default or no cave generation rules will apply.
    */
   readonly caves?: CaveSettings
+
+  /**
+   * Optional settings for water/liquid generation within this biome.
+   * If not provided, no water will generate in this biome.
+   */
+  readonly water?: WaterSettings
 }
 
 /**
