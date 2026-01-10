@@ -1091,12 +1091,12 @@ export class WorldManager implements IModifiedChunkProvider {
    */
   unloadChunk(coordinate: IChunkCoordinate): void {
     // Save all sub-chunks before unloading (fire and forget)
+    // Only save sub-chunks that completed generation (state >= LOADED)
     const column = this.chunkManager.getColumn(coordinate)
     if (column && this.persistenceManager) {
       for (let subY = 0; subY < 16; subY++) {
         const subChunk = column.getSubChunk(subY)
-        if (subChunk) {
-          // Save this sub-chunk before it's unloaded
+        if (subChunk && subChunk.state >= ChunkState.LOADED) {
           this.persistenceManager.saveSubChunk(
             subChunk.coordinate,
             subChunk.getBlockData(),
