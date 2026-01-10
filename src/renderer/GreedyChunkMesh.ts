@@ -76,9 +76,6 @@ export class GreedyChunkMesh implements IChunkMesh {
     this.subY = subY
     this.subChunkKey = createSubChunkKey(chunkCoordinate.x, chunkCoordinate.z, subY)
 
-    // Chunk meshes are static - disable matrix auto-update to skip updateMatrixWorld traversal
-    // This is critical for performance as orphaned groups can accumulate in Three.js internals
-    this.group.matrixAutoUpdate = false
   }
 
   /**
@@ -149,7 +146,6 @@ export class GreedyChunkMesh implements IChunkMesh {
     mesh.frustumCulled = true
     mesh.castShadow = true
     mesh.receiveShadow = true
-    mesh.matrixAutoUpdate = false // Static mesh - skip updateMatrixWorld
 
     // Transparent meshes render after opaque
     if (isTransparent) {
@@ -184,7 +180,6 @@ export class GreedyChunkMesh implements IChunkMesh {
       instancedMesh.frustumCulled = true
       instancedMesh.castShadow = true
       instancedMesh.receiveShadow = true
-      instancedMesh.matrixAutoUpdate = false // Static mesh - skip updateMatrixWorld
 
       const colors = new Float32Array(count * 3)
 
