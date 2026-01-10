@@ -36,10 +36,10 @@ export interface BackgroundLightingConfig {
 
 const DEFAULT_CONFIG: BackgroundLightingConfig = {
   columnsPerUpdate: 20,
-  reprocessCooldown: 60000, // 1 minute
-  nearbyReprocessCooldown: 2500, // 2.5 seconds
-  nearbyDistance: 8,
-  maxDistance: 16,
+  reprocessCooldown: 10000, // 10 seconds
+  nearbyReprocessCooldown: 1000, // 1 seconds
+  nearbyDistance: 2,
+  maxDistance: 8,
   enabled: true,
 }
 
