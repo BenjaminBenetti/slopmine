@@ -131,6 +131,7 @@ export interface ChunkGenerationRequest {
   chunkZ: number
   seed: number
   seaLevel: number
+  terrainThickness: number
   biomeConfig: WorkerBiomeConfig
   blocks: Uint16Array
   lightData: Uint8Array
@@ -171,6 +172,7 @@ export interface SubChunkGenerationRequest {
   maxWorldY: number // subY * 64 + 63
   seed: number
   seaLevel: number
+  terrainThickness: number
   biomeData: BiomeBlendData
   blocks: Uint16Array // 65,536 elements
   lightData: Uint8Array // 65,536 elements
@@ -409,7 +411,7 @@ function generateTerrain(
  * Main chunk generation function.
  */
 async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGenerationResponse> {
-  const { chunkX, chunkZ, seed, seaLevel, biomeConfig, blocks, lightData } = request
+  const { chunkX, chunkZ, seed, seaLevel, terrainThickness, biomeConfig, blocks, lightData } = request
 
   // Create WorkerChunk with the provided buffers
   const chunk = new WorkerChunk(chunkX, chunkZ, blocks, lightData)
@@ -437,6 +439,7 @@ async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGene
     const workerConfig: IGenerationConfig = {
       seed,
       seaLevel,
+      terrainThickness,
       chunkDistance: 4,
     }
 
@@ -485,6 +488,7 @@ function fillSubChunkColumn(
   localX: number,
   localZ: number,
   terrainHeight: number,
+  terrainThickness: number,
   minWorldY: number,
   maxWorldY: number,
   biomeConfig: WorkerBiomeConfig
@@ -493,6 +497,9 @@ function fillSubChunkColumn(
 
   let hasTerrainAbove = false
   let maxSolidY = -1
+
+  // Calculate terrain floor (below this is air)
+  const terrainFloor = terrainHeight - terrainThickness
 
   // Check if terrain extends above this sub-chunk
   if (terrainHeight > maxWorldY) {
@@ -503,7 +510,8 @@ function fillSubChunkColumn(
   for (let worldY = minWorldY; worldY <= maxWorldY; worldY++) {
     const localY = worldY - minWorldY
 
-    if (worldY <= terrainHeight) {
+    // Only fill blocks between terrain floor and terrain height (air below floor)
+    if (worldY <= terrainHeight && worldY > terrainFloor) {
       let blockId: BlockId
 
       if (worldY === terrainHeight) {
@@ -529,6 +537,7 @@ function generateSubChunkTerrain(
   subChunk: WorkerSubChunk,
   noise: SimplexNoise,
   seaLevel: number,
+  terrainThickness: number,
   minWorldY: number,
   maxWorldY: number,
   biomeData: BiomeBlendData
@@ -554,6 +563,7 @@ function generateSubChunkTerrain(
         localX,
         localZ,
         terrainHeight,
+        terrainThickness,
         minWorldY,
         maxWorldY,
         biomeData.primary
@@ -620,7 +630,7 @@ function applyProvisionalSkylight(
  * Generate a single sub-chunk.
  */
 async function generateSubChunk(request: SubChunkGenerationRequest): Promise<SubChunkGenerationResponse> {
-  const { chunkX, chunkZ, subY, minWorldY, maxWorldY, seed, seaLevel, biomeData, blocks, lightData } = request
+  const { chunkX, chunkZ, subY, minWorldY, maxWorldY, seed, seaLevel, terrainThickness, biomeData, blocks, lightData } = request
   const biomeConfig = biomeData.primary
 
   // Create WorkerSubChunk with the provided buffers
@@ -638,6 +648,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     subChunk,
     noise,
     seaLevel,
+    terrainThickness,
     minWorldY,
     maxWorldY,
     biomeData
@@ -662,7 +673,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     chunk: subChunk,
     world: null, // Workers don't have access to world
     noise,
-    config: { seed, seaLevel, chunkDistance: 8 },
+    config: { seed, seaLevel, terrainThickness, chunkDistance: 8 },
     biomeProperties: {
       name: biomeConfig.name,
       frequency: 1.0, // Not used in worker context

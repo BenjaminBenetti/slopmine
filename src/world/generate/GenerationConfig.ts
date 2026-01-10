@@ -6,12 +6,14 @@ export interface IGenerationConfig {
   seed: number
   chunkDistance: number
   seaLevel: number
+  terrainThickness: number
 }
 
 const DEFAULT_CONFIG: IGenerationConfig = {
   seed: Date.now(),
   chunkDistance: 8,
-  seaLevel: 64,
+  seaLevel: 240,
+  terrainThickness: 100,
 }
 
 export class GenerationConfig {
@@ -30,7 +32,10 @@ export class GenerationConfig {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
         const parsed = JSON.parse(stored) as Partial<IGenerationConfig>
-        return { config: { ...DEFAULT_CONFIG, ...parsed, ...overrides }, wasStored: true }
+        // Ignore seaLevel and terrainThickness from storage - always use defaults
+        // This ensures terrain height changes are applied without users clearing site data
+        const { seaLevel: _sl, terrainThickness: _tt, ...restParsed } = parsed
+        return { config: { ...DEFAULT_CONFIG, ...restParsed, ...overrides }, wasStored: true }
       }
     } catch (e) {
       console.warn('Failed to load world config:', e)
@@ -56,6 +61,10 @@ export class GenerationConfig {
 
   get seaLevel(): number {
     return this.config.seaLevel
+  }
+
+  get terrainThickness(): number {
+    return this.config.terrainThickness
   }
 
   set chunkDistance(value: number) {

@@ -515,6 +515,7 @@ export class WorldGenerator {
         coordinate,
         this.config.seed,
         this.config.seaLevel,
+        this.config.terrainThickness,
         minWorldY,
         maxWorldY,
         biomeData

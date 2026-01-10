@@ -292,6 +292,7 @@ export class WorldManager implements IModifiedChunkProvider {
     coordinate: ISubChunkCoordinate,
     seed: number,
     seaLevel: number,
+    terrainThickness: number,
     minWorldY: number,
     maxWorldY: number,
     biomeData: BiomeBlendData
@@ -311,6 +312,7 @@ export class WorldManager implements IModifiedChunkProvider {
       maxWorldY,
       seed,
       seaLevel,
+      terrainThickness,
       biomeData,
       blocks,
       lightData,

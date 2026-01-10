@@ -20,6 +20,16 @@ export class Skybox {
   /** Pre-allocated for update() to avoid GC pressure */
   private readonly tempSunPos = new THREE.Vector3()
 
+  // References for Y-based darkness updates
+  private readonly skyMaterial: THREE.ShaderMaterial
+  private readonly sunMaterial: THREE.MeshBasicMaterial
+  private readonly sunGlowMaterial: THREE.MeshBasicMaterial
+  private readonly cloudBaseOpacities: number[] = []
+
+  // Darkness transition thresholds
+  private readonly darknessStartY = 180
+  private readonly darknessEndY = 150
+
   constructor(options: SkyboxOptions = {}) {
     const {
       skyRadius = 500,
@@ -50,6 +60,19 @@ export class Skybox {
     this.cloudGroup.children.forEach((child) => {
       child.renderOrder = skyRenderOrder + 2
     })
+
+    // Store material references for Y-based darkness updates
+    this.skyMaterial = this.skyMesh.material as THREE.ShaderMaterial
+    this.sunMaterial = this.sunMesh.material as THREE.MeshBasicMaterial
+    this.sunGlowMaterial = (this.sunMesh.children[0] as THREE.Mesh)
+      .material as THREE.MeshBasicMaterial
+
+    // Store base cloud opacities
+    this.cloudGroup.children.forEach((child) => {
+      if (child instanceof THREE.Sprite) {
+        this.cloudBaseOpacities.push(child.material.opacity)
+      }
+    })
   }
 
   private createSkyDome(
@@ -64,26 +87,30 @@ export class Skybox {
       uniforms: {
         zenithColor: { value: zenithColor },
         horizonColor: { value: horizonColor },
+        darkness: { value: 0.0 },
       },
       vertexShader: `
-        varying vec3 vWorldPosition;
+        varying vec3 vLocalPosition;
         void main() {
-          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-          vWorldPosition = worldPosition.xyz;
+          // Use local position so gradient is relative to sphere center (camera), not world origin
+          vLocalPosition = position;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: `
         uniform vec3 zenithColor;
         uniform vec3 horizonColor;
-        varying vec3 vWorldPosition;
+        uniform float darkness;
+        varying vec3 vLocalPosition;
         void main() {
-          float h = normalize(vWorldPosition).y;
+          float h = normalize(vLocalPosition).y;
           // Clamp to 0-1 range (horizon at y=0, zenith at y=1)
           float t = clamp(h, 0.0, 1.0);
           // Smooth transition
           t = pow(t, 0.5);
           vec3 color = mix(horizonColor, zenithColor, t);
+          // Apply darkness factor
+          color *= (1.0 - darkness);
           gl_FragColor = vec4(color, 1.0);
         }
       `,
@@ -179,6 +206,29 @@ export class Skybox {
     this.sunMesh.position.copy(this.tempSunPos)
     // Make sun face the camera
     this.sunMesh.lookAt(cameraPos)
+
+    // Apply Y-based darkness (dark below darknessEndY, normal above darknessStartY)
+    const y = cameraPos.y
+    const darkness = Math.max(
+      0,
+      Math.min(1, (this.darknessStartY - y) / (this.darknessStartY - this.darknessEndY))
+    )
+
+    // Update sky shader darkness
+    this.skyMaterial.uniforms.darkness.value = darkness
+
+    // Update sun opacity
+    this.sunMaterial.opacity = 0.95 * (1 - darkness)
+    this.sunGlowMaterial.opacity = 0.3 * (1 - darkness)
+
+    // Update cloud opacities
+    let i = 0
+    this.cloudGroup.children.forEach((child) => {
+      if (child instanceof THREE.Sprite) {
+        child.material.opacity = this.cloudBaseOpacities[i] * (1 - darkness)
+        i++
+      }
+    })
   }
 
   addTo(scene: THREE.Scene): void {

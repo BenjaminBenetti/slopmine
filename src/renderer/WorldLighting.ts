@@ -87,9 +87,10 @@ export class WorldLighting {
     this.sun.target.updateMatrixWorld()
 
     // Update sun position relative to target using stored direction
+    // Use a smaller Y multiplier (0.4) to get a shallower sun angle matching the old look
     this.sun.position.set(
       target.x + this.sunDirection.x * this.sunDistance,
-      this.sunDirection.y * this.sunDistance,
+      target.y + this.sunDirection.y * this.sunDistance * 0.4,
       target.z + this.sunDirection.z * this.sunDistance
     )
   }
