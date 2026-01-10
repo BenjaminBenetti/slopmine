@@ -7,7 +7,7 @@ import { ChunkManager } from './chunks/ChunkManager.ts'
 import { BlockRegistry, getBlock } from './blocks/BlockRegistry.ts'
 import { Chunk } from './chunks/Chunk.ts'
 import { BlockIds } from './blocks/BlockIds.ts'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState, SUB_CHUNK_VOLUME } from './interfaces/IChunk.ts'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState, SUB_CHUNK_VOLUME, SUB_CHUNK_COUNT } from './interfaces/IChunk.ts'
 import { ChunkMesh, type IChunkMesh } from '../renderer/ChunkMesh.ts'
 import { GreedyChunkMesh } from '../renderer/GreedyChunkMesh.ts'
 import type { SubChunkOpacityCache } from '../renderer/SubChunkOpacityCache.ts'
@@ -60,7 +60,7 @@ export class WorldManager implements IModifiedChunkProvider {
 
   // Mesh result throttling to prevent GPU command buffer flooding
   private readonly pendingMeshResults: GreedyMeshResponse[] = []
-  private readonly MAX_MESH_RESULTS_PER_FRAME = 2
+  private readonly MAX_MESH_RESULTS_PER_FRAME = 4
 
   // Cache of opaque block IDs for worker visibility checks
   private opaqueBlockIds: number[] = []
@@ -1103,7 +1103,7 @@ export class WorldManager implements IModifiedChunkProvider {
     }
 
     // Clean up all pending mesh state and remove meshes for this column
-    for (let subY = 0; subY < 16; subY++) {
+    for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
       const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, subY)
 
       // Remove from pending subchunks (prevents worker result from creating orphaned mesh)

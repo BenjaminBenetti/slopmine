@@ -17,7 +17,7 @@ import type {
 } from '../../workers/LightingWorker.ts'
 import { SkylightPropagator } from './SkylightPropagator.ts'
 import { BlocklightPropagator } from './BlocklightPropagator.ts'
-import { SUB_CHUNK_HEIGHT } from '../interfaces/IChunk.ts'
+import { SUB_CHUNK_HEIGHT, SUB_CHUNK_COUNT } from '../interfaces/IChunk.ts'
 
 export interface BackgroundLightingConfig {
   /** How many columns to process per update cycle (default: 1) */
@@ -289,7 +289,7 @@ export class BackgroundLightingManager {
   private serializeSubChunks(column: ChunkColumn): SubChunkData[] {
     const subChunks: SubChunkData[] = []
 
-    for (let subY = 0; subY < 16; subY++) {
+    for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
       const subChunk = column.getSubChunk(subY)
       if (subChunk) {
         subChunks.push({
@@ -648,7 +648,7 @@ export class BackgroundLightingManager {
       if (!neighborColumn) continue
 
       // Propagate from source to neighbor for each sub-chunk
-      for (let subY = 0; subY < 16; subY++) {
+      for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
         const sourceSub = sourceColumn.getSubChunk(subY)
         const targetSub = neighborColumn.getSubChunk(subY)
         if (!sourceSub || !targetSub) continue
@@ -706,7 +706,7 @@ export class BackgroundLightingManager {
       if (!neighborColumn) continue
 
       // Propagate from neighbor to target for each sub-chunk
-      for (let subY = 0; subY < 16; subY++) {
+      for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
         const targetSub = targetColumn.getSubChunk(subY)
         const sourceSub = neighborColumn.getSubChunk(subY)
         if (!targetSub || !sourceSub) continue
@@ -812,7 +812,7 @@ export class BackgroundLightingManager {
         if (!neighborColumn) continue
 
         // Propagate from neighbor to target for each sub-chunk
-        for (let subY = 0; subY < 16; subY++) {
+        for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
           const targetSub = column.getSubChunk(subY)
           const sourceSub = neighborColumn.getSubChunk(subY)
           if (!targetSub || !sourceSub) continue
