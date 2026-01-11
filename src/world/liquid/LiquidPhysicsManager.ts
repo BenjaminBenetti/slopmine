@@ -391,20 +391,23 @@ export class LiquidPhysicsManager {
   /**
    * Calculate total water volume connected to this block.
    * Uses BFS with distance limit for performance.
+   * @returns Object with total volume and whether any non-eighth blocks exist
    */
-  private getConnectedWaterVolume(x: bigint, y: bigint, z: bigint, maxDistance: number): number {
+  private getConnectedWaterInfo(x: bigint, y: bigint, z: bigint, maxDistance: number): { volume: number; hasSubstantialBlock: boolean } {
     const visited = new Set<string>()
     const queue: Array<{ x: bigint; y: bigint; z: bigint; dist: number }> = []
     let totalVolume = 0
+    let hasSubstantialBlock = false  // True if any block is > 1/8 level
 
     const key = (px: bigint, py: bigint, pz: bigint) => `${px},${py},${pz}`
 
     // Start with current block
     const startLevel = this.getWaterLevel(this.getBlockId!(x, y, z))
-    if (startLevel === 0) return 0
+    if (startLevel === 0) return { volume: 0, hasSubstantialBlock: false }
 
     visited.add(key(x, y, z))
     totalVolume += startLevel
+    if (startLevel > WATER_LEVELS.EIGHTH) hasSubstantialBlock = true
     queue.push({ x, y, z, dist: 0 })
 
     while (queue.length > 0) {
@@ -431,12 +434,13 @@ export class LiquidPhysicsManager {
 
         if (nLevel > 0) {
           totalVolume += nLevel
+          if (nLevel > WATER_LEVELS.EIGHTH) hasSubstantialBlock = true
           queue.push({ x: n.x, y: n.y, z: n.z, dist: current.dist + 1 })
         }
       }
     }
 
-    return totalVolume
+    return { volume: totalVolume, hasSubstantialBlock }
   }
 
   /**
@@ -524,6 +528,24 @@ export class LiquidPhysicsManager {
     }
 
     // === STEP 2: HORIZONTAL FLOW ===
+    // Skip horizontal flow for tiny amounts (1/8 block = 1 half-unit)
+    // These don't have enough volume to split and cause oscillation
+    if (selfHalfUnits <= 1) {
+      // Tiny puddles only fall down or evaporate, no horizontal spread
+      // Check evaporation - also evaporate if ALL connected blocks are 1/8 level
+      const waterInfo = this.getConnectedWaterInfo(x, y, z, EVAPORATION_SEARCH_DISTANCE)
+      if (waterInfo.volume < EVAPORATION_VOLUME_THRESHOLD || !waterInfo.hasSubstantialBlock) {
+        this.setBlockRaw!(x, y, z, BlockIds.AIR)
+        return true
+      }
+      // Update self if we changed from vertical flow
+      if (selfHalfUnits !== originalSelfHalfUnits) {
+        this.setBlockRaw!(x, y, z, this.levelToBlockId(selfHalfUnits * 0.5))
+        return true
+      }
+      return changed
+    }
+
     // Get horizontal neighbors
     const horizontalNeighbors = [
       { x: x + 1n, z },
@@ -626,8 +648,9 @@ export class LiquidPhysicsManager {
 
     // === STEP 4: EVAPORATION for small isolated puddles ===
     if (!changed && selfHalfUnits <= 2) {  // Quarter or less
-      const volume = this.getConnectedWaterVolume(x, y, z, EVAPORATION_SEARCH_DISTANCE)
-      if (volume < EVAPORATION_VOLUME_THRESHOLD) {
+      const waterInfo = this.getConnectedWaterInfo(x, y, z, EVAPORATION_SEARCH_DISTANCE)
+      // Evaporate if volume too small OR if all connected blocks are just 1/8 droplets
+      if (waterInfo.volume < EVAPORATION_VOLUME_THRESHOLD || !waterInfo.hasSubstantialBlock) {
         // Reduce by one half-unit
         selfHalfUnits = Math.max(0, selfHalfUnits - 1)
         if (selfHalfUnits <= 0) {
