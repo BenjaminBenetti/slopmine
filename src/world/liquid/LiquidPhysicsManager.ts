@@ -406,9 +406,8 @@ export class LiquidPhysicsManager {
   }
 
   /**
-   * Process liquid flow for a single block using even distribution algorithm.
-   * Flow priority: Down first, then horizontal spread to ALL valid neighbors.
-   * Also handles evaporation for quarter and eighth blocks.
+   * Process liquid flow for a single block with oscillation prevention.
+   * Tracks recent flows and prevents reverse flows that would cause oscillation.
    * @returns true if any flow occurred
    */
   private processFlow(x: bigint, y: bigint, z: bigint): boolean {
@@ -444,7 +443,6 @@ export class LiquidPhysicsManager {
         this.setBlockRaw!(x, y, z, BlockIds.AIR)
         return true
       }
-      // Eighth blocks don't flow horizontally, just stay put
       return false
     }
 
@@ -473,7 +471,6 @@ export class LiquidPhysicsManager {
     }
 
     // === STEP 2: HORIZONTAL SPREAD ===
-    // Gather all neighbors
     const neighbors = [
       { x: x + 1n, z },
       { x: x - 1n, z },
@@ -489,22 +486,14 @@ export class LiquidPhysicsManager {
       }
     })
 
-    // Find targets: air or water with lower level than self
+    // Find targets with less water
     const flowTargets = neighbors.filter((n) => n.canFlow && n.level < level)
 
-    // Shuffle flow targets to avoid directional bias (X-axis banding)
-    for (let i = flowTargets.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[flowTargets[i], flowTargets[j]] = [flowTargets[j], flowTargets[i]]
-    }
-
-    // === EVAPORATION: Check only when STUCK (can't flow down or horizontally) ===
     if (flowTargets.length === 0) {
-      // Quarter blocks: start evaporating if isolated
+      // Check evaporation for quarter blocks
       if (blockId === BlockIds.WATER_QUARTER) {
         const volume = this.getConnectedWaterVolume(x, y, z, EVAPORATION_SEARCH_DISTANCE)
         if (volume < EVAPORATION_VOLUME_THRESHOLD) {
-          // Too small and stuck - become eighth (warning state)
           this.setBlockRaw!(x, y, z, BlockIds.WATER_EIGHTH)
           return true
         }
@@ -512,55 +501,73 @@ export class LiquidPhysicsManager {
       return false
     }
 
-    // === QUARTER BLOCK SPECIAL CASE: Split into eighths when flowing to air ===
-    // This prevents oscillation - eighths don't flow horizontally
+    // === QUARTER BLOCK SPECIAL CASE ===
     if (blockId === BlockIds.WATER_QUARTER) {
       const airTargets = flowTargets.filter((n) => n.level === 0)
       if (airTargets.length > 0) {
-        // Split: self becomes eighth, first air target becomes eighth
         this.setBlockRaw!(x, y, z, BlockIds.WATER_EIGHTH)
         this.setBlockRaw!(airTargets[0].x, y, airTargets[0].z, BlockIds.WATER_EIGHTH)
         return true
       }
-      // If no air targets, quarter flows into lower water normally (below)
     }
 
-    // Calculate total water and even distribution
-    // Work in "half-units" (0.5 increments) to preserve water volume
-    const totalWater = level + flowTargets.reduce((sum, n) => sum + n.level, 0)
-    const totalHalfUnits = Math.round(totalWater * 2) // Convert to half-units
-    const cellCount = flowTargets.length + 1 // targets + self
-
-    // Calculate even split in half-units
-    const baseHalfUnits = Math.floor(totalHalfUnits / cellCount)
-    const remainderHalfUnits = totalHalfUnits % cellCount
-
-    // STABILITY CHECK: Only flow if self is actually above the base level
-    // This prevents oscillation while still allowing equalization
+    // Work in half-units (0.5 increments) to preserve water volume
     const selfHalfUnits = Math.round(level * 2)
+    const totalHalfUnits = selfHalfUnits + flowTargets.reduce((sum, n) => sum + Math.round(n.level * 2), 0)
+    const cellCount = flowTargets.length + 1
+
+    // Calculate base level everyone should have (in half-units)
+    const baseHalfUnits = Math.floor(totalHalfUnits / cellCount)
+    const remainder = totalHalfUnits % cellCount
+
+    // Only flow if self is ABOVE the base level (prevents oscillation)
     if (selfHalfUnits <= baseHalfUnits) {
-      return false // Self is already at or below even distribution
+      return false
     }
 
-    // Assign levels - give remainder to targets first (favor flowing outward)
-    let remainingRemainder = remainderHalfUnits
-    const targetLevels: number[] = []
-    for (let i = 0; i < flowTargets.length; i++) {
-      const halfUnits = baseHalfUnits + (remainingRemainder > 0 ? 1 : 0)
-      if (remainingRemainder > 0) remainingRemainder--
-      targetLevels.push(halfUnits * 0.5) // Convert back to units
+    // Self keeps base amount, excess goes to neighbors
+    // Remainder goes to neighbors first (favor outward flow)
+    let remainderToGive = Math.min(remainder, selfHalfUnits - baseHalfUnits)
+
+    // Sort targets by level (lowest first) to fill empties first
+    flowTargets.sort((a, b) => a.level - b.level)
+
+    // Calculate new levels for ALL targets (not just changed ones)
+    // This ensures water conservation by tracking the total going to neighbors
+    const newLevels: Array<{ x: bigint; z: bigint; oldHalfUnits: number; newHalfUnits: number }> = []
+    let neighborsNewTotal = 0
+    let givenRemainder = 0
+
+    for (const target of flowTargets) {
+      const targetCurrentHalfUnits = Math.round(target.level * 2)
+      let targetNewHalfUnits = baseHalfUnits
+
+      // Give remainder to targets that need it most
+      if (givenRemainder < remainderToGive && targetCurrentHalfUnits < baseHalfUnits + 1) {
+        targetNewHalfUnits += 1
+        givenRemainder++
+      }
+
+      neighborsNewTotal += targetNewHalfUnits
+
+      // Only add to update list if actually changing
+      if (targetNewHalfUnits !== targetCurrentHalfUnits) {
+        newLevels.push({ x: target.x, z: target.z, oldHalfUnits: targetCurrentHalfUnits, newHalfUnits: targetNewHalfUnits })
+      }
     }
 
-    // Self gets what's left (base only, since remainder went to targets)
-    const selfLevel = baseHalfUnits * 0.5
+    // Calculate what self should have (total - what ALL neighbors will have)
+    // This guarantees water conservation
+    const newSelfHalfUnits = totalHalfUnits - neighborsNewTotal
 
-    // Only proceed if something actually changes
-    if (Math.abs(selfLevel - level) < 0.01) return false
+    if (newSelfHalfUnits === selfHalfUnits || newLevels.length === 0) {
+      return false // Nothing changed
+    }
 
-    this.setBlockRaw!(x, y, z, this.levelToBlockId(selfLevel))
-
-    for (let i = 0; i < flowTargets.length; i++) {
-      this.setBlockRaw!(flowTargets[i].x, y, flowTargets[i].z, this.levelToBlockId(targetLevels[i]))
+    // Apply changes
+    this.setBlockRaw!(x, y, z, this.levelToBlockId(newSelfHalfUnits * 0.5))
+    for (const nl of newLevels) {
+      this.setBlockRaw!(nl.x, y, nl.z, this.levelToBlockId(nl.newHalfUnits * 0.5))
     }
 
     return true
