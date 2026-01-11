@@ -11,6 +11,7 @@ export class PhysicsBody implements IPhysicsBody {
   readonly hitboxSize: THREE.Vector3
 
   private grounded = false
+  skipPhysics = false
 
   // Pre-allocated AABBs for getAABBs() to avoid per-frame GC pressure
   private readonly aabbsCache: AABB[] = []

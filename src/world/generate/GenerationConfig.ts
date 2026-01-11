@@ -76,6 +76,14 @@ export class GenerationConfig {
     return this.config.chunkDistance
   }
 
+  /**
+   * Get the vertical (Y-axis) chunk distance.
+   * This is half of the horizontal distance, rounded up.
+   */
+  getVerticalDistance(): number {
+    return Math.ceil(this.config.chunkDistance / 2)
+  }
+
   reset(newSeed?: number): void {
     this.config = { ...DEFAULT_CONFIG, seed: newSeed ?? Date.now() }
     this.save()

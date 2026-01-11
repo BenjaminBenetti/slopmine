@@ -18,6 +18,9 @@ export interface IPhysicsBody {
   /** Whether the body is currently on the ground */
   readonly isOnGround: boolean
 
+  /** When true, physics engine will skip this body (for flying/noclip modes) */
+  skipPhysics: boolean
+
   /** Set the grounded state */
   setOnGround(grounded: boolean): void
 

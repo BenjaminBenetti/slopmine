@@ -13,7 +13,7 @@ import { CaveCarver } from '../world/generate/caves/CaveCarver.ts'
 import { SkylightPropagator } from '../world/lighting/SkylightPropagator.ts'
 import { CliffFeature, type CliffFeatureSettings } from '../world/generate/features/CliffFeature.ts'
 import { OreFeature, type OreFeatureSettings, type OrePosition } from '../world/generate/features/OreFeature.ts'
-import { WaterFeature } from '../world/generate/features/WaterFeature.ts'
+import { WaterFeature, type WaterEdgeEffects } from '../world/generate/features/WaterFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
@@ -195,6 +195,7 @@ export interface SubChunkGenerationResponse {
   maxSolidY: number // Highest solid block world Y in this sub-chunk (-1 if empty)
   orePositions: OrePosition[] // Debug: positions of all ore blocks placed
   isFullyOpaque: boolean // True if ALL blocks in this sub-chunk are opaque (for occlusion culling)
+  waterEdgeEffects?: WaterEdgeEffects // Which edges have water (for neighbor propagation)
 }
 
 /**
@@ -669,6 +670,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   // Phase 2.5: Apply water to terrain depressions (after caves, before skylight)
   // Water only fills open-air depressions above terrain surface, not caves
   const waterSettings = biomeConfig.water
+  let waterEdgeEffects: WaterEdgeEffects | undefined
   if (waterSettings?.enabled) {
     const waterFeature = new WaterFeature(waterSettings)
     const waterContext: FeatureContext = {
@@ -692,7 +694,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
       },
       getBaseHeightAt: getHeight,
     }
-    await waterFeature.scan(waterContext)
+    waterEdgeEffects = await waterFeature.scanWithEdgeEffects(waterContext)
   }
 
   // Phase 3: Apply provisional skylight (uses blended height)
@@ -765,6 +767,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     maxSolidY,
     orePositions,
     isFullyOpaque,
+    waterEdgeEffects,
   }
 }
 

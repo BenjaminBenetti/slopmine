@@ -6,6 +6,21 @@ import { BlockIds } from '../../blocks/BlockIds.ts'
 import type { ISubChunkCoordinate } from '../../interfaces/ICoordinates.ts'
 
 /**
+ * Describes which edges of a chunk have water that could affect neighbors.
+ * Used to trigger re-processing of adjacent chunks.
+ */
+export interface WaterEdgeEffects {
+  /** True if water was placed on the -X edge (localX === 0) */
+  hasWaterOnNegX: boolean
+  /** True if water was placed on the +X edge (localX === CHUNK_SIZE_X - 1) */
+  hasWaterOnPosX: boolean
+  /** True if water was placed on the -Z edge (localZ === 0) */
+  hasWaterOnNegZ: boolean
+  /** True if water was placed on the +Z edge (localZ === CHUNK_SIZE_Z - 1) */
+  hasWaterOnPosZ: boolean
+}
+
+/**
  * Water feature that fills terrain depressions with water.
  *
  * Algorithm (Depression-Based Fill with Noise Regions):
@@ -66,7 +81,21 @@ export class WaterFeature extends Feature {
   }
 
   async scan(context: FeatureContext): Promise<void> {
-    if (!this.settings.enabled) return
+    await this.scanWithEdgeEffects(context)
+  }
+
+  /**
+   * Scan and fill water, returning edge effects for neighbor propagation.
+   */
+  async scanWithEdgeEffects(context: FeatureContext): Promise<WaterEdgeEffects> {
+    const edgeEffects: WaterEdgeEffects = {
+      hasWaterOnNegX: false,
+      hasWaterOnPosX: false,
+      hasWaterOnNegZ: false,
+      hasWaterOnPosZ: false,
+    }
+
+    if (!this.settings.enabled) return edgeEffects
 
     const { chunk, getBaseHeightAt, noise, frameBudget } = context
     const { liquidBlock, waterLevel, frequency, minDepth } = this.settings
@@ -79,7 +108,7 @@ export class WaterFeature extends Feature {
     const subChunkMaxY = subChunkMinY + SUB_CHUNK_HEIGHT - 1
 
     // Skip if water level is entirely outside this sub-chunk's range
-    if (waterLevel < subChunkMinY) return
+    if (waterLevel < subChunkMinY) return edgeEffects
 
     // Convert frequency (0-1) to a noise threshold
     const noiseThreshold = 1 - frequency * 2
@@ -106,31 +135,44 @@ export class WaterFeature extends Feature {
       return result
     }
 
-    // Check if position or any adjacent position is in a water region
-    // This ensures water continuity at chunk boundaries
-    const shouldHaveWater = (worldX: number, worldZ: number, localX: number, localZ: number): boolean => {
-      // Check current position
-      if (isWaterRegion(worldX, worldZ)) return true
+    // Determine if this chunk should have water by checking:
+    // 1. Any corner of the chunk is in a water region
+    // 2. Any adjacent position (just outside chunk) is in a water region
+    // This ensures entire depressions fill, not just edge blocks
+    const chunkOrigin = localToWorld(coord, { x: 0, y: 0, z: 0 })
+    const chunkBaseX = Number(chunkOrigin.x)
+    const chunkBaseZ = Number(chunkOrigin.z)
 
-      // At chunk edges, also check adjacent positions to ensure continuity
-      // If the neighboring chunk would have water, we should too
-      const isLeftEdge = localX === 0
-      const isRightEdge = localX === CHUNK_SIZE_X - 1
-      const isTopEdge = localZ === 0
-      const isBottomEdge = localZ === CHUNK_SIZE_Z - 1
+    let chunkHasWater = false
 
-      if (isLeftEdge && isWaterRegion(worldX - 1, worldZ)) return true
-      if (isRightEdge && isWaterRegion(worldX + 1, worldZ)) return true
-      if (isTopEdge && isWaterRegion(worldX, worldZ - 1)) return true
-      if (isBottomEdge && isWaterRegion(worldX, worldZ + 1)) return true
+    // Check chunk corners
+    const corners = [
+      [chunkBaseX, chunkBaseZ],
+      [chunkBaseX + CHUNK_SIZE_X - 1, chunkBaseZ],
+      [chunkBaseX, chunkBaseZ + CHUNK_SIZE_Z - 1],
+      [chunkBaseX + CHUNK_SIZE_X - 1, chunkBaseZ + CHUNK_SIZE_Z - 1],
+    ]
+    for (const [x, z] of corners) {
+      if (isWaterRegion(x, z)) {
+        chunkHasWater = true
+        break
+      }
+    }
 
-      // Check corners too
-      if (isLeftEdge && isTopEdge && isWaterRegion(worldX - 1, worldZ - 1)) return true
-      if (isRightEdge && isTopEdge && isWaterRegion(worldX + 1, worldZ - 1)) return true
-      if (isLeftEdge && isBottomEdge && isWaterRegion(worldX - 1, worldZ + 1)) return true
-      if (isRightEdge && isBottomEdge && isWaterRegion(worldX + 1, worldZ + 1)) return true
-
-      return false
+    // If no corner has water, check adjacent positions for cross-chunk continuity
+    if (!chunkHasWater) {
+      const adjacentChecks = [
+        [chunkBaseX - 1, chunkBaseZ + Math.floor(CHUNK_SIZE_Z / 2)],  // left edge center
+        [chunkBaseX + CHUNK_SIZE_X, chunkBaseZ + Math.floor(CHUNK_SIZE_Z / 2)],  // right edge center
+        [chunkBaseX + Math.floor(CHUNK_SIZE_X / 2), chunkBaseZ - 1],  // top edge center
+        [chunkBaseX + Math.floor(CHUNK_SIZE_X / 2), chunkBaseZ + CHUNK_SIZE_Z],  // bottom edge center
+      ]
+      for (const [x, z] of adjacentChecks) {
+        if (isWaterRegion(x, z)) {
+          chunkHasWater = true
+          break
+        }
+      }
     }
 
     frameBudget?.startFrame()
@@ -149,8 +191,8 @@ export class WaterFeature extends Feature {
         // Skip if terrain is at or above water level
         if (terrainHeight >= waterLevel) continue
 
-        // Check if this column should have water (includes edge continuity check)
-        if (!shouldHaveWater(worldX, worldZ, localX, localZ)) continue
+        // Skip if this chunk doesn't have water
+        if (!chunkHasWater) continue
 
         // Fill from terrain+1 up to waterLevel
         const fillStartWorldY = terrainHeight + 1
@@ -164,6 +206,7 @@ export class WaterFeature extends Feature {
         if (clampedStartY > clampedEndY) continue
 
         // Fill water blocks in this column
+        let placedWaterInColumn = false
         for (let worldY = clampedStartY; worldY <= clampedEndY; worldY++) {
           const localY = worldY - subChunkMinY
 
@@ -171,7 +214,16 @@ export class WaterFeature extends Feature {
           const currentBlock = chunk.getBlockId(localX, localY, localZ)
           if (currentBlock === BlockIds.AIR) {
             chunk.setBlockId(localX, localY, localZ, liquidBlock)
+            placedWaterInColumn = true
           }
+        }
+
+        // Track edge effects for neighbor propagation
+        if (placedWaterInColumn) {
+          if (localX === 0) edgeEffects.hasWaterOnNegX = true
+          if (localX === CHUNK_SIZE_X - 1) edgeEffects.hasWaterOnPosX = true
+          if (localZ === 0) edgeEffects.hasWaterOnNegZ = true
+          if (localZ === CHUNK_SIZE_Z - 1) edgeEffects.hasWaterOnPosZ = true
         }
       }
     }
@@ -180,5 +232,7 @@ export class WaterFeature extends Feature {
     if (frameBudget) {
       await frameBudget.yieldIfNeeded()
     }
+
+    return edgeEffects
   }
 }

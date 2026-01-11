@@ -25,6 +25,7 @@ import type {
   BiomeBlendData,
 } from '../workers/ChunkGenerationWorker.ts'
 import type { OrePosition } from './generate/features/OreFeature.ts'
+import type { WaterEdgeEffects } from './generate/features/WaterFeature.ts'
 import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
 import type { PersistenceManager, IModifiedChunkProvider } from '../persistence/PersistenceManager.ts'
 
@@ -296,7 +297,7 @@ export class WorldManager implements IModifiedChunkProvider {
     minWorldY: number,
     maxWorldY: number,
     biomeData: BiomeBlendData
-  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; orePositions: OrePosition[]; isFullyOpaque: boolean }> {
+  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; orePositions: OrePosition[]; isFullyOpaque: boolean; waterEdgeEffects?: WaterEdgeEffects }> {
     const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
 
     // Pre-allocate buffers (will be transferred to worker)
@@ -332,6 +333,7 @@ export class WorldManager implements IModifiedChunkProvider {
             lightData: response.lightData,
             orePositions: response.orePositions,
             isFullyOpaque: response.isFullyOpaque,
+            waterEdgeEffects: response.waterEdgeEffects,
           })
         },
         reject,

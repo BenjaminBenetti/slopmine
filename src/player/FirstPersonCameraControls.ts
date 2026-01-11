@@ -38,6 +38,11 @@ export class FirstPersonCameraControls implements CameraControls {
   private moveLeft = false
   private moveRight = false
   private jumpPressed = false
+  private shiftPressed = false
+
+  // Debug flying mode
+  private flyingMode = false
+  private readonly flyingSpeed = 32 // Fast flying speed
 
   private pointerLocked = false
 
@@ -114,6 +119,17 @@ export class FirstPersonCameraControls implements CameraControls {
   private onKeyDown = (event: KeyboardEvent): void => {
     if (!this.inputEnabled) return
 
+    // Toggle flying mode with Ctrl+Alt+P
+    if (event.code === 'KeyP' && event.ctrlKey && event.altKey) {
+      this.flyingMode = !this.flyingMode
+      if (this.physicsBody) {
+        this.physicsBody.skipPhysics = this.flyingMode
+      }
+      console.log(`[DEBUG] Flying mode: ${this.flyingMode ? 'ENABLED' : 'DISABLED'}`)
+      event.preventDefault()
+      return
+    }
+
     switch (event.code) {
       case 'KeyW':
         this.moveForward = true
@@ -129,6 +145,10 @@ export class FirstPersonCameraControls implements CameraControls {
         break
       case 'Space':
         this.jumpPressed = true
+        break
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        this.shiftPressed = true
         break
     }
   }
@@ -152,6 +172,10 @@ export class FirstPersonCameraControls implements CameraControls {
       case 'Space':
         this.jumpPressed = false
         break
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        this.shiftPressed = false
+        break
     }
   }
 
@@ -168,6 +192,7 @@ export class FirstPersonCameraControls implements CameraControls {
     this.moveLeft = false
     this.moveRight = false
     this.jumpPressed = false
+    this.shiftPressed = false
   }
 
   setInputEnabled(enabled: boolean): void {
@@ -186,6 +211,12 @@ export class FirstPersonCameraControls implements CameraControls {
     if (!this.physicsBody || !this.physicsEngine) {
       // Fallback to noclip mode if physics not set
       this.updateNoclip(_deltaTime)
+      return
+    }
+
+    // Flying mode: bypass physics, move freely
+    if (this.flyingMode) {
+      this.updateFlying(_deltaTime)
       return
     }
 
@@ -216,6 +247,50 @@ export class FirstPersonCameraControls implements CameraControls {
 
     // Sync camera position with physics body (add eye height)
     // Offset camera forward (-Z) to align view with hitbox center
+    this.camera.position.set(
+      this.physicsBody.position.x,
+      this.physicsBody.position.y + EYE_HEIGHT,
+      this.physicsBody.position.z
+    )
+  }
+
+  /**
+   * Debug flying mode - free movement without physics/collision.
+   * Space = up, Shift = down, WASD = horizontal movement
+   */
+  private updateFlying(deltaTime: number): void {
+    if (!this.physicsBody) return
+
+    // Calculate movement direction
+    this.tempDirection.set(0, 0, 0)
+    this.tempForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
+    this.tempRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw))
+
+    // Horizontal movement (WASD)
+    if (this.moveForward) this.tempDirection.add(this.tempForward)
+    if (this.moveBackward) this.tempDirection.sub(this.tempForward)
+    if (this.moveLeft) this.tempDirection.sub(this.tempRight)
+    if (this.moveRight) this.tempDirection.add(this.tempRight)
+
+    // Vertical movement (Space = up, Shift = down)
+    if (this.jumpPressed) this.tempDirection.y += 1
+    if (this.shiftPressed) this.tempDirection.y -= 1
+
+    // Normalize and apply flying speed
+    if (this.tempDirection.lengthSq() > 0) {
+      this.tempDirection.normalize()
+      this.tempDirection.multiplyScalar(this.flyingSpeed * deltaTime)
+    }
+
+    // Directly update position (bypass physics)
+    this.physicsBody.position.x += this.tempDirection.x
+    this.physicsBody.position.y += this.tempDirection.y
+    this.physicsBody.position.z += this.tempDirection.z
+
+    // Reset velocity so physics doesn't accumulate when we exit flying mode
+    this.physicsBody.velocity.set(0, 0, 0)
+
+    // Sync camera position
     this.camera.position.set(
       this.physicsBody.position.x,
       this.physicsBody.position.y + EYE_HEIGHT,

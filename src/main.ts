@@ -570,12 +570,12 @@ scheduler.createTask({
     world.updateLightingQueue(renderer.camera.position.x, renderer.camera.position.z),
 })
 
-// Queue management tasks 
+// Queue management tasks
 scheduler.createTask({
   id: 'world-generation-queue',
   priority: TaskPriority.NORMAL,
   update: () =>
-    worldGenerator.updateQueue(renderer.camera.position.x, renderer.camera.position.z),
+    worldGenerator.updateQueue(renderer.camera.position.x, renderer.camera.position.z, renderer.camera.position.y),
 })
 
 // Register NORMAL priority tasks (background work, budget-aware)

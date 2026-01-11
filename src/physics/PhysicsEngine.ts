@@ -47,7 +47,9 @@ export class PhysicsEngine {
     const dt = Math.min(deltaTime, 0.1)
 
     for (const body of this.bodies) {
-      this.updateBody(body, dt)
+      if (!body.skipPhysics) {
+        this.updateBody(body, dt)
+      }
     }
   }
 

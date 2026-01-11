@@ -3,22 +3,28 @@ import type { IChunkCoordinate, ISubChunkCoordinate } from '../world/interfaces/
 import { createChunkKey, createSubChunkKey, type ChunkKey, type SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import type { IChunkMesh } from './ChunkMesh.ts'
+import { BIOME_REGION_SIZE } from '../world/generate/biomes/BiomeRegistry.ts'
 
 /**
  * Manages debug wireframe boxes around chunk boundaries.
  * Uses shared geometry and materials for efficiency.
  * Wireframes are pink when visible, yellow when culled.
  * Supports both legacy full-height chunks and 64-height sub-chunks.
+ * Also shows biome boundaries with diagonal line walls.
  */
 export class ChunkWireframeManager {
   private readonly scene: THREE.Scene
   private readonly wireframes: Map<ChunkKey, THREE.LineSegments> = new Map()
   private readonly subChunkWireframes: Map<SubChunkKey, THREE.LineSegments> = new Map()
+  private readonly biomeBoundaryWireframes: Map<ChunkKey, THREE.LineSegments[]> = new Map()
   private readonly visibleMaterial: THREE.LineBasicMaterial
   private readonly culledMaterial: THREE.LineBasicMaterial
   private readonly lightingMaterial: THREE.LineBasicMaterial
+  private readonly biomeBoundaryMaterial: THREE.LineBasicMaterial
   private readonly geometry: THREE.EdgesGeometry
   private readonly subChunkGeometry: THREE.EdgesGeometry
+  private readonly biomeBoundaryXGeometry: THREE.BufferGeometry // Wall on X edge (runs along Z)
+  private readonly biomeBoundaryZGeometry: THREE.BufferGeometry // Wall on Z edge (runs along X)
   private visible = false
 
   // Track columns being lit (chunkKey -> expiry timestamp)
@@ -65,6 +71,57 @@ export class ChunkWireframeManager {
       depthTest: true,
       depthWrite: false,
     })
+
+    // Cyan wireframe material for biome boundaries
+    this.biomeBoundaryMaterial = new THREE.LineBasicMaterial({
+      color: 0x00ffff,
+      depthTest: true,
+      depthWrite: false,
+    })
+
+    // Create diagonal line geometries for biome boundaries
+    this.biomeBoundaryXGeometry = this.createDiagonalWallGeometry(CHUNK_SIZE_Z, CHUNK_HEIGHT)
+    this.biomeBoundaryZGeometry = this.createDiagonalWallGeometry(CHUNK_SIZE_X, CHUNK_HEIGHT)
+  }
+
+  /**
+   * Create geometry for a wall of diagonal lines (like /////).
+   * The wall is vertical in the XY plane, centered at origin.
+   * Lines go from bottom-left toward top-right at 45 degrees.
+   */
+  private createDiagonalWallGeometry(width: number, height: number): THREE.BufferGeometry {
+    const positions: number[] = []
+    const spacing = 16 // Space between diagonal lines in blocks
+
+    // Create parallel diagonal lines starting from bottom edge and left edge
+    for (let startOffset = -height; startOffset < width; startOffset += spacing) {
+      // Start point (on bottom edge or left edge of the wall)
+      let x1: number, y1: number
+      if (startOffset >= 0) {
+        x1 = startOffset
+        y1 = 0
+      } else {
+        x1 = 0
+        y1 = -startOffset
+      }
+
+      // End point (on right edge or top edge of the wall)
+      const maxRise = height - y1
+      const maxRun = width - x1
+      const diagonal = Math.min(maxRise, maxRun)
+      const x2 = x1 + diagonal
+      const y2 = y1 + diagonal
+
+      // Add line if it has length (centered at origin)
+      if (diagonal > 0) {
+        positions.push(x1 - width / 2, y1 - height / 2, 0)
+        positions.push(x2 - width / 2, y2 - height / 2, 0)
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    return geometry
   }
 
   /**
@@ -108,6 +165,56 @@ export class ChunkWireframeManager {
 
     this.scene.add(wireframe)
     this.subChunkWireframes.set(key, wireframe)
+
+    // Add biome boundary wireframes if this chunk is on a boundary
+    // (addBiomeBoundary is idempotent - it checks if boundaries already exist)
+    this.addBiomeBoundary(coordinate)
+  }
+
+  /**
+   * Add biome boundary wireframes for a chunk if it's on a biome boundary.
+   * Biome regions are BIOME_REGION_SIZE chunks (16x16).
+   */
+  private addBiomeBoundary(coordinate: IChunkCoordinate): void {
+    const chunkKey = createChunkKey(coordinate.x, coordinate.z)
+    if (this.biomeBoundaryWireframes.has(chunkKey)) return
+
+    // Calculate local position within biome region
+    const chunkX = Number(coordinate.x)
+    const chunkZ = Number(coordinate.z)
+    const localX = ((chunkX % BIOME_REGION_SIZE) + BIOME_REGION_SIZE) % BIOME_REGION_SIZE
+    const localZ = ((chunkZ % BIOME_REGION_SIZE) + BIOME_REGION_SIZE) % BIOME_REGION_SIZE
+
+    const boundaries: THREE.LineSegments[] = []
+    const worldX = chunkX * CHUNK_SIZE_X
+    const worldZ = chunkZ * CHUNK_SIZE_Z
+
+    // Boundary on -X edge (west side of chunk)
+    if (localX === 0) {
+      const wall = new THREE.LineSegments(this.biomeBoundaryXGeometry, this.biomeBoundaryMaterial)
+      // Rotate to face X direction and position at west edge
+      wall.rotation.y = Math.PI / 2
+      wall.position.set(worldX, CHUNK_HEIGHT / 2, worldZ + CHUNK_SIZE_Z / 2)
+      wall.visible = this.visible
+      wall.renderOrder = 999
+      this.scene.add(wall)
+      boundaries.push(wall)
+    }
+
+    // Boundary on -Z edge (north side of chunk)
+    if (localZ === 0) {
+      const wall = new THREE.LineSegments(this.biomeBoundaryZGeometry, this.biomeBoundaryMaterial)
+      // Already facing Z direction, position at north edge
+      wall.position.set(worldX + CHUNK_SIZE_X / 2, CHUNK_HEIGHT / 2, worldZ)
+      wall.visible = this.visible
+      wall.renderOrder = 999
+      this.scene.add(wall)
+      boundaries.push(wall)
+    }
+
+    if (boundaries.length > 0) {
+      this.biomeBoundaryWireframes.set(chunkKey, boundaries)
+    }
   }
 
   /**
@@ -132,6 +239,38 @@ export class ChunkWireframeManager {
       this.scene.remove(wireframe)
       this.subChunkWireframes.delete(key)
     }
+
+    // Remove biome boundary wireframes only when no sub-chunks remain in this column
+    if (!this.hasAnySubChunkInColumn(coordinate.x, coordinate.z)) {
+      this.removeBiomeBoundary(coordinate)
+    }
+  }
+
+  /**
+   * Check if any sub-chunks exist for a given column.
+   */
+  private hasAnySubChunkInColumn(chunkX: bigint, chunkZ: bigint): boolean {
+    const prefix = `${chunkX},${chunkZ},`
+    for (const key of this.subChunkWireframes.keys()) {
+      if (key.startsWith(prefix)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
+   * Remove biome boundary wireframes for a chunk.
+   */
+  private removeBiomeBoundary(coordinate: IChunkCoordinate): void {
+    const chunkKey = createChunkKey(coordinate.x, coordinate.z)
+    const boundaries = this.biomeBoundaryWireframes.get(chunkKey)
+    if (boundaries) {
+      for (const wall of boundaries) {
+        this.scene.remove(wall)
+      }
+      this.biomeBoundaryWireframes.delete(chunkKey)
+    }
   }
 
   /**
@@ -144,6 +283,11 @@ export class ChunkWireframeManager {
     }
     for (const wireframe of this.subChunkWireframes.values()) {
       wireframe.visible = visible
+    }
+    for (const boundaries of this.biomeBoundaryWireframes.values()) {
+      for (const wall of boundaries) {
+        wall.visible = visible
+      }
     }
   }
 
@@ -238,12 +382,21 @@ export class ChunkWireframeManager {
     for (const wireframe of this.subChunkWireframes.values()) {
       this.scene.remove(wireframe)
     }
+    for (const boundaries of this.biomeBoundaryWireframes.values()) {
+      for (const wall of boundaries) {
+        this.scene.remove(wall)
+      }
+    }
     this.wireframes.clear()
     this.subChunkWireframes.clear()
+    this.biomeBoundaryWireframes.clear()
     this.geometry.dispose()
     this.subChunkGeometry.dispose()
+    this.biomeBoundaryXGeometry.dispose()
+    this.biomeBoundaryZGeometry.dispose()
     this.visibleMaterial.dispose()
     this.culledMaterial.dispose()
     this.lightingMaterial.dispose()
+    this.biomeBoundaryMaterial.dispose()
   }
 }
