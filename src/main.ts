@@ -612,7 +612,7 @@ scheduler.registerTask(
   new BudgetAwareTask({
     id: 'liquid-physics',
     priority: TaskPriority.LOW,
-    maxUnitsPerFrame: 4,
+    maxUnitsPerFrame: 8,
     doWork: () => world.processNextLiquidPhysicsColumn(),
   })
 )

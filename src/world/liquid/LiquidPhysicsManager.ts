@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: LiquidPhysicsConfig = {
   nearbyDistance: 2,
   maxDistance: 8,
   enabled: true,
-  updateIntervalMs: 200,
+  updateIntervalMs: 25,
 }
 
 /**
@@ -50,6 +50,23 @@ const EVAPORATION_SEARCH_DISTANCE = 4
 
 /** Minimum water volume to avoid evaporation (4 = one full block worth) */
 const EVAPORATION_VOLUME_THRESHOLD = 4
+
+/**
+ * W-Shadow Compressibility Model Constants
+ * Based on: https://w-shadow.com/blog/2009/09/01/simple-fluid-simulation/
+ *
+ * The key insight: treat water as slightly compressible. Bottom cells can hold
+ * slightly more water than cells above them. This naturally creates pressure
+ * without explicit pressure tracking.
+ *
+ * We use integer "half-units" internally to prevent floating-point water loss.
+ * Each half-unit = 0.5 water level, so full water (4) = 8 half-units.
+ */
+/** Maximum water a cell can hold normally (uncompressed) */
+const MAX_MASS = WATER_LEVELS.FULL  // 4 units = 8 half-units
+
+/** Extra water a compressed cell can hold compared to cell above it */
+const MAX_COMPRESS = 0.1  // Small compression allowance for pressure simulation
 
 export class LiquidPhysicsManager {
   private readonly config: LiquidPhysicsConfig
@@ -174,9 +191,9 @@ export class LiquidPhysicsManager {
 
     const now = performance.now()
 
-    // Find the nearest column to process that's not on cooldown
-    let bestIndex = -1
-    let bestDistance = Infinity
+    // Find columns to process - prioritize nearby but don't starve distant ones
+    // Collect all valid (not on cooldown, within range) columns
+    const validIndices: Array<{ index: number; distance: number }> = []
 
     for (let i = 0; i < this.columnQueue.length; i++) {
       const key = this.columnQueue[i]
@@ -200,14 +217,31 @@ export class LiquidPhysicsManager {
         continue
       }
 
-      if (distance < bestDistance) {
-        bestDistance = distance
-        bestIndex = i
-      }
+      validIndices.push({ index: i, distance })
     }
 
     // No valid column found (all on cooldown or too far)
-    if (bestIndex === -1) {
+    if (validIndices.length === 0) {
+      return this.columnQueue.length > 0
+    }
+
+    // Separate into nearby (within ~1.5 chunks = 3x3 area) and distant
+    const nearbyThreshold = 1.5
+    const nearby = validIndices.filter((v) => v.distance <= nearbyThreshold)
+    const distant = validIndices.filter((v) => v.distance > nearbyThreshold)
+
+    // Pick from nearby columns equally (random selection for fairness)
+    // If no nearby, pick from distant (sorted by distance)
+    let bestIndex: number
+    if (nearby.length > 0) {
+      // Random selection among nearby columns - all get equal priority
+      const randomIdx = Math.floor(Math.random() * nearby.length)
+      bestIndex = nearby[randomIdx].index
+    } else if (distant.length > 0) {
+      // Sort distant by distance, pick nearest
+      distant.sort((a, b) => a.distance - b.distance)
+      bestIndex = distant[0].index
+    } else {
       return this.columnQueue.length > 0
     }
 
@@ -406,72 +440,92 @@ export class LiquidPhysicsManager {
   }
 
   /**
-   * Process liquid flow for a single block with oscillation prevention.
-   * Tracks recent flows and prevents reverse flows that would cause oscillation.
+   * Calculate the stable water level for the bottom cell of two vertically adjacent cells.
+   * This is the core of the W-Shadow compressibility model.
+   *
+   * When two cells are stacked, this function determines how the water should
+   * distribute between them to reach equilibrium. Bottom cells can hold slightly
+   * more water than normal when under pressure from above.
+   *
+   * @param totalMass Combined water in both cells
+   * @returns How much water the bottom cell should hold
+   */
+  private getStableStateBottom(totalMass: number): number {
+    if (totalMass <= MAX_MASS) {
+      // All water fits in bottom cell
+      return totalMass
+    } else if (totalMass < 2 * MAX_MASS + MAX_COMPRESS) {
+      // Some water in top, bottom gets compressed
+      // Formula: (MaxMass² + totalMass*MaxCompress) / (MaxMass + MaxCompress)
+      return (MAX_MASS * MAX_MASS + totalMass * MAX_COMPRESS) / (MAX_MASS + MAX_COMPRESS)
+    } else {
+      // Both cells near full, split evenly with compression bonus to bottom
+      return (totalMass + MAX_COMPRESS) / 2
+    }
+  }
+
+  /**
+   * Process liquid flow for a single block using W-Shadow compressibility model.
+   * Uses integer half-units to prevent water loss from floating-point rounding.
+   * Flow order: Down -> Horizontal -> Up (only for compressed water)
    * @returns true if any flow occurred
    */
   private processFlow(x: bigint, y: bigint, z: bigint): boolean {
     const blockId = this.getBlockId!(x, y, z)
     const level = this.getWaterLevel(blockId)
 
-    // Not a liquid block, nothing to do
-    if (level === 0) return false
+    // Not a liquid block or empty, nothing to do
+    if (level <= 0) return false
 
-    // === EIGHTH BLOCKS: Only fall down, no horizontal flow ===
-    if (blockId === BlockIds.WATER_EIGHTH) {
-      const belowId = this.getBlockId!(x, y - 1n, z)
-      const belowLevel = this.getWaterLevel(belowId)
+    // Work in half-units (integers) to prevent floating-point water loss
+    // Each half-unit = 0.5 level, so full water (4) = 8 half-units
+    let selfHalfUnits = Math.round(level * 2)
+    const originalSelfHalfUnits = selfHalfUnits
 
-      // Fall into empty space
-      if (belowId === BlockIds.AIR) {
-        this.setBlockRaw!(x, y - 1n, z, BlockIds.WATER_EIGHTH)
-        this.setBlockRaw!(x, y, z, BlockIds.AIR)
-        return true
-      }
-
-      // Combine with partial water below
-      if (belowLevel > 0 && belowLevel < WATER_LEVELS.FULL) {
-        const total = level + belowLevel
-        this.setBlockRaw!(x, y - 1n, z, this.levelToBlockId(total))
-        this.setBlockRaw!(x, y, z, BlockIds.AIR)
-        return true
-      }
-
-      // Stuck - check evaporation
-      const volume = this.getConnectedWaterVolume(x, y, z, EVAPORATION_SEARCH_DISTANCE)
-      if (volume < EVAPORATION_VOLUME_THRESHOLD) {
-        this.setBlockRaw!(x, y, z, BlockIds.AIR)
-        return true
-      }
-      return false
-    }
+    let changed = false
 
     // === STEP 1: FLOW DOWN (highest priority) ===
     const belowId = this.getBlockId!(x, y - 1n, z)
     const belowLevel = this.getWaterLevel(belowId)
 
-    // Fall into empty space - entire block moves down
-    if (belowId === BlockIds.AIR) {
-      this.setBlockRaw!(x, y - 1n, z, this.levelToBlockId(level))
-      this.setBlockRaw!(x, y, z, BlockIds.AIR)
-      return true
-    }
+    // Can flow down into air or partial water (with compression allowance)
+    const maxHalfUnits = Math.round((MAX_MASS + MAX_COMPRESS) * 2)  // ~8 half-units
+    if (belowId === BlockIds.AIR || (this.isLiquidBlock(belowId) && belowLevel < MAX_MASS + MAX_COMPRESS)) {
+      let belowHalfUnits = Math.round(belowLevel * 2)
 
-    // Combine with partial water below
-    if (belowLevel > 0 && belowLevel < WATER_LEVELS.FULL) {
-      const total = level + belowLevel
-      if (total <= WATER_LEVELS.FULL) {
-        this.setBlockRaw!(x, y - 1n, z, this.levelToBlockId(total))
-        this.setBlockRaw!(x, y, z, BlockIds.AIR)
-      } else {
-        this.setBlockRaw!(x, y - 1n, z, BlockIds.WATER)
-        this.setBlockRaw!(x, y, z, this.levelToBlockId(total - WATER_LEVELS.FULL))
+      // Calculate stable distribution using compressibility model
+      const totalMass = (selfHalfUnits + belowHalfUnits) * 0.5
+      const stableBottom = this.getStableStateBottom(totalMass)
+      const stableBottomHalfUnits = Math.round(stableBottom * 2)
+
+      // How many half-units should flow down
+      let flowHalfUnits = stableBottomHalfUnits - belowHalfUnits
+
+      // Clamp to available water
+      flowHalfUnits = Math.min(flowHalfUnits, selfHalfUnits)
+      flowHalfUnits = Math.max(0, flowHalfUnits)
+
+      // Only flow at least 1 half-unit (0.5 level)
+      if (flowHalfUnits >= 1) {
+        belowHalfUnits += flowHalfUnits
+        selfHalfUnits -= flowHalfUnits
+
+        this.setBlockRaw!(x, y - 1n, z, this.levelToBlockId(belowHalfUnits * 0.5))
+        changed = true
       }
-      return true
     }
 
-    // === STEP 2: HORIZONTAL SPREAD ===
-    const neighbors = [
+    // If we emptied out, update self and done
+    if (selfHalfUnits <= 0) {
+      if (changed) {
+        this.setBlockRaw!(x, y, z, BlockIds.AIR)
+      }
+      return changed
+    }
+
+    // === STEP 2: HORIZONTAL FLOW ===
+    // Get horizontal neighbors
+    const horizontalNeighbors = [
       { x: x + 1n, z },
       { x: x - 1n, z },
       { x, z: z + 1n },
@@ -481,96 +535,111 @@ export class LiquidPhysicsManager {
       return {
         x: n.x,
         z: n.z,
-        level: this.getWaterLevel(id),
+        blockId: id,
+        halfUnits: Math.round(this.getWaterLevel(id) * 2),
         canFlow: this.canFlowInto(id),
       }
     })
 
-    // Find targets with less water
-    const flowTargets = neighbors.filter((n) => n.canFlow && n.level < level)
+    // Filter to neighbors we can flow to (lower level and can receive water)
+    const flowableNeighbors = horizontalNeighbors.filter(
+      (n) => n.canFlow && n.halfUnits < selfHalfUnits
+    )
 
-    if (flowTargets.length === 0) {
-      // Check evaporation for quarter blocks
-      if (blockId === BlockIds.WATER_QUARTER) {
-        const volume = this.getConnectedWaterVolume(x, y, z, EVAPORATION_SEARCH_DISTANCE)
-        if (volume < EVAPORATION_VOLUME_THRESHOLD) {
-          this.setBlockRaw!(x, y, z, BlockIds.WATER_EIGHTH)
-          return true
+    if (flowableNeighbors.length > 0) {
+      // Sort by level (lowest first) - prioritize flowing to lowest points
+      flowableNeighbors.sort((a, b) => a.halfUnits - b.halfUnits)
+
+      // Calculate total water available for horizontal distribution
+      const totalHalfUnits = selfHalfUnits + flowableNeighbors.reduce((sum, n) => sum + n.halfUnits, 0)
+      const cellCount = flowableNeighbors.length + 1
+
+      // Target: everyone gets the same amount (or as close as possible)
+      const baseHalfUnits = Math.floor(totalHalfUnits / cellCount)
+      let remainder = totalHalfUnits % cellCount
+
+      // Only flow if we're above the target level
+      if (selfHalfUnits > baseHalfUnits) {
+        // Flow to each neighbor to bring them up to base level
+        for (const neighbor of flowableNeighbors) {
+          if (selfHalfUnits <= baseHalfUnits) break
+
+          // How much does this neighbor need to reach base (or base+1 for remainder)?
+          let targetHalfUnits = baseHalfUnits
+          if (remainder > 0 && neighbor.halfUnits < baseHalfUnits + 1) {
+            targetHalfUnits = baseHalfUnits + 1
+            remainder--
+          }
+
+          // Flow the difference
+          const need = targetHalfUnits - neighbor.halfUnits
+          if (need > 0) {
+            const flowHalfUnits = Math.min(need, selfHalfUnits - baseHalfUnits)
+            if (flowHalfUnits >= 1) {
+              neighbor.halfUnits += flowHalfUnits
+              selfHalfUnits -= flowHalfUnits
+              this.setBlockRaw!(neighbor.x, y, neighbor.z, this.levelToBlockId(neighbor.halfUnits * 0.5))
+              changed = true
+            }
+          }
         }
       }
-      return false
     }
 
-    // === QUARTER BLOCK SPECIAL CASE ===
-    if (blockId === BlockIds.WATER_QUARTER) {
-      const airTargets = flowTargets.filter((n) => n.level === 0)
-      if (airTargets.length > 0) {
-        this.setBlockRaw!(x, y, z, BlockIds.WATER_EIGHTH)
-        this.setBlockRaw!(airTargets[0].x, y, airTargets[0].z, BlockIds.WATER_EIGHTH)
+    // === STEP 3: FLOW UP (only for compressed water) ===
+    // Water only flows up if cell has MORE than MAX_MASS (is compressed)
+    const maxNormalHalfUnits = Math.round(MAX_MASS * 2)  // 8 half-units
+    if (selfHalfUnits > maxNormalHalfUnits) {
+      const aboveId = this.getBlockId!(x, y + 1n, z)
+      const aboveLevel = this.getWaterLevel(aboveId)
+
+      // Can flow up into air or partial water
+      if (aboveId === BlockIds.AIR || (this.isLiquidBlock(aboveId) && aboveLevel < MAX_MASS)) {
+        let aboveHalfUnits = Math.round(aboveLevel * 2)
+
+        // Flow excess compression upward
+        let flowHalfUnits = selfHalfUnits - maxNormalHalfUnits
+
+        // Clamp to capacity above
+        const aboveCapacity = maxNormalHalfUnits - aboveHalfUnits
+        flowHalfUnits = Math.min(flowHalfUnits, aboveCapacity)
+
+        if (flowHalfUnits >= 1) {
+          aboveHalfUnits += flowHalfUnits
+          selfHalfUnits -= flowHalfUnits
+
+          this.setBlockRaw!(x, y + 1n, z, this.levelToBlockId(aboveHalfUnits * 0.5))
+          changed = true
+        }
+      }
+    }
+
+    // Final update to self if changed
+    if (selfHalfUnits !== originalSelfHalfUnits) {
+      if (selfHalfUnits <= 0) {
+        this.setBlockRaw!(x, y, z, BlockIds.AIR)
+      } else {
+        this.setBlockRaw!(x, y, z, this.levelToBlockId(selfHalfUnits * 0.5))
+      }
+      changed = true
+    }
+
+    // === STEP 4: EVAPORATION for small isolated puddles ===
+    if (!changed && selfHalfUnits <= 2) {  // Quarter or less
+      const volume = this.getConnectedWaterVolume(x, y, z, EVAPORATION_SEARCH_DISTANCE)
+      if (volume < EVAPORATION_VOLUME_THRESHOLD) {
+        // Reduce by one half-unit
+        selfHalfUnits = Math.max(0, selfHalfUnits - 1)
+        if (selfHalfUnits <= 0) {
+          this.setBlockRaw!(x, y, z, BlockIds.AIR)
+        } else {
+          this.setBlockRaw!(x, y, z, this.levelToBlockId(selfHalfUnits * 0.5))
+        }
         return true
       }
     }
 
-    // Work in half-units (0.5 increments) to preserve water volume
-    const selfHalfUnits = Math.round(level * 2)
-    const totalHalfUnits = selfHalfUnits + flowTargets.reduce((sum, n) => sum + Math.round(n.level * 2), 0)
-    const cellCount = flowTargets.length + 1
-
-    // Calculate base level everyone should have (in half-units)
-    const baseHalfUnits = Math.floor(totalHalfUnits / cellCount)
-    const remainder = totalHalfUnits % cellCount
-
-    // Only flow if self is ABOVE the base level (prevents oscillation)
-    if (selfHalfUnits <= baseHalfUnits) {
-      return false
-    }
-
-    // Self keeps base amount, excess goes to neighbors
-    // Remainder goes to neighbors first (favor outward flow)
-    let remainderToGive = Math.min(remainder, selfHalfUnits - baseHalfUnits)
-
-    // Sort targets by level (lowest first) to fill empties first
-    flowTargets.sort((a, b) => a.level - b.level)
-
-    // Calculate new levels for ALL targets (not just changed ones)
-    // This ensures water conservation by tracking the total going to neighbors
-    const newLevels: Array<{ x: bigint; z: bigint; oldHalfUnits: number; newHalfUnits: number }> = []
-    let neighborsNewTotal = 0
-    let givenRemainder = 0
-
-    for (const target of flowTargets) {
-      const targetCurrentHalfUnits = Math.round(target.level * 2)
-      let targetNewHalfUnits = baseHalfUnits
-
-      // Give remainder to targets that need it most
-      if (givenRemainder < remainderToGive && targetCurrentHalfUnits < baseHalfUnits + 1) {
-        targetNewHalfUnits += 1
-        givenRemainder++
-      }
-
-      neighborsNewTotal += targetNewHalfUnits
-
-      // Only add to update list if actually changing
-      if (targetNewHalfUnits !== targetCurrentHalfUnits) {
-        newLevels.push({ x: target.x, z: target.z, oldHalfUnits: targetCurrentHalfUnits, newHalfUnits: targetNewHalfUnits })
-      }
-    }
-
-    // Calculate what self should have (total - what ALL neighbors will have)
-    // This guarantees water conservation
-    const newSelfHalfUnits = totalHalfUnits - neighborsNewTotal
-
-    if (newSelfHalfUnits === selfHalfUnits || newLevels.length === 0) {
-      return false // Nothing changed
-    }
-
-    // Apply changes
-    this.setBlockRaw!(x, y, z, this.levelToBlockId(newSelfHalfUnits * 0.5))
-    for (const nl of newLevels) {
-      this.setBlockRaw!(nl.x, y, nl.z, this.levelToBlockId(nl.newHalfUnits * 0.5))
-    }
-
-    return true
+    return changed
   }
 
   /**
