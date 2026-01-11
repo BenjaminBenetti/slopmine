@@ -79,6 +79,10 @@ export class WorldGenerator {
   private readonly featureReprocessQueue: FeatureReprocessRequest[] = []
   private readonly featureReprocessing: Set<string> = new Set() // "key:featureType"
 
+  // Pending water propagation - stores edge effects for chunks whose neighbors weren't ready yet
+  // Re-checked periodically to handle race conditions in concurrent chunk generation
+  private readonly pendingWaterPropagation: Map<SubChunkKey, { coordinate: ISubChunkCoordinate; edgeEffects: WaterEdgeEffects }> = new Map()
+
   constructor(world: WorldManager, config?: Partial<IGenerationConfig>) {
     this.world = world
     this.config = new GenerationConfig(config)
@@ -205,6 +209,7 @@ export class WorldGenerator {
   update(playerX: number, playerZ: number, playerY: number = 0): void {
     this.updateQueue(playerX, playerZ, playerY)
     this.processSubChunkQueue()
+    this.retryPendingWaterPropagation()
     this.processFeatureReprocessQueue()
   }
 
@@ -311,6 +316,7 @@ export class WorldGenerator {
           const subKey = createSubChunkKey(column.coordinate.x, column.coordinate.z, subY)
           this.generatedSubChunks.delete(subKey)
           this.generatingSubChunks.delete(subKey)
+          this.pendingWaterPropagation.delete(subKey)
         }
         continue
       }
@@ -327,6 +333,7 @@ export class WorldGenerator {
           const subKey = createSubChunkKey(column.coordinate.x, column.coordinate.z, subY)
           this.generatedSubChunks.delete(subKey)
           this.generatingSubChunks.delete(subKey)
+          this.pendingWaterPropagation.delete(subKey)
         }
       }
     }
@@ -536,9 +543,9 @@ export class WorldGenerator {
           )
           this.generatedSubChunks.add(key)
 
-          // Check if existing neighbors have water that should flow INTO this loaded chunk
-          // This fixes issues where water didn't propagate before saving, or race conditions
-          this.checkNeighborsForWaterPropagation(coordinate)
+          // NOTE: We intentionally do NOT propagate water for loaded chunks.
+          // The saved state is authoritative - if water didn't fill an area before saving,
+          // we shouldn't flood it on load. The player may have modified terrain.
 
           return
         }
@@ -765,40 +772,100 @@ export class WorldGenerator {
 
       let neighborHasWaterOnEdge = false
 
-      // Check the highest possible water block in this sub-chunk range
-      // If the neighbor has water at the top of the shared face, it propagates down
-      const checkWorldY = Math.min(subChunkMaxY, waterLevel)
-      const localY = checkWorldY - subChunkMinY
+      // Scan ALL Y levels where water could exist in this sub-chunk
+      // Water might only exist at lower Y levels if terrain is higher in some places
+      const maxLocalY = Math.min(waterLevel - subChunkMinY, SUB_CHUNK_HEIGHT - 1)
+      const minLocalY = 0
 
-      // Scan the neighbor's edge for water blocks
+      // Scan the neighbor's edge for water blocks at any Y level
       if (neighborEdgeX !== null) {
-        // Check along Z axis at fixed X
-        for (let z = 0; z < CHUNK_SIZE_Z && !neighborHasWaterOnEdge; z++) {
-          const blockId = neighborSubChunk.getBlockId(neighborEdgeX, localY, z)
-          if (blockId === liquidBlock) {
-            neighborHasWaterOnEdge = true
+        // Check along Z axis at fixed X, all Y levels
+        outerLoop: for (let localY = minLocalY; localY <= maxLocalY; localY++) {
+          for (let z = 0; z < CHUNK_SIZE_Z; z++) {
+            const blockId = neighborSubChunk.getBlockId(neighborEdgeX, localY, z)
+            if (blockId === liquidBlock) {
+              neighborHasWaterOnEdge = true
+              break outerLoop
+            }
           }
         }
       } else if (neighborEdgeZ !== null) {
-        // Check along X axis at fixed Z
-        for (let x = 0; x < CHUNK_SIZE_X && !neighborHasWaterOnEdge; x++) {
-          const blockId = neighborSubChunk.getBlockId(x, localY, neighborEdgeZ)
-          if (blockId === liquidBlock) {
-            neighborHasWaterOnEdge = true
+        // Check along X axis at fixed Z, all Y levels
+        outerLoop: for (let localY = minLocalY; localY <= maxLocalY; localY++) {
+          for (let x = 0; x < CHUNK_SIZE_X; x++) {
+            const blockId = neighborSubChunk.getBlockId(x, localY, neighborEdgeZ)
+            if (blockId === liquidBlock) {
+              neighborHasWaterOnEdge = true
+              break outerLoop
+            }
           }
         }
       }
 
       // If neighbor has water on their edge, queue ourselves for water propagation
       if (neighborHasWaterOnEdge) {
-        console.log(`Neighbor (${chunkX + dx}, ${chunkZ + dz}) has water, propagating to new chunk (${chunkX}, ${chunkZ})`)
         this.queueFeatureReprocess(coordinate, 'water', 0, propagationFrom)
       }
     }
   }
 
   /**
+   * Retry pending water propagations for chunks whose neighbors weren't ready.
+   * Called each frame to handle race conditions in concurrent chunk generation.
+   */
+  private retryPendingWaterPropagation(): void {
+    if (this.pendingWaterPropagation.size === 0) return
+
+    const toRemove: SubChunkKey[] = []
+
+    for (const [key, { coordinate, edgeEffects }] of this.pendingWaterPropagation) {
+      const chunkX = Number(coordinate.x)
+      const chunkZ = Number(coordinate.z)
+      const { subY } = coordinate
+
+      // Check if all neighbors with water edges are now generated
+      let allNeighborsReady = true
+      const neighbors: { dx: number; dz: number; hasWater: boolean; propagationFrom: PropagationDirection }[] = [
+        { dx: -1, dz: 0, hasWater: edgeEffects.hasWaterOnNegX, propagationFrom: 'fromPosX' },
+        { dx: 1, dz: 0, hasWater: edgeEffects.hasWaterOnPosX, propagationFrom: 'fromNegX' },
+        { dx: 0, dz: -1, hasWater: edgeEffects.hasWaterOnNegZ, propagationFrom: 'fromPosZ' },
+        { dx: 0, dz: 1, hasWater: edgeEffects.hasWaterOnPosZ, propagationFrom: 'fromNegZ' },
+      ]
+
+      for (const { dx, dz, hasWater, propagationFrom } of neighbors) {
+        if (!hasWater) continue
+
+        const neighborCoord: ISubChunkCoordinate = {
+          x: BigInt(chunkX + dx),
+          z: BigInt(chunkZ + dz),
+          subY,
+        }
+        const neighborKey = createSubChunkKey(neighborCoord.x, neighborCoord.z, subY)
+
+        if (this.generatedSubChunks.has(neighborKey)) {
+          // Neighbor is now ready - queue for reprocessing
+          this.queueFeatureReprocess(neighborCoord, 'water', 0, propagationFrom)
+        } else if (this.generatingSubChunks.has(neighborKey)) {
+          // Neighbor still generating - keep waiting
+          allNeighborsReady = false
+        }
+        // If neighbor is neither generated nor generating, it's out of range - skip it
+      }
+
+      if (allNeighborsReady) {
+        toRemove.push(key)
+      }
+    }
+
+    // Clean up completed entries
+    for (const key of toRemove) {
+      this.pendingWaterPropagation.delete(key)
+    }
+  }
+
+  /**
    * Queue neighboring sub-chunks for water reprocessing based on edge effects.
+   * Stores pending propagation if neighbors aren't generated yet.
    */
   private queueWaterPropagation(
     coordinate: ISubChunkCoordinate,
@@ -807,6 +874,10 @@ export class WorldGenerator {
     const chunkX = Number(coordinate.x)
     const chunkZ = Number(coordinate.z)
     const { subY } = coordinate
+    const sourceKey = createSubChunkKey(coordinate.x, coordinate.z, subY)
+
+    // Track if any neighbor wasn't ready
+    let hasUnreadyNeighbor = false
 
     // Check each direction where water touches the edge
     // propagationFrom tells the neighbor which edge the water is coming FROM
@@ -825,7 +896,21 @@ export class WorldGenerator {
         z: BigInt(chunkZ + dz),
         subY,
       }
-      this.queueFeatureReprocess(neighborCoord, 'water', 0, propagationFrom)
+      const neighborKey = createSubChunkKey(neighborCoord.x, neighborCoord.z, subY)
+
+      if (this.generatedSubChunks.has(neighborKey)) {
+        // Neighbor ready - queue immediately
+        this.queueFeatureReprocess(neighborCoord, 'water', 0, propagationFrom)
+      } else if (this.generatingSubChunks.has(neighborKey)) {
+        // Neighbor still generating - mark for retry
+        hasUnreadyNeighbor = true
+      }
+      // If neighbor is neither generated nor generating, it's out of range - skip
+    }
+
+    // Store for retry if any neighbor wasn't ready
+    if (hasUnreadyNeighbor) {
+      this.pendingWaterPropagation.set(sourceKey, { coordinate, edgeEffects })
     }
   }
 
@@ -841,8 +926,6 @@ export class WorldGenerator {
     while (this.featureReprocessQueue.length > 0 && started < maxPerFrame) {
       const item = this.featureReprocessQueue.shift()
       if (!item) break
-
-      console.log("Reprocessing Feature: ", item.featureType)
 
       const key = createSubChunkKey(item.coordinate.x, item.coordinate.z, item.coordinate.subY)
       const reprocessKey = `${key}:${item.featureType}`
@@ -977,7 +1060,6 @@ export class WorldGenerator {
 
     // Queue for remeshing if any water was added
     if (placedAnyWater) {
-      console.log(`Water propagated to chunk (${chunkX}, ${chunkZ}) from ${propagationFrom}`)
       this.world.queueSubChunkForMeshing(subChunk)
 
       // Recursively propagate to neighbors if water reached OTHER edges
