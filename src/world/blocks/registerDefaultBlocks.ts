@@ -14,9 +14,13 @@ import { DiamondBlockBlock } from './types/diamond_block/DiamondBlockBlock.ts'
 import { TorchBlock } from './types/torch/TorchBlock.ts'
 import { ForgeBlock } from './types/forge/ForgeBlock.ts'
 import { WaterBlock } from './types/water/WaterBlock.ts'
+import { WaterSevenEighthBlock } from './types/water_seven_eighth/WaterSevenEighthBlock.ts'
 import { WaterThreeQuarterBlock } from './types/water_three_quarter/WaterThreeQuarterBlock.ts'
+import { WaterFiveEighthBlock } from './types/water_five_eighth/WaterFiveEighthBlock.ts'
 import { WaterHalfBlock } from './types/water_half/WaterHalfBlock.ts'
+import { WaterThreeEighthBlock } from './types/water_three_eighth/WaterThreeEighthBlock.ts'
 import { WaterQuarterBlock } from './types/water_quarter/WaterQuarterBlock.ts'
+import { WaterEighthBlock } from './types/water_eighth/WaterEighthBlock.ts'
 
 /**
  * Register all default block types.
@@ -277,5 +281,69 @@ export function registerDefaultBlocks(): void {
       tags: [],
     },
     factory: () => new WaterQuarterBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.WATER_EIGHTH,
+      name: 'water_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new WaterEighthBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.WATER_SEVEN_EIGHTH,
+      name: 'water_seven_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 2,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new WaterSevenEighthBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.WATER_FIVE_EIGHTH,
+      name: 'water_five_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 1,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new WaterFiveEighthBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.WATER_THREE_EIGHTH,
+      name: 'water_three_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new WaterThreeEighthBlock(),
   })
 }

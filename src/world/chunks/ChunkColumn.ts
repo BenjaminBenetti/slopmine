@@ -3,14 +3,7 @@ import type { IChunkCoordinate } from '../interfaces/ICoordinates.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT, SUB_CHUNK_COUNT } from '../interfaces/IChunk.ts'
 import { SubChunk } from './SubChunk.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
-
-/** Liquid block IDs for fast lookup */
-const LIQUID_BLOCK_IDS: Set<BlockId> = new Set([
-  BlockIds.WATER,
-  BlockIds.WATER_THREE_QUARTER,
-  BlockIds.WATER_HALF,
-  BlockIds.WATER_QUARTER,
-])
+import { getBlock } from '../blocks/BlockRegistry.ts'
 
 /**
  * ChunkColumn manages a vertical stack of 16 sub-chunks.
@@ -92,7 +85,7 @@ export class ChunkColumn {
    * Check if a block ID is a liquid.
    */
   private isLiquidBlockId(blockId: BlockId): boolean {
-    return LIQUID_BLOCK_IDS.has(blockId)
+    return getBlock(blockId).properties.isLiquid
   }
 
   /**

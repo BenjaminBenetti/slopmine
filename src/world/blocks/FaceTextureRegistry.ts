@@ -27,6 +27,10 @@ export enum TextureId {
   WATER_THREE_QUARTER = 16,  // Non-greedy, partial liquid (3/4 height)
   WATER_HALF = 17,           // Non-greedy, partial liquid (1/2 height)
   WATER_QUARTER = 18,        // Non-greedy, partial liquid (1/4 height)
+  WATER_EIGHTH = 19,         // Non-greedy, evaporating liquid (1/8 height)
+  WATER_SEVEN_EIGHTH = 20,   // Non-greedy, partial liquid (7/8 height)
+  WATER_FIVE_EIGHTH = 21,    // Non-greedy, partial liquid (5/8 height)
+  WATER_THREE_EIGHTH = 22,   // Non-greedy, partial liquid (3/8 height)
 }
 
 // Cache for the face texture map

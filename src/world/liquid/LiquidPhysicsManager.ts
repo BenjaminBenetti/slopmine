@@ -30,15 +30,26 @@ const DEFAULT_CONFIG: LiquidPhysicsConfig = {
 
 /**
  * Water level constants for volume calculations.
- * Full = 4, ThreeQuarter = 3, Half = 2, Quarter = 1, Air = 0
+ * Levels are in "units" where Full = 4 units.
+ * Intermediate "odd eighth" levels allow even distribution between adjacent levels.
  */
 const WATER_LEVELS = {
   FULL: 4,
+  SEVEN_EIGHTH: 3.5,
   THREE_QUARTER: 3,
+  FIVE_EIGHTH: 2.5,
   HALF: 2,
+  THREE_EIGHTH: 1.5,
   QUARTER: 1,
+  EIGHTH: 0.5,
   AIR: 0,
 } as const
+
+/** Distance to search when calculating connected water volume */
+const EVAPORATION_SEARCH_DISTANCE = 4
+
+/** Minimum water volume to avoid evaporation (4 = one full block worth) */
+const EVAPORATION_VOLUME_THRESHOLD = 4
 
 export class LiquidPhysicsManager {
   private readonly config: LiquidPhysicsConfig
@@ -277,17 +288,26 @@ export class LiquidPhysicsManager {
 
   /**
    * Get the water level (0-4) for a block ID.
+   * Includes intermediate "odd eighth" levels for smooth distribution.
    */
   private getWaterLevel(blockId: BlockId): number {
     switch (blockId) {
       case BlockIds.WATER:
         return WATER_LEVELS.FULL
+      case BlockIds.WATER_SEVEN_EIGHTH:
+        return WATER_LEVELS.SEVEN_EIGHTH
       case BlockIds.WATER_THREE_QUARTER:
         return WATER_LEVELS.THREE_QUARTER
+      case BlockIds.WATER_FIVE_EIGHTH:
+        return WATER_LEVELS.FIVE_EIGHTH
       case BlockIds.WATER_HALF:
         return WATER_LEVELS.HALF
+      case BlockIds.WATER_THREE_EIGHTH:
+        return WATER_LEVELS.THREE_EIGHTH
       case BlockIds.WATER_QUARTER:
         return WATER_LEVELS.QUARTER
+      case BlockIds.WATER_EIGHTH:
+        return WATER_LEVELS.EIGHTH
       default:
         return WATER_LEVELS.AIR
     }
@@ -295,12 +315,17 @@ export class LiquidPhysicsManager {
 
   /**
    * Convert a water level (0-4) to a block ID.
+   * Includes intermediate "odd eighth" levels for smooth distribution.
    */
   private levelToBlockId(level: number): BlockId {
     if (level >= WATER_LEVELS.FULL) return BlockIds.WATER
+    if (level >= WATER_LEVELS.SEVEN_EIGHTH) return BlockIds.WATER_SEVEN_EIGHTH
     if (level >= WATER_LEVELS.THREE_QUARTER) return BlockIds.WATER_THREE_QUARTER
+    if (level >= WATER_LEVELS.FIVE_EIGHTH) return BlockIds.WATER_FIVE_EIGHTH
     if (level >= WATER_LEVELS.HALF) return BlockIds.WATER_HALF
+    if (level >= WATER_LEVELS.THREE_EIGHTH) return BlockIds.WATER_THREE_EIGHTH
     if (level >= WATER_LEVELS.QUARTER) return BlockIds.WATER_QUARTER
+    if (level >= WATER_LEVELS.EIGHTH) return BlockIds.WATER_EIGHTH
     return BlockIds.AIR
   }
 
@@ -310,9 +335,13 @@ export class LiquidPhysicsManager {
   private isLiquidBlock(blockId: BlockId): boolean {
     return (
       blockId === BlockIds.WATER ||
+      blockId === BlockIds.WATER_SEVEN_EIGHTH ||
       blockId === BlockIds.WATER_THREE_QUARTER ||
+      blockId === BlockIds.WATER_FIVE_EIGHTH ||
       blockId === BlockIds.WATER_HALF ||
-      blockId === BlockIds.WATER_QUARTER
+      blockId === BlockIds.WATER_THREE_EIGHTH ||
+      blockId === BlockIds.WATER_QUARTER ||
+      blockId === BlockIds.WATER_EIGHTH
     )
   }
 
@@ -326,8 +355,60 @@ export class LiquidPhysicsManager {
   }
 
   /**
+   * Calculate total water volume connected to this block.
+   * Uses BFS with distance limit for performance.
+   */
+  private getConnectedWaterVolume(x: bigint, y: bigint, z: bigint, maxDistance: number): number {
+    const visited = new Set<string>()
+    const queue: Array<{ x: bigint; y: bigint; z: bigint; dist: number }> = []
+    let totalVolume = 0
+
+    const key = (px: bigint, py: bigint, pz: bigint) => `${px},${py},${pz}`
+
+    // Start with current block
+    const startLevel = this.getWaterLevel(this.getBlockId!(x, y, z))
+    if (startLevel === 0) return 0
+
+    visited.add(key(x, y, z))
+    totalVolume += startLevel
+    queue.push({ x, y, z, dist: 0 })
+
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      if (current.dist >= maxDistance) continue
+
+      // Check all 6 neighbors
+      const neighbors = [
+        { x: current.x + 1n, y: current.y, z: current.z },
+        { x: current.x - 1n, y: current.y, z: current.z },
+        { x: current.x, y: current.y + 1n, z: current.z },
+        { x: current.x, y: current.y - 1n, z: current.z },
+        { x: current.x, y: current.y, z: current.z + 1n },
+        { x: current.x, y: current.y, z: current.z - 1n },
+      ]
+
+      for (const n of neighbors) {
+        const nKey = key(n.x, n.y, n.z)
+        if (visited.has(nKey)) continue
+        visited.add(nKey)
+
+        const nBlockId = this.getBlockId!(n.x, n.y, n.z)
+        const nLevel = this.getWaterLevel(nBlockId)
+
+        if (nLevel > 0) {
+          totalVolume += nLevel
+          queue.push({ x: n.x, y: n.y, z: n.z, dist: current.dist + 1 })
+        }
+      }
+    }
+
+    return totalVolume
+  }
+
+  /**
    * Process liquid flow for a single block using even distribution algorithm.
    * Flow priority: Down first, then horizontal spread to ALL valid neighbors.
+   * Also handles evaporation for quarter and eighth blocks.
    * @returns true if any flow occurred
    */
   private processFlow(x: bigint, y: bigint, z: bigint): boolean {
@@ -336,6 +417,36 @@ export class LiquidPhysicsManager {
 
     // Not a liquid block, nothing to do
     if (level === 0) return false
+
+    // === EIGHTH BLOCKS: Only fall down, no horizontal flow ===
+    if (blockId === BlockIds.WATER_EIGHTH) {
+      const belowId = this.getBlockId!(x, y - 1n, z)
+      const belowLevel = this.getWaterLevel(belowId)
+
+      // Fall into empty space
+      if (belowId === BlockIds.AIR) {
+        this.setBlockRaw!(x, y - 1n, z, BlockIds.WATER_EIGHTH)
+        this.setBlockRaw!(x, y, z, BlockIds.AIR)
+        return true
+      }
+
+      // Combine with partial water below
+      if (belowLevel > 0 && belowLevel < WATER_LEVELS.FULL) {
+        const total = level + belowLevel
+        this.setBlockRaw!(x, y - 1n, z, this.levelToBlockId(total))
+        this.setBlockRaw!(x, y, z, BlockIds.AIR)
+        return true
+      }
+
+      // Stuck - check evaporation
+      const volume = this.getConnectedWaterVolume(x, y, z, EVAPORATION_SEARCH_DISTANCE)
+      if (volume < EVAPORATION_VOLUME_THRESHOLD) {
+        this.setBlockRaw!(x, y, z, BlockIds.AIR)
+        return true
+      }
+      // Eighth blocks don't flow horizontally, just stay put
+      return false
+    }
 
     // === STEP 1: FLOW DOWN (highest priority) ===
     const belowId = this.getBlockId!(x, y - 1n, z)
@@ -361,7 +472,7 @@ export class LiquidPhysicsManager {
       return true
     }
 
-    // === STEP 2: HORIZONTAL SPREAD (even distribution) ===
+    // === STEP 2: HORIZONTAL SPREAD ===
     // Gather all neighbors
     const neighbors = [
       { x: x + 1n, z },
@@ -380,29 +491,76 @@ export class LiquidPhysicsManager {
 
     // Find targets: air or water with lower level than self
     const flowTargets = neighbors.filter((n) => n.canFlow && n.level < level)
-    if (flowTargets.length === 0) return false
+
+    // Shuffle flow targets to avoid directional bias (X-axis banding)
+    for (let i = flowTargets.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[flowTargets[i], flowTargets[j]] = [flowTargets[j], flowTargets[i]]
+    }
+
+    // === EVAPORATION: Check only when STUCK (can't flow down or horizontally) ===
+    if (flowTargets.length === 0) {
+      // Quarter blocks: start evaporating if isolated
+      if (blockId === BlockIds.WATER_QUARTER) {
+        const volume = this.getConnectedWaterVolume(x, y, z, EVAPORATION_SEARCH_DISTANCE)
+        if (volume < EVAPORATION_VOLUME_THRESHOLD) {
+          // Too small and stuck - become eighth (warning state)
+          this.setBlockRaw!(x, y, z, BlockIds.WATER_EIGHTH)
+          return true
+        }
+      }
+      return false
+    }
+
+    // === QUARTER BLOCK SPECIAL CASE: Split into eighths when flowing to air ===
+    // This prevents oscillation - eighths don't flow horizontally
+    if (blockId === BlockIds.WATER_QUARTER) {
+      const airTargets = flowTargets.filter((n) => n.level === 0)
+      if (airTargets.length > 0) {
+        // Split: self becomes eighth, first air target becomes eighth
+        this.setBlockRaw!(x, y, z, BlockIds.WATER_EIGHTH)
+        this.setBlockRaw!(airTargets[0].x, y, airTargets[0].z, BlockIds.WATER_EIGHTH)
+        return true
+      }
+      // If no air targets, quarter flows into lower water normally (below)
+    }
 
     // Calculate total water and even distribution
+    // Work in "half-units" (0.5 increments) to preserve water volume
     const totalWater = level + flowTargets.reduce((sum, n) => sum + n.level, 0)
+    const totalHalfUnits = Math.round(totalWater * 2) // Convert to half-units
     const cellCount = flowTargets.length + 1 // targets + self
 
-    // Calculate even split
-    const baseLevel = Math.floor(totalWater / cellCount)
-    let remainder = totalWater % cellCount
+    // Calculate even split in half-units
+    const baseHalfUnits = Math.floor(totalHalfUnits / cellCount)
+    const remainderHalfUnits = totalHalfUnits % cellCount
 
-    // Assign levels (remainder goes to cells that had more water, i.e., self first)
-    const selfLevel = baseLevel + (remainder > 0 ? 1 : 0)
-    if (remainder > 0) remainder--
+    // STABILITY CHECK: Only flow if self is actually above the base level
+    // This prevents oscillation while still allowing equalization
+    const selfHalfUnits = Math.round(level * 2)
+    if (selfHalfUnits <= baseHalfUnits) {
+      return false // Self is already at or below even distribution
+    }
+
+    // Assign levels - give remainder to targets first (favor flowing outward)
+    let remainingRemainder = remainderHalfUnits
+    const targetLevels: number[] = []
+    for (let i = 0; i < flowTargets.length; i++) {
+      const halfUnits = baseHalfUnits + (remainingRemainder > 0 ? 1 : 0)
+      if (remainingRemainder > 0) remainingRemainder--
+      targetLevels.push(halfUnits * 0.5) // Convert back to units
+    }
+
+    // Self gets what's left (base only, since remainder went to targets)
+    const selfLevel = baseHalfUnits * 0.5
 
     // Only proceed if something actually changes
-    if (selfLevel === level) return false
+    if (Math.abs(selfLevel - level) < 0.01) return false
 
     this.setBlockRaw!(x, y, z, this.levelToBlockId(selfLevel))
 
-    for (const target of flowTargets) {
-      const newLevel = baseLevel + (remainder > 0 ? 1 : 0)
-      if (remainder > 0) remainder--
-      this.setBlockRaw!(target.x, y, target.z, this.levelToBlockId(newLevel))
+    for (let i = 0; i < flowTargets.length; i++) {
+      this.setBlockRaw!(flowTargets[i].x, y, flowTargets[i].z, this.levelToBlockId(targetLevels[i]))
     }
 
     return true
