@@ -598,6 +598,25 @@ scheduler.registerTask(
   })
 )
 
+
+// Liquid physics queue management (moves pending blocks to processing queue)
+scheduler.createTask({
+  id: 'liquid-physics-queue',
+  priority: TaskPriority.LOW,
+  update: () =>
+    world.updateLiquidPhysicsQueue(renderer.camera.position.x, renderer.camera.position.z),
+})
+
+// Liquid physics processing (water flow simulation)
+scheduler.registerTask(
+  new BudgetAwareTask({
+    id: 'liquid-physics',
+    priority: TaskPriority.LOW,
+    maxUnitsPerFrame: 4,
+    doWork: () => world.processNextLiquidPhysicsColumn(),
+  })
+)
+
 /**
  * Transition from loading to playing state.
  * Shows UI elements and enables player controls.
@@ -661,6 +680,7 @@ const gameLoop = new GameLoop({
     fpsCounter.setLightingStats(world.getBackgroundLightingStats())
     fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
     fpsCounter.setRendererStats(rendererStats)
+    fpsCounter.setLiquidPhysicsStats(world.getLiquidPhysicsStats())
     // Add scheduler stats for debug display (reuse pre-allocated object)
     const schedulerMetrics = scheduler.getMetrics()
     if (schedulerMetrics) {

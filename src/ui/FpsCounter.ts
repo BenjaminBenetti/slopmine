@@ -37,6 +37,11 @@ export interface RendererStats {
   sceneObjects: number
 }
 
+export interface LiquidPhysicsStats {
+  columnsProcessed: number
+  columnsQueued: number
+}
+
 export interface FpsCounterUI {
   readonly element: HTMLDivElement
   update(metrics: FrameMetrics): void
@@ -46,6 +51,7 @@ export interface FpsCounterUI {
   setOcclusionStats(stats: OcclusionStats): void
   setSchedulerStats(stats: SchedulerStats): void
   setRendererStats(stats: RendererStats): void
+  setLiquidPhysicsStats(stats: LiquidPhysicsStats): void
   show(): void
   hide(): void
   toggle(): boolean
@@ -111,6 +117,8 @@ export function createFpsCounterUI(
   let occlusionStats: OcclusionStats | null = null
   let schedulerStats: SchedulerStats | null = null
   let rendererStats: RendererStats | null = null
+  let liquidPhysicsStats: LiquidPhysicsStats | null = null
+  let liquidColumnsProcessedTotal = 0
 
   // Target frame budget for 60 FPS
   const frameBudgetMs = 16.67
@@ -168,6 +176,11 @@ export function createFpsCounterUI(
           const objColor = rendererStats.sceneObjects < 12000 ? '#00ff00' : rendererStats.sceneObjects < 20000 ? '#ffaa00' : '#ff4444'
           lines.push(`SceneObj: <span style="color:${objColor}">${rendererStats.sceneObjects}</span>`)
         }
+        if (liquidPhysicsStats) {
+          const columnsPerSec = Math.round((liquidColumnsProcessedTotal / elapsedTime) * 1000)
+          lines.push(`Liquid: ${columnsPerSec}/s (${liquidPhysicsStats.columnsQueued} queued)`)
+          liquidColumnsProcessedTotal = 0
+        }
         el.innerHTML = lines.join('<br>')
 
         frameCount = 0
@@ -202,6 +215,11 @@ export function createFpsCounterUI(
 
     setRendererStats(stats: RendererStats): void {
       rendererStats = stats
+    },
+
+    setLiquidPhysicsStats(stats: LiquidPhysicsStats): void {
+      liquidColumnsProcessedTotal += stats.columnsProcessed
+      liquidPhysicsStats = stats
     },
 
     show(): void {

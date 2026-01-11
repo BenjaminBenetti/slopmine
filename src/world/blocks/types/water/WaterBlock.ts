@@ -3,17 +3,25 @@ import type { IBlockProperties, BlockFace, IBlock } from '../../../interfaces/IB
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
+import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
+import waterTexUrl from './assets/water.webp'
+
+// Register texture for atlas (marked as transparent)
+registerTextureUrl(TextureId.WATER, waterTexUrl, true)
+
+const waterTexture = loadBlockTexture(waterTexUrl)
 
 /**
- * Semi-transparent blue material for water.
- * Uses depthWrite: false for proper transparent rendering.
+ * Semi-transparent blue material for water with texture.
+ * depthWrite: true prevents overlapping water fragments from causing artifacts.
  */
 const waterMaterial = new THREE.MeshLambertMaterial({
-  color: 0x3399ff,
+  map: waterTexture,
   transparent: true,
-  opacity: 0.65,
+  opacity: 0.75,
   side: THREE.DoubleSide,
-  depthWrite: false,
+  depthWrite: true,
 })
 
 /**
@@ -43,7 +51,8 @@ export class WaterBlock extends TransparentBlock {
   }
 
   /**
-   * Water cannot be greedy-meshed due to transparency.
+   * Water should be greedy-meshed to eliminate internal face z-fighting.
+   * It will be placed in a separate transparent mesh group.
    */
   isGreedyMeshable(): boolean {
     return false

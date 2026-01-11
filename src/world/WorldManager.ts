@@ -27,6 +27,7 @@ import type {
 import type { OrePosition } from './generate/features/OreFeature.ts'
 import type { WaterEdgeEffects } from './generate/features/WaterFeature.ts'
 import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
+import { LiquidPhysicsManager } from './liquid/LiquidPhysicsManager.ts'
 import type { PersistenceManager, IModifiedChunkProvider } from '../persistence/PersistenceManager.ts'
 
 /**
@@ -88,6 +89,9 @@ export class WorldManager implements IModifiedChunkProvider {
   // Background lighting manager for all lighting updates (generation and block changes)
   private readonly backgroundLightingManager: BackgroundLightingManager
 
+  // Liquid physics manager for water flow simulation
+  private readonly liquidPhysicsManager: LiquidPhysicsManager
+
   // Persistence manager for saving/loading world data
   private persistenceManager: PersistenceManager | null = null
 
@@ -117,6 +121,23 @@ export class WorldManager implements IModifiedChunkProvider {
     this.backgroundLightingManager.setCallbacks(
       (coord) => this.chunkManager.getColumn(coord),
       (subChunk, priority, forceRequeue) => this.queueSubChunkForMeshing(subChunk, priority, forceRequeue)
+    )
+
+    // Initialize liquid physics manager
+    this.liquidPhysicsManager = new LiquidPhysicsManager({
+      nearbyDistance: 2,
+      maxDistance: 8,
+    })
+    this.liquidPhysicsManager.setCallbacks(
+      (x, y, z) => this.getBlockId(x, y, z),
+      (x, y, z, blockId) => this.setBlockRaw(x, y, z, blockId),
+      () => this.flushBlockChanges(),
+      (coord) => this.chunkManager.getColumn(coord) !== undefined,
+      (coord) => {
+        const column = this.chunkManager.getColumn(coord)
+        return column ? column.getLiquidBlockPositions() : []
+      },
+      (blockId, tag) => getBlock(blockId).properties.tags.includes(tag)
     )
   }
 
@@ -800,10 +821,38 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Get liquid physics statistics for debug display.
+   */
+  getLiquidPhysicsStats(): {
+    columnsProcessed: number
+    columnsQueued: number
+  } {
+    return this.liquidPhysicsManager.getStats()
+  }
+
+  /**
    * Register a callback for when a column starts being lit.
    */
   onColumnLightingStarted(callback: (coord: IChunkCoordinate) => void): () => void {
     return this.backgroundLightingManager.onLightingStarted(callback)
+  }
+
+  /**
+   * Update the liquid physics queue (does NOT process blocks).
+   * Call this every frame to keep the queue up to date.
+   */
+  updateLiquidPhysicsQueue(playerX: number, playerZ: number): void {
+    this.liquidPhysicsManager.setPlayerPosition(playerX, playerZ)
+    this.liquidPhysicsManager.updateQueue()
+  }
+
+  /**
+   * Process a single liquid physics column.
+   * Used by the task scheduler for budget-aware processing.
+   * @returns true if work was done (more may remain), false if no work
+   */
+  processNextLiquidPhysicsColumn(): boolean {
+    return this.liquidPhysicsManager.processNextColumn()
   }
 
   /**
@@ -855,6 +904,69 @@ export class WorldManager implements IModifiedChunkProvider {
     return column.getBlockId(local.x, local.y, local.z)
   }
 
+  // Track pending block changes for bulk updates
+  private readonly pendingBlockChanges: Map<string, { coord: IChunkCoordinate; subY: number; wasRemoval: boolean }> = new Map()
+
+  /**
+   * Set block at world coordinates without triggering updates.
+   * Use flushBlockChanges() after bulk updates to trigger lighting/meshing.
+   * Returns true if the block was changed.
+   */
+  setBlockRaw(x: bigint, y: bigint, z: bigint, blockId: BlockId): boolean {
+    const world: IWorldCoordinate = { x, y, z }
+    const chunkCoord = worldToChunk(world)
+    const local = worldToLocal(world)
+
+    let column = this.chunkManager.getColumn(chunkCoord)
+    if (!column) {
+      column = this.chunkManager.loadColumn(chunkCoord)
+    }
+
+    const oldBlockId = column.getBlockId(local.x, local.y, local.z)
+    const wasBlockRemoved = blockId === BlockIds.AIR && oldBlockId !== BlockIds.AIR
+
+    const changed = column.setBlockId(local.x, local.y, local.z, blockId)
+    if (changed) {
+      const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
+      const subChunk = column.getSubChunk(subY)
+      if (subChunk) {
+        subChunk.markModifiedByPlayer()
+        this.persistenceManager?.markSubChunkModified(subChunk.coordinate)
+      }
+
+      // Track this change for later flushing
+      const key = `${chunkCoord.x},${chunkCoord.z},${subY}`
+      const existing = this.pendingBlockChanges.get(key)
+      if (!existing || wasBlockRemoved) {
+        this.pendingBlockChanges.set(key, { coord: chunkCoord, subY, wasRemoval: wasBlockRemoved || existing?.wasRemoval || false })
+      }
+    }
+
+    return changed
+  }
+
+  /**
+   * Flush pending block changes - trigger lighting and meshing updates.
+   * Call this after a batch of setBlockRaw calls.
+   */
+  flushBlockChanges(): void {
+    for (const [, { coord, subY, wasRemoval }] of this.pendingBlockChanges) {
+      const column = this.chunkManager.getColumn(coord)
+      if (!column) continue
+
+      // Queue lighting update for this subchunk
+      this.backgroundLightingManager.queueBlockChange(
+        column,
+        16, // middle of chunk - lighting will propagate
+        subY * SUB_CHUNK_HEIGHT + 16,
+        16,
+        wasRemoval
+      )
+    }
+
+    this.pendingBlockChanges.clear()
+  }
+
   /**
    * Set block at world coordinates.
    * Returns true if the block was changed.
@@ -904,9 +1016,28 @@ export class WorldManager implements IModifiedChunkProvider {
       // Note: Vertical neighbor sub-chunks at Y boundaries are handled by the
       // lighting worker callback - it marks them as changed so they get remeshed
       // with correct lighting data (avoiding race condition with stale light)
+
+      // Trigger liquid physics for the chunk column containing this block
+      const isLiquid = this.isLiquidBlockId(blockId)
+      const wasLiquid = this.isLiquidBlockId(oldBlockId)
+      if (isLiquid || wasLiquid || wasBlockRemoved) {
+        this.liquidPhysicsManager.queueColumnAndNeighbors(x, z)
+      }
     }
 
     return changed
+  }
+
+  /**
+   * Check if a block ID is a liquid block.
+   */
+  private isLiquidBlockId(blockId: BlockId): boolean {
+    return (
+      blockId === BlockIds.WATER ||
+      blockId === BlockIds.WATER_THREE_QUARTER ||
+      blockId === BlockIds.WATER_HALF ||
+      blockId === BlockIds.WATER_QUARTER
+    )
   }
 
   /**

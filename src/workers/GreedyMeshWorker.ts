@@ -288,8 +288,19 @@ function getFaceLight(
   }
 }
 
+// Water block IDs for liquid-to-liquid face culling
+const WATER_BLOCK_IDS = new Set([13, 14, 15, 16])
+
+/**
+ * Check if a block is a liquid (water).
+ */
+function isLiquid(blockId: number): boolean {
+  return WATER_BLOCK_IDS.has(blockId)
+}
+
 /**
  * Check if a face should be rendered (adjacent block is not opaque).
+ * Also skips liquid-to-liquid faces to eliminate internal water faces.
  */
 function shouldRenderFace(
   blocks: Uint16Array,
@@ -298,7 +309,8 @@ function shouldRenderFace(
   x: number,
   y: number,
   z: number,
-  faceDir: number
+  faceDir: number,
+  currentBlockId: number
 ): boolean {
   let neighborBlock: number
 
@@ -310,6 +322,11 @@ function shouldRenderFace(
     case FACE_EAST:   neighborBlock = getBlockAt(blocks, neighbors, x + 1, y, z); break
     case FACE_WEST:   neighborBlock = getBlockAt(blocks, neighbors, x - 1, y, z); break
     default:          return false
+  }
+
+  // Skip faces between liquid blocks (water-to-water)
+  if (isLiquid(currentBlockId) && isLiquid(neighborBlock)) {
+    return false
   }
 
   return !isOpaque(neighborBlock, opaqueSet)
@@ -657,7 +674,7 @@ function processSubChunk(
           }
 
           // Check if face should be rendered
-          if (!shouldRenderFace(blocks, neighbors, opaqueSet, x, y, z, faceDir)) {
+          if (!shouldRenderFace(blocks, neighbors, opaqueSet, x, y, z, faceDir, blockId)) {
             continue
           }
 
@@ -680,8 +697,8 @@ function processSubChunk(
         const lightLevel = decodeLightLevel(faceData)
         const blockId = decodeBlockId(faceData)
 
-        // Determine if transparent (for now, just oak_leaves = blockId 5)
-        const isTransparent = blockId === 5
+        // Determine if transparent based on block's isOpaque property
+        const isTransparent = !isOpaque(blockId, opaqueSet)
 
         // Calculate slice origin (base position for this slice)
         // emitQuadVertices will add quadU/quadV offsets based on face direction

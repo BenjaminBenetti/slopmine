@@ -24,6 +24,9 @@ export enum TextureId {
   TORCH = 13,        // Non-greedy, but defined
   FORGE = 14,
   WATER = 15,        // Non-greedy, transparent liquid
+  WATER_THREE_QUARTER = 16,  // Non-greedy, partial liquid (3/4 height)
+  WATER_HALF = 17,           // Non-greedy, partial liquid (1/2 height)
+  WATER_QUARTER = 18,        // Non-greedy, partial liquid (1/4 height)
 }
 
 // Cache for the face texture map
@@ -99,7 +102,7 @@ export function getFaceTextureId(
  */
 export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   11, // Torch - custom slim geometry
-  13, // Water - transparent liquid
+  // Water (13-16) is now greedy-meshed to eliminate internal face z-fighting
 ])
 
 /**

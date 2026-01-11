@@ -12,7 +12,7 @@ export class GameLoop {
   private static readonly TICK_RATE = 60
   private static readonly TICK_DURATION_MS = 1000 / GameLoop.TICK_RATE
   private static readonly TICK_DURATION_S = 1 / GameLoop.TICK_RATE
-  private static readonly MAX_UPDATES_PER_FRAME = 10
+  private static readonly MAX_UPDATES_PER_FRAME = 1
 
   private lastTime = 0
   private lastRenderTime = 0

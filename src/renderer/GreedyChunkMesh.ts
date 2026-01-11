@@ -65,6 +65,7 @@ function getAtlasMaterial(isTransparent: boolean): THREE.Material {
 export class GreedyChunkMesh implements IChunkMesh {
   private readonly meshes: THREE.Mesh[] = []
   private readonly instancedMeshes: Map<BlockId, THREE.InstancedMesh> = new Map()
+  private readonly batchedMeshes: Map<BlockId, THREE.BatchedMesh> = new Map()
   private readonly group: THREE.Group = new THREE.Group()
 
   readonly chunkCoordinate: IChunkCoordinate
@@ -158,6 +159,8 @@ export class GreedyChunkMesh implements IChunkMesh {
 
   /**
    * Build instanced meshes for non-greedy blocks (torch, etc.).
+   * Uses BatchedMesh for transparent blocks with depthWrite:false (water)
+   * to enable per-instance depth sorting.
    */
   private buildNonGreedyBlocks(
     nonGreedyBlocks: Array<[number, Float32Array]>,
@@ -176,39 +179,120 @@ export class GreedyChunkMesh implements IChunkMesh {
       const material = block.getInstanceMaterial()
       const geometry = block.getInstanceGeometry()
 
-      const instancedMesh = new THREE.InstancedMesh(geometry, material, count)
-      instancedMesh.frustumCulled = true
-      instancedMesh.castShadow = true
-      instancedMesh.receiveShadow = true
+      // Check if this needs depth-sorted rendering (blended transparency)
+      const mat = Array.isArray(material) ? material[0] : material
+      const needsDepthSort = mat && mat.transparent
 
-      const colors = new Float32Array(count * 3)
-
-      for (let j = 0; j < count; j++) {
-        const posIdx = j * 3
-        matrix.setPosition(
-          positions[posIdx] + 0.5,
-          positions[posIdx + 1] + 0.5,
-          positions[posIdx + 2] + 0.5
-        )
-        instancedMesh.setMatrixAt(j, matrix)
-
-        // Calculate brightness from light level
-        const light = lights[j] ?? 15
-        const minBrightness = 0.02
-        const normalized = light / 15
-        const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
-
-        colors[posIdx] = brightness
-        colors[posIdx + 1] = brightness
-        colors[posIdx + 2] = brightness
-      }
-
-      instancedMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
-      instancedMesh.instanceMatrix.needsUpdate = true
-
-      this.instancedMeshes.set(blockId, instancedMesh)
-      this.group.add(instancedMesh)
+      this.buildInstancedMesh(blockId, geometry, material, positions, lights, count, matrix, mat)
     }
+  }
+
+  /**
+   * Build a BatchedMesh for blocks requiring per-instance depth sorting
+   */
+  private buildBatchedMesh(
+    blockId: BlockId,
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material | THREE.Material[],
+    positions: Float32Array,
+    lights: Uint8Array,
+    count: number,
+    matrix: THREE.Matrix4
+  ): void {
+    const posAttr = geometry.getAttribute('position')
+    const indexAttr = geometry.getIndex()
+    const vertexCount = posAttr ? posAttr.count : 0
+    const indexCount = indexAttr ? indexAttr.count : vertexCount * 2
+
+    const batchedMesh = new THREE.BatchedMesh(
+      count,
+      vertexCount * count,
+      indexCount * count,
+      Array.isArray(material) ? material[0] : material
+    )
+    batchedMesh.frustumCulled = false  // Disable frustum culling - causes edge artifacts
+    batchedMesh.perObjectFrustumCulled = false  // Disable per-instance culling too
+    batchedMesh.castShadow = true
+    batchedMesh.receiveShadow = true
+    batchedMesh.sortObjects = true  // Enable per-instance depth sorting
+    batchedMesh.renderOrder = 2     // Render after alpha-tested transparency
+
+    // Add geometry once
+    const geometryId = batchedMesh.addGeometry(geometry)
+
+    // Add instances
+    for (let j = 0; j < count; j++) {
+      const posIdx = j * 3
+      matrix.setPosition(
+        positions[posIdx] + 0.5,
+        positions[posIdx + 1] + 0.5,
+        positions[posIdx + 2] + 0.5
+      )
+      const instanceId = batchedMesh.addInstance(geometryId)
+      batchedMesh.setMatrixAt(instanceId, matrix)
+
+      // Calculate brightness from light level
+      const light = lights[j] ?? 15
+      const minBrightness = 0.02
+      const normalized = light / 15
+      const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
+      batchedMesh.setColorAt(instanceId, new THREE.Color(brightness, brightness, brightness))
+    }
+
+    this.batchedMeshes.set(blockId, batchedMesh)
+    this.group.add(batchedMesh)
+  }
+
+  /**
+   * Build an InstancedMesh for opaque or alpha-tested blocks.
+   */
+  private buildInstancedMesh(
+    blockId: BlockId,
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material | THREE.Material[],
+    positions: Float32Array,
+    lights: Uint8Array,
+    count: number,
+    matrix: THREE.Matrix4,
+    mat: THREE.Material | undefined
+  ): void {
+    const instancedMesh = new THREE.InstancedMesh(geometry, material, count)
+    instancedMesh.frustumCulled = true
+    instancedMesh.castShadow = true
+    instancedMesh.receiveShadow = true
+
+    // Set renderOrder for alpha-tested transparent materials
+    if (mat && mat.transparent) {
+      instancedMesh.renderOrder = 1
+    }
+
+    const colors = new Float32Array(count * 3)
+
+    for (let j = 0; j < count; j++) {
+      const posIdx = j * 3
+      matrix.setPosition(
+        positions[posIdx] + 0.5,
+        positions[posIdx + 1] + 0.5,
+        positions[posIdx + 2] + 0.5
+      )
+      instancedMesh.setMatrixAt(j, matrix)
+
+      // Calculate brightness from light level
+      const light = lights[j] ?? 15
+      const minBrightness = 0.02
+      const normalized = light / 15
+      const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
+
+      colors[posIdx] = brightness
+      colors[posIdx + 1] = brightness
+      colors[posIdx + 2] = brightness
+    }
+
+    instancedMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
+    instancedMesh.instanceMatrix.needsUpdate = true
+
+    this.instancedMeshes.set(blockId, instancedMesh)
+    this.group.add(instancedMesh)
   }
 
   /**
@@ -280,6 +364,12 @@ export class GreedyChunkMesh implements IChunkMesh {
     }
     this.instancedMeshes.clear()
 
+    for (const batchedMesh of this.batchedMeshes.values()) {
+      batchedMesh.dispose()
+      // Note: geometry and material are shared from Block definitions
+    }
+    this.batchedMeshes.clear()
+
     // Clear group children to release references
     this.group.clear()
   }
@@ -288,7 +378,7 @@ export class GreedyChunkMesh implements IChunkMesh {
    * Get the number of mesh objects in this chunk.
    */
   getMeshCount(): number {
-    return this.meshes.length + this.instancedMeshes.size
+    return this.meshes.length + this.instancedMeshes.size + this.batchedMeshes.size
   }
 
   /**

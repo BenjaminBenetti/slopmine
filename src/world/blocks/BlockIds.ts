@@ -17,4 +17,7 @@ export enum BlockIds {
   TORCH = 11,
   FORGE = 12,
   WATER = 13,
+  WATER_THREE_QUARTER = 14,
+  WATER_HALF = 15,
+  WATER_QUARTER = 16,
 }

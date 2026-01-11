@@ -14,6 +14,9 @@ import { DiamondBlockBlock } from './types/diamond_block/DiamondBlockBlock.ts'
 import { TorchBlock } from './types/torch/TorchBlock.ts'
 import { ForgeBlock } from './types/forge/ForgeBlock.ts'
 import { WaterBlock } from './types/water/WaterBlock.ts'
+import { WaterThreeQuarterBlock } from './types/water_three_quarter/WaterThreeQuarterBlock.ts'
+import { WaterHalfBlock } from './types/water_half/WaterHalfBlock.ts'
+import { WaterQuarterBlock } from './types/water_quarter/WaterQuarterBlock.ts'
 
 /**
  * Register all default block types.
@@ -223,8 +226,56 @@ export function registerDefaultBlocks(): void {
       lightLevel: 0,
       lightBlocking: 2,
       demolitionForceRequired: Infinity,
-      tags: [],
+      tags: [BlockTags.LIQUID_SOURCE],
     },
     factory: () => new WaterBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.WATER_THREE_QUARTER,
+      name: 'water_three_quarter',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 2,
+      demolitionForceRequired: Infinity,
+      tags: [BlockTags.LIQUID_SOURCE],
+    },
+    factory: () => new WaterThreeQuarterBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.WATER_HALF,
+      name: 'water_half',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 1,
+      demolitionForceRequired: Infinity,
+      tags: [BlockTags.LIQUID_SOURCE],
+    },
+    factory: () => new WaterHalfBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.WATER_QUARTER,
+      name: 'water_quarter',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new WaterQuarterBlock(),
   })
 }

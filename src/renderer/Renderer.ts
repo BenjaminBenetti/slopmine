@@ -36,6 +36,9 @@ export class Renderer {
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
+    // Enable default back-to-front sorting for transparent objects
+    this.renderer.setTransparentSort(null)
+
     document.body.appendChild(this.renderer.domElement)
 
     this.scene = new THREE.Scene()
