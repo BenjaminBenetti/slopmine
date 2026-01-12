@@ -48,8 +48,8 @@ const WATER_LEVELS = {
 /** Distance to search when calculating connected water volume */
 const EVAPORATION_SEARCH_DISTANCE = 4
 
-/** Minimum water volume to avoid evaporation (4 = one full block worth) */
-const EVAPORATION_VOLUME_THRESHOLD = 4
+/** Minimum water volume to avoid evaporation (8 = two full blocks worth) */
+const EVAPORATION_VOLUME_THRESHOLD = 8
 
 /**
  * W-Shadow Compressibility Model Constants
@@ -662,25 +662,54 @@ export class LiquidPhysicsManager {
 
     // CIRCULAR FLOW PREVENTION: If all flowable neighbors are within 1 half-unit of self,
     // AND there's no back pressure (no higher neighbors), we're at equilibrium - stop flowing
+    // Check for back pressure up to 5 blocks back in each horizontal direction
+    // Track WHICH directions have back pressure so we can flow opposite to them
+    const backPressureDirections: Array<{ dx: bigint; dz: bigint }> = []
+    const backPressureDistance = 5
+
+    const directions = [
+      { dx: 1n, dz: 0n },
+      { dx: -1n, dz: 0n },
+      { dx: 0n, dz: 1n },
+      { dx: 0n, dz: -1n },
+    ]
+
+    for (const dir of directions) {
+      let prevHalfUnits = selfHalfUnits
+      for (let dist = 1; dist <= backPressureDistance; dist++) {
+        const checkX = x + dir.dx * BigInt(dist)
+        const checkZ = z + dir.dz * BigInt(dist)
+
+        // Check same level - water higher than previous in chain
+        const checkId = this.getBlockId!(checkX, y, checkZ)
+        const checkHalfUnits = Math.round(this.getWaterLevel(checkId) * 2)
+
+        if (checkHalfUnits > prevHalfUnits) {
+          // Found higher water in this direction - record it
+          backPressureDirections.push(dir)
+          break
+        }
+
+        // Check elevated (Y+1) - any water above will flow down and push
+        const elevatedId = this.getBlockId!(checkX, y + 1n, checkZ)
+        if (this.isLiquidBlock(elevatedId)) {
+          backPressureDirections.push(dir)
+          break
+        }
+
+        // Stop searching this direction if we hit non-water (wall/air breaks the chain)
+        if (!this.isLiquidBlock(checkId)) {
+          break
+        }
+
+        prevHalfUnits = checkHalfUnits
+      }
+    }
+
     if (flowableNeighbors.length > 0) {
       const maxDiff = Math.max(...flowableNeighbors.map((n) => selfHalfUnits - n.halfUnits))
 
-      // Check for back pressure - any horizontal neighbor that's higher than us
-      let hasBackPressure = horizontalNeighbors.some((n) => n.halfUnits > selfHalfUnits)
-
-      // Also check for elevated back pressure - water at Y+1 in horizontal positions
-      // Any water above and beside us will flow down and push us
-      if (!hasBackPressure) {
-        for (const n of horizontalNeighbors) {
-          const elevatedId = this.getBlockId!(n.x, y + 1n, n.z)
-          if (this.isLiquidBlock(elevatedId)) {
-            hasBackPressure = true
-            break
-          }
-        }
-      }
-
-      if (maxDiff <= 1 && !hasBackPressure) {
+      if (maxDiff <= 1 && backPressureDirections.length === 0) {
         // Everyone is within 0.5 water level AND no pressure from behind
         // We've reached equilibrium - stop flowing to prevent circular shuffling
         this.previousWaterState.set(selfKey, selfHalfUnits)
@@ -690,6 +719,43 @@ export class LiquidPhysicsManager {
           return true
         }
         return changed
+      }
+
+      // If we're in near-equilibrium but have back pressure, only flow OPPOSITE to back pressure
+      // This makes room for incoming water
+      if (maxDiff <= 1 && backPressureDirections.length > 0) {
+        // Filter to only neighbors in opposite direction of back pressure
+        // AND not in the direction of another back pressure
+        const oppositeFlowNeighbors = flowableNeighbors.filter((n) => {
+          const ndx = n.x - x
+          const ndz = n.z - z
+
+          // First check: don't flow TOWARDS any back pressure direction
+          const flowsTowardsBackPressure = backPressureDirections.some((bp) => {
+            return ndx === bp.dx && ndz === bp.dz
+          })
+          if (flowsTowardsBackPressure) return false
+
+          // Second check: must be opposite to at least one back pressure direction
+          return backPressureDirections.some((bp) => {
+            // Opposite means: if pressure from +X, allow flow to -X
+            return (bp.dx !== 0n && ndx === -bp.dx) || (bp.dz !== 0n && ndz === -bp.dz)
+          })
+        })
+
+        if (oppositeFlowNeighbors.length === 0) {
+          // No valid opposite direction to flow - stay put
+          this.previousWaterState.set(selfKey, selfHalfUnits)
+          if (selfHalfUnits !== originalSelfHalfUnits) {
+            this.setBlockRaw!(x, y, z, this.levelToBlockId(selfHalfUnits * 0.5))
+            return true
+          }
+          return changed
+        }
+
+        // Replace flowable neighbors with only the opposite-direction ones
+        flowableNeighbors.length = 0
+        flowableNeighbors.push(...oppositeFlowNeighbors)
       }
     }
 
