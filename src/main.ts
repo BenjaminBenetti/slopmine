@@ -672,6 +672,13 @@ const gameLoop = new GameLoop({
     heldItemRenderer.render()
     // Update wireframe colors based on culling (after culling runs in render)
     wireframeManager.updateColors(world.getChunkMeshes())
+    // Update liquid physics indicators (blue circles at chunk corners when processing water)
+    wireframeManager.updateLiquidPhysicsIndicators(
+      world.getLiquidPhysicsQueuedColumns(),
+      playerBody.position.x,
+      playerBody.position.y,
+      playerBody.position.z
+    )
     // Measure total CPU time for update + render
     const cpuTime = performance.now() - frameCpuStart
     const renderRes = renderer.getRenderResolution()

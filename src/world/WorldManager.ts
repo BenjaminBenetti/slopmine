@@ -831,6 +831,14 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Get the set of chunk column keys currently queued for liquid physics.
+   * Used for debug visualization.
+   */
+  getLiquidPhysicsQueuedColumns(): ReadonlySet<ChunkKey> {
+    return this.liquidPhysicsManager.getQueuedColumnKeys()
+  }
+
+  /**
    * Register a callback for when a column starts being lit.
    */
   onColumnLightingStarted(callback: (coord: IChunkCoordinate) => void): () => void {

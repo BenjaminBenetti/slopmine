@@ -479,7 +479,7 @@ export class LiquidPhysicsManager {
   /**
    * Process liquid flow for a single block using W-Shadow compressibility model.
    * Uses integer half-units to prevent water loss from floating-point rounding.
-   * Flow order: Down -> Horizontal -> Up (only for compressed water)
+   * Flow order: Down -> Diagonal Down -> Horizontal -> Up (only for compressed water)
    * @returns true if any flow occurred
    */
   private processFlow(x: bigint, y: bigint, z: bigint): boolean {
@@ -912,5 +912,13 @@ export class LiquidPhysicsManager {
       columnsProcessed: processed,
       columnsQueued: this.columnQueue.length,
     }
+  }
+
+  /**
+   * Get the set of chunk column keys currently in the queue.
+   * Used for debug visualization.
+   */
+  getQueuedColumnKeys(): ReadonlySet<ChunkKey> {
+    return this.columnQueueSet
   }
 }

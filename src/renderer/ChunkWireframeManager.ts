@@ -21,14 +21,19 @@ export class ChunkWireframeManager {
   private readonly culledMaterial: THREE.LineBasicMaterial
   private readonly lightingMaterial: THREE.LineBasicMaterial
   private readonly biomeBoundaryMaterial: THREE.LineBasicMaterial
+  private readonly liquidPhysicsMaterial: THREE.LineBasicMaterial
   private readonly geometry: THREE.EdgesGeometry
   private readonly subChunkGeometry: THREE.EdgesGeometry
   private readonly biomeBoundaryXGeometry: THREE.BufferGeometry // Wall on X edge (runs along Z)
   private readonly biomeBoundaryZGeometry: THREE.BufferGeometry // Wall on Z edge (runs along X)
+  private readonly cornerCircleGeometry: THREE.BufferGeometry // Circle for liquid physics corners
   private visible = false
 
   // Track columns being lit (chunkKey -> expiry timestamp)
   private readonly lightingHighlights: Map<ChunkKey, number> = new Map()
+
+  // Track columns with active liquid physics (chunkKey -> corner circle meshes)
+  private readonly liquidPhysicsCorners: Map<ChunkKey, THREE.LineLoop[]> = new Map()
 
   // Frame counter for throttling color updates
   private frameCount = 0
@@ -79,9 +84,35 @@ export class ChunkWireframeManager {
       depthWrite: false,
     })
 
+    // Blue material for liquid physics indicators
+    this.liquidPhysicsMaterial = new THREE.LineBasicMaterial({
+      color: 0x0088ff,
+      depthTest: false,
+      depthWrite: false,
+      linewidth: 2,
+    })
+
     // Create diagonal line geometries for biome boundaries
     this.biomeBoundaryXGeometry = this.createDiagonalWallGeometry(CHUNK_SIZE_Z, CHUNK_HEIGHT)
     this.biomeBoundaryZGeometry = this.createDiagonalWallGeometry(CHUNK_SIZE_X, CHUNK_HEIGHT)
+
+    // Create circle geometry for liquid physics corner indicators
+    this.cornerCircleGeometry = this.createCircleGeometry(1.5, 16) // radius 1.5, 16 segments
+  }
+
+  /**
+   * Create a circle geometry in the XY plane (vertical, facing +Z).
+   * Will be rotated to face the player at runtime.
+   */
+  private createCircleGeometry(radius: number, segments: number): THREE.BufferGeometry {
+    const positions: number[] = []
+    for (let i = 0; i <= segments; i++) {
+      const angle = (i / segments) * Math.PI * 2
+      positions.push(Math.cos(angle) * radius, Math.sin(angle) * radius, 0)
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    return geometry
   }
 
   /**
@@ -309,6 +340,112 @@ export class ChunkWireframeManager {
   }
 
   /**
+   * Show liquid physics indicators at all sub-chunk corners.
+   * Creates circles at each corner of every sub-chunk in the column.
+   */
+  showLiquidPhysics(chunkX: bigint, chunkZ: bigint): void {
+    const key = createChunkKey(chunkX, chunkZ)
+    if (this.liquidPhysicsCorners.has(key)) return // Already showing
+
+    const worldX = Number(chunkX) * CHUNK_SIZE_X
+    const worldZ = Number(chunkZ) * CHUNK_SIZE_Z
+
+    // 4 XZ corners of the chunk
+    const xzCorners = [
+      { x: worldX, z: worldZ },
+      { x: worldX + CHUNK_SIZE_X, z: worldZ },
+      { x: worldX, z: worldZ + CHUNK_SIZE_Z },
+      { x: worldX + CHUNK_SIZE_X, z: worldZ + CHUNK_SIZE_Z },
+    ]
+
+    // Y levels at sub-chunk boundaries (0, 64, 128, ... 1024)
+    const subChunkCount = 16
+    const circles: THREE.LineLoop[] = []
+
+    for (const corner of xzCorners) {
+      for (let subY = 0; subY <= subChunkCount; subY++) {
+        const y = subY * SUB_CHUNK_HEIGHT
+        const circle = new THREE.LineLoop(this.cornerCircleGeometry, this.liquidPhysicsMaterial)
+        circle.position.set(corner.x, y, corner.z)
+        circle.renderOrder = 1000
+        this.scene.add(circle)
+        circles.push(circle)
+      }
+    }
+
+    this.liquidPhysicsCorners.set(key, circles)
+  }
+
+  /**
+   * Hide liquid physics indicators for a chunk column.
+   */
+  hideLiquidPhysics(chunkX: bigint, chunkZ: bigint): void {
+    const key = createChunkKey(chunkX, chunkZ)
+    const circles = this.liquidPhysicsCorners.get(key)
+    if (circles) {
+      for (const circle of circles) {
+        this.scene.remove(circle)
+      }
+      this.liquidPhysicsCorners.delete(key)
+    }
+  }
+
+  /**
+   * Clear all liquid physics indicators.
+   */
+  clearAllLiquidPhysics(): void {
+    for (const [key, circles] of this.liquidPhysicsCorners) {
+      for (const circle of circles) {
+        this.scene.remove(circle)
+      }
+    }
+    this.liquidPhysicsCorners.clear()
+  }
+
+  /**
+   * Update liquid physics indicators to match the current set of queued columns.
+   * Shows circles for chunks in the set, hides circles for chunks no longer in set.
+   * Circles face the player (billboard effect).
+   */
+  updateLiquidPhysicsIndicators(queuedColumns: ReadonlySet<ChunkKey>, playerX: number, playerY: number, playerZ: number): void {
+    if (!this.visible) {
+      // If wireframes are hidden, clear all indicators
+      if (this.liquidPhysicsCorners.size > 0) {
+        this.clearAllLiquidPhysics()
+      }
+      return
+    }
+
+    // Remove indicators for columns no longer in queue
+    for (const key of this.liquidPhysicsCorners.keys()) {
+      if (!queuedColumns.has(key)) {
+        const circles = this.liquidPhysicsCorners.get(key)!
+        for (const circle of circles) {
+          this.scene.remove(circle)
+        }
+        this.liquidPhysicsCorners.delete(key)
+      }
+    }
+
+    // Add indicators for new columns in queue and update all circles to face player
+    for (const key of queuedColumns) {
+      if (!this.liquidPhysicsCorners.has(key)) {
+        // New column - parse key and show indicators at all sub-chunk corners
+        const [xStr, zStr] = key.split(',')
+        const chunkX = BigInt(xStr)
+        const chunkZ = BigInt(zStr)
+        this.showLiquidPhysics(chunkX, chunkZ)
+      }
+
+      // Rotate all circles to face player
+      const circles = this.liquidPhysicsCorners.get(key)!
+      for (const circle of circles) {
+        circle.lookAt(playerX, circle.position.y, playerZ)
+      }
+    }
+  }
+
+  /**
    * Update wireframe colors based on chunk mesh visibility.
    * Green = being lit, Pink = visible, Yellow = culled.
    */
@@ -387,6 +524,14 @@ export class ChunkWireframeManager {
         this.scene.remove(wall)
       }
     }
+    // Clean up liquid physics indicators
+    for (const circles of this.liquidPhysicsCorners.values()) {
+      for (const circle of circles) {
+        this.scene.remove(circle)
+      }
+    }
+    this.liquidPhysicsCorners.clear()
+
     this.wireframes.clear()
     this.subChunkWireframes.clear()
     this.biomeBoundaryWireframes.clear()
@@ -394,9 +539,11 @@ export class ChunkWireframeManager {
     this.subChunkGeometry.dispose()
     this.biomeBoundaryXGeometry.dispose()
     this.biomeBoundaryZGeometry.dispose()
+    this.cornerCircleGeometry.dispose()
     this.visibleMaterial.dispose()
     this.culledMaterial.dispose()
     this.lightingMaterial.dispose()
     this.biomeBoundaryMaterial.dispose()
+    this.liquidPhysicsMaterial.dispose()
   }
 }
