@@ -32,4 +32,7 @@ export enum BlockIds {
   LAVA_THREE_EIGHTH = 26,
   LAVA_QUARTER = 27,
   LAVA_EIGHTH = 28,
+  SAND = 29,
+  SANDSTONE = 30,
+  CACTUS = 31,
 }

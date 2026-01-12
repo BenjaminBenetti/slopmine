@@ -2,13 +2,16 @@ import { TerrainGenerator } from './TerrainGenerator.ts'
 import type { IChunkData } from '../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../WorldManager.ts'
-import type { BlockId } from '../interfaces/IBlock.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
 import { localToWorld } from '../coordinates/CoordinateUtils.ts'
 import { FrameBudget } from '../../core/FrameBudget.ts'
 import { Feature, type FeatureContext } from './features/Feature.ts'
 import { CaveCarver } from './caves/CaveCarver.ts'
 import { SkylightPropagator } from '../lighting/SkylightPropagator.ts'
+import { evaluateTerrainConfig } from './terrain/NoiseEvaluator.ts'
+import type { TerrainConfig } from './terrain/TerrainConfig.ts'
+import type { SimplexNoise } from './SimplexNoise.ts'
+import type { BlockId } from '../interfaces/IBlock.ts'
 
 /**
  * Configuration for water/liquid generation within a biome.
@@ -142,36 +145,6 @@ export interface BiomeProperties {
    */
   readonly frequency: number
   /**
-   * The block type that will form the very top layer of the terrain in this biome.
-   * For example, this might be `dirt` or `sand`.
-   */
-  readonly surfaceBlock: BlockId
-  /**
-   * The block type found directly beneath the surface block in this biome.
-   * For example, this could be `dirt` below grass, or `sandstone` below sand.
-   */
-  readonly subsurfaceBlock: BlockId
-  /**
-   * How many blocks deep the `subsurfaceBlock` layer extends before hitting the base block.
-   * A higher value means a thicker layer of subsurface material.
-   */
-  readonly subsurfaceDepth: number
-  /**
-   * The primary block type that makes up the bulk of the terrain underneath the surface and subsurface layers.
-   * This is typically `stone` in most biomes.
-   */
-  readonly baseBlock: BlockId
-  /**
-   * Controls the intensity of height variations in the biome's terrain.
-   * A higher amplitude creates more dramatic hills and valleys, while a lower value results in flatter terrain.
-   */
-  readonly heightAmplitude: number
-  /**
-   * Shifts the entire terrain up or down from the standard sea level.
-   * A positive offset raises the biome, creating elevated plateaus; a negative offset lowers it, forming depressions.
-   */
-  readonly heightOffset: number
-  /**
    * Determines how many trees (or other large vegetation features) will attempt to generate in each chunk within this biome.
    * A higher density value means more trees will be scattered across the landscape.
    */
@@ -192,6 +165,12 @@ export interface BiomeProperties {
    * If not provided, no water will generate in this biome.
    */
   readonly water?: WaterSettings
+
+  /**
+   * Terrain configuration for height generation.
+   * Defines noise layers, height scaling, and combination mode.
+   */
+  readonly terrainConfig: TerrainConfig
 }
 
 /**
@@ -202,6 +181,24 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   protected readonly frameBudget = new FrameBudget()
   private caveCarver: CaveCarver | null = null
   private readonly skylightPropagator = new SkylightPropagator()
+
+  /**
+   * Fill a chunk/sub-chunk with terrain blocks. Must be implemented by each biome.
+   * Only processes blocks within the given Y range for efficient sub-chunk generation.
+   *
+   * @param chunk The chunk data to write blocks into
+   * @param minY Minimum world Y coordinate to fill (inclusive)
+   * @param maxY Maximum world Y coordinate to fill (inclusive)
+   * @param noise The noise generator for additional variation
+   * @param getHeightAt Function to get terrain height at world coordinates
+   */
+  protected abstract fillChunk(
+    chunk: IChunkData,
+    minY: number,
+    maxY: number,
+    noise: SimplexNoise,
+    getHeightAt: (worldX: number, worldZ: number) => number
+  ): void
 
   /**
    * Get the biome properties for serialization to workers.
@@ -222,49 +219,25 @@ export abstract class BiomeGenerator extends TerrainGenerator {
    * Get base terrain height at world coordinates (before features).
    */
   override getHeightAt(worldX: number, worldZ: number): number {
-    const baseNoise = this.noise.fractalNoise2D(worldX, worldZ, 4, 0.5, 0.01)
-
-    const { seaLevel } = this.config
-    const { heightAmplitude, heightOffset } = this.properties
-
-    const height = seaLevel + heightOffset + baseNoise * heightAmplitude
-
+    const height = evaluateTerrainConfig(
+      this.noise,
+      this.properties.terrainConfig,
+      worldX,
+      worldZ,
+      this.config.seaLevel
+    )
     return Math.floor(height)
   }
 
   /**
-   * Generate the base terrain (stone/dirt/grass layers).
-   * Yields based on time budget to prevent blocking the main thread.
+   * Generate the base terrain by calling fillChunk.
+   * For full chunks, minY is 0 (no offset) and maxY covers the full height.
    */
   protected async generateTerrain(chunk: IChunkData): Promise<void> {
-    const { surfaceBlock, subsurfaceBlock, subsurfaceDepth, baseBlock } =
-      this.properties
-    const coord = chunk.coordinate
+    const maxY = this.config.seaLevel + 100 // Allow for terrain above sea level
 
-    this.frameBudget.startFrame()
-
-    for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
-      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-        const worldCoord = localToWorld(coord, { x: localX, y: 0, z: localZ })
-        const worldX = Number(worldCoord.x)
-        const worldZ = Number(worldCoord.z)
-
-        const height = this.getHeightAt(worldX, worldZ)
-
-        this.fillColumn(
-          chunk,
-          localX,
-          localZ,
-          height,
-          surfaceBlock,
-          subsurfaceBlock,
-          subsurfaceDepth,
-          baseBlock
-        )
-      }
-      // Yield when frame budget is exhausted
-      await this.frameBudget.yieldIfNeeded()
-    }
+    // For full chunks, minY=0 means no Y offset (world Y = local Y)
+    this.fillChunk(chunk, 0, maxY, this.noise, (worldX, worldZ) => this.getHeightAt(worldX, worldZ))
   }
 
   /**

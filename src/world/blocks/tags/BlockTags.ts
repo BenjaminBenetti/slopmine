@@ -10,6 +10,7 @@ export const BlockTags = {
   METAL: 'metal',
   /** Liquid blocks that can sustain smaller liquid blocks (half or greater) */
   LIQUID_SOURCE: 'liquid_source',
+  SAND: 'sand',
 } as const
 
 export type BlockTag = (typeof BlockTags)[keyof typeof BlockTags]

@@ -29,6 +29,9 @@ import { LavaHalfBlock } from './types/lava_half/LavaHalfBlock.ts'
 import { LavaThreeEighthBlock } from './types/lava_three_eighth/LavaThreeEighthBlock.ts'
 import { LavaQuarterBlock } from './types/lava_quarter/LavaQuarterBlock.ts'
 import { LavaEighthBlock } from './types/lava_eighth/LavaEighthBlock.ts'
+import { SandBlock } from './types/sand/SandBlock.ts'
+import { SandstoneBlock } from './types/sandstone/SandstoneBlock.ts'
+import { CactusBlock } from './types/cactus/CactusBlock.ts'
 
 /**
  * Register all default block types.
@@ -482,5 +485,54 @@ export function registerDefaultBlocks(): void {
       tags: [],
     },
     factory: () => new LavaEighthBlock(),
+  })
+
+  // Desert biome blocks
+  registerBlock({
+    properties: {
+      id: BlockIds.SAND,
+      name: 'sand',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 0.5,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 0,
+      tags: [BlockTags.SAND],
+    },
+    factory: () => new SandBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.SANDSTONE,
+      name: 'sandstone',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 0.8,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.STONE],
+    },
+    factory: () => new SandstoneBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.CACTUS,
+      name: 'cactus',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 0.4,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 0,
+      tags: [],
+    },
+    factory: () => new CactusBlock(),
   })
 }

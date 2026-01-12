@@ -39,6 +39,9 @@ export enum TextureId {
   LAVA_THREE_EIGHTH = 28,    // Non-greedy, partial liquid (3/8 height)
   LAVA_QUARTER = 29,         // Non-greedy, partial liquid (1/4 height)
   LAVA_EIGHTH = 30,          // Non-greedy, evaporating liquid (1/8 height)
+  SAND = 31,                 // sand.webp
+  SANDSTONE = 32,            // sandstone.webp
+  CACTUS = 33,               // cactus.webp
 }
 
 // Cache for the face texture map

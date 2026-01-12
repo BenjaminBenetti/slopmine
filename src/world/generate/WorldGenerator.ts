@@ -147,16 +147,11 @@ export class WorldGenerator {
 
     return {
       name: props.name,
-      surfaceBlock: props.surfaceBlock,
-      subsurfaceBlock: props.subsurfaceBlock,
-      subsurfaceDepth: props.subsurfaceDepth,
-      baseBlock: props.baseBlock,
-      heightAmplitude: props.heightAmplitude,
-      heightOffset: props.heightOffset,
       treeDensity: props.treeDensity,
       features,
       caves: props.caves,
       water: props.water,
+      terrainConfig: props.terrainConfig,
     }
   }
 

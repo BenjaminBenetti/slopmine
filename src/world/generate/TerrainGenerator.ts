@@ -1,17 +1,16 @@
 import { SimplexNoise } from './SimplexNoise.ts'
-import { GenerationConfig } from './GenerationConfig.ts'
+import type { IGenerationConfig } from './GenerationConfig.ts'
 import type { IChunkData } from '../interfaces/IChunkData.ts'
 import type { WorldManager } from '../WorldManager.ts'
-import type { BlockId } from '../interfaces/IBlock.ts'
 
 /**
  * Base class for terrain generators with common utilities.
  */
 export abstract class TerrainGenerator {
   protected readonly noise: SimplexNoise
-  protected readonly config: GenerationConfig
+  protected readonly config: IGenerationConfig
 
-  constructor(config: GenerationConfig) {
+  constructor(config: IGenerationConfig) {
     this.config = config
     this.noise = new SimplexNoise(config.seed)
   }
@@ -21,34 +20,6 @@ export abstract class TerrainGenerator {
    * Must be implemented by subclasses for biome-specific height variations.
    */
   abstract getHeightAt(worldX: number, worldZ: number): number
-
-  /**
-   * Fill a column with layered blocks (stone -> subsurface -> surface).
-   */
-  protected fillColumn(
-    chunk: IChunkData,
-    localX: number,
-    localZ: number,
-    height: number,
-    surfaceBlock: BlockId,
-    subsurfaceBlock: BlockId,
-    subsurfaceDepth: number,
-    baseBlock: BlockId
-  ): void {
-    for (let y = 0; y <= height; y++) {
-      let blockId: BlockId
-
-      if (y === height) {
-        blockId = surfaceBlock
-      } else if (y > height - subsurfaceDepth) {
-        blockId = subsurfaceBlock
-      } else {
-        blockId = baseBlock
-      }
-
-      chunk.setBlockId(localX, y, localZ, blockId)
-    }
-  }
 
   /**
    * Deterministic random based on position.

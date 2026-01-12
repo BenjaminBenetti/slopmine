@@ -3,11 +3,14 @@ import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
+import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
+import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
+import type { SimplexNoise } from '../SimplexNoise.ts'
 
 /**
  * Grassy hills biome with dramatic rolling hills and sparse oak trees.
@@ -16,12 +19,6 @@ export class GrassyHillsGenerator extends BiomeGenerator {
   protected readonly properties: BiomeProperties = {
     name: 'grassy-hills',
     frequency: 0.25,
-    surfaceBlock: BlockIds.GRASS,
-    subsurfaceBlock: BlockIds.DIRT,
-    subsurfaceDepth: 4,
-    baseBlock: BlockIds.STONE,
-    heightAmplitude: 13,
-    heightOffset: 10,
     treeDensity: 1.5,
     features: [
       new CliffFeature({
@@ -109,9 +106,79 @@ export class GrassyHillsGenerator extends BiomeGenerator {
       frequency: 0.3,         // Fewer water pools in hills
       minDepth: 3,            // Need deeper depressions in hilly terrain
     },
+    terrainConfig: {
+      layers: [
+        {
+          type: 'fractal',
+          octaves: 4,
+          persistence: 0.5,
+          scale: 0.01,
+          weight: 1.0,
+        },
+      ],
+      baseHeight: 10,
+      heightScale: 13,
+      combineMode: 'add',
+    } as TerrainConfig,
   }
 
   private readonly TREE_GRID_SIZE = 8
+
+  /**
+   * Fill terrain within the given Y range with grass, dirt, and stone layers.
+   * Only processes blocks within minY/maxY for efficient sub-chunk generation.
+   *
+   * @param chunk The chunk to fill (uses local Y coordinates for setBlockId)
+   * @param minY Minimum world Y coordinate of this chunk/sub-chunk
+   * @param maxY Maximum world Y coordinate of this chunk/sub-chunk
+   */
+  protected fillChunk(
+    chunk: IChunkData,
+    minY: number,
+    maxY: number,
+    noise: SimplexNoise,
+    getHeightAt: (worldX: number, worldZ: number) => number
+  ): void {
+    const coord = chunk.coordinate
+    const terrainFloor = this.config.seaLevel - this.config.terrainThickness
+
+    for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
+      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
+        const worldCoord = localToWorld(coord, { x: localX, y: 0, z: localZ })
+        const worldX = Number(worldCoord.x)
+        const worldZ = Number(worldCoord.z)
+
+        const height = getHeightAt(worldX, worldZ)
+
+        // Calculate layer boundaries (world Y)
+        const surfaceY = height
+        const dirtStartY = height - 1
+        const dirtEndY = height - 4  // 4 blocks of dirt
+        const stoneStartY = dirtEndY - 1
+        const stoneEndY = terrainFloor
+
+        // Surface: grass (only if within Y range)
+        if (surfaceY >= minY && surfaceY <= maxY) {
+          const localY = surfaceY - minY
+          chunk.setBlockId(localX, localY, localZ, BlockIds.GRASS)
+        }
+
+        // Subsurface: dirt (only blocks within Y range)
+        for (let worldY = Math.min(dirtStartY, maxY); worldY >= Math.max(dirtEndY, minY); worldY--) {
+          if (worldY >= terrainFloor) {
+            const localY = worldY - minY
+            chunk.setBlockId(localX, localY, localZ, BlockIds.DIRT)
+          }
+        }
+
+        // Base: stone (only blocks within Y range)
+        for (let worldY = Math.min(stoneStartY, maxY); worldY >= Math.max(stoneEndY, minY); worldY--) {
+          const localY = worldY - minY
+          chunk.setBlockId(localX, localY, localZ, BlockIds.STONE)
+        }
+      }
+    }
+  }
 
   protected override async generateDecorations(
     chunk: Chunk,

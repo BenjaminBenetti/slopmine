@@ -19,12 +19,56 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interface
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
 import { registerDefaultBlocks } from '../world/blocks/registerDefaultBlocks.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
-import type { CaveSettings, WaterSettings } from '../world/generate/BiomeGenerator.ts'
+import { evaluateTerrainConfig } from '../world/generate/terrain/NoiseEvaluator.ts'
+import type { TerrainConfig } from '../world/generate/terrain/TerrainConfig.ts'
+import type { CaveSettings, WaterSettings, BiomeGenerator } from '../world/generate/BiomeGenerator.ts'
 import type { IGenerationConfig } from '../world/generate/GenerationConfig.ts'
-import type { BlockId } from '../world/interfaces/IBlock.ts'
+
+// Import biome generators for direct instantiation
+import { PlainsGenerator } from '../world/generate/biomes/PlainsGenerator.ts'
+import { GrassyHillsGenerator } from '../world/generate/biomes/GrassyHillsGenerator.ts'
 
 // Initialize block registry in worker context
 registerDefaultBlocks()
+
+/**
+ * Cache of biome generator instances by seed+name key.
+ * Biome generators are created lazily and cached for reuse.
+ */
+const biomeCache = new Map<string, BiomeGenerator>()
+
+/**
+ * Get or create a biome generator instance for the given config.
+ */
+function getBiomeGenerator(name: string, seed: number, seaLevel: number, terrainThickness: number): BiomeGenerator {
+  const key = `${seed}-${name}`
+  let generator = biomeCache.get(key)
+
+  if (!generator) {
+    const config: IGenerationConfig = {
+      seed,
+      seaLevel,
+      terrainThickness,
+      chunkDistance: 8,
+    }
+
+    switch (name) {
+      case 'plains':
+        generator = new PlainsGenerator(config)
+        break
+      case 'grassy-hills':
+        generator = new GrassyHillsGenerator(config)
+        break
+      default:
+        // Default to plains for unknown biomes
+        generator = new PlainsGenerator(config)
+    }
+
+    biomeCache.set(key, generator)
+  }
+
+  return generator
+}
 
 /**
  * Serialized feature config passed from main thread.
@@ -39,16 +83,11 @@ export type FeatureConfig =
  */
 export interface WorkerBiomeConfig {
   name: string
-  surfaceBlock: BlockId
-  subsurfaceBlock: BlockId
-  subsurfaceDepth: number
-  baseBlock: BlockId
-  heightAmplitude: number
-  heightOffset: number
   treeDensity: number
   features: FeatureConfig[]
   caves?: CaveSettings
   water?: WaterSettings
+  terrainConfig: TerrainConfig
 }
 
 /**
@@ -95,6 +134,13 @@ function smoothstep(t: number): number {
  */
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t
+}
+
+/**
+ * Get the TerrainConfig from a biome config.
+ */
+function getTerrainConfig(biomeConfig: WorkerBiomeConfig): TerrainConfig {
+  return biomeConfig.terrainConfig
 }
 
 /**
@@ -229,6 +275,7 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
 
 /**
  * Generate terrain height at a world position for a single biome.
+ * Uses terrainConfig if available, otherwise falls back to legacy calculation.
  */
 function getHeightAt(
   noise: SimplexNoise,
@@ -237,9 +284,8 @@ function getHeightAt(
   seaLevel: number,
   biomeConfig: WorkerBiomeConfig
 ): number {
-  const baseNoise = noise.fractalNoise2D(worldX, worldZ, 4, 0.5, 0.01)
-  const { heightAmplitude, heightOffset } = biomeConfig
-  return Math.floor(seaLevel + heightOffset + baseNoise * heightAmplitude)
+  const config = getTerrainConfig(biomeConfig)
+  return Math.floor(evaluateTerrainConfig(noise, config, worldX, worldZ, seaLevel))
 }
 
 /**
@@ -289,7 +335,9 @@ function bilerp(values: [number, number, number, number], u: number, v: number):
 
 /**
  * Generate blended terrain height at a world position.
- * Uses bilinear interpolation at corners for seamless transitions.
+ * Uses NOISE-LEVEL BLENDING: evaluates each biome's terrain config separately,
+ * then blends the resulting HEIGHT VALUES. This allows biomes with completely
+ * different noise types to blend smoothly.
  */
 function getBlendedHeightAt(
   noise: SimplexNoise,
@@ -299,9 +347,7 @@ function getBlendedHeightAt(
   biomeData: BiomeBlendData
 ): number {
   const { primary } = biomeData
-
-  // Get base noise (same for all biomes)
-  const baseNoise = noise.fractalNoise2D(worldX, worldZ, 4, 0.5, 0.01)
+  const primaryConfig = getTerrainConfig(primary)
 
   // Calculate distance to nearest boundary for each axis
   const xBoundary = getDistanceToBoundary(worldX)
@@ -310,107 +356,82 @@ function getBlendedHeightAt(
   const xInBlend = xBoundary.distance < BLEND_DISTANCE
   const zInBlend = zBoundary.distance < BLEND_DISTANCE
 
-  let blendedAmplitude: number
-  let blendedOffset: number
+  // Evaluate primary biome's height
+  const primaryHeight = evaluateTerrainConfig(noise, primaryConfig, worldX, worldZ, seaLevel)
+
+  if (!xInBlend && !zInBlend) {
+    // No blending needed - use primary biome only
+    return Math.floor(primaryHeight)
+  }
+
+  // NOISE-LEVEL BLENDING: Evaluate each biome separately, then blend heights
 
   if (xInBlend && zInBlend) {
-    // Corner case: use bilinear interpolation between 4 biomes
+    // Corner case: bilinear interpolation of 4 biome heights
     const [b00, b10, b01, b11] = getCornerBiomes(
       biomeData,
       xBoundary.neighborDirection,
       zBoundary.neighborDirection
     )
 
+    // Evaluate all 4 corner biomes at this position
+    const h00 = evaluateTerrainConfig(noise, getTerrainConfig(b00), worldX, worldZ, seaLevel)
+    const h10 = evaluateTerrainConfig(noise, getTerrainConfig(b10), worldX, worldZ, seaLevel)
+    const h01 = evaluateTerrainConfig(noise, getTerrainConfig(b01), worldX, worldZ, seaLevel)
+    const h11 = evaluateTerrainConfig(noise, getTerrainConfig(b11), worldX, worldZ, seaLevel)
+
     // Blend factors: 0.5 at boundary, 0 at edge of blend zone
-    // u represents "how much toward X neighbor" (0.5 at boundary)
-    // v represents "how much toward Z neighbor" (0.5 at boundary)
     const u = 0.5 * (1 - smoothstep(xBoundary.distance / BLEND_DISTANCE))
     const v = 0.5 * (1 - smoothstep(zBoundary.distance / BLEND_DISTANCE))
 
-    // Bilinear interpolation of parameters
-    blendedAmplitude = bilerp(
-      [b00.heightAmplitude, b10.heightAmplitude, b01.heightAmplitude, b11.heightAmplitude],
-      u, v
-    )
-    blendedOffset = bilerp(
-      [b00.heightOffset, b10.heightOffset, b01.heightOffset, b11.heightOffset],
-      u, v
-    )
+    // Bilinear interpolation of heights
+    return Math.floor(bilerp([h00, h10, h01, h11], u, v))
+
   } else if (xInBlend) {
-    // Only X axis blending
+    // X-axis blending only
     const neighbor = xBoundary.neighborDirection === -1
       ? (biomeData.west ?? primary)
       : (biomeData.east ?? primary)
+    const neighborHeight = evaluateTerrainConfig(
+      noise, getTerrainConfig(neighbor), worldX, worldZ, seaLevel
+    )
     // t: 0.5 at boundary, 1.0 at edge of blend zone (fully primary)
     const t = 0.5 + 0.5 * smoothstep(xBoundary.distance / BLEND_DISTANCE)
-    blendedAmplitude = lerp(neighbor.heightAmplitude, primary.heightAmplitude, t)
-    blendedOffset = lerp(neighbor.heightOffset, primary.heightOffset, t)
-  } else if (zInBlend) {
-    // Only Z axis blending
+    return Math.floor(lerp(neighborHeight, primaryHeight, t))
+
+  } else {
+    // Z-axis blending only
     const neighbor = zBoundary.neighborDirection === -1
       ? (biomeData.north ?? primary)
       : (biomeData.south ?? primary)
+    const neighborHeight = evaluateTerrainConfig(
+      noise, getTerrainConfig(neighbor), worldX, worldZ, seaLevel
+    )
     const t = 0.5 + 0.5 * smoothstep(zBoundary.distance / BLEND_DISTANCE)
-    blendedAmplitude = lerp(neighbor.heightAmplitude, primary.heightAmplitude, t)
-    blendedOffset = lerp(neighbor.heightOffset, primary.heightOffset, t)
-  } else {
-    // No blending needed
-    blendedAmplitude = primary.heightAmplitude
-    blendedOffset = primary.heightOffset
-  }
-
-  // Compute height with blended parameters
-  return Math.floor(seaLevel + blendedOffset + baseNoise * blendedAmplitude)
-}
-
-/**
- * Fill a column with layered blocks.
- */
-function fillColumn(
-  chunk: WorkerChunk,
-  localX: number,
-  localZ: number,
-  height: number,
-  biomeConfig: WorkerBiomeConfig
-): void {
-  const { surfaceBlock, subsurfaceBlock, subsurfaceDepth, baseBlock } = biomeConfig
-
-  for (let y = 0; y <= height; y++) {
-    let blockId: number
-
-    if (y === height) {
-      blockId = surfaceBlock
-    } else if (y > height - subsurfaceDepth) {
-      blockId = subsurfaceBlock
-    } else {
-      blockId = baseBlock
-    }
-
-    chunk.setBlockId(localX, y, localZ, blockId)
+    return Math.floor(lerp(neighborHeight, primaryHeight, t))
   }
 }
 
 /**
- * Generate terrain for the chunk.
+ * Generate terrain for the chunk using the biome's fillChunk method.
  */
 function generateTerrain(
   chunk: WorkerChunk,
   noise: SimplexNoise,
+  seed: number,
   seaLevel: number,
+  terrainThickness: number,
   biomeConfig: WorkerBiomeConfig
 ): void {
-  const coord = chunk.coordinate
+  const biome = getBiomeGenerator(biomeConfig.name, seed, seaLevel, terrainThickness)
+  const maxY = seaLevel + 100 // Allow for terrain above sea level
 
-  for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
-    for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-      const worldCoord = localToWorld(coord, { x: localX, y: 0, z: localZ })
-      const worldX = Number(worldCoord.x)
-      const worldZ = Number(worldCoord.z)
+  // Height getter that uses the biome's terrain config
+  const getHeight = (worldX: number, worldZ: number) =>
+    getHeightAt(noise, worldX, worldZ, seaLevel, biomeConfig)
 
-      const height = getHeightAt(noise, worldX, worldZ, seaLevel, biomeConfig)
-      fillColumn(chunk, localX, localZ, height, biomeConfig)
-    }
-  }
+  // For full chunks, minY=0 means no Y offset (world Y = local Y)
+  ;(biome as any).fillChunk(chunk, 0, maxY, noise, getHeight)
 }
 
 /**
@@ -429,8 +450,8 @@ async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGene
   const getHeight = (worldX: number, worldZ: number) =>
     getHeightAt(noise, worldX, worldZ, seaLevel, biomeConfig)
 
-  // Phase 1: Generate terrain
-  generateTerrain(chunk, noise, seaLevel, biomeConfig)
+  // Phase 1: Generate terrain using biome's fillColumn
+  generateTerrain(chunk, noise, seed, seaLevel, terrainThickness, biomeConfig)
 
   // Phase 2: Carve caves
   const caves = biomeConfig.caves
@@ -487,96 +508,55 @@ async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGene
 // ==================== Sub-Chunk Generation ====================
 
 /**
- * Fill a column within a sub-chunk's Y range.
- */
-function fillSubChunkColumn(
-  subChunk: WorkerSubChunk,
-  localX: number,
-  localZ: number,
-  terrainHeight: number,
-  terrainThickness: number,
-  minWorldY: number,
-  maxWorldY: number,
-  biomeConfig: WorkerBiomeConfig
-): { hasTerrainAbove: boolean; maxSolidY: number } {
-  const { surfaceBlock, subsurfaceBlock, subsurfaceDepth, baseBlock } = biomeConfig
-
-  let hasTerrainAbove = false
-  let maxSolidY = -1
-
-  // Calculate terrain floor (below this is air)
-  const terrainFloor = terrainHeight - terrainThickness
-
-  // Check if terrain extends above this sub-chunk
-  if (terrainHeight > maxWorldY) {
-    hasTerrainAbove = true
-  }
-
-  // Fill blocks within this sub-chunk's Y range
-  for (let worldY = minWorldY; worldY <= maxWorldY; worldY++) {
-    const localY = worldY - minWorldY
-
-    // Only fill blocks between terrain floor and terrain height (air below floor)
-    if (worldY <= terrainHeight && worldY > terrainFloor) {
-      let blockId: BlockId
-
-      if (worldY === terrainHeight) {
-        blockId = surfaceBlock
-      } else if (worldY > terrainHeight - subsurfaceDepth) {
-        blockId = subsurfaceBlock
-      } else {
-        blockId = baseBlock
-      }
-
-      subChunk.setBlockId(localX, localY, localZ, blockId)
-      maxSolidY = worldY
-    }
-  }
-
-  return { hasTerrainAbove, maxSolidY }
-}
-
-/**
  * Generate terrain for a sub-chunk with biome blending.
+ * Uses fillChunk with Y bounds for efficient generation.
  */
 function generateSubChunkTerrain(
   subChunk: WorkerSubChunk,
   noise: SimplexNoise,
+  seed: number,
   seaLevel: number,
   terrainThickness: number,
   minWorldY: number,
   maxWorldY: number,
   biomeData: BiomeBlendData
 ): { hasTerrainAbove: boolean; maxSolidY: number } {
-  const coord = subChunk.coordinate
+  // Get biome generator instance (uses primary biome for block types)
+  const biome = getBiomeGenerator(biomeData.primary.name, seed, seaLevel, terrainThickness)
+
+  // Height getter with biome blending
+  const getHeight = (worldX: number, worldZ: number) =>
+    getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
+
+  // Call the biome's fillChunk with sub-chunk's Y bounds
+  ;(biome as any).fillChunk(subChunk, minWorldY, maxWorldY, noise, getHeight)
+
+  // Calculate hasTerrainAbove and maxSolidY by scanning the sub-chunk
   let hasTerrainAbove = false
   let maxSolidY = -1
 
   for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
     for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
+      // Check if terrain extends above this sub-chunk
       const worldCoord = localToWorld(
-        { x: coord.x, z: coord.z },
+        { x: subChunk.coordinate.x, z: subChunk.coordinate.z },
         { x: localX, y: 0, z: localZ }
       )
-      const worldX = Number(worldCoord.x)
-      const worldZ = Number(worldCoord.z)
+      const height = getHeight(Number(worldCoord.x), Number(worldCoord.z))
+      if (height > maxWorldY) {
+        hasTerrainAbove = true
+      }
 
-      // Use blended height for smooth biome transitions
-      const terrainHeight = getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
-      // Use primary biome for block types (no blending for blocks)
-      const result = fillSubChunkColumn(
-        subChunk,
-        localX,
-        localZ,
-        terrainHeight,
-        terrainThickness,
-        minWorldY,
-        maxWorldY,
-        biomeData.primary
-      )
-
-      if (result.hasTerrainAbove) hasTerrainAbove = true
-      if (result.maxSolidY > maxSolidY) maxSolidY = result.maxSolidY
+      // Find max solid Y in this column
+      for (let localY = SUB_CHUNK_HEIGHT - 1; localY >= 0; localY--) {
+        if (subChunk.getBlockId(localX, localY, localZ) !== 0) {
+          const worldY = minWorldY + localY
+          if (worldY > maxSolidY) {
+            maxSolidY = worldY
+          }
+          break
+        }
+      }
     }
   }
 
@@ -653,6 +633,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   const { hasTerrainAbove, maxSolidY } = generateSubChunkTerrain(
     subChunk,
     noise,
+    seed,
     seaLevel,
     terrainThickness,
     minWorldY,
@@ -681,16 +662,11 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
       biomeProperties: {
         name: biomeConfig.name,
         frequency: 1.0,
-        surfaceBlock: biomeConfig.surfaceBlock,
-        subsurfaceBlock: biomeConfig.subsurfaceBlock,
-        subsurfaceDepth: biomeConfig.subsurfaceDepth,
-        baseBlock: biomeConfig.baseBlock,
-        heightAmplitude: biomeConfig.heightAmplitude,
-        heightOffset: biomeConfig.heightOffset,
         treeDensity: biomeConfig.treeDensity,
         features: [],
         caves: biomeConfig.caves,
         water: biomeConfig.water,
+        terrainConfig: biomeConfig.terrainConfig,
       },
       getBaseHeightAt: getHeight,
     }
@@ -713,16 +689,11 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     biomeProperties: {
       name: biomeConfig.name,
       frequency: 1.0, // Not used in worker context
-      surfaceBlock: biomeConfig.surfaceBlock,
-      subsurfaceBlock: biomeConfig.subsurfaceBlock,
-      subsurfaceDepth: biomeConfig.subsurfaceDepth,
-      baseBlock: biomeConfig.baseBlock,
-      heightAmplitude: biomeConfig.heightAmplitude,
-      heightOffset: biomeConfig.heightOffset,
       treeDensity: biomeConfig.treeDensity,
       features: [],
       caves: biomeConfig.caves,
       water: biomeConfig.water,
+      terrainConfig: biomeConfig.terrainConfig,
     },
     getBaseHeightAt: getHeight,
   }

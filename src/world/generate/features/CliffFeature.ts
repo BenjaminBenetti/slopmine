@@ -16,6 +16,10 @@ export interface CliffFeatureSettings {
   readonly maxHeight: number
   /** Block type used for cliff faces and underground extension */
   readonly block: BlockId
+  /** Block type for the top surface of cliffs (defaults to GRASS) */
+  readonly surfaceBlock?: BlockId
+  /** Depth of subsurface layer (defaults to 4) */
+  readonly subsurfaceDepth?: number
 }
 
 /**
@@ -57,9 +61,8 @@ export class CliffFeature extends Feature {
   }
 
   async scan(context: FeatureContext): Promise<void> {
-    const { chunk, noise, biomeProperties, getBaseHeightAt, frameBudget } = context
-    const { frequency, threshold, maxHeight, block } = this.settings
-    const { surfaceBlock, subsurfaceDepth } = biomeProperties
+    const { chunk, noise, getBaseHeightAt, frameBudget } = context
+    const { frequency, threshold, maxHeight, block, surfaceBlock = block, subsurfaceDepth = 4 } = this.settings
     const coord = chunk.coordinate
 
     frameBudget?.startFrame()
