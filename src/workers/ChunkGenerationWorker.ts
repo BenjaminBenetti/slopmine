@@ -506,9 +506,52 @@ async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGene
 // ==================== Sub-Chunk Generation ====================
 
 /**
- * Dither distance in blocks from biome boundary where blending occurs.
+ * Base dither distance in blocks from biome boundary where blending occurs.
  */
-const DITHER_DISTANCE = 8
+const DITHER_DISTANCE_BASE = 8
+
+/**
+ * Amount the dither distance can vary due to noise (in both directions).
+ * Effective dither distance will range from BASE - VARIANCE to BASE + VARIANCE.
+ */
+const DITHER_VARIANCE = 8
+
+/**
+ * Scale of the noise used to vary dither distance.
+ * Lower values = larger, smoother snake patterns.
+ * Higher values = smaller, more frequent snake patterns.
+ */
+const DITHER_NOISE_SCALE = 0.1
+
+/**
+ * Cache for dither noise generator (created lazily per seed).
+ */
+let ditherNoise: SimplexNoise | null = null
+let ditherNoiseSeed: number = 0
+
+/**
+ * Get the effective dither distance at a world position.
+ * Uses noise to vary the distance, creating a snaking boundary.
+ */
+function getEffectiveDitherDistance(worldX: number, worldZ: number, seed: number): number {
+  // Lazily create or update noise generator
+  if (!ditherNoise || ditherNoiseSeed !== seed) {
+    // Use a different seed offset for dither noise to avoid correlation with terrain
+    ditherNoise = new SimplexNoise(seed + 12345)
+    ditherNoiseSeed = seed
+  }
+
+  // Sample noise at this position (-1 to 1 range)
+  const noiseValue = ditherNoise.noise2D(worldX * DITHER_NOISE_SCALE, worldZ * DITHER_NOISE_SCALE)
+
+  // Map noise to dither distance variation
+  // noiseValue of -1 = min distance (BASE - VARIANCE)
+  // noiseValue of +1 = max distance (BASE + VARIANCE)
+  const effectiveDistance = DITHER_DISTANCE_BASE + noiseValue * DITHER_VARIANCE
+
+  // Clamp to minimum of 1 block
+  return Math.max(1, effectiveDistance)
+}
 
 /**
  * Get unique neighboring biomes that differ from primary.
@@ -537,10 +580,10 @@ function getUniqueNeighborBiomes(biomeData: BiomeBlendData): WorkerBiomeConfig[]
  * Calculate dither probability based on distance to boundary.
  * Returns 0-1 where 0 = fully primary, 1 = fully secondary.
  */
-function getDitherProbability(distanceToBoundary: number): number {
-  if (distanceToBoundary >= DITHER_DISTANCE) return 0
+function getDitherProbability(distanceToBoundary: number, effectiveDitherDistance: number): number {
+  if (distanceToBoundary >= effectiveDitherDistance) return 0
   // Smooth transition: 0 at edge, 0.5 at boundary
-  return 0.5 * (1 - distanceToBoundary / DITHER_DISTANCE)
+  return 0.5 * (1 - distanceToBoundary / effectiveDitherDistance)
 }
 
 /**
@@ -585,14 +628,21 @@ function isAtBiomeRegionEdge(
 /**
  * Get the neighbor biome and distance to boundary for a specific position.
  * Only returns a neighbor if we're actually at a biome region boundary.
+ * Uses noise-varied dither distance for organic boundary shapes.
  */
 function getNeighborAndDistance(
   biomeData: BiomeBlendData,
   localX: number,
-  localZ: number
-): { neighbor: WorkerBiomeConfig; distance: number } | null {
+  localZ: number,
+  worldX: number,
+  worldZ: number,
+  seed: number
+): { neighbor: WorkerBiomeConfig; distance: number; effectiveDitherDistance: number } | null {
   const primary = biomeData.primary
   const { chunkLocalX, chunkLocalZ } = biomeData
+
+  // Get noise-varied dither distance for this position
+  const effectiveDitherDistance = getEffectiveDitherDistance(worldX, worldZ, seed)
 
   // Calculate distances to each chunk edge
   const distToWest = localX
@@ -607,7 +657,7 @@ function getNeighborAndDistance(
   // West edge
   if (isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'west') &&
       biomeData.west && biomeData.west.name !== primary.name &&
-      distToWest < DITHER_DISTANCE && distToWest < bestDistance) {
+      distToWest < effectiveDitherDistance && distToWest < bestDistance) {
     bestNeighbor = biomeData.west
     bestDistance = distToWest
   }
@@ -615,7 +665,7 @@ function getNeighborAndDistance(
   // East edge
   if (isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'east') &&
       biomeData.east && biomeData.east.name !== primary.name &&
-      distToEast < DITHER_DISTANCE && distToEast < bestDistance) {
+      distToEast < effectiveDitherDistance && distToEast < bestDistance) {
     bestNeighbor = biomeData.east
     bestDistance = distToEast
   }
@@ -623,7 +673,7 @@ function getNeighborAndDistance(
   // North edge
   if (isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'north') &&
       biomeData.north && biomeData.north.name !== primary.name &&
-      distToNorth < DITHER_DISTANCE && distToNorth < bestDistance) {
+      distToNorth < effectiveDitherDistance && distToNorth < bestDistance) {
     bestNeighbor = biomeData.north
     bestDistance = distToNorth
   }
@@ -631,7 +681,7 @@ function getNeighborAndDistance(
   // South edge
   if (isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'south') &&
       biomeData.south && biomeData.south.name !== primary.name &&
-      distToSouth < DITHER_DISTANCE && distToSouth < bestDistance) {
+      distToSouth < effectiveDitherDistance && distToSouth < bestDistance) {
     bestNeighbor = biomeData.south
     bestDistance = distToSouth
   }
@@ -645,7 +695,7 @@ function getNeighborAndDistance(
   // Northwest corner
   if (atWestEdge && atNorthEdge && biomeData.northwest && biomeData.northwest.name !== primary.name) {
     const cornerDist = Math.min(distToWest, distToNorth)
-    if (cornerDist < DITHER_DISTANCE && cornerDist < bestDistance) {
+    if (cornerDist < effectiveDitherDistance && cornerDist < bestDistance) {
       bestNeighbor = biomeData.northwest
       bestDistance = cornerDist
     }
@@ -654,7 +704,7 @@ function getNeighborAndDistance(
   // Northeast corner
   if (atEastEdge && atNorthEdge && biomeData.northeast && biomeData.northeast.name !== primary.name) {
     const cornerDist = Math.min(distToEast, distToNorth)
-    if (cornerDist < DITHER_DISTANCE && cornerDist < bestDistance) {
+    if (cornerDist < effectiveDitherDistance && cornerDist < bestDistance) {
       bestNeighbor = biomeData.northeast
       bestDistance = cornerDist
     }
@@ -663,7 +713,7 @@ function getNeighborAndDistance(
   // Southwest corner
   if (atWestEdge && atSouthEdge && biomeData.southwest && biomeData.southwest.name !== primary.name) {
     const cornerDist = Math.min(distToWest, distToSouth)
-    if (cornerDist < DITHER_DISTANCE && cornerDist < bestDistance) {
+    if (cornerDist < effectiveDitherDistance && cornerDist < bestDistance) {
       bestNeighbor = biomeData.southwest
       bestDistance = cornerDist
     }
@@ -672,14 +722,14 @@ function getNeighborAndDistance(
   // Southeast corner
   if (atEastEdge && atSouthEdge && biomeData.southeast && biomeData.southeast.name !== primary.name) {
     const cornerDist = Math.min(distToEast, distToSouth)
-    if (cornerDist < DITHER_DISTANCE && cornerDist < bestDistance) {
+    if (cornerDist < effectiveDitherDistance && cornerDist < bestDistance) {
       bestNeighbor = biomeData.southeast
       bestDistance = cornerDist
     }
   }
 
   if (bestNeighbor) {
-    return { neighbor: bestNeighbor, distance: bestDistance }
+    return { neighbor: bestNeighbor, distance: bestDistance, effectiveDitherDistance }
   }
   return null
 }
@@ -736,24 +786,25 @@ function generateSubChunkTerrain(
       const coord = subChunk.coordinate
       for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
         for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-          // Check if this position should blend with this neighbor
-          const neighborInfo = getNeighborAndDistance(biomeData, localX, localZ)
-          if (!neighborInfo || neighborInfo.neighbor.name !== neighborConfig.name) {
-            continue
-          }
-
-          // Calculate dither probability based on distance to biome boundary
-          const ditherProb = getDitherProbability(neighborInfo.distance)
-
-          if (ditherProb <= 0) continue
-
-          // Get world coordinates for deterministic dithering
+          // Get world coordinates first (needed for noise-based dither distance)
           const worldCoord = localToWorld(
             { x: coord.x, z: coord.z },
             { x: localX, y: 0, z: localZ }
           )
           const worldX = Number(worldCoord.x)
           const worldZ = Number(worldCoord.z)
+
+          // Check if this position should blend with this neighbor
+          const neighborInfo = getNeighborAndDistance(biomeData, localX, localZ, worldX, worldZ, seed)
+          if (!neighborInfo || neighborInfo.neighbor.name !== neighborConfig.name) {
+            continue
+          }
+
+          // Calculate dither probability based on distance to biome boundary
+          // Uses the noise-varied effective dither distance for organic boundaries
+          const ditherProb = getDitherProbability(neighborInfo.distance, neighborInfo.effectiveDitherDistance)
+
+          if (ditherProb <= 0) continue
 
           // Dither each Y level in this column
           for (let localY = 0; localY < SUB_CHUNK_HEIGHT; localY++) {
