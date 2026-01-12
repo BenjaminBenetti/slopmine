@@ -21,6 +21,14 @@ import { WaterHalfBlock } from './types/water_half/WaterHalfBlock.ts'
 import { WaterThreeEighthBlock } from './types/water_three_eighth/WaterThreeEighthBlock.ts'
 import { WaterQuarterBlock } from './types/water_quarter/WaterQuarterBlock.ts'
 import { WaterEighthBlock } from './types/water_eighth/WaterEighthBlock.ts'
+import { LavaBlock } from './types/lava/LavaBlock.ts'
+import { LavaSevenEighthBlock } from './types/lava_seven_eighth/LavaSevenEighthBlock.ts'
+import { LavaThreeQuarterBlock } from './types/lava_three_quarter/LavaThreeQuarterBlock.ts'
+import { LavaFiveEighthBlock } from './types/lava_five_eighth/LavaFiveEighthBlock.ts'
+import { LavaHalfBlock } from './types/lava_half/LavaHalfBlock.ts'
+import { LavaThreeEighthBlock } from './types/lava_three_eighth/LavaThreeEighthBlock.ts'
+import { LavaQuarterBlock } from './types/lava_quarter/LavaQuarterBlock.ts'
+import { LavaEighthBlock } from './types/lava_eighth/LavaEighthBlock.ts'
 
 /**
  * Register all default block types.
@@ -345,5 +353,134 @@ export function registerDefaultBlocks(): void {
       tags: [],
     },
     factory: () => new WaterThreeEighthBlock(),
+  })
+
+  // Lava blocks
+  registerBlock({
+    properties: {
+      id: BlockIds.LAVA,
+      name: 'lava',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 15,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [BlockTags.LIQUID_SOURCE],
+    },
+    factory: () => new LavaBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.LAVA_SEVEN_EIGHTH,
+      name: 'lava_seven_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 15,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new LavaSevenEighthBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.LAVA_THREE_QUARTER,
+      name: 'lava_three_quarter',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 14,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new LavaThreeQuarterBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.LAVA_FIVE_EIGHTH,
+      name: 'lava_five_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 13,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new LavaFiveEighthBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.LAVA_HALF,
+      name: 'lava_half',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 12,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new LavaHalfBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.LAVA_THREE_EIGHTH,
+      name: 'lava_three_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 11,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new LavaThreeEighthBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.LAVA_QUARTER,
+      name: 'lava_quarter',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 10,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new LavaQuarterBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.LAVA_EIGHTH,
+      name: 'lava_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 8,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+    },
+    factory: () => new LavaEighthBlock(),
   })
 }

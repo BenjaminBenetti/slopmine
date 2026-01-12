@@ -35,6 +35,10 @@ export interface IBlockProperties {
   readonly demolitionForceRequired: number
   /** Tags for tool effectiveness matching (e.g., 'stone', 'wood', 'dirt') */
   readonly tags: ReadonlyArray<string>
+  /** For liquid blocks: the fill level (1-8, where 8 is full source) */
+  readonly liquidLevel?: number
+  /** For liquid blocks: the liquid family (e.g., 'water', 'lava') */
+  readonly liquidFamily?: string
 }
 
 /**

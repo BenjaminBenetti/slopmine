@@ -75,6 +75,8 @@ export class WaterFiveEighthBlock extends TransparentBlock {
     lightBlocking: 1,
     demolitionForceRequired: Infinity,
     tags: [],
+    liquidFamily: 'water',
+    liquidLevel: 5,
   }
 
   protected get defaultTextureId(): number {

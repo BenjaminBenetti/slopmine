@@ -5,55 +5,57 @@ import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
-import waterTexUrl from './assets/water.webp'
+import lavaTexUrl from './assets/lava.webp'
 
 // Register texture for atlas (marked as transparent)
-registerTextureUrl(TextureId.WATER, waterTexUrl, true)
+registerTextureUrl(TextureId.LAVA, lavaTexUrl, true)
 
-const waterTexture = loadBlockTexture(waterTexUrl)
+const lavaTexture = loadBlockTexture(lavaTexUrl)
 
 /**
- * Semi-transparent blue material for water with texture.
- * depthWrite: true prevents overlapping water fragments from causing artifacts.
+ * Semi-transparent orange material for lava with texture.
+ * depthWrite: true prevents overlapping lava fragments from causing artifacts.
  */
-const waterMaterial = new THREE.MeshLambertMaterial({
-  map: waterTexture,
+const lavaMaterial = new THREE.MeshLambertMaterial({
+  map: lavaTexture,
   transparent: true,
-  opacity: 0.75,
+  opacity: 0.9,
   side: THREE.DoubleSide,
   depthWrite: true,
+  emissive: new THREE.Color(0xff4400),
+  emissiveIntensity: 0.3,
 })
 
 /**
- * Water block - a transparent, non-solid liquid.
- * Water fills terrain depressions during world generation.
+ * Lava block - a transparent, non-solid liquid that emits light.
+ * Lava fills deep terrain areas during world generation.
  */
-export class WaterBlock extends TransparentBlock {
+export class LavaBlock extends TransparentBlock {
   readonly properties: IBlockProperties = {
-    id: BlockIds.WATER,
-    name: 'water',
+    id: BlockIds.LAVA,
+    name: 'lava',
     isOpaque: false,
     isSolid: false,
     isLiquid: true,
     hardness: 100,
-    lightLevel: 0,
-    lightBlocking: 2,
+    lightLevel: 15,
+    lightBlocking: 0,
     demolitionForceRequired: Infinity,
     tags: [],
-    liquidFamily: 'water',
+    liquidFamily: 'lava',
     liquidLevel: 8,
   }
 
   protected get defaultTextureId(): number {
-    return TextureId.WATER
+    return TextureId.LAVA
   }
 
   protected getMaterials(): THREE.Material {
-    return waterMaterial
+    return lavaMaterial
   }
 
   /**
-   * Water should be greedy-meshed to eliminate internal face z-fighting.
+   * Lava should be greedy-meshed to eliminate internal face z-fighting.
    * It will be placed in a separate transparent mesh group.
    */
   isGreedyMeshable(): boolean {
@@ -61,23 +63,23 @@ export class WaterBlock extends TransparentBlock {
   }
 
   /**
-   * Water has no collision - player can walk through it.
+   * Lava has no collision - player can walk through it.
    */
   getCollisionBox(): THREE.Box3 | null {
     return null
   }
 
   /**
-   * Only render faces adjacent to air or non-water blocks.
-   * Don't render faces between adjacent water blocks.
+   * Only render faces adjacent to air or non-lava blocks.
+   * Don't render faces between adjacent lava blocks.
    */
   override shouldRenderFace(_face: BlockFace, neighbor: IBlock): boolean {
     // Always render face if neighbor is air
     if (neighbor.properties.id === BlockIds.AIR) {
       return true
     }
-    // Don't render faces between water blocks
-    if (neighbor.properties.id === BlockIds.WATER) {
+    // Don't render faces between lava blocks
+    if (neighbor.properties.isLiquid) {
       return false
     }
     // Render face against any other block

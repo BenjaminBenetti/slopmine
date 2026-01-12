@@ -1,13 +1,15 @@
 /**
- * Manages liquid physics simulation for water blocks.
- * Uses simple Minecraft-style flow: water slopes down from source blocks.
- * No volume conservation - water just flows and dissipates.
+ * Manages liquid physics simulation for all liquid blocks (water, lava, etc.).
+ * Uses simple Minecraft-style flow: liquids slope down from source blocks.
+ * No volume conservation - liquids just flow and dissipate.
  */
 
 import type { BlockId } from '../interfaces/IBlock.ts'
 import type { IChunkCoordinate } from '../interfaces/ICoordinates.ts'
 import { createChunkKey, type ChunkKey } from '../interfaces/ICoordinates.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
+import { getBlock } from '../blocks/BlockRegistry.ts'
+import { getLiquidBlockId } from './LiquidRegistry.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
 
 export interface LiquidPhysicsConfig {
@@ -29,11 +31,11 @@ const DEFAULT_CONFIG: LiquidPhysicsConfig = {
 }
 
 /**
- * Water levels - full source is 8, flowing water decreases to 1.
- * Level 0 = air.
+ * Liquid levels - full source is 8, flowing liquid decreases to 1.
+ * Level 0 = air (not a liquid).
  */
-const WATER_LEVEL_MAX = 8
-const WATER_LEVEL_MIN = 1
+const LIQUID_LEVEL_MAX = 8
+const LIQUID_LEVEL_MIN = 1
 
 export class LiquidPhysicsManager {
   private readonly config: LiquidPhysicsConfig
@@ -183,7 +185,7 @@ export class LiquidPhysicsManager {
 
     this.flushBlockChanges!()
 
-    // Only re-queue self if water changed
+    // Only re-queue self if liquid changed
     if (changed) {
       this.queueColumn(chunkX, chunkZ)
     }
@@ -200,7 +202,7 @@ export class LiquidPhysicsManager {
   }
 
   /**
-   * Process all water blocks in a chunk column.
+   * Process all liquid blocks in a chunk column.
    */
   private processColumn(chunkX: bigint, chunkZ: bigint): boolean {
     const coord: IChunkCoordinate = { x: chunkX, z: chunkZ }
@@ -222,8 +224,8 @@ export class LiquidPhysicsManager {
       const worldZ = baseZ + BigInt(pos.z)
 
       const blockId = this.getBlockId!(worldX, worldY, worldZ)
-      if (this.isWaterBlock(blockId)) {
-        if (this.processWaterBlock(worldX, worldY, worldZ)) {
+      if (this.isLiquidBlock(blockId)) {
+        if (this.processLiquidBlock(worldX, worldY, worldZ)) {
           anyChanged = true
         }
       }
@@ -233,67 +235,44 @@ export class LiquidPhysicsManager {
   }
 
   /**
-   * Get the water level (1-8) for a block ID. 0 = not water.
+   * Get the liquid level (1-8) for a block ID. 0 = not a liquid.
    */
-  private getWaterLevel(blockId: BlockId): number {
-    switch (blockId) {
-      case BlockIds.WATER: return 8
-      case BlockIds.WATER_SEVEN_EIGHTH: return 7
-      case BlockIds.WATER_THREE_QUARTER: return 6
-      case BlockIds.WATER_FIVE_EIGHTH: return 5
-      case BlockIds.WATER_HALF: return 4
-      case BlockIds.WATER_THREE_EIGHTH: return 3
-      case BlockIds.WATER_QUARTER: return 2
-      case BlockIds.WATER_EIGHTH: return 1
-      default: return 0
-    }
+  private getLiquidLevel(blockId: BlockId): number {
+    return getBlock(blockId).properties.liquidLevel ?? 0
   }
 
   /**
-   * Convert a water level (1-8) to a block ID.
+   * Get the liquid family (e.g., 'water', 'lava') for a block ID.
+   * Returns undefined if not a liquid.
    */
-  private levelToBlockId(level: number): BlockId {
-    if (level >= 8) return BlockIds.WATER
-    if (level >= 7) return BlockIds.WATER_SEVEN_EIGHTH
-    if (level >= 6) return BlockIds.WATER_THREE_QUARTER
-    if (level >= 5) return BlockIds.WATER_FIVE_EIGHTH
-    if (level >= 4) return BlockIds.WATER_HALF
-    if (level >= 3) return BlockIds.WATER_THREE_EIGHTH
-    if (level >= 2) return BlockIds.WATER_QUARTER
-    if (level >= 1) return BlockIds.WATER_EIGHTH
-    return BlockIds.AIR
+  private getLiquidFamily(blockId: BlockId): string | undefined {
+    return getBlock(blockId).properties.liquidFamily
   }
 
   /**
-   * Check if a block is any type of water.
+   * Check if a block is any type of liquid.
    */
-  private isWaterBlock(blockId: BlockId): boolean {
-    return this.getWaterLevel(blockId) > 0
-  }
-
-  /**
-   * Check if water can flow into a block (air or lower water).
-   */
-  private canFlowInto(blockId: BlockId): boolean {
-    return blockId === BlockIds.AIR || this.isWaterBlock(blockId)
+  private isLiquidBlock(blockId: BlockId): boolean {
+    return getBlock(blockId).properties.isLiquid
   }
 
   /**
    * Check if a block is solid (can't flow into).
+   * A block is solid if it's not air and not a liquid.
    */
   private isSolid(blockId: BlockId): boolean {
-    return blockId !== BlockIds.AIR && !this.isWaterBlock(blockId)
+    return blockId !== BlockIds.AIR && !this.isLiquidBlock(blockId)
   }
 
   /**
-   * Check if this water block has a source (water above or adjacent source at same/higher level).
+   * Check if this liquid block has a source (liquid of same family above or adjacent at same/higher level).
    */
-  private hasWaterSource(x: bigint, y: bigint, z: bigint, myLevel: number): boolean {
-    // Water directly above is always a source
+  private hasLiquidSource(x: bigint, y: bigint, z: bigint, myLevel: number, myFamily: string): boolean {
+    // Liquid directly above of same family is always a source
     const aboveId = this.getBlockId!(x, y + 1n, z)
-    if (this.isWaterBlock(aboveId)) return true
+    if (this.getLiquidFamily(aboveId) === myFamily) return true
 
-    // Check horizontal neighbors for source blocks or higher level
+    // Check horizontal neighbors for source blocks or higher level of same family
     const neighbors = [
       { x: x + 1n, z },
       { x: x - 1n, z },
@@ -303,8 +282,11 @@ export class LiquidPhysicsManager {
 
     for (const n of neighbors) {
       const nId = this.getBlockId!(n.x, y, n.z)
-      const nLevel = this.getWaterLevel(nId)
-      // Source block (level 8) or higher level water feeds us
+      const nFamily = this.getLiquidFamily(nId)
+      if (nFamily !== myFamily) continue
+
+      const nLevel = this.getLiquidLevel(nId)
+      // Source block (level 8) or higher level liquid feeds us
       if (nLevel >= myLevel) return true
     }
 
@@ -312,43 +294,48 @@ export class LiquidPhysicsManager {
   }
 
   /**
-   * Process a single water block using Minecraft-style flow.
+   * Process a single liquid block using Minecraft-style flow.
    * Returns true if any change occurred.
    */
-  private processWaterBlock(x: bigint, y: bigint, z: bigint): boolean {
+  private processLiquidBlock(x: bigint, y: bigint, z: bigint): boolean {
     const blockId = this.getBlockId!(x, y, z)
-    const level = this.getWaterLevel(blockId)
+    const level = this.getLiquidLevel(blockId)
+    const family = this.getLiquidFamily(blockId)
 
-    if (level <= 0) return false
+    if (level <= 0 || !family) return false
 
     let changed = false
     const belowId = this.getBlockId!(x, y - 1n, z)
+    const belowFamily = this.getLiquidFamily(belowId)
 
-    // === STEP 0: SOURCE CREATION (Minecraft infinite water) ===
-    // If this is flowing water on a solid block with 2+ adjacent source blocks, become a source
-    if (level < WATER_LEVEL_MAX && this.isSolid(belowId)) {
+    // Get the source block ID for this liquid family
+    const sourceBlockId = getLiquidBlockId(family, LIQUID_LEVEL_MAX)
+
+    // === STEP 0: SOURCE CREATION (Minecraft infinite liquid) ===
+    // If this is flowing liquid on a solid block with 2+ adjacent source blocks of same family, become a source
+    if (level < LIQUID_LEVEL_MAX && this.isSolid(belowId)) {
       let sourceCount = 0
 
-      // Check horizontal neighbors for sources
+      // Check horizontal neighbors for sources of same family
       const n1 = this.getBlockId!(x + 1n, y, z)
       const n2 = this.getBlockId!(x - 1n, y, z)
       const n3 = this.getBlockId!(x, y, z + 1n)
       const n4 = this.getBlockId!(x, y, z - 1n)
 
-      if (this.getWaterLevel(n1) >= WATER_LEVEL_MAX) sourceCount++
-      if (this.getWaterLevel(n2) >= WATER_LEVEL_MAX) sourceCount++
-      if (this.getWaterLevel(n3) >= WATER_LEVEL_MAX) sourceCount++
-      if (this.getWaterLevel(n4) >= WATER_LEVEL_MAX) sourceCount++
+      if (this.getLiquidFamily(n1) === family && this.getLiquidLevel(n1) >= LIQUID_LEVEL_MAX) sourceCount++
+      if (this.getLiquidFamily(n2) === family && this.getLiquidLevel(n2) >= LIQUID_LEVEL_MAX) sourceCount++
+      if (this.getLiquidFamily(n3) === family && this.getLiquidLevel(n3) >= LIQUID_LEVEL_MAX) sourceCount++
+      if (this.getLiquidFamily(n4) === family && this.getLiquidLevel(n4) >= LIQUID_LEVEL_MAX) sourceCount++
 
-      // Also count water above as a source
+      // Also count liquid above of same family as a source
       if (sourceCount < 2) {
         const aboveId = this.getBlockId!(x, y + 1n, z)
-        if (this.isWaterBlock(aboveId)) sourceCount++
+        if (this.getLiquidFamily(aboveId) === family) sourceCount++
       }
 
       // 2+ sources = become a source block
       if (sourceCount >= 2) {
-        if (this.setBlockRaw!(x, y, z, BlockIds.WATER)) {
+        if (this.setBlockRaw!(x, y, z, sourceBlockId)) {
           return true  // Changed to source, let next tick handle spreading
         }
         return false  // Already a source somehow
@@ -357,27 +344,28 @@ export class LiquidPhysicsManager {
 
     // === STEP 1: FLOW DOWN ===
     if (belowId === BlockIds.AIR) {
-      // Flow down into air - create full water (falling water is full)
-      if (this.setBlockRaw!(x, y - 1n, z, BlockIds.WATER)) {
+      // Flow down into air - create full liquid (falling liquid is full)
+      if (this.setBlockRaw!(x, y - 1n, z, sourceBlockId)) {
         changed = true
         this.queueColumnAt(x, z)  // Same column, but queue for next tick
       }
-    } else if (this.isWaterBlock(belowId)) {
-      // Below is water - make it full if not already
-      const belowLevel = this.getWaterLevel(belowId)
-      if (belowLevel < WATER_LEVEL_MAX) {
-        if (this.setBlockRaw!(x, y - 1n, z, BlockIds.WATER)) {
+    } else if (belowFamily === family) {
+      // Below is same liquid family - make it full if not already
+      const belowLevel = this.getLiquidLevel(belowId)
+      if (belowLevel < LIQUID_LEVEL_MAX) {
+        if (this.setBlockRaw!(x, y - 1n, z, sourceBlockId)) {
           changed = true
         }
       }
     }
 
     // === STEP 2: HORIZONTAL SPREAD (only if can't flow down) ===
-    if (this.isSolid(belowId) || this.getWaterLevel(belowId) >= WATER_LEVEL_MAX) {
+    if (this.isSolid(belowId) || (belowFamily === family && this.getLiquidLevel(belowId) >= LIQUID_LEVEL_MAX)) {
       // Calculate the level we spread at
       const spreadLevel = level - 1
 
-      if (spreadLevel >= WATER_LEVEL_MIN) {
+      if (spreadLevel >= LIQUID_LEVEL_MIN) {
+        const spreadBlockId = getLiquidBlockId(family, spreadLevel)
         const neighbors = [
           { x: x + 1n, z },
           { x: x - 1n, z },
@@ -387,17 +375,18 @@ export class LiquidPhysicsManager {
 
         for (const n of neighbors) {
           const nId = this.getBlockId!(n.x, y, n.z)
-          const nLevel = this.getWaterLevel(nId)
+          const nFamily = this.getLiquidFamily(nId)
+          const nLevel = this.getLiquidLevel(nId)
 
-          // Can spread into air or lower-level water
+          // Can spread into air
           if (nId === BlockIds.AIR) {
-            if (this.setBlockRaw!(n.x, y, n.z, this.levelToBlockId(spreadLevel))) {
+            if (this.setBlockRaw!(n.x, y, n.z, spreadBlockId)) {
               changed = true
               this.queueColumnAt(n.x, n.z)  // Queue neighbor chunk for processing
             }
-          } else if (this.isWaterBlock(nId) && nLevel < spreadLevel) {
-            // Upgrade lower water to our spread level
-            if (this.setBlockRaw!(n.x, y, n.z, this.levelToBlockId(spreadLevel))) {
+          } else if (nFamily === family && nLevel < spreadLevel) {
+            // Upgrade lower liquid of same family to our spread level
+            if (this.setBlockRaw!(n.x, y, n.z, spreadBlockId)) {
               changed = true
               this.queueColumnAt(n.x, n.z)  // Queue neighbor chunk for processing
             }
@@ -407,9 +396,9 @@ export class LiquidPhysicsManager {
     }
 
     // === STEP 3: DRY UP if no source ===
-    // Non-source water (level < 8) needs a source to persist
-    if (level < WATER_LEVEL_MAX) {
-      if (!this.hasWaterSource(x, y, z, level)) {
+    // Non-source liquid (level < 8) needs a source to persist
+    if (level < LIQUID_LEVEL_MAX) {
+      if (!this.hasLiquidSource(x, y, z, level, family)) {
         // No source - dry up
         if (this.setBlockRaw!(x, y, z, BlockIds.AIR)) {
           changed = true
