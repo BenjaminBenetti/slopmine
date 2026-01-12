@@ -327,6 +327,14 @@ export class FirstPersonCameraControls implements CameraControls {
            this.moveLeft || this.moveRight
   }
 
+  /**
+   * Get the current yaw angle (horizontal rotation) in radians.
+   * 0 = looking at -Z (north), positive = counter-clockwise
+   */
+  getYaw(): number {
+    return this.yaw
+  }
+
   dispose(): void {
     this.domElement.removeEventListener('click', this.onClick)
     document.removeEventListener('pointerlockchange', this.onPointerLockChange)

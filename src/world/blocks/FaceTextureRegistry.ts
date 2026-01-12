@@ -42,6 +42,21 @@ export enum TextureId {
   SAND = 31,                 // sand.webp
   SANDSTONE = 32,            // sandstone.webp
   CACTUS = 33,               // cactus.webp
+  VINE = 34,                 // vine.webp
+  BASALT = 35,               // basalt.webp
+  MAGMA = 36,                // magma.webp
+  MUD = 37,                  // mud.webp
+  CLAY = 38,                 // clay.webp
+  MUSHROOM = 39,             // mushroom.webp
+  MUSHROOM_CAP = 40,         // mushroom-cap.webp
+  SWAMP_WATER = 41,          // swamp-water.webp
+  SWAMP_WATER_SEVEN_EIGHTH = 42,
+  SWAMP_WATER_THREE_QUARTER = 43,
+  SWAMP_WATER_FIVE_EIGHTH = 44,
+  SWAMP_WATER_HALF = 45,
+  SWAMP_WATER_THREE_EIGHTH = 46,
+  SWAMP_WATER_QUARTER = 47,
+  SWAMP_WATER_EIGHTH = 48,
 }
 
 // Cache for the face texture map

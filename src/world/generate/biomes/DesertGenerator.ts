@@ -1,6 +1,7 @@
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
+import { OasisFeature, type OasisLocation } from '../features/OasisFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -13,13 +14,26 @@ import type { SimplexNoise } from '../SimplexNoise.ts'
 
 /**
  * Desert biome with sand surface, sandstone subsurface, and scattered cacti.
+ * Features rare oasis water pools with increased cactus density nearby.
  */
 export class DesertGenerator extends BiomeGenerator {
+  // Oasis feature for generating water pools
+  private readonly oasisFeature = new OasisFeature({
+    enabled: true,
+    liquidBlock: BlockIds.WATER,
+    rarity: 0.9, // Rare - ~1 oasis per 10 chunks
+    minRadius: 5,
+    maxRadius: 7,
+    waterDepth: 3,
+  })
+
   protected readonly properties: BiomeProperties = {
     name: 'desert',
     frequency: 0.5,
     treeDensity: 10.0,
     features: [
+      // Oasis water pools (rare)
+      this.oasisFeature,
       // Sandstone cliffs
       new CliffFeature({
         frequency: 0.02,
@@ -134,6 +148,93 @@ export class DesertGenerator extends BiomeGenerator {
   // Cactus placement grid size
   private readonly CACTUS_GRID_SIZE = 12
 
+  // Oasis proximity settings for cactus density boost
+  private readonly OASIS_INFLUENCE_RADIUS = 15
+  private readonly OASIS_MAX_MULTIPLIER = 5
+  private readonly OASIS_GRID_SIZE = 64
+
+  /**
+   * Deterministic random matching OasisFeature's implementation.
+   * Uses sin-based hash for consistency with oasis placement.
+   */
+  private oasisPositionRandom(x: number, y: number, z: number, salt: number): number {
+    const n = Math.sin(x * 12.9898 + y * 4.1414 + z * 78.233 + salt * 43758.5453) * 43758.5453
+    return n - Math.floor(n)
+  }
+
+  /**
+   * Find oases that could affect a given world area.
+   * Uses the same deterministic noise-based calculation as OasisFeature.
+   */
+  private findNearbyOases(
+    centerX: number,
+    centerZ: number,
+    searchRadius: number
+  ): OasisLocation[] {
+    const oases: OasisLocation[] = []
+    const gridSize = this.OASIS_GRID_SIZE
+    const maxOasisRadius = this.oasisFeature.settings.maxRadius
+
+    // Search grid cells that could contain oases affecting this area
+    const startGridX = Math.floor((centerX - searchRadius - maxOasisRadius) / gridSize) * gridSize
+    const endGridX = Math.floor((centerX + searchRadius + maxOasisRadius) / gridSize) * gridSize
+    const startGridZ = Math.floor((centerZ - searchRadius - maxOasisRadius) / gridSize) * gridSize
+    const endGridZ = Math.floor((centerZ + searchRadius + maxOasisRadius) / gridSize) * gridSize
+
+    for (let gridX = startGridX; gridX <= endGridX; gridX += gridSize) {
+      for (let gridZ = startGridZ; gridZ <= endGridZ; gridZ += gridSize) {
+        // Check if this grid cell has an oasis (same noise check as OasisFeature)
+        const oasisNoise = this.noise.noise2D(gridX * 0.003, gridZ * 0.003)
+        const normalizedNoise = (oasisNoise + 1) / 2
+        if (normalizedNoise <= this.oasisFeature.settings.rarity) continue
+
+        // Calculate jittered center (same as OasisFeature)
+        const jitterX = Math.floor(this.oasisPositionRandom(gridX, 0, gridZ, 1) * (gridSize - 10)) + 5
+        const jitterZ = Math.floor(this.oasisPositionRandom(gridX, 0, gridZ, 2) * (gridSize - 10)) + 5
+        const oasisX = gridX + jitterX
+        const oasisZ = gridZ + jitterZ
+
+        // Calculate radius (same as OasisFeature)
+        const { minRadius, maxRadius } = this.oasisFeature.settings
+        const radiusRange = maxRadius - minRadius
+        const radiusFactor = this.oasisPositionRandom(oasisX, 0, oasisZ, 100)
+        const radius = minRadius + Math.floor(radiusFactor * (radiusRange + 1))
+
+        oases.push({ x: oasisX, z: oasisZ, radius })
+      }
+    }
+
+    return oases
+  }
+
+  /**
+   * Calculate cactus spawn multiplier based on proximity to oases.
+   * Returns 1.0 for normal spawning, up to OASIS_MAX_MULTIPLIER near water.
+   */
+  private getCactusOasisMultiplier(worldX: number, worldZ: number, oases: OasisLocation[]): number {
+    if (oases.length === 0) return 1.0
+
+    let closestDist = Infinity
+
+    for (const oasis of oases) {
+      const dx = worldX - oasis.x
+      const dz = worldZ - oasis.z
+      // Distance from oasis edge (not center)
+      const distFromCenter = Math.sqrt(dx * dx + dz * dz)
+      const distFromEdge = Math.max(0, distFromCenter - oasis.radius)
+
+      if (distFromEdge < closestDist) {
+        closestDist = distFromEdge
+      }
+    }
+
+    if (closestDist >= this.OASIS_INFLUENCE_RADIUS) return 1.0
+
+    // Linear interpolation: 5x at edge, 1x at influence radius
+    const factor = 1 - closestDist / this.OASIS_INFLUENCE_RADIUS
+    return 1 + (this.OASIS_MAX_MULTIPLIER - 1) * factor
+  }
+
   /**
    * Fill terrain with sand, sandstone, and stone layers.
    */
@@ -218,6 +319,15 @@ export class DesertGenerator extends BiomeGenerator {
     const minSubY = Number(coord.subY) * SUB_CHUNK_HEIGHT
     const maxSubY = minSubY + SUB_CHUNK_HEIGHT - 1
 
+    // Get chunk center for oasis search
+    const chunkOrigin = localToWorld(coord, { x: 0, y: 0, z: 0 })
+    const chunkCenterX = Number(chunkOrigin.x) + CHUNK_SIZE_X / 2
+    const chunkCenterZ = Number(chunkOrigin.z) + CHUNK_SIZE_Z / 2
+
+    // Find oases that could affect cactus spawning in this chunk
+    const searchRadius = Math.max(CHUNK_SIZE_X, CHUNK_SIZE_Z) / 2 + this.OASIS_INFLUENCE_RADIUS
+    const nearbyOases = this.findNearbyOases(chunkCenterX, chunkCenterZ, searchRadius)
+
     let cactiPlaced = 0
 
     // Check each cell in a grid pattern for potential cactus positions
@@ -238,9 +348,10 @@ export class DesertGenerator extends BiomeGenerator {
         const cactusWorldX = worldX + jitterX
         const cactusWorldZ = worldZ + jitterZ
 
-        // Probability check for cactus placement
+        // Probability check for cactus placement (boosted near oases)
         const cactusChance = this.positionRandom(cactusWorldX, cactusWorldZ, 0)
-        const threshold = cactusDensity / (gridSize * gridSize)
+        const oasisMultiplier = this.getCactusOasisMultiplier(cactusWorldX, cactusWorldZ, nearbyOases)
+        const threshold = (cactusDensity * oasisMultiplier) / (gridSize * gridSize)
 
         if (cactusChance > threshold) continue
 
@@ -286,6 +397,15 @@ export class DesertGenerator extends BiomeGenerator {
     const cactusDensity = this.properties.treeDensity
     const gridSize = this.CACTUS_GRID_SIZE
 
+    // Get chunk center for oasis search
+    const chunkOrigin = localToWorld(coord, { x: 0, y: 0, z: 0 })
+    const chunkCenterX = Number(chunkOrigin.x) + CHUNK_SIZE_X / 2
+    const chunkCenterZ = Number(chunkOrigin.z) + CHUNK_SIZE_Z / 2
+
+    // Find oases that could affect cactus spawning in this chunk
+    const searchRadius = Math.max(CHUNK_SIZE_X, CHUNK_SIZE_Z) / 2 + this.OASIS_INFLUENCE_RADIUS
+    const nearbyOases = this.findNearbyOases(chunkCenterX, chunkCenterZ, searchRadius)
+
     let cactiPlaced = 0
 
     // Check each cell in a grid pattern for potential cactus positions
@@ -306,9 +426,10 @@ export class DesertGenerator extends BiomeGenerator {
         const cactusWorldX = worldX + jitterX
         const cactusWorldZ = worldZ + jitterZ
 
-        // Probability check for cactus placement
+        // Probability check for cactus placement (boosted near oases)
         const cactusChance = this.positionRandom(cactusWorldX, cactusWorldZ, 0)
-        const threshold = cactusDensity / (gridSize * gridSize)
+        const oasisMultiplier = this.getCactusOasisMultiplier(cactusWorldX, cactusWorldZ, nearbyOases)
+        const threshold = (cactusDensity * oasisMultiplier) / (gridSize * gridSize)
 
         if (cactusChance > threshold) continue
 

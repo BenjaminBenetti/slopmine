@@ -11,6 +11,8 @@ export const BlockTags = {
   /** Liquid blocks that can sustain smaller liquid blocks (half or greater) */
   LIQUID_SOURCE: 'liquid_source',
   SAND: 'sand',
+  MUD: 'mud',
+  CLAY: 'clay',
 } as const
 
 export type BlockTag = (typeof BlockTags)[keyof typeof BlockTags]

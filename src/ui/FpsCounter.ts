@@ -42,6 +42,11 @@ export interface LiquidPhysicsStats {
   columnsQueued: number
 }
 
+export interface BiomeMiniMapData {
+  grid: string[][] // 5x5 grid of 3-letter abbreviations (unrotated, north at top)
+  yaw: number // Player yaw in radians (0 = north/-Z, positive = counter-clockwise)
+}
+
 export interface FpsCounterUI {
   readonly element: HTMLDivElement
   update(metrics: FrameMetrics): void
@@ -52,6 +57,7 @@ export interface FpsCounterUI {
   setSchedulerStats(stats: SchedulerStats): void
   setRendererStats(stats: RendererStats): void
   setLiquidPhysicsStats(stats: LiquidPhysicsStats): void
+  setBiomeMiniMap(data: BiomeMiniMapData): void
   show(): void
   hide(): void
   toggle(): boolean
@@ -101,6 +107,24 @@ export function createFpsCounterUI(
   el.innerHTML = 'FPS: --<br>UPS: --<br>Frame: --<br>CPU: --'
 
   parent.appendChild(el)
+
+  // Create biome mini-map element (top-left corner)
+  const miniMapEl = document.createElement('div')
+  miniMapEl.style.cssText = `
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #ffffff;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+    z-index: 30;
+    user-select: none;
+    line-height: 1.3;
+    white-space: pre;
+  `
+  parent.appendChild(miniMapEl)
 
   let isVisible = true
 
@@ -222,13 +246,68 @@ export function createFpsCounterUI(
       liquidPhysicsStats = stats
     },
 
+    setBiomeMiniMap(data: BiomeMiniMapData): void {
+      if (!data.grid || data.grid.length !== 5) return
+
+      // Normalize yaw to [0, 2π) and determine rotation index (0-3)
+      // yaw=0 is North, increases counter-clockwise (π/2=West, π=South, 3π/2=East)
+      const TWO_PI = 2 * Math.PI
+      const normalizedYaw = ((data.yaw % TWO_PI) + TWO_PI) % TWO_PI
+      const rotationIndex = Math.round(normalizedYaw / (Math.PI / 2)) % 4
+
+      // Get rotated cell value based on rotation index
+      // 0: no rotation (North at top)
+      // 1: 90° CW (West at top)
+      // 2: 180° (South at top)
+      // 3: 270° CW (East at top)
+      const getRotatedCell = (row: number, col: number): string => {
+        let srcRow: number, srcCol: number
+        switch (rotationIndex) {
+          case 1: // 90° CW: new[row][col] = old[4-col][row]
+            srcRow = 4 - col
+            srcCol = row
+            break
+          case 2: // 180°: new[row][col] = old[4-row][4-col]
+            srcRow = 4 - row
+            srcCol = 4 - col
+            break
+          case 3: // 270° CW: new[row][col] = old[col][4-row]
+            srcRow = col
+            srcCol = 4 - row
+            break
+          default: // 0: no rotation
+            srcRow = row
+            srcCol = col
+        }
+        return data.grid[srcRow]?.[srcCol] || '???'
+      }
+
+      const lines: string[] = []
+      for (let row = 0; row < 5; row++) {
+        const cells: string[] = []
+        for (let col = 0; col < 5; col++) {
+          const abbr = getRotatedCell(row, col)
+          // Highlight center cell (player's current biome) - always at [2][2]
+          if (row === 2 && col === 2) {
+            cells.push(`<span style="color:#00ffff">${abbr}</span>`)
+          } else {
+            cells.push(abbr)
+          }
+        }
+        lines.push(cells.join(' '))
+      }
+      miniMapEl.innerHTML = lines.join('\n')
+    },
+
     show(): void {
       el.style.display = 'block'
+      miniMapEl.style.display = 'block'
       isVisible = true
     },
 
     hide(): void {
       el.style.display = 'none'
+      miniMapEl.style.display = 'none'
       isVisible = false
     },
 
@@ -248,6 +327,9 @@ export function createFpsCounterUI(
     destroy(): void {
       if (el.parentElement === parent) {
         parent.removeChild(el)
+      }
+      if (miniMapEl.parentElement === parent) {
+        parent.removeChild(miniMapEl)
       }
     },
   }

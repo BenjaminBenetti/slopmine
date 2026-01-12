@@ -32,6 +32,21 @@ import { LavaEighthBlock } from './types/lava_eighth/LavaEighthBlock.ts'
 import { SandBlock } from './types/sand/SandBlock.ts'
 import { SandstoneBlock } from './types/sandstone/SandstoneBlock.ts'
 import { CactusBlock } from './types/cactus/CactusBlock.ts'
+import { VineBlock } from './types/vine/VineBlock.ts'
+import { BasaltBlock } from './types/basalt/BasaltBlock.ts'
+import { MagmaBlock } from './types/magma/MagmaBlock.ts'
+import { MudBlock } from './types/mud/MudBlock.ts'
+import { ClayBlock } from './types/clay/ClayBlock.ts'
+import { MushroomBlock } from './types/mushroom/MushroomBlock.ts'
+import { MushroomCapBlock } from './types/mushroom-cap/MushroomCapBlock.ts'
+import { SwampWaterBlock } from './types/swamp_water/SwampWaterBlock.ts'
+import { SwampWaterSevenEighthBlock } from './types/swamp_water_seven_eighth/SwampWaterSevenEighthBlock.ts'
+import { SwampWaterThreeQuarterBlock } from './types/swamp_water_three_quarter/SwampWaterThreeQuarterBlock.ts'
+import { SwampWaterFiveEighthBlock } from './types/swamp_water_five_eighth/SwampWaterFiveEighthBlock.ts'
+import { SwampWaterHalfBlock } from './types/swamp_water_half/SwampWaterHalfBlock.ts'
+import { SwampWaterThreeEighthBlock } from './types/swamp_water_three_eighth/SwampWaterThreeEighthBlock.ts'
+import { SwampWaterQuarterBlock } from './types/swamp_water_quarter/SwampWaterQuarterBlock.ts'
+import { SwampWaterEighthBlock } from './types/swamp_water_eighth/SwampWaterEighthBlock.ts'
 
 /**
  * Register all default block types.
@@ -534,5 +549,265 @@ export function registerDefaultBlocks(): void {
       tags: [],
     },
     factory: () => new CactusBlock(),
+  })
+
+  // Jungle biome blocks
+  registerBlock({
+    properties: {
+      id: BlockIds.VINE,
+      name: 'vine',
+      isOpaque: false,
+      isSolid: false, // Players can walk through vines
+      isLiquid: false,
+      hardness: 0.2,
+      lightLevel: 0,
+      lightBlocking: 0,
+      demolitionForceRequired: 0,
+      tags: [],
+    },
+    factory: () => new VineBlock(),
+  })
+
+  // Volcanic biome blocks
+  registerBlock({
+    properties: {
+      id: BlockIds.BASALT,
+      name: 'basalt',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 1.25,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.STONE],
+    },
+    factory: () => new BasaltBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.MAGMA,
+      name: 'magma',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 1.5,
+      lightLevel: 3,
+      lightBlocking: 15,
+      demolitionForceRequired: 1,
+      tags: [BlockTags.STONE],
+    },
+    factory: () => new MagmaBlock(),
+  })
+
+  // Swamp biome blocks
+  registerBlock({
+    properties: {
+      id: BlockIds.MUD,
+      name: 'mud',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 0.5,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 0,
+      tags: [BlockTags.MUD],
+    },
+    factory: () => new MudBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.CLAY,
+      name: 'clay',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 0.6,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 0,
+      tags: [BlockTags.CLAY],
+    },
+    factory: () => new ClayBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.MUSHROOM,
+      name: 'mushroom',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 0.2,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 0,
+      tags: [],
+    },
+    factory: () => new MushroomBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.MUSHROOM_CAP,
+      name: 'mushroom_cap',
+      isOpaque: true,
+      isSolid: true,
+      isLiquid: false,
+      hardness: 0.2,
+      lightLevel: 0,
+      lightBlocking: 15,
+      demolitionForceRequired: 0,
+      tags: [],
+    },
+    factory: () => new MushroomCapBlock(),
+  })
+
+  // Swamp water blocks
+  registerBlock({
+    properties: {
+      id: BlockIds.SWAMP_WATER,
+      name: 'swamp_water',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 3,
+      demolitionForceRequired: Infinity,
+      tags: [BlockTags.LIQUID_SOURCE],
+      liquidFamily: 'swamp_water',
+      liquidLevel: 8,
+    },
+    factory: () => new SwampWaterBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.SWAMP_WATER_SEVEN_EIGHTH,
+      name: 'swamp_water_seven_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 2,
+      demolitionForceRequired: Infinity,
+      tags: [],
+      liquidFamily: 'swamp_water',
+      liquidLevel: 7,
+    },
+    factory: () => new SwampWaterSevenEighthBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.SWAMP_WATER_THREE_QUARTER,
+      name: 'swamp_water_three_quarter',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 2,
+      demolitionForceRequired: Infinity,
+      tags: [],
+      liquidFamily: 'swamp_water',
+      liquidLevel: 6,
+    },
+    factory: () => new SwampWaterThreeQuarterBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.SWAMP_WATER_FIVE_EIGHTH,
+      name: 'swamp_water_five_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 1,
+      demolitionForceRequired: Infinity,
+      tags: [],
+      liquidFamily: 'swamp_water',
+      liquidLevel: 5,
+    },
+    factory: () => new SwampWaterFiveEighthBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.SWAMP_WATER_HALF,
+      name: 'swamp_water_half',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 1,
+      demolitionForceRequired: Infinity,
+      tags: [],
+      liquidFamily: 'swamp_water',
+      liquidLevel: 4,
+    },
+    factory: () => new SwampWaterHalfBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.SWAMP_WATER_THREE_EIGHTH,
+      name: 'swamp_water_three_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+      liquidFamily: 'swamp_water',
+      liquidLevel: 3,
+    },
+    factory: () => new SwampWaterThreeEighthBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.SWAMP_WATER_QUARTER,
+      name: 'swamp_water_quarter',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+      liquidFamily: 'swamp_water',
+      liquidLevel: 2,
+    },
+    factory: () => new SwampWaterQuarterBlock(),
+  })
+
+  registerBlock({
+    properties: {
+      id: BlockIds.SWAMP_WATER_EIGHTH,
+      name: 'swamp_water_eighth',
+      isOpaque: false,
+      isSolid: false,
+      isLiquid: true,
+      hardness: 100,
+      lightLevel: 0,
+      lightBlocking: 0,
+      demolitionForceRequired: Infinity,
+      tags: [],
+      liquidFamily: 'swamp_water',
+      liquidLevel: 1,
+    },
+    factory: () => new SwampWaterEighthBlock(),
   })
 }

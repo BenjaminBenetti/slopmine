@@ -14,6 +14,8 @@ import { SkylightPropagator } from '../world/lighting/SkylightPropagator.ts'
 import { CliffFeature, type CliffFeatureSettings } from '../world/generate/features/CliffFeature.ts'
 import { OreFeature, type OreFeatureSettings, type OrePosition } from '../world/generate/features/OreFeature.ts'
 import { WaterFeature, type WaterEdgeEffects } from '../world/generate/features/WaterFeature.ts'
+import { OasisFeature, type OasisSettings } from '../world/generate/features/OasisFeature.ts'
+import { LavaFeature, type LavaFeatureConfig } from '../world/generate/features/LavaFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
@@ -75,6 +77,8 @@ export type FeatureConfig =
   | { type: 'cliff'; settings: CliffFeatureSettings }
   | { type: 'ore'; settings: OreFeatureSettings }
   | { type: 'water'; settings: WaterSettings }
+  | { type: 'oasis'; settings: OasisSettings }
+  | { type: 'lava'; settings: LavaFeatureConfig }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -265,6 +269,10 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new OreFeature(config.settings)
       case 'water':
         return new WaterFeature(config.settings)
+      case 'oasis':
+        return new OasisFeature(config.settings)
+      case 'lava':
+        return new LavaFeature(config.settings)
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }
@@ -970,7 +978,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   // Phase 3: Apply provisional skylight (uses blended height)
   applyProvisionalSkylight(subChunk, noise, seaLevel, minWorldY, maxWorldY, biomeData)
 
-  // Phase 4: Apply ore features and collect positions (uses primary biome)
+  // Phase 4: Apply all features (uses primary biome)
   const orePositions: OrePosition[] = []
   const features = createFeatures(biomeConfig.features)
 
@@ -992,21 +1000,23 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     getBaseHeightAt: getHeight,
   }
 
-  // Apply ore features and collect positions
+  // Apply all features
   for (const feature of features) {
     if (feature instanceof OreFeature) {
-      // Check if ore Y range overlaps with this sub-chunk
+      // Special handling for ore: collect positions for main thread
       const oreMinY = feature.settings.minY
       const oreMaxY = feature.settings.maxY
       if (oreMaxY >= minWorldY && oreMinY <= maxWorldY) {
         const positions = feature.scanWithPositions(featureContext)
-        // Filter to only positions within this sub-chunk's Y range
         for (const pos of positions) {
           if (pos.y >= minWorldY && pos.y <= maxWorldY) {
             orePositions.push(pos)
           }
         }
       }
+    } else {
+      // Generic handling: call scan() for all other features
+      await feature.scan(featureContext)
     }
   }
 

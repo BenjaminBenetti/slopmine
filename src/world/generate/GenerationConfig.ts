@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'slopmine:worldConfig'
 
-export type BiomeType = 'plains' | 'grassy-hills' | 'desert'
+export type BiomeType = 'plains' | 'grassy-hills' | 'desert' | 'volcanic' | 'jungle' | 'swamp'
 
 export interface IGenerationConfig {
   seed: number

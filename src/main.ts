@@ -30,6 +30,7 @@ import {
 } from './world/index.ts'
 import { registerDefaultRecipes } from './crafting/index.ts'
 import { WorldGenerator } from './world/generate/index.ts'
+import { biomeRegistry } from './world/generate/biomes/BiomeRegistry.ts'
 import { GraphicsSettings } from './settings/index.ts'
 import * as THREE from 'three'
 import {
@@ -120,6 +121,29 @@ recipeRegistry.register({
 
 // Register block UI for forge
 blockUIRegistry.register(BlockIds.FORGE, (state) => createForgeUI(state as ForgeBlockState))
+
+// Biome mini-map helpers
+function getBiomeAbbreviation(biomeType: string): string {
+  return biomeType.substring(0, 3).toUpperCase()
+}
+
+function calculateBiomeMiniMap(worldX: number, worldZ: number, seed: number): string[][] {
+  const chunkX = Math.floor(worldX / 32)
+  const chunkZ = Math.floor(worldZ / 32)
+  const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
+
+  // 5x5 grid with player's region at center [2][2]
+  const grid: string[][] = []
+  for (let dz = -2; dz <= 2; dz++) {
+    const row: string[] = []
+    for (let dx = -2; dx <= 2; dx++) {
+      const biome = biomeRegistry.selectBiome(regionX + dx, regionZ + dz, seed)
+      row.push(getBiomeAbbreviation(biome))
+    }
+    grid.push(row)
+  }
+  return grid
+}
 
 const renderer = new Renderer()
 
@@ -684,6 +708,10 @@ const gameLoop = new GameLoop({
     const renderRes = renderer.getRenderResolution()
     fpsCounter.setRenderResolution(renderRes.width, renderRes.height)
     fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
+    fpsCounter.setBiomeMiniMap({
+      grid: calculateBiomeMiniMap(playerBody.position.x, playerBody.position.z, worldGenerator.getConfig().seed),
+      yaw: cameraControls.getYaw(),
+    })
     fpsCounter.setLightingStats(world.getBackgroundLightingStats())
     fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
     fpsCounter.setRendererStats(rendererStats)

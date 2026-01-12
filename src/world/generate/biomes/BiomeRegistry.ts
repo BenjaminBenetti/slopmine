@@ -4,6 +4,9 @@ import type { BiomeGenerator } from '../BiomeGenerator.ts'
 import { PlainsGenerator } from './PlainsGenerator.ts'
 import { GrassyHillsGenerator } from './GrassyHillsGenerator.ts'
 import { DesertGenerator } from './DesertGenerator.ts'
+import { VolcanicGenerator } from './VolcanicGenerator.ts'
+import { JungleGenerator } from './JungleGenerator.ts'
+import { SwampGenerator } from './SwampGenerator.ts'
 
 /**
  * Information about a registered biome.
@@ -58,6 +61,27 @@ export class BiomeRegistry {
       type: 'desert',
       frequency: desertGen.getBiomeProperties().frequency,
       createGenerator: (config) => new DesertGenerator(config),
+    })
+
+    const volcanicGen = new VolcanicGenerator(defaultConfig)
+    this.register({
+      type: 'volcanic',
+      frequency: volcanicGen.getBiomeProperties().frequency,
+      createGenerator: (config) => new VolcanicGenerator(config),
+    })
+
+    const jungleGen = new JungleGenerator(defaultConfig)
+    this.register({
+      type: 'jungle',
+      frequency: jungleGen.getBiomeProperties().frequency,
+      createGenerator: (config) => new JungleGenerator(config),
+    })
+
+    const swampGen = new SwampGenerator(defaultConfig)
+    this.register({
+      type: 'swamp',
+      frequency: swampGen.getBiomeProperties().frequency,
+      createGenerator: (config) => new SwampGenerator(config),
     })
   }
 

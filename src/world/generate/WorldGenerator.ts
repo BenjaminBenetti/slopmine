@@ -9,6 +9,8 @@ import type { BiomeGenerator, WaterSettings } from './BiomeGenerator.ts'
 import { biomeRegistry, BIOME_REGION_SIZE } from './biomes/BiomeRegistry.ts'
 import { CliffFeature } from './features/CliffFeature.ts'
 import { OreFeature } from './features/OreFeature.ts'
+import { OasisFeature } from './features/OasisFeature.ts'
+import { LavaFeature } from './features/LavaFeature.ts'
 import type { WaterEdgeEffects } from './features/WaterFeature.ts'
 import { EntranceGenerator } from './caves/EntranceGenerator.ts'
 import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../workers/ChunkGenerationWorker.ts'
@@ -141,6 +143,12 @@ export class WorldGenerator {
       }
       if (feature instanceof OreFeature) {
         return { type: 'ore', settings: feature.settings }
+      }
+      if (feature instanceof OasisFeature) {
+        return { type: 'oasis', settings: feature.settings }
+      }
+      if (feature instanceof LavaFeature) {
+        return { type: 'lava', settings: (feature as any).config }
       }
       throw new Error(`Unknown feature type: ${feature.constructor.name}`)
     })
