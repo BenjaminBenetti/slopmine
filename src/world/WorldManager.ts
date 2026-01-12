@@ -1042,9 +1042,13 @@ export class WorldManager implements IModifiedChunkProvider {
   private isLiquidBlockId(blockId: BlockId): boolean {
     return (
       blockId === BlockIds.WATER ||
+      blockId === BlockIds.WATER_SEVEN_EIGHTH ||
       blockId === BlockIds.WATER_THREE_QUARTER ||
+      blockId === BlockIds.WATER_FIVE_EIGHTH ||
       blockId === BlockIds.WATER_HALF ||
-      blockId === BlockIds.WATER_QUARTER
+      blockId === BlockIds.WATER_THREE_EIGHTH ||
+      blockId === BlockIds.WATER_QUARTER ||
+      blockId === BlockIds.WATER_EIGHTH
     )
   }
 

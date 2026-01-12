@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: LiquidPhysicsConfig = {
   nearbyDistance: 2,
   maxDistance: 8,
   enabled: true,
-  updateIntervalMs: 100,
+  updateIntervalMs: 500,  // Slower updates = less CPU
 }
 
 /**
@@ -42,12 +42,8 @@ export class LiquidPhysicsManager {
   private readonly columnQueue: ChunkKey[] = []
   private readonly columnQueueSet: Set<ChunkKey> = new Set()
 
-  // Cooldown tracking - when each column was last processed
+  // Per-column cooldown tracking (key -> last processed timestamp)
   private readonly lastProcessedTime: Map<ChunkKey, number> = new Map()
-
-  // Player position for priority calculation (in chunk coordinates)
-  private playerChunkX = 0
-  private playerChunkZ = 0
 
   // Stats tracking
   private columnsProcessedSinceLastQuery = 0
@@ -85,11 +81,10 @@ export class LiquidPhysicsManager {
   }
 
   /**
-   * Update the player position for priority processing.
+   * Update the player position (no longer used, kept for API compatibility).
    */
-  setPlayerPosition(worldX: number, worldZ: number): void {
-    this.playerChunkX = Math.floor(worldX / CHUNK_SIZE_X)
-    this.playerChunkZ = Math.floor(worldZ / CHUNK_SIZE_Z)
+  setPlayerPosition(_worldX: number, _worldZ: number): void {
+    // No longer used - simple FIFO queue now
   }
 
   /**
@@ -138,7 +133,7 @@ export class LiquidPhysicsManager {
   updateQueue(): void {}
 
   /**
-   * Process the next chunk column in the queue.
+   * Process the next chunk column in the queue (FIFO with cooldown).
    */
   processNextColumn(): boolean {
     if (!this.config.enabled) return false
@@ -147,43 +142,31 @@ export class LiquidPhysicsManager {
 
     const now = performance.now()
 
-    // Find a valid column to process
-    let bestIndex = -1
-    let bestDistance = Infinity
+    // Find first column that's not on cooldown
+    let keyToProcess: ChunkKey | null = null
+    let keysSkipped = 0
 
     for (let i = 0; i < this.columnQueue.length; i++) {
       const key = this.columnQueue[i]
-
       const lastTime = this.lastProcessedTime.get(key) ?? 0
-      if (now - lastTime < this.config.updateIntervalMs) continue
-
-      const [xStr, zStr] = key.split(',')
-      const chunkX = Number(xStr)
-      const chunkZ = Number(zStr)
-
-      const dx = chunkX - this.playerChunkX
-      const dz = chunkZ - this.playerChunkZ
-      const distance = Math.sqrt(dx * dx + dz * dz)
-
-      if (distance > this.config.maxDistance) continue
-
-      if (distance < bestDistance) {
-        bestDistance = distance
-        bestIndex = i
+      if (now - lastTime >= this.config.updateIntervalMs) {
+        // This column is ready - remove it from queue
+        this.columnQueue.splice(i, 1)
+        this.columnQueueSet.delete(key)
+        keyToProcess = key
+        break
       }
+      keysSkipped++
+      // Don't search forever - if first 10 are all on cooldown, wait
+      if (keysSkipped >= 10) break
     }
 
-    if (bestIndex === -1) {
+    if (!keyToProcess) {
+      // All checked columns are on cooldown
       return this.columnQueue.length > 0
     }
 
-    const key = this.columnQueue[bestIndex]
-    this.columnQueue.splice(bestIndex, 1)
-    this.columnQueueSet.delete(key)
-
-    this.lastProcessedTime.set(key, now)
-
-    const [xStr, zStr] = key.split(',')
+    const [xStr, zStr] = keyToProcess.split(',')
     const chunkX = BigInt(xStr)
     const chunkZ = BigInt(zStr)
     const coord: IChunkCoordinate = { x: chunkX, z: chunkZ }
@@ -192,18 +175,25 @@ export class LiquidPhysicsManager {
       return this.columnQueue.length > 0
     }
 
+    // Mark as processed
+    this.lastProcessedTime.set(keyToProcess, now)
+
     const changed = this.processColumn(chunkX, chunkZ)
     this.columnsProcessedSinceLastQuery++
 
     this.flushBlockChanges!()
 
-    // Re-queue if water changed
+    // Only re-queue self if water changed
     if (changed) {
       this.queueColumn(chunkX, chunkZ)
-      this.queueColumn(chunkX - 1n, chunkZ)
-      this.queueColumn(chunkX + 1n, chunkZ)
-      this.queueColumn(chunkX, chunkZ - 1n)
-      this.queueColumn(chunkX, chunkZ + 1n)
+    }
+
+    // Clean up old cooldown entries periodically (when map gets large)
+    if (this.lastProcessedTime.size > 1000) {
+      const cutoff = now - this.config.updateIntervalMs * 2
+      for (const [k, t] of this.lastProcessedTime) {
+        if (t < cutoff) this.lastProcessedTime.delete(k)
+      }
     }
 
     return this.columnQueue.length > 0
@@ -337,34 +327,31 @@ export class LiquidPhysicsManager {
     // === STEP 0: SOURCE CREATION (Minecraft infinite water) ===
     // If this is flowing water on a solid block with 2+ adjacent source blocks, become a source
     if (level < WATER_LEVEL_MAX && this.isSolid(belowId)) {
-      const neighbors = [
-        { x: x + 1n, z },
-        { x: x - 1n, z },
-        { x, z: z + 1n },
-        { x, z: z - 1n },
-      ]
-
       let sourceCount = 0
-      for (const n of neighbors) {
-        const nId = this.getBlockId!(n.x, y, n.z)
-        if (this.getWaterLevel(nId) >= WATER_LEVEL_MAX) {
-          sourceCount++
-        }
-      }
+
+      // Check horizontal neighbors for sources
+      const n1 = this.getBlockId!(x + 1n, y, z)
+      const n2 = this.getBlockId!(x - 1n, y, z)
+      const n3 = this.getBlockId!(x, y, z + 1n)
+      const n4 = this.getBlockId!(x, y, z - 1n)
+
+      if (this.getWaterLevel(n1) >= WATER_LEVEL_MAX) sourceCount++
+      if (this.getWaterLevel(n2) >= WATER_LEVEL_MAX) sourceCount++
+      if (this.getWaterLevel(n3) >= WATER_LEVEL_MAX) sourceCount++
+      if (this.getWaterLevel(n4) >= WATER_LEVEL_MAX) sourceCount++
 
       // Also count water above as a source
-      const aboveId = this.getBlockId!(x, y + 1n, z)
-      if (this.isWaterBlock(aboveId)) {
-        sourceCount++
+      if (sourceCount < 2) {
+        const aboveId = this.getBlockId!(x, y + 1n, z)
+        if (this.isWaterBlock(aboveId)) sourceCount++
       }
 
       // 2+ sources = become a source block
       if (sourceCount >= 2) {
         if (this.setBlockRaw!(x, y, z, BlockIds.WATER)) {
-          changed = true
+          return true  // Changed to source, let next tick handle spreading
         }
-        // Now we're a source, continue processing as such
-        return changed || this.processWaterBlock(x, y, z)
+        return false  // Already a source somehow
       }
     }
 
@@ -373,6 +360,7 @@ export class LiquidPhysicsManager {
       // Flow down into air - create full water (falling water is full)
       if (this.setBlockRaw!(x, y - 1n, z, BlockIds.WATER)) {
         changed = true
+        this.queueColumnAt(x, z)  // Same column, but queue for next tick
       }
     } else if (this.isWaterBlock(belowId)) {
       // Below is water - make it full if not already
@@ -405,11 +393,13 @@ export class LiquidPhysicsManager {
           if (nId === BlockIds.AIR) {
             if (this.setBlockRaw!(n.x, y, n.z, this.levelToBlockId(spreadLevel))) {
               changed = true
+              this.queueColumnAt(n.x, n.z)  // Queue neighbor chunk for processing
             }
           } else if (this.isWaterBlock(nId) && nLevel < spreadLevel) {
             // Upgrade lower water to our spread level
             if (this.setBlockRaw!(n.x, y, n.z, this.levelToBlockId(spreadLevel))) {
               changed = true
+              this.queueColumnAt(n.x, n.z)  // Queue neighbor chunk for processing
             }
           }
         }
