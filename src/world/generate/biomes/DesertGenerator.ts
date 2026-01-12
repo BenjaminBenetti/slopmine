@@ -18,7 +18,7 @@ export class DesertGenerator extends BiomeGenerator {
   protected readonly properties: BiomeProperties = {
     name: 'desert',
     frequency: 0.5,
-    treeDensity: 0.3, // Low density - cacti are sparse
+    treeDensity: 1.0, // Low density - cacti are sparse
     features: [
       // Sandstone cliffs
       new CliffFeature({

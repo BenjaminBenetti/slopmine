@@ -506,7 +506,186 @@ async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGene
 // ==================== Sub-Chunk Generation ====================
 
 /**
- * Generate terrain for a sub-chunk with biome blending.
+ * Dither distance in blocks from biome boundary where blending occurs.
+ */
+const DITHER_DISTANCE = 8
+
+/**
+ * Get unique neighboring biomes that differ from primary.
+ */
+function getUniqueNeighborBiomes(biomeData: BiomeBlendData): WorkerBiomeConfig[] {
+  const primary = biomeData.primary
+  const neighbors: WorkerBiomeConfig[] = []
+  const seen = new Set<string>([primary.name])
+
+  const candidates = [
+    biomeData.north, biomeData.south, biomeData.east, biomeData.west,
+    biomeData.northeast, biomeData.northwest, biomeData.southeast, biomeData.southwest
+  ]
+
+  for (const neighbor of candidates) {
+    if (neighbor && !seen.has(neighbor.name)) {
+      seen.add(neighbor.name)
+      neighbors.push(neighbor)
+    }
+  }
+
+  return neighbors
+}
+
+/**
+ * Calculate dither probability based on distance to boundary.
+ * Returns 0-1 where 0 = fully primary, 1 = fully secondary.
+ */
+function getDitherProbability(distanceToBoundary: number): number {
+  if (distanceToBoundary >= DITHER_DISTANCE) return 0
+  // Smooth transition: 0 at edge, 0.5 at boundary
+  return 0.5 * (1 - distanceToBoundary / DITHER_DISTANCE)
+}
+
+/**
+ * Deterministic dither decision based on world position.
+ * Returns true if should use secondary biome block.
+ */
+function shouldDither(worldX: number, worldZ: number, worldY: number, seed: number, probability: number): boolean {
+  if (probability <= 0) return false
+  if (probability >= 1) return true
+
+  // Hash position for deterministic randomness
+  let hash = seed ^ (worldX * 73856093) ^ (worldZ * 19349663) ^ (worldY * 83492791)
+  hash = ((hash ^ (hash >>> 16)) * 0x85ebca6b) >>> 0
+  hash = ((hash ^ (hash >>> 13)) * 0xc2b2ae35) >>> 0
+  hash = (hash ^ (hash >>> 16)) >>> 0
+  const random = (hash & 0x7fffffff) / 0x7fffffff
+
+  return random < probability
+}
+
+/**
+ * Size of a biome region in chunks.
+ */
+const BIOME_REGION_SIZE = 16
+
+/**
+ * Check if this chunk is at the edge of its biome region in a given direction.
+ */
+function isAtBiomeRegionEdge(
+  chunkLocalX: number,
+  chunkLocalZ: number,
+  direction: 'north' | 'south' | 'east' | 'west'
+): boolean {
+  switch (direction) {
+    case 'north': return chunkLocalZ === 0
+    case 'south': return chunkLocalZ === BIOME_REGION_SIZE - 1
+    case 'west': return chunkLocalX === 0
+    case 'east': return chunkLocalX === BIOME_REGION_SIZE - 1
+  }
+}
+
+/**
+ * Get the neighbor biome and distance to boundary for a specific position.
+ * Only returns a neighbor if we're actually at a biome region boundary.
+ */
+function getNeighborAndDistance(
+  biomeData: BiomeBlendData,
+  localX: number,
+  localZ: number
+): { neighbor: WorkerBiomeConfig; distance: number } | null {
+  const primary = biomeData.primary
+  const { chunkLocalX, chunkLocalZ } = biomeData
+
+  // Calculate distances to each chunk edge
+  const distToWest = localX
+  const distToEast = CHUNK_SIZE_X - 1 - localX
+  const distToNorth = localZ
+  const distToSouth = CHUNK_SIZE_Z - 1 - localZ
+
+  // Check each direction - only if we're at the biome region edge AND have a different neighbor
+  let bestNeighbor: WorkerBiomeConfig | null = null
+  let bestDistance = Infinity
+
+  // West edge
+  if (isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'west') &&
+      biomeData.west && biomeData.west.name !== primary.name &&
+      distToWest < DITHER_DISTANCE && distToWest < bestDistance) {
+    bestNeighbor = biomeData.west
+    bestDistance = distToWest
+  }
+
+  // East edge
+  if (isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'east') &&
+      biomeData.east && biomeData.east.name !== primary.name &&
+      distToEast < DITHER_DISTANCE && distToEast < bestDistance) {
+    bestNeighbor = biomeData.east
+    bestDistance = distToEast
+  }
+
+  // North edge
+  if (isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'north') &&
+      biomeData.north && biomeData.north.name !== primary.name &&
+      distToNorth < DITHER_DISTANCE && distToNorth < bestDistance) {
+    bestNeighbor = biomeData.north
+    bestDistance = distToNorth
+  }
+
+  // South edge
+  if (isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'south') &&
+      biomeData.south && biomeData.south.name !== primary.name &&
+      distToSouth < DITHER_DISTANCE && distToSouth < bestDistance) {
+    bestNeighbor = biomeData.south
+    bestDistance = distToSouth
+  }
+
+  // Corner cases - check if we're at a corner of the biome region
+  const atWestEdge = isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'west')
+  const atEastEdge = isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'east')
+  const atNorthEdge = isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'north')
+  const atSouthEdge = isAtBiomeRegionEdge(chunkLocalX, chunkLocalZ, 'south')
+
+  // Northwest corner
+  if (atWestEdge && atNorthEdge && biomeData.northwest && biomeData.northwest.name !== primary.name) {
+    const cornerDist = Math.min(distToWest, distToNorth)
+    if (cornerDist < DITHER_DISTANCE && cornerDist < bestDistance) {
+      bestNeighbor = biomeData.northwest
+      bestDistance = cornerDist
+    }
+  }
+
+  // Northeast corner
+  if (atEastEdge && atNorthEdge && biomeData.northeast && biomeData.northeast.name !== primary.name) {
+    const cornerDist = Math.min(distToEast, distToNorth)
+    if (cornerDist < DITHER_DISTANCE && cornerDist < bestDistance) {
+      bestNeighbor = biomeData.northeast
+      bestDistance = cornerDist
+    }
+  }
+
+  // Southwest corner
+  if (atWestEdge && atSouthEdge && biomeData.southwest && biomeData.southwest.name !== primary.name) {
+    const cornerDist = Math.min(distToWest, distToSouth)
+    if (cornerDist < DITHER_DISTANCE && cornerDist < bestDistance) {
+      bestNeighbor = biomeData.southwest
+      bestDistance = cornerDist
+    }
+  }
+
+  // Southeast corner
+  if (atEastEdge && atSouthEdge && biomeData.southeast && biomeData.southeast.name !== primary.name) {
+    const cornerDist = Math.min(distToEast, distToSouth)
+    if (cornerDist < DITHER_DISTANCE && cornerDist < bestDistance) {
+      bestNeighbor = biomeData.southeast
+      bestDistance = cornerDist
+    }
+  }
+
+  if (bestNeighbor) {
+    return { neighbor: bestNeighbor, distance: bestDistance }
+  }
+  return null
+}
+
+/**
+ * Generate terrain for a sub-chunk with biome blending and block dithering.
  * Uses fillChunk with Y bounds for efficient generation.
  */
 function generateSubChunkTerrain(
@@ -519,15 +698,81 @@ function generateSubChunkTerrain(
   maxWorldY: number,
   biomeData: BiomeBlendData
 ): { hasTerrainAbove: boolean; maxSolidY: number } {
-  // Get biome generator instance (uses primary biome for block types)
-  const biome = getBiomeGenerator(biomeData.primary.name, seed, seaLevel, terrainThickness)
+  // Get primary biome generator
+  const primaryBiome = getBiomeGenerator(biomeData.primary.name, seed, seaLevel, terrainThickness)
 
   // Height getter with biome blending
   const getHeight = (worldX: number, worldZ: number) =>
     getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
 
-  // Call the biome's fillChunk with sub-chunk's Y bounds
-  ;(biome as any).fillChunk(subChunk, minWorldY, maxWorldY, noise, getHeight)
+  // Fill with primary biome first
+  ;(primaryBiome as any).fillChunk(subChunk, minWorldY, maxWorldY, noise, getHeight)
+
+  // Check if we have any different neighboring biomes
+  const uniqueNeighbors = getUniqueNeighborBiomes(biomeData)
+
+  if (uniqueNeighbors.length > 0) {
+    // Create temporary storage for secondary biome blocks
+    const blockCount = CHUNK_SIZE_X * CHUNK_SIZE_Z * SUB_CHUNK_HEIGHT
+    const secondaryBlocks = new Uint16Array(blockCount)
+
+    // For each unique neighbor, fill temp buffer and dither-blend
+    for (const neighborConfig of uniqueNeighbors) {
+      const neighborBiome = getBiomeGenerator(neighborConfig.name, seed, seaLevel, terrainThickness)
+
+      // Create a temp sub-chunk to fill with neighbor biome
+      const tempSubChunk = new WorkerSubChunk(
+        Number(subChunk.coordinate.x),
+        Number(subChunk.coordinate.z),
+        Number(subChunk.coordinate.subY),
+        secondaryBlocks,
+        new Uint8Array(blockCount) // Light data not needed for dithering
+      )
+
+      // Fill temp with neighbor biome
+      ;(neighborBiome as any).fillChunk(tempSubChunk, minWorldY, maxWorldY, noise, getHeight)
+
+      // Dither-blend: copy secondary blocks based on dither pattern
+      const coord = subChunk.coordinate
+      for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
+        for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
+          // Check if this position should blend with this neighbor
+          const neighborInfo = getNeighborAndDistance(biomeData, localX, localZ)
+          if (!neighborInfo || neighborInfo.neighbor.name !== neighborConfig.name) {
+            continue
+          }
+
+          // Calculate dither probability based on distance to biome boundary
+          const ditherProb = getDitherProbability(neighborInfo.distance)
+
+          if (ditherProb <= 0) continue
+
+          // Get world coordinates for deterministic dithering
+          const worldCoord = localToWorld(
+            { x: coord.x, z: coord.z },
+            { x: localX, y: 0, z: localZ }
+          )
+          const worldX = Number(worldCoord.x)
+          const worldZ = Number(worldCoord.z)
+
+          // Dither each Y level in this column
+          for (let localY = 0; localY < SUB_CHUNK_HEIGHT; localY++) {
+            const worldY = minWorldY + localY
+            if (shouldDither(worldX, worldZ, worldY, seed, ditherProb)) {
+              const secondaryBlock = tempSubChunk.getBlockId(localX, localY, localZ)
+              // Only copy if secondary has a block (don't replace solid with air)
+              if (secondaryBlock !== 0) {
+                subChunk.setBlockId(localX, localY, localZ, secondaryBlock)
+              }
+            }
+          }
+        }
+      }
+
+      // Clear temp buffer for next neighbor
+      secondaryBlocks.fill(0)
+    }
+  }
 
   // Calculate hasTerrainAbove and maxSolidY by scanning the sub-chunk
   let hasTerrainAbove = false
