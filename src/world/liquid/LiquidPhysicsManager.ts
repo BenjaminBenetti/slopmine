@@ -78,6 +78,14 @@ export class LiquidPhysicsManager {
   // Cooldown tracking - when each column was last processed
   private readonly lastProcessedTime: Map<ChunkKey, number> = new Map()
 
+  // Previous water state tracking for oscillation prevention
+  // Key: "x,y,z" position string, Value: half-units from previous tick
+  private readonly previousWaterState: Map<string, number> = new Map()
+
+  // Flow direction tracking for momentum-like behavior
+  // Key: "x,y,z" position string, Value: direction water flowed (dx, dz in bigint)
+  private readonly previousFlowDirection: Map<string, { dx: bigint; dz: bigint }> = new Map()
+
   // Player position for priority calculation (in chunk coordinates)
   private playerChunkX = 0
   private playerChunkZ = 0
@@ -481,6 +489,10 @@ export class LiquidPhysicsManager {
     // Not a liquid block or empty, nothing to do
     if (level <= 0) return false
 
+    // Helper to create position key for state tracking
+    const posKey = (px: bigint, py: bigint, pz: bigint) => `${px},${py},${pz}`
+    const selfKey = posKey(x, y, z)
+
     // Work in half-units (integers) to prevent floating-point water loss
     // Each half-unit = 0.5 level, so full water (4) = 8 half-units
     let selfHalfUnits = Math.round(level * 2)
@@ -523,8 +535,68 @@ export class LiquidPhysicsManager {
     if (selfHalfUnits <= 0) {
       if (changed) {
         this.setBlockRaw!(x, y, z, BlockIds.AIR)
+        this.previousWaterState.delete(selfKey)
+        this.previousFlowDirection.delete(selfKey)
       }
       return changed
+    }
+
+    // === STEP 1.5: DIAGONAL DOWN FLOW ===
+    // If we couldn't flow straight down (solid below), try flowing diagonally down
+    // to water/air at y-1 in horizontal neighbor positions
+    // This handles water on a ledge flowing down to adjacent lower water
+    const belowIsSolid = !this.canFlowInto(belowId)
+    if (belowIsSolid && selfHalfUnits > 0) {
+      const diagonalDownTargets = [
+        { x: x + 1n, z },
+        { x: x - 1n, z },
+        { x, z: z + 1n },
+        { x, z: z - 1n },
+      ]
+        .map((pos) => {
+          const targetId = this.getBlockId!(pos.x, y - 1n, pos.z)
+          const targetLevel = this.getWaterLevel(targetId)
+          const targetHalfUnits = Math.round(targetLevel * 2)
+          return {
+            x: pos.x,
+            z: pos.z,
+            blockId: targetId,
+            halfUnits: targetHalfUnits,
+            canFlow: this.canFlowInto(targetId) && targetHalfUnits < maxHalfUnits,
+          }
+        })
+        .filter((t) => t.canFlow)
+        .sort((a, b) => a.halfUnits - b.halfUnits) // Lowest first
+
+      for (const target of diagonalDownTargets) {
+        if (selfHalfUnits <= 0) break
+
+        // Flow down as much as possible using compressibility model
+        const totalMass = (selfHalfUnits + target.halfUnits) * 0.5
+        const stableBottom = this.getStableStateBottom(totalMass)
+        const stableBottomHalfUnits = Math.round(stableBottom * 2)
+
+        let flowHalfUnits = stableBottomHalfUnits - target.halfUnits
+        flowHalfUnits = Math.min(flowHalfUnits, selfHalfUnits)
+        flowHalfUnits = Math.max(0, flowHalfUnits)
+
+        if (flowHalfUnits >= 1) {
+          target.halfUnits += flowHalfUnits
+          selfHalfUnits -= flowHalfUnits
+          this.setBlockRaw!(target.x, y - 1n, target.z, this.levelToBlockId(target.halfUnits * 0.5))
+          changed = true
+        }
+      }
+
+      // Check if we emptied out after diagonal flow
+      if (selfHalfUnits <= 0) {
+        if (changed) {
+          this.setBlockRaw!(x, y, z, BlockIds.AIR)
+          this.previousWaterState.delete(selfKey)
+          this.previousFlowDirection.delete(selfKey)
+        }
+        return changed
+      }
     }
 
     // === STEP 2: HORIZONTAL FLOW ===
@@ -536,15 +608,25 @@ export class LiquidPhysicsManager {
       const waterInfo = this.getConnectedWaterInfo(x, y, z, EVAPORATION_SEARCH_DISTANCE)
       if (waterInfo.volume < EVAPORATION_VOLUME_THRESHOLD || !waterInfo.hasSubstantialBlock) {
         this.setBlockRaw!(x, y, z, BlockIds.AIR)
+        this.previousWaterState.delete(selfKey)
+        this.previousFlowDirection.delete(selfKey)
         return true
       }
       // Update self if we changed from vertical flow
       if (selfHalfUnits !== originalSelfHalfUnits) {
         this.setBlockRaw!(x, y, z, this.levelToBlockId(selfHalfUnits * 0.5))
+        this.previousWaterState.set(selfKey, selfHalfUnits)
+        // Clear flow direction - tiny puddles don't flow horizontally
+        this.previousFlowDirection.delete(selfKey)
         return true
       }
+      // Update previous state even if no change (for oscillation tracking)
+      this.previousWaterState.set(selfKey, selfHalfUnits)
       return changed
     }
+
+    // Get previous state for oscillation detection
+    const prevSelfHalfUnits = this.previousWaterState.get(selfKey) ?? selfHalfUnits
 
     // Get horizontal neighbors
     const horizontalNeighbors = [
@@ -554,23 +636,82 @@ export class LiquidPhysicsManager {
       { x, z: z - 1n },
     ].map((n) => {
       const id = this.getBlockId!(n.x, y, n.z)
+      const nKey = posKey(n.x, y, n.z)
+      const currentHalfUnits = Math.round(this.getWaterLevel(id) * 2)
       return {
         x: n.x,
         z: n.z,
+        key: nKey,
         blockId: id,
-        halfUnits: Math.round(this.getWaterLevel(id) * 2),
+        halfUnits: currentHalfUnits,
+        prevHalfUnits: this.previousWaterState.get(nKey) ?? currentHalfUnits,
         canFlow: this.canFlowInto(id),
       }
     })
 
     // Filter to neighbors we can flow to (lower level and can receive water)
-    const flowableNeighbors = horizontalNeighbors.filter(
-      (n) => n.canFlow && n.halfUnits < selfHalfUnits
-    )
+    // OSCILLATION PREVENTION: Also require that previous state allowed this flow
+    const flowableNeighbors = horizontalNeighbors.filter((n) => {
+      if (!n.canFlow) return false
+      if (n.halfUnits >= selfHalfUnits) return false
+      // Check previous state - only flow if we were ALSO higher in previous tick
+      // This prevents A→B then B→A oscillation
+      if (prevSelfHalfUnits <= n.prevHalfUnits) return false
+      return true
+    })
+
+    // CIRCULAR FLOW PREVENTION: If all flowable neighbors are within 1 half-unit of self,
+    // AND there's no back pressure (no higher neighbors), we're at equilibrium - stop flowing
+    if (flowableNeighbors.length > 0) {
+      const maxDiff = Math.max(...flowableNeighbors.map((n) => selfHalfUnits - n.halfUnits))
+
+      // Check for back pressure - any horizontal neighbor that's higher than us
+      let hasBackPressure = horizontalNeighbors.some((n) => n.halfUnits > selfHalfUnits)
+
+      // Also check for elevated back pressure - water at Y+1 in horizontal positions
+      // Any water above and beside us will flow down and push us
+      if (!hasBackPressure) {
+        for (const n of horizontalNeighbors) {
+          const elevatedId = this.getBlockId!(n.x, y + 1n, n.z)
+          if (this.isLiquidBlock(elevatedId)) {
+            hasBackPressure = true
+            break
+          }
+        }
+      }
+
+      if (maxDiff <= 1 && !hasBackPressure) {
+        // Everyone is within 0.5 water level AND no pressure from behind
+        // We've reached equilibrium - stop flowing to prevent circular shuffling
+        this.previousWaterState.set(selfKey, selfHalfUnits)
+        // Keep flow direction in case we need it later when more water arrives
+        if (selfHalfUnits !== originalSelfHalfUnits) {
+          this.setBlockRaw!(x, y, z, this.levelToBlockId(selfHalfUnits * 0.5))
+          return true
+        }
+        return changed
+      }
+    }
 
     if (flowableNeighbors.length > 0) {
-      // Sort by level (lowest first) - prioritize flowing to lowest points
-      flowableNeighbors.sort((a, b) => a.halfUnits - b.halfUnits)
+      // Get previous flow direction for momentum bias
+      const prevFlowDir = this.previousFlowDirection.get(selfKey)
+
+      // Sort flowable neighbors:
+      // 1. First priority: previous flow direction (momentum)
+      // 2. Second priority: lowest level (flows to lowest points first)
+      flowableNeighbors.sort((a, b) => {
+        // Check if either neighbor matches the previous flow direction
+        if (prevFlowDir) {
+          const aMatchesDir = (a.x - x === prevFlowDir.dx) && (a.z - z === prevFlowDir.dz)
+          const bMatchesDir = (b.x - x === prevFlowDir.dx) && (b.z - z === prevFlowDir.dz)
+          // Prioritize the one matching previous direction
+          if (aMatchesDir && !bMatchesDir) return -1
+          if (bMatchesDir && !aMatchesDir) return 1
+        }
+        // Secondary sort: lower level first
+        return a.halfUnits - b.halfUnits
+      })
 
       // Calculate total water available for horizontal distribution
       const totalHalfUnits = selfHalfUnits + flowableNeighbors.reduce((sum, n) => sum + n.halfUnits, 0)
@@ -579,6 +720,9 @@ export class LiquidPhysicsManager {
       // Target: everyone gets the same amount (or as close as possible)
       const baseHalfUnits = Math.floor(totalHalfUnits / cellCount)
       let remainder = totalHalfUnits % cellCount
+
+      // Track the direction we actually flow in (for next frame)
+      let flowedDirection: { dx: bigint; dz: bigint } | null = null
 
       // Only flow if we're above the target level
       if (selfHalfUnits > baseHalfUnits) {
@@ -601,10 +745,25 @@ export class LiquidPhysicsManager {
               neighbor.halfUnits += flowHalfUnits
               selfHalfUnits -= flowHalfUnits
               this.setBlockRaw!(neighbor.x, y, neighbor.z, this.levelToBlockId(neighbor.halfUnits * 0.5))
+              // Update previous state for neighbor
+              this.previousWaterState.set(neighbor.key, neighbor.halfUnits)
               changed = true
+
+              // Track the first (primary) direction we flowed in
+              if (!flowedDirection) {
+                flowedDirection = { dx: neighbor.x - x, dz: neighbor.z - z }
+              }
             }
           }
         }
+      }
+
+      // Update or clear flow direction for next frame
+      if (flowedDirection) {
+        this.previousFlowDirection.set(selfKey, flowedDirection)
+      } else if (changed) {
+        // We changed but didn't flow horizontally - clear direction
+        this.previousFlowDirection.delete(selfKey)
       }
     }
 
@@ -655,11 +814,22 @@ export class LiquidPhysicsManager {
         selfHalfUnits = Math.max(0, selfHalfUnits - 1)
         if (selfHalfUnits <= 0) {
           this.setBlockRaw!(x, y, z, BlockIds.AIR)
+          this.previousWaterState.delete(selfKey)
+          this.previousFlowDirection.delete(selfKey)
         } else {
           this.setBlockRaw!(x, y, z, this.levelToBlockId(selfHalfUnits * 0.5))
+          this.previousWaterState.set(selfKey, selfHalfUnits)
         }
         return true
       }
+    }
+
+    // Update previous state for oscillation prevention
+    if (selfHalfUnits > 0) {
+      this.previousWaterState.set(selfKey, selfHalfUnits)
+    } else {
+      this.previousWaterState.delete(selfKey)
+      this.previousFlowDirection.delete(selfKey)
     }
 
     return changed
