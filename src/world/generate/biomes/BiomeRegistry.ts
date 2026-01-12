@@ -3,6 +3,7 @@ import { GenerationConfig } from '../GenerationConfig.ts'
 import type { BiomeGenerator } from '../BiomeGenerator.ts'
 import { PlainsGenerator } from './PlainsGenerator.ts'
 import { GrassyHillsGenerator } from './GrassyHillsGenerator.ts'
+import { DesertGenerator } from './DesertGenerator.ts'
 
 /**
  * Information about a registered biome.
@@ -32,18 +33,31 @@ export class BiomeRegistry {
 
   /**
    * Register default biomes.
+   * Frequencies are read from the biome's properties for consistency.
    */
   private registerDefaultBiomes(): void {
+    // Create temporary generators to read their frequency properties
+    const defaultConfig = new GenerationConfig({ seed: 0 })
+
+    const plainsGen = new PlainsGenerator(defaultConfig)
     this.register({
       type: 'plains',
-      frequency: 1.0,
+      frequency: plainsGen.getBiomeProperties().frequency,
       createGenerator: (config) => new PlainsGenerator(config),
     })
 
+    const hillsGen = new GrassyHillsGenerator(defaultConfig)
     this.register({
       type: 'grassy-hills',
-      frequency: 1.0,
+      frequency: hillsGen.getBiomeProperties().frequency,
       createGenerator: (config) => new GrassyHillsGenerator(config),
+    })
+
+    const desertGen = new DesertGenerator(defaultConfig)
+    this.register({
+      type: 'desert',
+      frequency: desertGen.getBiomeProperties().frequency,
+      createGenerator: (config) => new DesertGenerator(config),
     })
   }
 

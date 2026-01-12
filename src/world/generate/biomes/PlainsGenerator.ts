@@ -18,7 +18,7 @@ import type { SimplexNoise } from '../SimplexNoise.ts'
 export class PlainsGenerator extends BiomeGenerator {
   protected readonly properties: BiomeProperties = {
     name: 'plains',
-    frequency: 4.0,
+    frequency: 1.0,
     treeDensity: 3.0,
     features: [
       new CliffFeature({

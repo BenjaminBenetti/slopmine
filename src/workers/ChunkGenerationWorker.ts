@@ -24,9 +24,9 @@ import type { TerrainConfig } from '../world/generate/terrain/TerrainConfig.ts'
 import type { CaveSettings, WaterSettings, BiomeGenerator } from '../world/generate/BiomeGenerator.ts'
 import type { IGenerationConfig } from '../world/generate/GenerationConfig.ts'
 
-// Import biome generators for direct instantiation
-import { PlainsGenerator } from '../world/generate/biomes/PlainsGenerator.ts'
-import { GrassyHillsGenerator } from '../world/generate/biomes/GrassyHillsGenerator.ts'
+// Import biome registry for dynamic biome instantiation
+import { biomeRegistry } from '../world/generate/biomes/BiomeRegistry.ts'
+import type { BiomeType } from '../world/generate/GenerationConfig.ts'
 
 // Initialize block registry in worker context
 registerDefaultBlocks()
@@ -39,6 +39,7 @@ const biomeCache = new Map<string, BiomeGenerator>()
 
 /**
  * Get or create a biome generator instance for the given config.
+ * Uses the biome registry to dynamically create generators.
  */
 function getBiomeGenerator(name: string, seed: number, seaLevel: number, terrainThickness: number): BiomeGenerator {
   const key = `${seed}-${name}`
@@ -52,16 +53,13 @@ function getBiomeGenerator(name: string, seed: number, seaLevel: number, terrain
       chunkDistance: 8,
     }
 
-    switch (name) {
-      case 'plains':
-        generator = new PlainsGenerator(config)
-        break
-      case 'grassy-hills':
-        generator = new GrassyHillsGenerator(config)
-        break
-      default:
-        // Default to plains for unknown biomes
-        generator = new PlainsGenerator(config)
+    // Get biome from registry, fallback to first registered biome if not found
+    const registration = biomeRegistry.get(name as BiomeType)
+    if (registration) {
+      generator = registration.createGenerator(config as any)
+    } else {
+      const allBiomes = biomeRegistry.getAll()
+      generator = allBiomes[0].createGenerator(config as any)
     }
 
     biomeCache.set(key, generator)
