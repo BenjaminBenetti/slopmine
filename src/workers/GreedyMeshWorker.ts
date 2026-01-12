@@ -831,7 +831,11 @@ function processSubChunk(
     const meta = groupMeta.get(key)!
 
     // Use Uint32Array if vertex count exceeds Uint16 limit
-    const maxIndex = Math.max(...inds)
+    // Note: Cannot use Math.max(...inds) as spread can overflow call stack with large arrays
+    let maxIndex = 0
+    for (let i = 0; i < inds.length; i++) {
+      if (inds[i] > maxIndex) maxIndex = inds[i]
+    }
     const indices = maxIndex > 65535
       ? new Uint32Array(inds)
       : new Uint16Array(inds)
