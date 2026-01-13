@@ -27,7 +27,7 @@ import type {
 import type { OrePosition } from './generate/features/OreFeature.ts'
 import type { WaterEdgeEffects } from './generate/features/WaterFeature.ts'
 import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
-import { LiquidPhysicsManager } from './liquid/LiquidPhysicsManager.ts'
+import { BackgroundLiquidPhysicsManager } from './liquid/BackgroundLiquidPhysicsManager.ts'
 import type { PersistenceManager, IModifiedChunkProvider } from '../persistence/PersistenceManager.ts'
 
 /**
@@ -89,8 +89,8 @@ export class WorldManager implements IModifiedChunkProvider {
   // Background lighting manager for all lighting updates (generation and block changes)
   private readonly backgroundLightingManager: BackgroundLightingManager
 
-  // Liquid physics manager for water flow simulation
-  private readonly liquidPhysicsManager: LiquidPhysicsManager
+  // Liquid physics manager for water flow simulation (background worker pool)
+  private readonly liquidPhysicsManager: BackgroundLiquidPhysicsManager
 
   // Persistence manager for saving/loading world data
   private persistenceManager: PersistenceManager | null = null
@@ -123,21 +123,15 @@ export class WorldManager implements IModifiedChunkProvider {
       (subChunk, priority, forceRequeue) => this.queueSubChunkForMeshing(subChunk, priority, forceRequeue)
     )
 
-    // Initialize liquid physics manager
-    this.liquidPhysicsManager = new LiquidPhysicsManager({
+    // Initialize liquid physics manager (background worker pool)
+    this.liquidPhysicsManager = new BackgroundLiquidPhysicsManager({
       nearbyDistance: 2,
       maxDistance: 8,
     })
     this.liquidPhysicsManager.setCallbacks(
-      (x, y, z) => this.getBlockId(x, y, z),
+      (coord) => this.chunkManager.getColumn(coord),
       (x, y, z, blockId) => this.setBlockRaw(x, y, z, blockId),
-      () => this.flushBlockChanges(),
-      (coord) => this.chunkManager.getColumn(coord) !== undefined,
-      (coord) => {
-        const column = this.chunkManager.getColumn(coord)
-        return column ? column.getLiquidBlockPositions() : []
-      },
-      (blockId, tag) => getBlock(blockId).properties.tags.includes(tag)
+      () => this.flushBlockChanges()
     )
   }
 
