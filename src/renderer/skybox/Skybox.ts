@@ -30,6 +30,15 @@ export class Skybox {
   private readonly darknessStartY = 180
   private readonly darknessEndY = 150
 
+  // Biome-based skybox modifiers (0-1 range)
+  private biomeBrightness = 1.0
+  private biomeTint = { r: 1.0, g: 1.0, b: 1.0 }
+
+  // Target values for smooth interpolation
+  private targetBiomeBrightness = 1.0
+  private targetBiomeTint = { r: 1.0, g: 1.0, b: 1.0 }
+  private readonly BIOME_BLEND_SPEED = 2.0 // units per second
+
   constructor(options: SkyboxOptions = {}) {
     const {
       skyRadius = 500,
@@ -88,6 +97,8 @@ export class Skybox {
         zenithColor: { value: zenithColor },
         horizonColor: { value: horizonColor },
         darkness: { value: 0.0 },
+        biomeBrightness: { value: 1.0 },
+        biomeTint: { value: new THREE.Vector3(1.0, 1.0, 1.0) },
       },
       vertexShader: `
         varying vec3 vLocalPosition;
@@ -101,6 +112,8 @@ export class Skybox {
         uniform vec3 zenithColor;
         uniform vec3 horizonColor;
         uniform float darkness;
+        uniform float biomeBrightness;
+        uniform vec3 biomeTint;
         varying vec3 vLocalPosition;
         void main() {
           float h = normalize(vLocalPosition).y;
@@ -109,7 +122,11 @@ export class Skybox {
           // Smooth transition
           t = pow(t, 0.5);
           vec3 color = mix(horizonColor, zenithColor, t);
-          // Apply darkness factor
+          // Apply biome tint
+          color *= biomeTint;
+          // Apply biome brightness
+          color *= biomeBrightness;
+          // Apply Y-based darkness factor (underground)
           color *= (1.0 - darkness);
           gl_FragColor = vec4(color, 1.0);
         }
@@ -190,8 +207,26 @@ export class Skybox {
     this.sunDirection.copy(position).normalize()
   }
 
+  /**
+   * Set the biome-based skybox modifiers.
+   * These values will be smoothly interpolated towards.
+   * @param brightness - Brightness multiplier (0-1, default 1)
+   * @param tint - Color tint multiplier (RGB 0-1, default white)
+   */
+  setBiomeModifiers(
+    brightness: number = 1.0,
+    tint: { r: number; g: number; b: number } = { r: 1, g: 1, b: 1 }
+  ): void {
+    this.targetBiomeBrightness = Math.max(0, Math.min(1, brightness))
+    this.targetBiomeTint = {
+      r: Math.max(0, Math.min(1, tint.r)),
+      g: Math.max(0, Math.min(1, tint.g)),
+      b: Math.max(0, Math.min(1, tint.b)),
+    }
+  }
+
   /** Call each frame to keep skybox centered on the camera */
-  update(camera: THREE.Camera): void {
+  update(camera: THREE.Camera, deltaTime: number = 0.016): void {
     const cameraPos = camera.position
 
     // Move all skybox elements to follow the camera
@@ -214,18 +249,36 @@ export class Skybox {
       Math.min(1, (this.darknessStartY - y) / (this.darknessStartY - this.darknessEndY))
     )
 
-    // Update sky shader darkness
+    // Smoothly interpolate biome modifiers towards target values
+    const blendFactor = Math.min(1, this.BIOME_BLEND_SPEED * deltaTime)
+    this.biomeBrightness += (this.targetBiomeBrightness - this.biomeBrightness) * blendFactor
+    this.biomeTint.r += (this.targetBiomeTint.r - this.biomeTint.r) * blendFactor
+    this.biomeTint.g += (this.targetBiomeTint.g - this.biomeTint.g) * blendFactor
+    this.biomeTint.b += (this.targetBiomeTint.b - this.biomeTint.b) * blendFactor
+
+    // Update sky shader uniforms
     this.skyMaterial.uniforms.darkness.value = darkness
+    this.skyMaterial.uniforms.biomeBrightness.value = this.biomeBrightness
+    const tintUniform = this.skyMaterial.uniforms.biomeTint.value as THREE.Vector3
+    tintUniform.set(this.biomeTint.r, this.biomeTint.g, this.biomeTint.b)
 
-    // Update sun opacity
-    this.sunMaterial.opacity = 0.95 * (1 - darkness)
-    this.sunGlowMaterial.opacity = 0.3 * (1 - darkness)
+    // Update sun opacity (affected by both Y-darkness and biome brightness)
+    const combinedBrightness = (1 - darkness) * this.biomeBrightness
+    this.sunMaterial.opacity = 0.95 * combinedBrightness
+    this.sunGlowMaterial.opacity = 0.3 * combinedBrightness
+    // Apply biome tint to sun (subtle tinting)
+    const avgTint = (this.biomeTint.r + this.biomeTint.g + this.biomeTint.b) / 3
+    this.sunMaterial.color.setRGB(
+      1.0 * (0.7 + 0.3 * this.biomeTint.r),
+      0.95 * (0.7 + 0.3 * this.biomeTint.g),
+      0.5 * (0.7 + 0.3 * avgTint)
+    )
 
-    // Update cloud opacities
+    // Update cloud opacities (affected by both Y-darkness and biome brightness)
     let i = 0
     this.cloudGroup.children.forEach((child) => {
       if (child instanceof THREE.Sprite) {
-        child.material.opacity = this.cloudBaseOpacities[i] * (1 - darkness)
+        child.material.opacity = this.cloudBaseOpacities[i] * combinedBrightness
         i++
       }
     })

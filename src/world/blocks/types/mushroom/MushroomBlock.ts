@@ -3,6 +3,7 @@ import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { MushroomBlockItem } from '../../../../items/blocks/mushroom/MushroomBlockItem.ts'
@@ -26,7 +27,7 @@ export class MushroomBlock extends SolidBlock {
     lightLevel: 0,
     lightBlocking: 15,
     demolitionForceRequired: 0,
-    tags: [],
+    tags: [BlockTags.WOOD],
   }
 
   protected get defaultTextureId(): number {

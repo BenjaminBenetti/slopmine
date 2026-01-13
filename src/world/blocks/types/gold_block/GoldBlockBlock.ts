@@ -27,7 +27,7 @@ export class GoldBlockBlock extends SolidBlock {
     lightLevel: 0,
     lightBlocking: 15,
     demolitionForceRequired: 1,
-    tags: [BlockTags.STONE, BlockTags.METAL],
+    tags: [BlockTags.ROCK],
   }
 
   protected get defaultTextureId(): number {

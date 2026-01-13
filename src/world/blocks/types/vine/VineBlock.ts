@@ -3,6 +3,7 @@ import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
+import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { VineBlockItem } from '../../../../items/blocks/vine/VineBlockItem.ts'
@@ -32,7 +33,7 @@ export class VineBlock extends TransparentBlock {
     lightLevel: 0,
     lightBlocking: 0,
     demolitionForceRequired: 0,
-    tags: [],
+    tags: [BlockTags.LEAVES],
   }
 
   protected get defaultTextureId(): number {

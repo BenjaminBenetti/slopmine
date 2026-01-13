@@ -135,6 +135,26 @@ export interface CaveSettings {
   readonly entranceThreshold?: number
 }
 
+/**
+ * Configuration for biome-specific skybox modifications.
+ * Used to create atmospheric effects that vary by biome.
+ */
+export interface SkyboxSettings {
+  /**
+   * Brightness multiplier for the skybox (0.0 to 1.0).
+   * 1.0 = normal brightness, 0.5 = half brightness, 0.0 = completely dark.
+   * Default: 1.0
+   */
+  readonly brightness?: number
+
+  /**
+   * Color tint to apply to the skybox (RGB values 0-1).
+   * The tint is multiplied with the base sky colors.
+   * Default: { r: 1, g: 1, b: 1 } (no tint)
+   */
+  readonly tint?: { r: number; g: number; b: number }
+}
+
 export interface BiomeProperties {
   /** The unique name of this biome, used for identification. */
   readonly name: string
@@ -171,6 +191,12 @@ export interface BiomeProperties {
    * Defines noise layers, height scaling, and combination mode.
    */
   readonly terrainConfig: TerrainConfig
+
+  /**
+   * Optional settings for biome-specific skybox modifications.
+   * If not provided, the skybox will use default settings (no modification).
+   */
+  readonly skybox?: SkyboxSettings
 }
 
 /**

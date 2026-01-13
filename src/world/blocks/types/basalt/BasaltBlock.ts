@@ -30,7 +30,7 @@ export class BasaltBlock extends SolidBlock {
     lightLevel: 0,
     lightBlocking: 15,
     demolitionForceRequired: 1, // Requires pickaxe
-    tags: [BlockTags.STONE],
+    tags: [BlockTags.ROCK],
   }
 
   protected get defaultTextureId(): number {

@@ -1,12 +1,4 @@
-import type { BlockId, IBlock, IBlockProperties } from './IBlock.ts'
-
-/**
- * Block registration entry with factory function.
- */
-export interface IBlockRegistration {
-  readonly properties: IBlockProperties
-  readonly factory: () => IBlock
-}
+import type { BlockId, IBlock } from './IBlock.ts'
 
 /**
  * Registry for mapping block IDs to block instances.
@@ -14,9 +6,9 @@ export interface IBlockRegistration {
  */
 export interface IBlockRegistry {
   /**
-   * Register a block type with the registry.
+   * Register a block instance. Properties are read from the block itself.
    */
-  register(registration: IBlockRegistration): void
+  register(block: IBlock): void
 
   /**
    * Get the block instance for a given ID.

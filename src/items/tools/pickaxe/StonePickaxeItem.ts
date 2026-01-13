@@ -8,7 +8,7 @@ export class StonePickaxeItem extends PickaxeItem {
   readonly name = 'stone_pickaxe'
   protected readonly baseDamage = 0.8
   protected readonly tier = 2
-  protected readonly stoneMultiplier = 8.0
+  protected readonly rockMultiplier = 8.0
 
   override get displayName(): string {
     return 'Stone Pickaxe'

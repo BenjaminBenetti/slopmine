@@ -2,7 +2,7 @@
 export type { IBlock, IBlockProperties, BlockId, IWorld } from './interfaces/IBlock.ts'
 export type { IChunk } from './interfaces/IChunk.ts'
 export type { IWorldCoordinate, IChunkCoordinate, ILocalCoordinate, ChunkKey } from './interfaces/ICoordinates.ts'
-export type { IBlockRegistry, IBlockRegistration } from './interfaces/IBlockRegistry.ts'
+export type { IBlockRegistry } from './interfaces/IBlockRegistry.ts'
 
 // Constants and Enums
 export { BlockFace } from './interfaces/IBlock.ts'

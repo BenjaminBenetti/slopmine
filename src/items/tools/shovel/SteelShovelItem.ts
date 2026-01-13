@@ -8,7 +8,7 @@ export class SteelShovelItem extends ShovelItem {
   readonly name = 'steel_shovel'
   protected readonly baseDamage = 1.5
   protected readonly tier = 4
-  protected readonly dirtMultiplier = 8.0
+  protected readonly soilMultiplier = 8.0
 
   override get displayName(): string {
     return 'Steel Shovel'

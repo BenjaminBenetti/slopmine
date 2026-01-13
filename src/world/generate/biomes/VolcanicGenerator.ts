@@ -138,6 +138,11 @@ export class VolcanicGenerator extends BiomeGenerator {
       heightScale: 18, // More dramatic terrain than plains
       combineMode: 'add',
     } as TerrainConfig,
+    // Volcanic biome has an ominous, fiery atmosphere
+    skybox: {
+      brightness: 0.55, // Dark, smoky sky
+      tint: { r: 1.0, g: 0.7, b: 0.5 }, // Reddish-orange tint from volcanic ash/glow
+    },
   }
 
   /**

@@ -48,7 +48,7 @@ export class ForgeBlock extends SolidBlock {
     lightLevel: 0,
     lightBlocking: 15,
     demolitionForceRequired: 1,
-    tags: [BlockTags.STONE],
+    tags: [BlockTags.ROCK],
   }
 
   /** Mark this block as interactable */

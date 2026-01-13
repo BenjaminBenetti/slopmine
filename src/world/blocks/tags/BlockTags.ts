@@ -3,16 +3,16 @@
  * Tags are used for tool damage multipliers and block categorization.
  */
 export const BlockTags = {
-  STONE: 'stone',
+  /** Pickaxe effective - stone, ores, brick-like blocks */
+  ROCK: 'rock',
+  /** Axe effective - wood, mushroom blocks, plant stems */
   WOOD: 'wood',
-  DIRT: 'dirt',
+  /** Shovel effective - dirt, sand, mud, clay, gravel */
+  SOIL: 'soil',
+  /** Shears effective - leaves, vines */
   LEAVES: 'leaves',
-  METAL: 'metal',
   /** Liquid blocks that can sustain smaller liquid blocks (half or greater) */
   LIQUID_SOURCE: 'liquid_source',
-  SAND: 'sand',
-  MUD: 'mud',
-  CLAY: 'clay',
 } as const
 
 export type BlockTag = (typeof BlockTags)[keyof typeof BlockTags]

@@ -31,7 +31,7 @@ export class MagmaBlock extends SolidBlock {
     lightLevel: 6, // Emits dim light from the glowing cracks
     lightBlocking: 15,
     demolitionForceRequired: 1, // Requires pickaxe
-    tags: [BlockTags.STONE],
+    tags: [BlockTags.ROCK],
   }
 
   protected get defaultTextureId(): number {

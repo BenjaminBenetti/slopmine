@@ -27,7 +27,7 @@ export class MudBlock extends SolidBlock {
     lightLevel: 0,
     lightBlocking: 15,
     demolitionForceRequired: 0,
-    tags: [BlockTags.MUD],
+    tags: [BlockTags.SOIL],
   }
 
   protected get defaultTextureId(): number {

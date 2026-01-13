@@ -18,6 +18,12 @@ import { GoldBlockItem } from '../items/blocks/gold_block/GoldBlockItem.ts'
 import { DiamondBlockItem } from '../items/blocks/diamond_block/DiamondBlockItem.ts'
 import { TorchBlockItem } from '../items/blocks/torch/TorchBlockItem.ts'
 import { ForgeBlockItem } from '../items/blocks/forge/ForgeBlockItem.ts'
+import { MudBlockItem } from '../items/blocks/mud/MudBlockItem.ts'
+import { MuddyGrassBlockItem } from '../items/blocks/muddy_grass/MuddyGrassBlockItem.ts'
+import { BlueMushroomBlockItem } from '../items/blocks/blue_mushroom/BlueMushroomBlockItem.ts'
+import { BlueMushroomCapBlockItem } from '../items/blocks/blue_mushroom_cap/BlueMushroomCapBlockItem.ts'
+import { PurpleMushroomBlockItem } from '../items/blocks/purple_mushroom/PurpleMushroomBlockItem.ts'
+import { PurpleMushroomCapBlockItem } from '../items/blocks/purple_mushroom_cap/PurpleMushroomCapBlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -110,6 +116,12 @@ export function initializeItemRegistry(): void {
   registerItemFactory('diamond_block', () => new DiamondBlockItem())
   registerItemFactory('torch_block', () => new TorchBlockItem())
   registerItemFactory('forge_block', () => new ForgeBlockItem())
+  registerItemFactory('mud_block', () => new MudBlockItem())
+  registerItemFactory('muddy_grass_block', () => new MuddyGrassBlockItem())
+  registerItemFactory('blue_mushroom_block', () => new BlueMushroomBlockItem())
+  registerItemFactory('blue_mushroom_cap_block', () => new BlueMushroomCapBlockItem())
+  registerItemFactory('purple_mushroom_block', () => new PurpleMushroomBlockItem())
+  registerItemFactory('purple_mushroom_cap_block', () => new PurpleMushroomCapBlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())

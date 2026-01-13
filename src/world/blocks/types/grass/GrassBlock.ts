@@ -35,7 +35,7 @@ export class GrassBlock extends SolidBlock {
     lightLevel: 0,
     lightBlocking: 15,
     demolitionForceRequired: 0,
-    tags: [BlockTags.DIRT],
+    tags: [BlockTags.SOIL],
   }
 
   protected get defaultTextureId(): number {

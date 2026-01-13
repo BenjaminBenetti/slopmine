@@ -27,7 +27,7 @@ export class ClayBlock extends SolidBlock {
     lightLevel: 0,
     lightBlocking: 15,
     demolitionForceRequired: 0,
-    tags: [BlockTags.CLAY],
+    tags: [BlockTags.SOIL],
   }
 
   protected get defaultTextureId(): number {

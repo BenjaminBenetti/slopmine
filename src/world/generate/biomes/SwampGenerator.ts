@@ -130,6 +130,11 @@ export class SwampGenerator extends BiomeGenerator {
       heightScale: 10, // Slightly more variation for water pools
       combineMode: 'add',
     } as TerrainConfig,
+    // Swamp has a darker, murky atmosphere
+    skybox: {
+      brightness: 0.6, // 60% brightness for darker sky
+      tint: { r: 0.85, g: 0.9, b: 0.75 }, // Slight greenish-brown tint
+    },
   }
 
   // Mushroom placement grid size
@@ -164,8 +169,17 @@ export class SwampGenerator extends BiomeGenerator {
         const stoneStartY = clayEndY - 1
         const stoneEndY = terrainFloor
 
-        // Surface and near-surface: mud
-        for (let worldY = Math.min(mudStartY, maxY); worldY >= Math.max(mudEndY, minY); worldY--) {
+        // Top surface: muddy grass (or exposed mud near water for shoreline effect)
+        if (mudStartY >= minY && mudStartY <= maxY && mudStartY >= terrainFloor) {
+          const localY = mudStartY - minY
+          const waterLevel = this.properties.water?.waterLevel ?? 234
+          // Use exposed mud within 2 blocks of water level for muddy shoreline
+          const isNearWater = height <= waterLevel + 2
+          chunk.setBlockId(localX, localY, localZ, isNearWater ? BlockIds.MUD : BlockIds.MUDDY_GRASS)
+        }
+
+        // Below surface: mud
+        for (let worldY = Math.min(mudStartY - 1, maxY); worldY >= Math.max(mudEndY, minY); worldY--) {
           if (worldY >= terrainFloor) {
             const localY = worldY - minY
             chunk.setBlockId(localX, localY, localZ, BlockIds.MUD)
@@ -343,9 +357,9 @@ export class SwampGenerator extends BiomeGenerator {
     y: bigint,
     z: bigint
   ): boolean {
-    // Check that the block below is mud or clay (typical swamp ground)
+    // Check that the block below is muddy grass, mud, or clay (typical swamp ground)
     const blockBelow = world.getBlockId(x, y - 1n, z)
-    if (blockBelow !== BlockIds.MUD && blockBelow !== BlockIds.CLAY) return false
+    if (blockBelow !== BlockIds.MUDDY_GRASS && blockBelow !== BlockIds.MUD && blockBelow !== BlockIds.CLAY) return false
 
     // Check that base position is air
     const blockAt = world.getBlockId(x, y, z)
@@ -388,6 +402,7 @@ export class SwampGenerator extends BiomeGenerator {
   /**
    * Place a giant mushroom at the given location.
    * Creates a tall stem with a wide cap on top.
+   * Randomly selects between regular, blue, and purple mushroom types.
    */
   private placeMushroom(
     world: WorldManager,
@@ -395,6 +410,24 @@ export class SwampGenerator extends BiomeGenerator {
     y: bigint,
     z: bigint
   ): void {
+    // Determine mushroom type based on position (regular, blue, or purple)
+    const typeRandom = this.positionRandom(Number(x), Number(z), 200)
+    let stemBlock: number
+    let capBlock: number
+    if (typeRandom < 0.5) {
+      // 50% regular mushrooms
+      stemBlock = BlockIds.MUSHROOM
+      capBlock = BlockIds.MUSHROOM_CAP
+    } else if (typeRandom < 0.75) {
+      // 25% blue mushrooms
+      stemBlock = BlockIds.BLUE_MUSHROOM
+      capBlock = BlockIds.BLUE_MUSHROOM_CAP
+    } else {
+      // 25% purple mushrooms
+      stemBlock = BlockIds.PURPLE_MUSHROOM
+      capBlock = BlockIds.PURPLE_MUSHROOM_CAP
+    }
+
     // Determine height based on position (4-12 blocks)
     const heightRandom = this.positionRandom(Number(x), Number(z), 100)
     let height = Math.floor(4 + heightRandom * 8)
@@ -408,13 +441,13 @@ export class SwampGenerator extends BiomeGenerator {
 
     // If no room even for minimum height, place single block
     if (height < 4) {
-      world.setBlock(x, y, z, BlockIds.MUSHROOM)
+      world.setBlock(x, y, z, stemBlock)
       return
     }
 
     // Build stem (mushroom blocks)
     for (let h = 0; h < height; h++) {
-      world.setBlock(x, y + BigInt(h), z, BlockIds.MUSHROOM)
+      world.setBlock(x, y + BigInt(h), z, stemBlock)
     }
 
     // Build cap (mushroom cap blocks)
@@ -432,7 +465,7 @@ export class SwampGenerator extends BiomeGenerator {
           x + BigInt(dx),
           capY,
           z + BigInt(dz),
-          BlockIds.MUSHROOM_CAP
+          capBlock
         )
 
         // Add hanging edges for taller mushrooms
@@ -441,7 +474,7 @@ export class SwampGenerator extends BiomeGenerator {
             x + BigInt(dx),
             capY - 1n,
             z + BigInt(dz),
-            BlockIds.MUSHROOM_CAP
+            capBlock
           )
         }
       }
@@ -458,7 +491,7 @@ export class SwampGenerator extends BiomeGenerator {
               x + BigInt(dx),
               capY + 1n,
               z + BigInt(dz),
-              BlockIds.MUSHROOM_CAP
+              capBlock
             )
           }
         }

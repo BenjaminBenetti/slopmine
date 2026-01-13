@@ -1,5 +1,5 @@
 import type { BlockId, IBlock } from '../interfaces/IBlock.ts'
-import type { IBlockRegistry, IBlockRegistration } from '../interfaces/IBlockRegistry.ts'
+import type { IBlockRegistry } from '../interfaces/IBlockRegistry.ts'
 import { BlockIds } from './BlockIds.ts'
 import { AirBlock } from './Block.ts'
 
@@ -37,20 +37,22 @@ export class BlockRegistry implements IBlockRegistry {
     BlockRegistry.instance = null
   }
 
-  register(registration: IBlockRegistration): void {
-    const { properties, factory } = registration
+  /**
+   * Register a block instance. Properties are read from the block itself.
+   */
+  register(block: IBlock): void {
+    const { id, name } = block.properties
 
-    if (this.blocks.has(properties.id)) {
-      console.warn(`Block ID ${properties.id} already registered, overwriting`)
+    if (this.blocks.has(id)) {
+      console.warn(`Block ID ${id} already registered, overwriting`)
     }
 
-    if (this.blocksByName.has(properties.name)) {
-      console.warn(`Block name "${properties.name}" already registered, overwriting`)
+    if (this.blocksByName.has(name)) {
+      console.warn(`Block name "${name}" already registered, overwriting`)
     }
 
-    const block = factory()
-    this.blocks.set(properties.id, block)
-    this.blocksByName.set(properties.name, block)
+    this.blocks.set(id, block)
+    this.blocksByName.set(name, block)
   }
 
   getBlock(id: BlockId): IBlock {
@@ -77,8 +79,8 @@ export class BlockRegistry implements IBlockRegistry {
 /**
  * Convenience function for block registration.
  */
-export function registerBlock(registration: IBlockRegistration): void {
-  BlockRegistry.getInstance().register(registration)
+export function registerBlock(block: IBlock): void {
+  BlockRegistry.getInstance().register(block)
 }
 
 /**

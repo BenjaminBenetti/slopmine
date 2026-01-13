@@ -6,6 +6,7 @@ import { Renderer } from './renderer/Renderer.ts'
 import { SubChunkOpacityCache } from './renderer/SubChunkOpacityCache.ts'
 import { WorldLighting } from './renderer/WorldLighting.ts'
 import { Skybox } from './renderer/skybox/Skybox.ts'
+import { BiomeSkyboxManager } from './renderer/skybox/BiomeSkyboxManager.ts'
 import { HeldItemRenderer } from './renderer/helditem/index.ts'
 import {
 	  FirstPersonCameraControls,
@@ -434,6 +435,13 @@ const skybox = new Skybox()
 skybox.setSunPosition(lighting.sun.position)
 skybox.addTo(renderer.scene)
 
+// Create biome skybox manager for atmospheric effects
+const biomeSkyboxManager = new BiomeSkyboxManager(
+  skybox,
+  biomeRegistry,
+  worldGenerator.getConfig()
+)
+
 // Held item renderer (shows selected item in player's hand)
 const heldItemRenderer = new HeldItemRenderer(
   renderer.renderer,
@@ -568,7 +576,12 @@ scheduler.createTask({
 scheduler.createTask({
   id: 'skybox',
   priority: TaskPriority.NORMAL,
-  update: () => skybox.update(renderer.camera),
+  update: (dt) => {
+    // Update biome-based skybox modifiers
+    biomeSkyboxManager.update(playerBody.position.x, playerBody.position.z)
+    // Update skybox position and apply modifiers
+    skybox.update(renderer.camera, dt)
+  },
 })
 
 scheduler.createTask({

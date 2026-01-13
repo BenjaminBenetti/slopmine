@@ -1,3 +1,5 @@
+import loadingScreenBg from './assets/loading-screen-bg.png'
+
 export interface LoadingScreenOptions {
   targetChunks?: number
   backgroundColor?: string
@@ -29,6 +31,10 @@ export function createLoadingScreenUI(
     position: fixed;
     inset: 0;
     background: ${backgroundColor};
+    background-image: url(${loadingScreenBg});
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -38,15 +44,17 @@ export function createLoadingScreenUI(
     transition: opacity 0.3s ease-out;
   `
 
-  // Title
+  // Title - now shows loading status below the background title
   const title = document.createElement('div')
-  title.textContent = 'Generating World'
+  title.textContent = 'Generating World...'
   title.style.cssText = `
     color: #ffffff;
     font-size: 24px;
     font-weight: 600;
+    margin-top: 180px;
     margin-bottom: 32px;
     letter-spacing: 0.5px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
   `
   container.appendChild(title)
 
@@ -54,11 +62,13 @@ export function createLoadingScreenUI(
   const barContainer = document.createElement('div')
   barContainer.style.cssText = `
     width: 320px;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
+    height: 10px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 5px;
     overflow: hidden;
     margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.2);
   `
   container.appendChild(barContainer)
 
@@ -68,8 +78,9 @@ export function createLoadingScreenUI(
     width: 0%;
     height: 100%;
     background: ${barColor};
-    border-radius: 4px;
+    border-radius: 5px;
     transition: width 0.1s ease-out;
+    box-shadow: 0 0 10px ${barColor};
   `
   barContainer.appendChild(barFill)
 
@@ -77,8 +88,9 @@ export function createLoadingScreenUI(
   const progressText = document.createElement('div')
   progressText.textContent = '0 / 64 chunks'
   progressText.style.cssText = `
-    color: rgba(255, 255, 255, 0.7);
+    color: rgba(255, 255, 255, 0.9);
     font-size: 14px;
+    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
   `
   container.appendChild(progressText)
 
