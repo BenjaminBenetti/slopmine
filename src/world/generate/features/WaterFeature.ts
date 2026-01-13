@@ -25,14 +25,12 @@ export interface WaterEdgeEffects {
  *
  * Algorithm (Depression-Based Fill):
  * 1. For each column (x,z), check if terrain height < waterLevel
- * 2. Check if the depression is deep enough (minDepth requirement)
- * 3. Fill from terrain+1 up to waterLevel
- * 4. Only fill AIR blocks (don't replace solid blocks or cave air)
+ * 2. Fill from terrain+1 up to waterLevel
+ * 3. Only fill AIR blocks (don't replace solid blocks or cave air)
  *
- * Water fills ALL depressions meeting the depth requirement, creating
- * continuous pools that naturally span chunk boundaries like real water.
- * The minDepth setting controls which depressions get water (prevents
- * shallow puddles everywhere while filling proper basins).
+ * Water fills ALL depressions below waterLevel, creating continuous
+ * pools that naturally span chunk boundaries and reach the edge of
+ * depressions like real water.
  */
 export class WaterFeature extends Feature {
   readonly settings: WaterSettings
@@ -62,7 +60,7 @@ export class WaterFeature extends Feature {
     if (!this.settings.enabled) return edgeEffects
 
     const { chunk, getBaseHeightAt, frameBudget } = context
-    const { liquidBlock, waterLevel, minDepth } = this.settings
+    const { liquidBlock, waterLevel } = this.settings
     const coord = chunk.coordinate
 
     // Determine the sub-chunk's world Y range
@@ -89,10 +87,6 @@ export class WaterFeature extends Feature {
 
         // Skip if terrain is at or above water level
         if (terrainHeight >= waterLevel) continue
-
-        // Depth check - ensures water only fills deep enough depressions
-        const depth = waterLevel - terrainHeight
-        if (depth < minDepth) continue
 
         // Fill from terrain+1 up to waterLevel
         const fillStartWorldY = terrainHeight + 1
