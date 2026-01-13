@@ -1,17 +1,14 @@
-import { Item } from '../../Item.ts'
+import { BlockItem } from '../../BlockItem.ts'
 
 /**
  * Oak leaves block item for player inventory.
  */
-export class OakLeavesBlockItem extends Item {
+export class OakLeavesBlockItem extends BlockItem {
   readonly id = 'oak_leaves_block'
   readonly name = 'oak_leaves_block'
+  readonly blockName = 'oak_leaves'
 
   override get displayName(): string {
     return 'Oak Leaves'
-  }
-
-  override get iconUrl(): string {
-    return new URL('./assets/oak-leaves-block-icon.webp', import.meta.url).href
   }
 }

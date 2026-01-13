@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "art-gen": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["tsx", "/workspaces/slopmine/script/art-gen/server.ts"],
+      "cwd": "/workspaces/slopmine/script/art-gen",
+      "env": {
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}"
+      }
+    }
+  }
+}

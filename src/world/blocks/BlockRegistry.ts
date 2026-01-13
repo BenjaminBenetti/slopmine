@@ -68,6 +68,10 @@ export class BlockRegistry implements IBlockRegistry {
   getAllBlockIds(): BlockId[] {
     return Array.from(this.blocks.keys())
   }
+
+  getAllBlockNames(): string[] {
+    return Array.from(this.blocksByName.keys())
+  }
 }
 
 /**

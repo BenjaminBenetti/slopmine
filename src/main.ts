@@ -64,6 +64,7 @@ import {
   serializeInventory,
   deserializeInventory,
 } from './persistence/index.ts'
+import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
 
 // Initialize world system
 registerDefaultBlocks()
@@ -218,6 +219,9 @@ const worldGenerator = new WorldGenerator(world)
 
 // Initialize texture atlas for reduced draw calls (must complete before mesh rendering)
 await world.initializeAtlas()
+
+// Generate block icons for UI after textures are loaded
+BlockIconGenerator.getInstance().generateAllIcons(renderer.renderer)
 
 // Create persistence manager and initialize asynchronously
 const persistenceManager = new PersistenceManager()

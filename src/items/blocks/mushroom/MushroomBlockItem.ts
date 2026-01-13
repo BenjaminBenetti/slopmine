@@ -1,21 +1,14 @@
-import { Item } from '../../Item.ts'
+import { BlockItem } from '../../BlockItem.ts'
 
 /**
  * Mushroom block item for player inventory.
  */
-export class MushroomBlockItem extends Item {
+export class MushroomBlockItem extends BlockItem {
   readonly id = 'mushroom_block'
   readonly name = 'mushroom_block'
+  readonly blockName = 'mushroom'
 
   override get displayName(): string {
     return 'Mushroom Block'
-  }
-
-  override get iconUrl(): string {
-    return new URL('./assets/mushroom-block-icon.webp', import.meta.url).href
-  }
-
-  override get tags(): ReadonlyArray<string> {
-    return []
   }
 }

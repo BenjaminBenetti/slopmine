@@ -1,18 +1,15 @@
-import { Item } from '../../Item.ts'
+import { BlockItem } from '../../BlockItem.ts'
 
 /**
  * Grass block item for player inventory.
  */
-export class GrassBlockItem extends Item {
+export class GrassBlockItem extends BlockItem {
   readonly id = 'grass_block'
   readonly name = 'grass_block'
+  readonly blockName = 'grass'
 
   override get displayName(): string {
     return 'Grass Block'
-  }
-
-  override get iconUrl(): string {
-    return new URL('./assets/grass-block-icon.webp', import.meta.url).href
   }
 }
 

@@ -1,18 +1,15 @@
-import { Item } from '../../Item.ts'
+import { BlockItem } from '../../BlockItem.ts'
 
 /**
  * Dirt block item for player inventory.
  */
-export class DirtBlockItem extends Item {
+export class DirtBlockItem extends BlockItem {
   readonly id = 'dirt_block'
   readonly name = 'dirt_block'
+  readonly blockName = 'dirt'
 
   override get displayName(): string {
     return 'Dirt Block'
-  }
-
-  override get iconUrl(): string {
-    return new URL('./assets/dirt-block-icon.webp', import.meta.url).href
   }
 }
 

@@ -1,21 +1,14 @@
-import { Item } from '../../Item.ts'
+import { BlockItem } from '../../BlockItem.ts'
 
 /**
  * Clay block item for player inventory.
  */
-export class ClayBlockItem extends Item {
+export class ClayBlockItem extends BlockItem {
   readonly id = 'clay_block'
   readonly name = 'clay_block'
+  readonly blockName = 'clay'
 
   override get displayName(): string {
     return 'Clay Block'
-  }
-
-  override get iconUrl(): string {
-    return new URL('./assets/clay-block-icon.webp', import.meta.url).href
-  }
-
-  override get tags(): ReadonlyArray<string> {
-    return []
   }
 }

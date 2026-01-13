@@ -1,19 +1,16 @@
-import { Item } from '../../Item.ts'
+import { BlockItem } from '../../BlockItem.ts'
 import { ItemTags } from '../../tags/index.ts'
 
 /**
  * Iron block item for player inventory.
  */
-export class IronBlockItem extends Item {
+export class IronBlockItem extends BlockItem {
   readonly id = 'iron_block'
   readonly name = 'iron_block'
+  readonly blockName = 'iron_block'
 
   override get displayName(): string {
     return 'Iron Block'
-  }
-
-  override get iconUrl(): string {
-    return new URL('./assets/iron-block-icon.webp', import.meta.url).href
   }
 
   override get tags(): ReadonlyArray<string> {
