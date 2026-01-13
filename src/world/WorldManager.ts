@@ -125,8 +125,9 @@ export class WorldManager implements IModifiedChunkProvider {
 
     // Initialize liquid physics manager (background worker pool)
     this.liquidPhysicsManager = new BackgroundLiquidPhysicsManager({
-      nearbyDistance: 2,
+      nearbyDistance: 4,
       maxDistance: 8,
+      updateIntervalMs: 1000,
     })
     this.liquidPhysicsManager.setCallbacks(
       (coord) => this.chunkManager.getColumn(coord),

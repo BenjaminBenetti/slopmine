@@ -216,8 +216,11 @@ export class BackgroundLiquidPhysicsManager {
       const dz = chunkZ - this.playerChunkZ
       const distance = Math.sqrt(dx * dx + dz * dz)
 
-      // Skip if beyond max distance
+      // Remove if beyond max distance (don't let them pile up)
       if (distance > this.config.maxDistance) {
+        this.columnQueue.splice(i, 1)
+        this.columnQueueSet.delete(key)
+        i-- // Adjust index after removal
         continue
       }
 
