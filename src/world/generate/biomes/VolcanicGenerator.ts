@@ -142,8 +142,8 @@ export class VolcanicGenerator extends BiomeGenerator {
 
   /**
    * Fill terrain with basalt surface, magma subsurface, and stone base.
-   * Sprinkles magma blocks on the surface in valleys for a glowing effect.
-   * Places lava at mountain peaks to create volcanic vents.
+   * Creates magma-filled craters at mountain peaks.
+   * Sprinkles magma blocks on the surface in valleys.
    */
   protected fillChunk(
     chunk: IChunkData,
@@ -155,7 +155,7 @@ export class VolcanicGenerator extends BiomeGenerator {
     const coord = chunk.coordinate
     const terrainFloor = this.config.seaLevel - this.config.terrainThickness
     const valleyThreshold = this.config.seaLevel - 2 // Heights below this are valleys
-    const peakThreshold = this.config.seaLevel + 10 // Heights above this are peaks
+    const peakThreshold = this.config.seaLevel + 8 // Heights above this are peaks
 
     for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
       for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
@@ -165,45 +165,55 @@ export class VolcanicGenerator extends BiomeGenerator {
 
         const height = getHeightAt(worldX, worldZ)
 
-        // Layer boundaries (world Y)
-        const basaltStartY = height
-        const basaltEndY = height - 3  // 4 blocks of basalt on surface
-        const magmaStartY = basaltEndY - 1
-        const magmaEndY = height - 10  // ~7 blocks of magma
-        const stoneStartY = magmaEndY - 1
-        const stoneEndY = terrainFloor
-
         // Check if this column is in a valley and should have surface magma
         const isValley = height < valleyThreshold
         let hasSurfaceMagma = false
         if (isValley) {
-          // Use noise to randomly place magma patches in valleys
           const magmaNoise = noise.noise2D(worldX * 0.08 + 1000, worldZ * 0.08 + 1000)
-          // ~25% of valley surface gets magma
           hasSurfaceMagma = magmaNoise > 0.5
         }
 
-        // Check if this column is a peak and should have lava vent
+        // Check if this column is a peak and calculate crater depth
         const isPeak = height > peakThreshold
-        let hasPeakLava = false
+        let craterDepth = 0
         if (isPeak) {
-          // Use noise to create lava pools at peaks
-          const lavaNoise = noise.noise2D(worldX * 0.05 + 2000, worldZ * 0.05 + 2000)
-          // ~40% of peaks get lava vents
-          hasPeakLava = lavaNoise > 0.2
+          // Use noise to define crater regions - lower frequency for larger craters
+          const craterNoise = noise.noise2D(worldX * 0.04 + 2000, worldZ * 0.04 + 2000)
+          if (craterNoise > 0.3) {
+            // Crater depth varies based on noise (1-4 blocks deep)
+            craterDepth = Math.floor(1 + (craterNoise - 0.3) * 6)
+            craterDepth = Math.min(craterDepth, 4)
+          }
         }
 
-        // Surface and near-surface: basalt (or magma in valleys, or lava at peaks)
+        // Adjusted surface height for craters
+        const effectiveSurfaceY = height - craterDepth
+
+        // Layer boundaries (world Y) - based on effective surface
+        const basaltStartY = effectiveSurfaceY
+        const basaltEndY = effectiveSurfaceY - 3
+        const magmaStartY = basaltEndY - 1
+        const magmaEndY = effectiveSurfaceY - 10
+        const stoneStartY = magmaEndY - 1
+        const stoneEndY = terrainFloor
+
+        // Fill crater with magma (from effective surface up to original height)
+        if (craterDepth > 0) {
+          for (let worldY = Math.min(height, maxY); worldY > Math.max(effectiveSurfaceY, minY - 1); worldY--) {
+            if (worldY >= minY) {
+              const localY = worldY - minY
+              chunk.setBlockId(localX, localY, localZ, BlockIds.MAGMA)
+            }
+          }
+        }
+
+        // Surface and near-surface: basalt (or magma in valleys)
         for (let worldY = Math.min(basaltStartY, maxY); worldY >= Math.max(basaltEndY, minY); worldY--) {
           if (worldY >= terrainFloor) {
             const localY = worldY - minY
             const isSurfaceBlock = worldY === Math.floor(basaltStartY)
 
-            if (hasPeakLava && isSurfaceBlock) {
-              // Lava at mountain peaks
-              chunk.setBlockId(localX, localY, localZ, BlockIds.LAVA)
-            } else if (hasSurfaceMagma && isSurfaceBlock) {
-              // Magma in valleys
+            if (hasSurfaceMagma && isSurfaceBlock) {
               chunk.setBlockId(localX, localY, localZ, BlockIds.MAGMA)
             } else {
               chunk.setBlockId(localX, localY, localZ, BlockIds.BASALT)
