@@ -19,15 +19,21 @@ export interface LiquidPhysicsConfig {
   maxDistance: number
   /** Whether liquid physics is enabled (default: true) */
   enabled: boolean
-  /** Minimum time between updates for a single column in ms (default: 100) */
+  /** Minimum time between updates for nearby columns in ms (default: 500) */
   updateIntervalMs: number
+  /** Minimum time between background updates for far columns in ms (default: 5000) */
+  backgroundUpdateIntervalMs: number
+  /** Interval between background queue scans in ms (default: 2000) */
+  backgroundScanIntervalMs: number
 }
 
 const DEFAULT_CONFIG: LiquidPhysicsConfig = {
   nearbyDistance: 2,
   maxDistance: 8,
   enabled: true,
-  updateIntervalMs: 500,  // Slower updates = less CPU
+  updateIntervalMs: 500,  // Cooldown for nearby/reactive updates
+  backgroundUpdateIntervalMs: 5000,  // Cooldown for background updates (far chunks)
+  backgroundScanIntervalMs: 2000,  // How often to scan for columns to queue
 }
 
 /**
@@ -50,6 +56,13 @@ export class LiquidPhysicsManager {
   // Stats tracking
   private columnsProcessedSinceLastQuery = 0
 
+  // Player position for distance-based processing (in chunk coordinates)
+  private playerChunkX = 0
+  private playerChunkZ = 0
+
+  // Background queue scanning
+  private lastBackgroundScanTime = 0
+
   // Callbacks for world access
   private getBlockId: ((x: bigint, y: bigint, z: bigint) => BlockId) | null = null
   private setBlockRaw: ((x: bigint, y: bigint, z: bigint, blockId: BlockId) => boolean) | null = null
@@ -57,6 +70,7 @@ export class LiquidPhysicsManager {
   private isColumnLoaded: ((coord: IChunkCoordinate) => boolean) | null = null
   private getLiquidPositions: ((coord: IChunkCoordinate) => Array<{ x: number; worldY: number; z: number }>) | null = null
   private hasBlockTag: ((blockId: BlockId, tag: string) => boolean) | null = null
+  private getLoadedColumnCoordinates: (() => IChunkCoordinate[]) | null = null
 
   constructor(config: Partial<LiquidPhysicsConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -72,7 +86,8 @@ export class LiquidPhysicsManager {
     flushBlockChanges: () => void,
     isColumnLoaded: (coord: IChunkCoordinate) => boolean,
     getLiquidPositions: (coord: IChunkCoordinate) => Array<{ x: number; worldY: number; z: number }>,
-    hasBlockTag: (blockId: BlockId, tag: string) => boolean
+    hasBlockTag: (blockId: BlockId, tag: string) => boolean,
+    getLoadedColumnCoordinates: () => IChunkCoordinate[]
   ): void {
     this.getBlockId = getBlockId
     this.setBlockRaw = setBlockRaw
@@ -80,13 +95,17 @@ export class LiquidPhysicsManager {
     this.isColumnLoaded = isColumnLoaded
     this.getLiquidPositions = getLiquidPositions
     this.hasBlockTag = hasBlockTag
+    this.getLoadedColumnCoordinates = getLoadedColumnCoordinates
   }
 
   /**
-   * Update the player position (no longer used, kept for API compatibility).
+   * Update the player position for distance-based processing.
+   * @param worldX World X coordinate of the player
+   * @param worldZ World Z coordinate of the player
    */
-  setPlayerPosition(_worldX: number, _worldZ: number): void {
-    // No longer used - simple FIFO queue now
+  setPlayerPosition(worldX: number, worldZ: number): void {
+    this.playerChunkX = Math.floor(worldX / CHUNK_SIZE_X)
+    this.playerChunkZ = Math.floor(worldZ / CHUNK_SIZE_Z)
   }
 
   /**
@@ -130,12 +149,41 @@ export class LiquidPhysicsManager {
   }
 
   /**
-   * No-op for API compatibility.
+   * Periodically scan loaded columns and queue those within range for background processing.
+   * Call this every frame to enable background liquid physics updates.
    */
-  updateQueue(): void {}
+  updateQueue(): void {
+    if (!this.config.enabled) return
+    if (!this.getLoadedColumnCoordinates) return
+
+    const now = performance.now()
+
+    // Only scan periodically to avoid overhead
+    if (now - this.lastBackgroundScanTime < this.config.backgroundScanIntervalMs) {
+      return
+    }
+    this.lastBackgroundScanTime = now
+
+    // Get all loaded columns and queue those within range
+    const loadedColumns = this.getLoadedColumnCoordinates()
+    for (const coord of loadedColumns) {
+      const chunkX = Number(coord.x)
+      const chunkZ = Number(coord.z)
+      const dx = chunkX - this.playerChunkX
+      const dz = chunkZ - this.playerChunkZ
+      const distance = Math.sqrt(dx * dx + dz * dz)
+
+      // Only queue columns within max processing distance
+      if (distance <= this.config.maxDistance) {
+        this.queueColumn(coord.x, coord.z)
+      }
+    }
+  }
 
   /**
-   * Process the next chunk column in the queue (FIFO with cooldown).
+   * Process the next chunk column in the queue with distance-based cooldowns.
+   * Nearby columns use shorter cooldowns for reactive updates.
+   * Far columns use longer cooldowns for background processing.
    */
   processNextColumn(): boolean {
     if (!this.config.enabled) return false
@@ -144,14 +192,45 @@ export class LiquidPhysicsManager {
 
     const now = performance.now()
 
-    // Find first column that's not on cooldown
+    // Find first column that's not on cooldown (with distance-based cooldowns)
     let keyToProcess: ChunkKey | null = null
     let keysSkipped = 0
 
     for (let i = 0; i < this.columnQueue.length; i++) {
       const key = this.columnQueue[i]
+      const [xStr, zStr] = key.split(',')
+      const chunkX = Number(xStr)
+      const chunkZ = Number(zStr)
+
+      // Calculate distance from player
+      const dx = chunkX - this.playerChunkX
+      const dz = chunkZ - this.playerChunkZ
+      const distance = Math.sqrt(dx * dx + dz * dz)
+
+      // Skip columns beyond max processing distance
+      if (distance > this.config.maxDistance) {
+        keysSkipped++
+        if (keysSkipped >= 10) break
+        continue
+      }
+
+      // Use shorter cooldown for nearby chunks, longer for background
+      const isNearby = distance <= this.config.nearbyDistance
+      const baseCooldown = isNearby
+        ? this.config.updateIntervalMs
+        : this.config.backgroundUpdateIntervalMs
+
+      // Add deterministic jitter based on chunk coordinates to spread reprocessing
+      // Nearby chunks use higher jitter (0-100%) to spread across the window
+      // Far chunks use lower jitter (0-50%) for more consistent timing
+      const jitterSeed = (chunkX * 73856093) ^ (chunkZ * 19349663)
+      const jitterPercent = isNearby
+        ? (Math.abs(jitterSeed) % 100) / 100
+        : (Math.abs(jitterSeed) % 50) / 100
+      const effectiveCooldown = baseCooldown + baseCooldown * jitterPercent
+
       const lastTime = this.lastProcessedTime.get(key) ?? 0
-      if (now - lastTime >= this.config.updateIntervalMs) {
+      if (now - lastTime >= effectiveCooldown) {
         // This column is ready - remove it from queue
         this.columnQueue.splice(i, 1)
         this.columnQueueSet.delete(key)
