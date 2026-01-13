@@ -33,7 +33,7 @@ const DEFAULT_CONFIG: LiquidPhysicsConfig = {
   enabled: true,
   updateIntervalMs: 500,  // Cooldown for nearby/reactive updates
   backgroundUpdateIntervalMs: 5000,  // Cooldown for background updates (far chunks)
-  backgroundScanIntervalMs: 2000,  // How often to scan for columns to queue
+  backgroundScanIntervalMs: 30000,  // How often to scan for columns to queue (15 seconds)
 }
 
 /**
@@ -70,7 +70,6 @@ export class LiquidPhysicsManager {
   private isColumnLoaded: ((coord: IChunkCoordinate) => boolean) | null = null
   private getLiquidPositions: ((coord: IChunkCoordinate) => Array<{ x: number; worldY: number; z: number }>) | null = null
   private hasBlockTag: ((blockId: BlockId, tag: string) => boolean) | null = null
-  private getLoadedColumnCoordinates: (() => IChunkCoordinate[]) | null = null
 
   constructor(config: Partial<LiquidPhysicsConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -86,8 +85,7 @@ export class LiquidPhysicsManager {
     flushBlockChanges: () => void,
     isColumnLoaded: (coord: IChunkCoordinate) => boolean,
     getLiquidPositions: (coord: IChunkCoordinate) => Array<{ x: number; worldY: number; z: number }>,
-    hasBlockTag: (blockId: BlockId, tag: string) => boolean,
-    getLoadedColumnCoordinates: () => IChunkCoordinate[]
+    hasBlockTag: (blockId: BlockId, tag: string) => boolean
   ): void {
     this.getBlockId = getBlockId
     this.setBlockRaw = setBlockRaw
@@ -95,7 +93,6 @@ export class LiquidPhysicsManager {
     this.isColumnLoaded = isColumnLoaded
     this.getLiquidPositions = getLiquidPositions
     this.hasBlockTag = hasBlockTag
-    this.getLoadedColumnCoordinates = getLoadedColumnCoordinates
   }
 
   /**
@@ -149,33 +146,27 @@ export class LiquidPhysicsManager {
   }
 
   /**
-   * Periodically scan loaded columns and queue those within range for background processing.
-   * Call this every frame to enable background liquid physics updates.
+   * Periodically queue nearby columns for background liquid physics processing.
+   * Only queues a small area around the player to avoid overwhelming the system.
    */
   updateQueue(): void {
     if (!this.config.enabled) return
-    if (!this.getLoadedColumnCoordinates) return
 
     const now = performance.now()
 
-    // Only scan periodically to avoid overhead
+    // Only scan periodically (every 60 seconds by default)
     if (now - this.lastBackgroundScanTime < this.config.backgroundScanIntervalMs) {
       return
     }
     this.lastBackgroundScanTime = now
 
-    // Get all loaded columns and queue those within range
-    const loadedColumns = this.getLoadedColumnCoordinates()
-    for (const coord of loadedColumns) {
-      const chunkX = Number(coord.x)
-      const chunkZ = Number(coord.z)
-      const dx = chunkX - this.playerChunkX
-      const dz = chunkZ - this.playerChunkZ
-      const distance = Math.sqrt(dx * dx + dz * dz)
-
-      // Only queue columns within max processing distance
-      if (distance <= this.config.maxDistance) {
-        this.queueColumn(coord.x, coord.z)
+    // Queue chunks in a small area around the player (nearbyDistance radius)
+    const radius = this.config.nearbyDistance
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        const chunkX = BigInt(this.playerChunkX + dx)
+        const chunkZ = BigInt(this.playerChunkZ + dz)
+        this.queueColumn(chunkX, chunkZ)
       }
     }
   }
@@ -202,17 +193,10 @@ export class LiquidPhysicsManager {
       const chunkX = Number(xStr)
       const chunkZ = Number(zStr)
 
-      // Calculate distance from player
+      // Calculate distance from player for cooldown selection
       const dx = chunkX - this.playerChunkX
       const dz = chunkZ - this.playerChunkZ
       const distance = Math.sqrt(dx * dx + dz * dz)
-
-      // Skip columns beyond max processing distance
-      if (distance > this.config.maxDistance) {
-        keysSkipped++
-        if (keysSkipped >= 10) break
-        continue
-      }
 
       // Use shorter cooldown for nearby chunks, longer for background
       const isNearby = distance <= this.config.nearbyDistance

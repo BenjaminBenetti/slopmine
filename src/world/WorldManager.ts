@@ -137,8 +137,7 @@ export class WorldManager implements IModifiedChunkProvider {
         const column = this.chunkManager.getColumn(coord)
         return column ? column.getLiquidBlockPositions() : []
       },
-      (blockId, tag) => getBlock(blockId).properties.tags.includes(tag),
-      () => this.chunkManager.getLoadedColumns().map(col => col.coordinate)
+      (blockId, tag) => getBlock(blockId).properties.tags.includes(tag)
     )
   }
 
@@ -417,9 +416,6 @@ export class WorldManager implements IModifiedChunkProvider {
 
     // Queue column for background lighting correction
     this.backgroundLightingManager.queueColumn(chunkCoord)
-
-    // Queue column for background liquid physics processing
-    this.liquidPhysicsManager.queueColumn(chunkCoord.x, chunkCoord.z)
   }
 
   /**
