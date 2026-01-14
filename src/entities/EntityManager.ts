@@ -2,9 +2,11 @@ import * as THREE from 'three'
 import type { ITask, ITaskResult } from '../core/interfaces/ITask.ts'
 import { TaskPriority } from '../core/interfaces/ITask.ts'
 import type { PhysicsEngine } from '../physics/PhysicsEngine.ts'
+import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
 import type { IEntity, EntityId } from './interfaces/IEntity.ts'
 import { EntityState } from './interfaces/IEntity.ts'
 import type { IEntityCallbacks } from './interfaces/IEntityCallbacks.ts'
+import { CHUNK_SIZE_X } from '../world/interfaces/IChunk.ts'
 
 /**
  * Configuration for EntityManager.
@@ -12,6 +14,8 @@ import type { IEntityCallbacks } from './interfaces/IEntityCallbacks.ts'
 export interface EntityManagerConfig {
   /** Maximum entities allowed (prevents runaway spawning) */
   maxEntities?: number
+  /** Function to get current chunk distance setting */
+  getChunkDistance?: () => number
 }
 
 /**
@@ -36,8 +40,10 @@ export class EntityManager implements ITask {
 
   private readonly scene: THREE.Scene
   private readonly physicsEngine: PhysicsEngine | null
+  private playerBody: IPhysicsBody | null = null
 
   private readonly maxEntities: number
+  private readonly getChunkDistance: () => number
 
   private readonly callbacks: Set<IEntityCallbacks> = new Set()
 
@@ -57,6 +63,14 @@ export class EntityManager implements ITask {
     this.scene = scene
     this.physicsEngine = physicsEngine
     this.maxEntities = config.maxEntities ?? 1000
+    this.getChunkDistance = config.getChunkDistance ?? (() => 8)
+  }
+
+  /**
+   * Set the player body for distance-based despawning.
+   */
+  setPlayerBody(playerBody: IPhysicsBody): void {
+    this.playerBody = playerBody
   }
 
   /**
@@ -173,15 +187,32 @@ export class EntityManager implements ITask {
 
     this.processAdditions()
 
+    // Calculate despawn distance (2 chunks before max chunk distance)
+    const despawnDistanceSq = this.playerBody
+      ? ((this.getChunkDistance() - 2) * CHUNK_SIZE_X) ** 2
+      : Infinity
+
     let updatedCount = 0
     for (const entity of this.entities.values()) {
       if (entity.state === EntityState.ACTIVE && entity.isAlive) {
         entity.update(deltaTime)
         updatedCount++
 
+        // Check if entity died
         if (!entity.isAlive && entity.state === EntityState.ACTIVE) {
           entity.state = EntityState.DESPAWNING
           this.entitiesToRemove.push(entity.id)
+          continue
+        }
+
+        // Check despawn distance from player
+        if (this.playerBody) {
+          this.tempVector.copy(entity.position).sub(this.playerBody.position)
+          const distSq = this.tempVector.x ** 2 + this.tempVector.z ** 2 // Horizontal distance only
+          if (distSq > despawnDistanceSq) {
+            entity.state = EntityState.DESPAWNING
+            this.entitiesToRemove.push(entity.id)
+          }
         }
       }
     }

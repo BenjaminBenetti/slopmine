@@ -367,7 +367,9 @@ physicsEngine.addBody(playerBody)
 // Create entity manager
 const entityManager = new EntityManager(renderer.scene, physicsEngine, {
   maxEntities: 500,
+  getChunkDistance: () => worldGenerator.getConfig().chunkDistance,
 })
+entityManager.setPlayerBody(playerBody)
 
 // Create entity spawner
 const entitySpawner = new EntitySpawner(

@@ -5,10 +5,11 @@ import type { IEntityConfig } from '../../interfaces/IEntityConfig.ts'
 // Import pig texture
 import pigTextureUrl from './assets/pig-texture.webp'
 
-// Pig colors (fallback if texture doesn't load)
+// Pig colors
 const PIG_PINK = 0xf5a9b8
 const PIG_SNOUT = 0xffccd5
-const PIG_DARK = 0xd48a98
+const PIG_DARK = 0x1a1a1a // Dark color for eyes/nostrils
+const PIG_ROSY = 0xe88a9a // Rosy cheek color
 
 // Movement constants
 const WALK_SPEED = 2.0 // blocks per second
@@ -32,6 +33,9 @@ const LEG_DEPTH = 3 * SCALE
 const SNOUT_WIDTH = 3 * SCALE
 const SNOUT_HEIGHT = 2 * SCALE
 const SNOUT_DEPTH = 1.5 * SCALE
+const NOSTRIL_SIZE = 0.5 * SCALE
+const NOSTRIL_DEPTH = 0.3 * SCALE
+const EYE_SIZE = 1.5 * SCALE
 
 /**
  * A pig entity that wanders randomly around the world.
@@ -123,6 +127,54 @@ export class PigEntity extends Entity {
     snout.castShadow = true
     headGroup.add(snout)
 
+    // Nostrils (dark holes on snout)
+    const nostrilMaterial = new THREE.MeshLambertMaterial({ color: PIG_DARK })
+    const nostrilGeometry = new THREE.BoxGeometry(NOSTRIL_SIZE, NOSTRIL_SIZE, NOSTRIL_DEPTH)
+
+    const leftNostril = new THREE.Mesh(nostrilGeometry, nostrilMaterial)
+    leftNostril.position.set(-SNOUT_WIDTH / 4, 0, SNOUT_DEPTH / 2 + NOSTRIL_DEPTH / 2)
+    snout.add(leftNostril)
+
+    const rightNostril = new THREE.Mesh(nostrilGeometry, nostrilMaterial)
+    rightNostril.position.set(SNOUT_WIDTH / 4, 0, SNOUT_DEPTH / 2 + NOSTRIL_DEPTH / 2)
+    snout.add(rightNostril)
+
+    // Eyes (dark with white highlights for a happy look)
+    const eyeMaterial = new THREE.MeshLambertMaterial({ color: PIG_DARK })
+    const eyeGeometry = new THREE.BoxGeometry(EYE_SIZE * 0.6, EYE_SIZE * 0.7, EYE_SIZE * 0.2)
+
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
+    leftEye.position.set(-HEAD_SIZE / 4, HEAD_SIZE / 5, HEAD_SIZE / 2 + 0.01)
+    headGroup.add(leftEye)
+
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
+    rightEye.position.set(HEAD_SIZE / 4, HEAD_SIZE / 5, HEAD_SIZE / 2 + 0.01)
+    headGroup.add(rightEye)
+
+    // Eye highlights (white sparkles for life)
+    const highlightMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff })
+    const highlightGeometry = new THREE.BoxGeometry(EYE_SIZE * 0.25, EYE_SIZE * 0.25, EYE_SIZE * 0.1)
+
+    const leftHighlight = new THREE.Mesh(highlightGeometry, highlightMaterial)
+    leftHighlight.position.set(-HEAD_SIZE / 4 + EYE_SIZE * 0.1, HEAD_SIZE / 5 + EYE_SIZE * 0.15, HEAD_SIZE / 2 + 0.02)
+    headGroup.add(leftHighlight)
+
+    const rightHighlight = new THREE.Mesh(highlightGeometry, highlightMaterial)
+    rightHighlight.position.set(HEAD_SIZE / 4 + EYE_SIZE * 0.1, HEAD_SIZE / 5 + EYE_SIZE * 0.15, HEAD_SIZE / 2 + 0.02)
+    headGroup.add(rightHighlight)
+
+    // Rosy cheeks (small pink circles below eyes)
+    const cheekMaterial = new THREE.MeshLambertMaterial({ color: PIG_ROSY })
+    const cheekGeometry = new THREE.BoxGeometry(EYE_SIZE * 0.8, EYE_SIZE * 0.5, EYE_SIZE * 0.15)
+
+    const leftCheek = new THREE.Mesh(cheekGeometry, cheekMaterial)
+    leftCheek.position.set(-HEAD_SIZE / 3, -HEAD_SIZE / 8, HEAD_SIZE / 2 + 0.01)
+    headGroup.add(leftCheek)
+
+    const rightCheek = new THREE.Mesh(cheekGeometry, cheekMaterial)
+    rightCheek.position.set(HEAD_SIZE / 3, -HEAD_SIZE / 8, HEAD_SIZE / 2 + 0.01)
+    headGroup.add(rightCheek)
+
     // Position head
     headGroup.position.y = LEG_HEIGHT + BODY_HEIGHT / 2 + HEAD_SIZE / 4
     headGroup.position.z = BODY_DEPTH / 2 + HEAD_SIZE / 3
@@ -169,8 +221,12 @@ export class PigEntity extends Entity {
 
     group.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshLambertMaterial) {
-        child.material.map = PigEntity.texture
-        child.material.needsUpdate = true
+        // Only apply body texture to pink body parts, not eyes/cheeks/nostrils
+        const color = child.material.color.getHex()
+        if (color === PIG_PINK || color === PIG_SNOUT) {
+          child.material.map = PigEntity.texture
+          child.material.needsUpdate = true
+        }
       }
     })
   }

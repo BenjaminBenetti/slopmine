@@ -8,8 +8,8 @@ import type { IPhysicsBody } from '../../physics/interfaces/IPhysicsBody.ts'
 import type { EntitySpawnConfig } from './EntitySpawnConfig.ts'
 
 // Spawning constants
-const SPAWN_CHECK_INTERVAL = 2.0 // seconds between spawn checks
-const SPAWN_RADIUS = 64 // blocks from player to check for spawning
+const SPAWN_CHECK_INTERVAL = 60.0 // seconds between spawn checks
+const SPAWN_CHUNK_RADIUS = 4 // chunks from player to check for spawning
 const MIN_SPAWN_DISTANCE = 24 // minimum distance from player to spawn
 const CHUNK_SIZE = 32 // blocks per chunk
 const DEFAULT_MAX_NEARBY = 8 // default max entities of one type nearby
@@ -28,11 +28,8 @@ export class EntitySpawner implements ITask {
   private readonly worldManager: WorldManager
   private readonly playerBody: IPhysicsBody
 
-  // Track which chunks have been processed for spawning
-  private readonly processedChunks: Set<string> = new Set()
-
-  // Timer for spawn checks
-  private spawnTimer = 0
+  // Timer for spawn checks (start at interval to trigger immediately)
+  private spawnTimer = SPAWN_CHECK_INTERVAL
 
   // Pre-allocated result object
   private readonly taskResult: ITaskResult = {
@@ -78,22 +75,12 @@ export class EntitySpawner implements ITask {
     const playerChunkX = Math.floor(playerPos.x / CHUNK_SIZE)
     const playerChunkZ = Math.floor(playerPos.z / CHUNK_SIZE)
 
-    // Calculate chunk range to check
-    const chunkRadius = Math.ceil(SPAWN_RADIUS / CHUNK_SIZE)
-
     let spawnsAttempted = 0
 
-    for (let dx = -chunkRadius; dx <= chunkRadius; dx++) {
-      for (let dz = -chunkRadius; dz <= chunkRadius; dz++) {
+    for (let dx = -SPAWN_CHUNK_RADIUS; dx <= SPAWN_CHUNK_RADIUS; dx++) {
+      for (let dz = -SPAWN_CHUNK_RADIUS; dz <= SPAWN_CHUNK_RADIUS; dz++) {
         const chunkX = playerChunkX + dx
         const chunkZ = playerChunkZ + dz
-        const chunkKey = `${chunkX},${chunkZ}`
-
-        // Skip if already processed
-        if (this.processedChunks.has(chunkKey)) continue
-
-        // Mark as processed
-        this.processedChunks.add(chunkKey)
 
         // Get spawn configs for this chunk's biome
         const worldX = chunkX * CHUNK_SIZE + CHUNK_SIZE / 2
@@ -110,9 +97,6 @@ export class EntitySpawner implements ITask {
         }
       }
     }
-
-    // Clean up old processed chunks that are far from player
-    this.cleanupProcessedChunks(playerChunkX, playerChunkZ)
 
     this.taskResult.workUnits = spawnsAttempted
   }
@@ -196,28 +180,9 @@ export class EntitySpawner implements ITask {
   }
 
   /**
-   * Clean up processed chunks that are far from the player.
-   * This allows respawning in areas the player returns to later.
-   */
-  private cleanupProcessedChunks(playerChunkX: number, playerChunkZ: number): void {
-    const cleanupRadius = Math.ceil(SPAWN_RADIUS / CHUNK_SIZE) + 2
-
-    for (const key of this.processedChunks) {
-      const [cx, cz] = key.split(',').map(Number)
-      const dx = Math.abs(cx - playerChunkX)
-      const dz = Math.abs(cz - playerChunkZ)
-
-      if (dx > cleanupRadius || dz > cleanupRadius) {
-        this.processedChunks.delete(key)
-      }
-    }
-  }
-
-  /**
-   * Clear all tracking state.
+   * Reset spawn timer to trigger spawn check on next update.
    */
   clear(): void {
-    this.processedChunks.clear()
-    this.spawnTimer = 0
+    this.spawnTimer = SPAWN_CHECK_INTERVAL
   }
 }

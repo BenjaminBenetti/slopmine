@@ -125,8 +125,8 @@ export class PlainsGenerator extends BiomeGenerator {
     entitySpawns: [
       {
         entityType: 'pig',
-        spawnRate: 0.3, // ~1 pig per 3 chunks
-        maxNearby: 4,
+        spawnRate: 0.1,
+        maxNearby: 16,
         createEntity: (pos: THREE.Vector3) => new PigEntity({ position: pos }),
       },
     ],
