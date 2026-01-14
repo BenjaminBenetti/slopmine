@@ -1,7 +1,9 @@
+import * as THREE from 'three'
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
+import { PigEntity } from '../../../entities/animals/pig/index.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -120,6 +122,14 @@ export class GrassyHillsGenerator extends BiomeGenerator {
       heightScale: 13,
       combineMode: 'add',
     } as TerrainConfig,
+    entitySpawns: [
+      {
+        entityType: 'pig',
+        spawnRate: 0.3, // ~1 pig per 3 chunks
+        maxNearby: 4,
+        createEntity: (pos: THREE.Vector3) => new PigEntity({ position: pos }),
+      },
+    ],
   }
 
   private readonly TREE_GRID_SIZE = 8

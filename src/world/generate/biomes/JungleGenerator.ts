@@ -1,7 +1,9 @@
+import * as THREE from 'three'
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
+import { PigEntity } from '../../../entities/animals/pig/index.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -128,6 +130,14 @@ export class JungleGenerator extends BiomeGenerator {
       heightScale: 10, // Slightly more dramatic than plains
       combineMode: 'add',
     } as TerrainConfig,
+    entitySpawns: [
+      {
+        entityType: 'pig',
+        spawnRate: 0.2, // Less common in jungle
+        maxNearby: 3,
+        createEntity: (pos: THREE.Vector3) => new PigEntity({ position: pos }),
+      },
+    ],
   }
 
   // Tree placement grid size (smaller = denser trees)

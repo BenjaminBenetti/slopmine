@@ -1,5 +1,6 @@
 import type { WorldManager } from '../WorldManager.ts'
 import type { ISubChunkCoordinate } from '../interfaces/ICoordinates.ts'
+import type { EntitySpawnConfig } from '../../entities/spawning/EntitySpawnConfig.ts'
 import { createSubChunkKey, type SubChunkKey } from '../interfaces/ICoordinates.ts'
 import { worldToChunk, localToWorld } from '../coordinates/CoordinateUtils.ts'
 import { SUB_CHUNK_HEIGHT, SUB_CHUNK_COUNT, CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
@@ -98,6 +99,18 @@ export class WorldGenerator {
   private getBiomeForChunk(chunkX: number, chunkZ: number): BiomeType {
     const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
     return biomeRegistry.selectBiome(regionX, regionZ, this.config.seed)
+  }
+
+  /**
+   * Get entity spawn configurations for a world position.
+   * Returns the spawn configs from the biome at that position.
+   */
+  getEntitySpawnsAtPosition(worldX: number, worldZ: number): EntitySpawnConfig[] | undefined {
+    const chunkX = Math.floor(worldX / 32)
+    const chunkZ = Math.floor(worldZ / 32)
+    const biomeType = this.getBiomeForChunk(chunkX, chunkZ)
+    const generator = this.getGeneratorForBiome(biomeType)
+    return generator.getBiomeProperties().entitySpawns
   }
 
   /**

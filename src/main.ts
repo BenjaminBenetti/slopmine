@@ -66,7 +66,7 @@ import {
   deserializeInventory,
 } from './persistence/index.ts'
 import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
-import { EntityManager } from './entities/index.ts'
+import { EntityManager, EntitySpawner } from './entities/index.ts'
 
 // Initialize world system
 registerDefaultBlocks()
@@ -369,6 +369,14 @@ const entityManager = new EntityManager(renderer.scene, physicsEngine, {
   maxEntities: 500,
 })
 
+// Create entity spawner
+const entitySpawner = new EntitySpawner(
+  entityManager,
+  worldGenerator,
+  world,
+  playerBody
+)
+
 // Connect camera controls to physics
 cameraControls.setPhysics(playerBody, physicsEngine)
 
@@ -567,6 +575,9 @@ scheduler.registerTask(blockTickManager)
 
 // Register entity manager
 scheduler.registerTask(entityManager)
+
+// Register entity spawner
+scheduler.registerTask(entitySpawner)
 
 // Update block UI when open
 scheduler.createTask({

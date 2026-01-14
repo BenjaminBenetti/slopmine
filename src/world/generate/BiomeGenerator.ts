@@ -12,6 +12,7 @@ import { evaluateTerrainConfig } from './terrain/NoiseEvaluator.ts'
 import type { TerrainConfig } from './terrain/TerrainConfig.ts'
 import type { SimplexNoise } from './SimplexNoise.ts'
 import type { BlockId } from '../interfaces/IBlock.ts'
+import type { EntitySpawnConfig } from '../../entities/spawning/EntitySpawnConfig.ts'
 
 /**
  * Configuration for water/liquid generation within a biome.
@@ -203,6 +204,12 @@ export interface BiomeProperties {
    * If not provided, the skybox will use default settings (no modification).
    */
   readonly skybox?: SkyboxSettings
+
+  /**
+   * Optional entity spawn configurations for this biome.
+   * Defines what entities can spawn naturally and at what rates.
+   */
+  readonly entitySpawns?: EntitySpawnConfig[]
 }
 
 /**

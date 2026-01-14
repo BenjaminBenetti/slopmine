@@ -15,3 +15,10 @@ export { Entity } from './Entity.ts'
 
 // Constants
 export * from './constants.ts'
+
+// Spawning
+export type { EntitySpawnConfig } from './spawning/EntitySpawnConfig.ts'
+export { EntitySpawner } from './spawning/EntitySpawner.ts'
+
+// Animals
+export { PigEntity } from './animals/pig/index.ts'
