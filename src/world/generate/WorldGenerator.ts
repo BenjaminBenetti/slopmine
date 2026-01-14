@@ -556,6 +556,11 @@ export class WorldGenerator {
           )
           this.generatedSubChunks.add(key)
 
+          // Mark entrances as generated for this column.
+          // If any sub-chunk was saved, the column was fully generated with entrances already carved.
+          const columnKey = `${coordinate.x},${coordinate.z}`
+          this.entrancesGenerated.add(columnKey)
+
           // NOTE: We intentionally do NOT propagate water for loaded chunks.
           // The saved state is authoritative - if water didn't fill an area before saving,
           // we shouldn't flood it on load. The player may have modified terrain.

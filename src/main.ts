@@ -66,6 +66,7 @@ import {
   deserializeInventory,
 } from './persistence/index.ts'
 import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
+import { EntityManager } from './entities/index.ts'
 
 // Initialize world system
 registerDefaultBlocks()
@@ -363,6 +364,11 @@ const playerBody = new PhysicsBody(
 )
 physicsEngine.addBody(playerBody)
 
+// Create entity manager
+const entityManager = new EntityManager(renderer.scene, physicsEngine, {
+  maxEntities: 500,
+})
+
 // Connect camera controls to physics
 cameraControls.setPhysics(playerBody, physicsEngine)
 
@@ -558,6 +564,9 @@ scheduler.createTask({
 
 // Register block tick manager (for forge smelting, etc.)
 scheduler.registerTask(blockTickManager)
+
+// Register entity manager
+scheduler.registerTask(entityManager)
 
 // Update block UI when open
 scheduler.createTask({
