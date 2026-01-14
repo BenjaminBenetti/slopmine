@@ -27,6 +27,15 @@ const MAX_HEALTH = 10 // 10 HP
 const BASE_DAMAGE = 2 // Fist damage
 const KNOCKBACK_HORIZONTAL = 6.0 // blocks/sec push away from player
 const KNOCKBACK_VERTICAL = 5.0 // blocks/sec upward
+const KNOCKBACK_STUN_TIME = 0.4 // seconds to disable AI after being hit
+
+// Flee constants
+const FLEE_SPEED = 4.0 // blocks per second (faster than walk)
+const FLEE_DURATION = 3.0 // seconds to flee after being hit
+
+// Death animation constants
+const DEATH_FALL_DURATION = 0.5 // seconds to fall over
+const DEATH_LINGER_DURATION = 1.0 // seconds to stay on ground before despawn
 
 // Pig dimensions (in world units)
 const SCALE = 0.0625 // Each "pixel" is 1/16th of a block
@@ -67,6 +76,11 @@ export class PigEntity extends Entity {
 
   // Health state
   private health = MAX_HEALTH
+  private knockbackTimer = 0 // Time remaining where AI is disabled
+  private fleeTimer = 0 // Time remaining to flee from player
+  private fleeDirection = new THREE.Vector3() // Direction to run away
+  private isDying = false // Death animation in progress
+  private deathTimer = 0 // Time into death animation
 
   // Mesh references for animation
   private legs: THREE.Mesh[] = []
@@ -253,6 +267,65 @@ export class PigEntity extends Entity {
       }
     }
 
+    // Handle death animation
+    if (this.isDying) {
+      this.deathTimer += deltaTime
+      const mesh = this.getMesh()
+      const body = this.getPhysicsBody()
+
+      // Stop all movement
+      if (body) {
+        body.velocity.x = 0
+        body.velocity.z = 0
+      }
+
+      // Animate falling over (rotate on Z axis)
+      if (mesh) {
+        const fallProgress = Math.min(this.deathTimer / DEATH_FALL_DURATION, 1.0)
+        // Ease out for natural fall
+        const easedProgress = 1 - Math.pow(1 - fallProgress, 2)
+        mesh.rotation.z = easedProgress * (Math.PI / 2) // Rotate 90 degrees
+      }
+
+      // After fall + linger, actually die
+      if (this.deathTimer >= DEATH_FALL_DURATION + DEATH_LINGER_DURATION) {
+        this.kill()
+      }
+
+      return
+    }
+
+    // Handle knockback stun - skip AI while stunned
+    if (this.knockbackTimer > 0) {
+      this.knockbackTimer -= deltaTime
+      // Still update animations while stunned
+      this.updateAnimations(deltaTime)
+      return
+    }
+
+    // Handle flee state - run away from player at higher speed
+    if (this.fleeTimer > 0) {
+      this.fleeTimer -= deltaTime
+      const body = this.getPhysicsBody()
+      if (body) {
+        // Run in flee direction at flee speed
+        body.velocity.x = this.fleeDirection.x * FLEE_SPEED
+        body.velocity.z = this.fleeDirection.z * FLEE_SPEED
+        this.isWalking = true
+
+        // Face flee direction
+        const mesh = this.getMesh()
+        if (mesh && (this.fleeDirection.x !== 0 || this.fleeDirection.z !== 0)) {
+          mesh.rotation.y = Math.atan2(this.fleeDirection.x, this.fleeDirection.z)
+        }
+      }
+
+      // Update last position and animations
+      this.lastPosition.copy(this.position)
+      this.updateAnimations(deltaTime)
+      return
+    }
+
     // Update wander cooldown
     this.wanderCooldown -= deltaTime
 
@@ -390,7 +463,7 @@ export class PigEntity extends Entity {
    * Check if player can interact with this pig.
    */
   canPlayerInteract(playerPosition: THREE.Vector3, maxDistance: number): boolean {
-    if (!this.isAlive) return false
+    if (!this.isAlive || this.isDying) return false
     const dist = this.position.distanceTo(playerPosition)
     return dist <= maxDistance
   }
@@ -432,10 +505,18 @@ export class PigEntity extends Entity {
       body.velocity.y = KNOCKBACK_VERTICAL
     }
 
-    // Check death
+    // Check death - start death animation instead of immediate kill
     if (this.health <= 0) {
-      console.log("oooof");
-      this.kill()
+      this.isDying = true
+      this.deathTimer = 0
+      // Clear other states
+      this.knockbackTimer = 0
+      this.fleeTimer = 0
+    } else {
+      // Only set flee/knockback if not dying
+      this.knockbackTimer = KNOCKBACK_STUN_TIME
+      this.fleeTimer = FLEE_DURATION
+      this.fleeDirection.copy(knockbackDir) // Run in same direction as knockback
     }
 
     return true
