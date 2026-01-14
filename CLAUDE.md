@@ -385,6 +385,25 @@ items/
 - `damage` - Base damage per second
 - `damageMultipliers` - Tag-based bonuses (pickaxe → stone, axe → wood)
 
+**CRITICAL: Item Registry**
+
+When creating a new item, you **MUST** register it in `src/persistence/ItemRegistry.ts`. This is essential for inventory persistence - items that are not registered will be lost when the game is saved and loaded.
+
+To register an item:
+1. Import the item class at the top of `ItemRegistry.ts`
+2. Add a `registerItemFactory()` call in `initializeItemRegistry()` with the item's ID
+
+Example:
+```typescript
+// At the top - import the item
+import { MyNewBlockItem } from '../items/blocks/my_new/MyNewBlockItem.ts'
+
+// In initializeItemRegistry() - register the factory
+registerItemFactory('my_new_block', () => new MyNewBlockItem())
+```
+
+The item ID passed to `registerItemFactory()` must exactly match the `id` property of the item class.
+
 ---
 
 ### `src/ui/` - User Interface

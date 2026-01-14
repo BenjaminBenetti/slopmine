@@ -1,5 +1,6 @@
 import type * as THREE from 'three'
 import type { IPhysicsBody } from '../../physics/interfaces/IPhysicsBody.ts'
+import type { IItem } from '../../items/Item.ts'
 
 /**
  * Unique identifier for entities.
@@ -95,9 +96,10 @@ export interface IEntity {
    * Handle player interaction with this entity.
    * @param playerPosition Player's current position
    * @param isLeftClick True for attack/use, false for interact
+   * @param heldItem Currently held item (for damage calculation)
    * @returns True if interaction was handled
    */
-  onPlayerInteract?(playerPosition: THREE.Vector3, isLeftClick: boolean): boolean
+  onPlayerInteract?(playerPosition: THREE.Vector3, isLeftClick: boolean, heldItem: IItem | null): boolean
 
   /**
    * Check if player can interact with this entity.

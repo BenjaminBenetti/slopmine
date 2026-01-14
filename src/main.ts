@@ -486,6 +486,7 @@ const blockInteraction = new BlockInteraction(
       toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
       updateHeldItem() // Update held item when inventory changes
     },
+    entityManager,
   }
 )
 

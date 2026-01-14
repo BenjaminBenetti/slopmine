@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { Entity } from '../../Entity.ts'
 import type { IEntityConfig } from '../../interfaces/IEntityConfig.ts'
+import type { IItem } from '../../../items/Item.ts'
 
 // Import pig texture
 import pigTextureUrl from './assets/pig-texture.webp'
@@ -20,6 +21,12 @@ const WANDER_MAX_DISTANCE = 8.0 // blocks
 const JUMP_VELOCITY = 8.0 // blocks per second (slightly less than player)
 const STUCK_MOVEMENT_RATIO = 0.2 // if moving less than 20% of expected, we're stuck
 const STUCK_TIME_THRESHOLD = 0.4 // seconds of being stuck before reacting
+
+// Combat constants
+const MAX_HEALTH = 10 // 10 HP
+const BASE_DAMAGE = 2 // Fist damage
+const KNOCKBACK_HORIZONTAL = 6.0 // blocks/sec push away from player
+const KNOCKBACK_VERTICAL = 5.0 // blocks/sec upward
 
 // Pig dimensions (in world units)
 const SCALE = 0.0625 // Each "pixel" is 1/16th of a block
@@ -57,6 +64,9 @@ export class PigEntity extends Entity {
   private legAnimPhase = 0
   private headBobPhase = 0
   private isWalking = false
+
+  // Health state
+  private health = MAX_HEALTH
 
   // Mesh references for animation
   private legs: THREE.Mesh[] = []
@@ -374,6 +384,61 @@ export class PigEntity extends Entity {
   onSpawn(): void {
     // Initialize last position for stuck detection
     this.lastPosition.copy(this.position)
+  }
+
+  /**
+   * Check if player can interact with this pig.
+   */
+  canPlayerInteract(playerPosition: THREE.Vector3, maxDistance: number): boolean {
+    if (!this.isAlive) return false
+    const dist = this.position.distanceTo(playerPosition)
+    return dist <= maxDistance
+  }
+
+  /**
+   * Handle player hitting this pig.
+   */
+  onPlayerInteract(playerPosition: THREE.Vector3, isLeftClick: boolean, heldItem: IItem | null): boolean {
+    if (!isLeftClick) return false
+    if (!this.isAlive) return false
+
+    // Calculate damage from held item
+    let damage = BASE_DAMAGE
+    if (heldItem && 'toolStats' in heldItem) {
+      const toolItem = heldItem as { toolStats: { damage: number } }
+      damage = toolItem.toolStats.damage
+    }
+
+    // Apply damage
+    this.health -= damage
+
+    // Calculate knockback direction (away from player)
+    const knockbackDir = new THREE.Vector3()
+      .copy(this.position)
+      .sub(playerPosition)
+    knockbackDir.y = 0
+    if (knockbackDir.lengthSq() > 0) {
+      knockbackDir.normalize()
+    } else {
+      // Player is exactly on pig, pick random direction
+      knockbackDir.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize()
+    }
+
+    // Apply knockback to physics body
+    const body = this.getPhysicsBody()
+    if (body) {
+      body.velocity.x = knockbackDir.x * KNOCKBACK_HORIZONTAL
+      body.velocity.z = knockbackDir.z * KNOCKBACK_HORIZONTAL
+      body.velocity.y = KNOCKBACK_VERTICAL
+    }
+
+    // Check death
+    if (this.health <= 0) {
+      console.log("oooof");
+      this.kill()
+    }
+
+    return true
   }
 
   dispose(): void {

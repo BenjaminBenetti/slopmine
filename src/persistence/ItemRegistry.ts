@@ -24,6 +24,15 @@ import { BlueMushroomBlockItem } from '../items/blocks/blue_mushroom/BlueMushroo
 import { BlueMushroomCapBlockItem } from '../items/blocks/blue_mushroom_cap/BlueMushroomCapBlockItem.ts'
 import { PurpleMushroomBlockItem } from '../items/blocks/purple_mushroom/PurpleMushroomBlockItem.ts'
 import { PurpleMushroomCapBlockItem } from '../items/blocks/purple_mushroom_cap/PurpleMushroomCapBlockItem.ts'
+import { SandBlockItem } from '../items/blocks/sand/SandBlockItem.ts'
+import { SandstoneBlockItem } from '../items/blocks/sandstone/SandstoneBlockItem.ts'
+import { CactusBlockItem } from '../items/blocks/cactus/CactusBlockItem.ts'
+import { BasaltBlockItem } from '../items/blocks/basalt/BasaltBlockItem.ts'
+import { MagmaBlockItem } from '../items/blocks/magma/MagmaBlockItem.ts'
+import { VineBlockItem } from '../items/blocks/vine/VineBlockItem.ts'
+import { ClayBlockItem } from '../items/blocks/clay/ClayBlockItem.ts'
+import { MushroomBlockItem } from '../items/blocks/mushroom/MushroomBlockItem.ts'
+import { MushroomCapBlockItem } from '../items/blocks/mushroom-cap/MushroomCapBlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -122,6 +131,15 @@ export function initializeItemRegistry(): void {
   registerItemFactory('blue_mushroom_cap_block', () => new BlueMushroomCapBlockItem())
   registerItemFactory('purple_mushroom_block', () => new PurpleMushroomBlockItem())
   registerItemFactory('purple_mushroom_cap_block', () => new PurpleMushroomCapBlockItem())
+  registerItemFactory('sand_block', () => new SandBlockItem())
+  registerItemFactory('sandstone_block', () => new SandstoneBlockItem())
+  registerItemFactory('cactus_block', () => new CactusBlockItem())
+  registerItemFactory('basalt_block', () => new BasaltBlockItem())
+  registerItemFactory('magma_block', () => new MagmaBlockItem())
+  registerItemFactory('vine_block', () => new VineBlockItem())
+  registerItemFactory('clay_block', () => new ClayBlockItem())
+  registerItemFactory('mushroom_block', () => new MushroomBlockItem())
+  registerItemFactory('mushroom_cap_block', () => new MushroomCapBlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())

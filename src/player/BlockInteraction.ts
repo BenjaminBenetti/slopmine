@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import type { BlockId } from '../world/interfaces/IBlock.ts'
 import type { WorldManager } from '../world/WorldManager.ts'
 import type { IPlayerState } from './PlayerState.ts'
+import type { EntityManager } from '../entities/EntityManager.ts'
+import type { IEntity } from '../entities/interfaces/IEntity.ts'
 import { BlockRaycaster, type IBlockRaycastHit } from './BlockRaycaster.ts'
 import { MiningOverlay } from '../renderer/MiningOverlay.ts'
 import { BlockIds } from '../world/blocks/BlockIds.ts'
@@ -30,6 +32,8 @@ export interface IBlockInteractionConfig {
   maxReachDistance?: number
   /** Called after items are collected from a broken block */
   onItemsCollected?: () => void
+  /** Entity manager for hitting entities */
+  entityManager?: EntityManager
 }
 
 /**
@@ -40,6 +44,7 @@ export class BlockInteraction {
   private readonly camera: THREE.PerspectiveCamera
   private readonly worldManager: WorldManager
   private readonly playerState: IPlayerState
+  private readonly entityManager: EntityManager | null
   private readonly raycaster: BlockRaycaster
   private readonly miningOverlay: MiningOverlay
   private readonly domElement: HTMLElement
@@ -48,7 +53,14 @@ export class BlockInteraction {
   private readonly onItemsCollected?: () => void
 
   private isMouseDown = false
+  private hasHitEntityThisClick = false
   private currentMining: IMiningProgress | null = null
+
+  // Pre-allocated vectors for entity hit detection
+  private readonly rayOrigin = new THREE.Vector3()
+  private readonly rayDirection = new THREE.Vector3()
+  private readonly aabbMin = new THREE.Vector3()
+  private readonly aabbMax = new THREE.Vector3()
 
   constructor(
     camera: THREE.PerspectiveCamera,
@@ -61,6 +73,7 @@ export class BlockInteraction {
     this.camera = camera
     this.worldManager = worldManager
     this.playerState = playerState
+    this.entityManager = config.entityManager ?? null
     this.domElement = domElement
 
     this.maxReachDistance = config.maxReachDistance ?? MAX_REACH_DISTANCE
@@ -87,10 +100,33 @@ export class BlockInteraction {
       return
     }
 
-    // Perform raycast to find target block
-    const hit = this.raycaster.castFromCamera(this.camera, this.maxReachDistance)
+    // Get ray from camera for both block and entity detection
+    this.camera.getWorldPosition(this.rayOrigin)
+    this.camera.getWorldDirection(this.rayDirection)
 
-    if (!hit) {
+    // Check for entity hit first
+    const entityHit = this.checkEntityHit()
+
+    // Perform raycast to find target block
+    const blockHit = this.raycaster.castFromCamera(this.camera, this.maxReachDistance)
+
+    // Determine what to interact with (closer target wins)
+    // Only hit entity once per click (not continuously while held)
+    if (entityHit && !this.hasHitEntityThisClick) {
+      const entityDist = entityHit.distance
+      const blockDist = blockHit?.distance ?? Infinity
+
+      if (entityDist < blockDist) {
+        // Hit entity - instant interaction, no mining progress
+        this.cancelMining()
+        this.hitEntity(entityHit.entity)
+        this.hasHitEntityThisClick = true
+        return
+      }
+    }
+
+    // No entity hit or block is closer - proceed with block mining
+    if (!blockHit) {
       // No block in range
       this.cancelMining()
       return
@@ -99,17 +135,17 @@ export class BlockInteraction {
     // Check if we're still targeting the same block
     if (this.currentMining) {
       if (
-        hit.worldX !== this.currentMining.worldX ||
-        hit.worldY !== this.currentMining.worldY ||
-        hit.worldZ !== this.currentMining.worldZ
+        blockHit.worldX !== this.currentMining.worldX ||
+        blockHit.worldY !== this.currentMining.worldY ||
+        blockHit.worldZ !== this.currentMining.worldZ
       ) {
         // Target changed, restart mining
-        this.startMining(hit)
+        this.startMining(blockHit)
         return
       }
     } else {
       // Start mining new block
-      this.startMining(hit)
+      this.startMining(blockHit)
       return
     }
 
@@ -161,6 +197,7 @@ export class BlockInteraction {
     if (event.button !== 0) return
 
     this.isMouseDown = false
+    this.hasHitEntityThisClick = false
     this.cancelMining()
   }
 
@@ -168,6 +205,7 @@ export class BlockInteraction {
     // Cancel mining if pointer lock is released
     if (document.pointerLockElement !== this.domElement) {
       this.isMouseDown = false
+      this.hasHitEntityThisClick = false
       this.cancelMining()
     }
   }
@@ -260,5 +298,109 @@ export class BlockInteraction {
       this.miningOverlay.hide()
       this.currentMining = null
     }
+  }
+
+  /**
+   * Check for entity hit using ray-AABB intersection.
+   * Returns the closest entity hit within reach distance.
+   */
+  private checkEntityHit(): { entity: IEntity; distance: number } | null {
+    if (!this.entityManager) return null
+
+    // Get nearby entities
+    const nearbyEntities = this.entityManager.getEntitiesNear(this.rayOrigin, this.maxReachDistance)
+
+    let closestHit: { entity: IEntity; distance: number } | null = null
+
+    for (const entity of nearbyEntities) {
+      // Skip if entity can't be interacted with
+      if (!entity.canPlayerInteract?.(this.rayOrigin, this.maxReachDistance)) {
+        continue
+      }
+
+      // Get entity AABB from physics body or estimate from position
+      const physicsBody = entity.getPhysicsBody()
+      if (!physicsBody) continue
+
+      // Get hitbox AABBs and test intersection with each
+      const aabbs = physicsBody.getAABBs()
+      for (const aabb of aabbs) {
+        const distance = this.rayIntersectsAABB(
+          this.rayOrigin,
+          this.rayDirection,
+          aabb.min,
+          aabb.max
+        )
+
+        if (distance !== null && distance <= this.maxReachDistance) {
+          if (!closestHit || distance < closestHit.distance) {
+            closestHit = { entity, distance }
+          }
+        }
+      }
+    }
+
+    return closestHit
+  }
+
+  /**
+   * Hit an entity - call its interaction hook.
+   */
+  private hitEntity(entity: IEntity): void {
+    // Get currently held item
+    const selectedIndex = this.playerState.inventory.toolbar.selectedIndex
+    const heldItem = this.playerState.inventory.toolbar.getItem(selectedIndex)
+
+    // Call entity interaction hook
+    entity.onPlayerInteract?.(this.rayOrigin, true, heldItem)
+  }
+
+  /**
+   * Ray-AABB intersection using slab method.
+   * Returns distance to intersection, or null if no hit.
+   */
+  private rayIntersectsAABB(
+    rayOrigin: THREE.Vector3,
+    rayDir: THREE.Vector3,
+    aabbMin: THREE.Vector3,
+    aabbMax: THREE.Vector3
+  ): number | null {
+    let tMin = 0
+    let tMax = Infinity
+
+    for (let i = 0; i < 3; i++) {
+      const axis = i === 0 ? 'x' : i === 1 ? 'y' : 'z'
+      const origin = rayOrigin[axis]
+      const dir = rayDir[axis]
+      const min = aabbMin[axis]
+      const max = aabbMax[axis]
+
+      if (Math.abs(dir) < 1e-8) {
+        // Ray is parallel to slab
+        if (origin < min || origin > max) {
+          return null
+        }
+      } else {
+        // Compute intersection t values
+        let t1 = (min - origin) / dir
+        let t2 = (max - origin) / dir
+
+        if (t1 > t2) {
+          const temp = t1
+          t1 = t2
+          t2 = temp
+        }
+
+        tMin = Math.max(tMin, t1)
+        tMax = Math.min(tMax, t2)
+
+        if (tMin > tMax) {
+          return null
+        }
+      }
+    }
+
+    // Return distance if intersection is in front of ray
+    return tMin >= 0 ? tMin : (tMax >= 0 ? tMax : null)
   }
 }
