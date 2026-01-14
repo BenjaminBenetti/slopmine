@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { IBlockProperties, IWorld } from '../../../interfaces/IBlock.ts'
+import type { IBlockProperties, IWorld, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
@@ -12,13 +12,22 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 
-import forgeTexUrl from './assets/forge.webp'
+import forgeFrontTexUrl from './assets/forge-front.webp'
+import forgeSideTexUrl from './assets/forge-side.webp'
+import forgeTopTexUrl from './assets/forge-top.webp'
 
-// Register texture for atlas
-registerTextureUrl(TextureId.FORGE, forgeTexUrl)
+// Register textures for atlas
+registerTextureUrl(TextureId.FORGE_FRONT, forgeFrontTexUrl)
+registerTextureUrl(TextureId.FORGE_SIDE, forgeSideTexUrl)
+registerTextureUrl(TextureId.FORGE_TOP, forgeTopTexUrl)
 
-const forgeTexture = loadBlockTexture(forgeTexUrl)
-const forgeMaterial = new THREE.MeshLambertMaterial({ map: forgeTexture })
+const forgeFrontTexture = loadBlockTexture(forgeFrontTexUrl)
+const forgeSideTexture = loadBlockTexture(forgeSideTexUrl)
+const forgeTopTexture = loadBlockTexture(forgeTopTexUrl)
+
+const forgeFrontMaterial = new THREE.MeshLambertMaterial({ map: forgeFrontTexture })
+const forgeSideMaterial = new THREE.MeshLambertMaterial({ map: forgeSideTexture })
+const forgeTopMaterial = new THREE.MeshLambertMaterial({ map: forgeTopTexture })
 
 // Reference to the block tick manager - set during initialization
 let blockTickManager: BlockTickManager | null = null
@@ -55,15 +64,46 @@ export class ForgeBlock extends SolidBlock {
   readonly isInteractable = true
 
   protected get defaultTextureId(): number {
-    return TextureId.FORGE
+    return TextureId.FORGE_FRONT
   }
 
-  protected getMaterials(): THREE.Material {
-    return forgeMaterial
+  protected getMaterials(): THREE.Material[] {
+    // Order: +X, -X, +Y, -Y, +Z, -Z
+    return [
+      forgeSideMaterial,  // +X (right) - side
+      forgeSideMaterial,  // -X (left) - side
+      forgeTopMaterial,   // +Y (top)
+      forgeTopMaterial,   // -Y (bottom)
+      forgeFrontMaterial, // +Z (front) - front with fire opening
+      forgeSideMaterial,  // -Z (back) - side
+    ]
+  }
+
+  /**
+   * Return texture ID for each face for greedy meshing.
+   * TOP=0, BOTTOM=1, NORTH=2, SOUTH=3, EAST=4, WEST=5
+   */
+  getTextureForFace(face: BlockFace): number {
+    switch (face) {
+      case 0: // TOP
+      case 1: // BOTTOM
+        return TextureId.FORGE_TOP
+      case 3: // SOUTH (+Z) - front with fire opening
+        return TextureId.FORGE_FRONT
+      default:
+        return TextureId.FORGE_SIDE
+    }
   }
 
   getDrops(): IItem[] {
     return [new ForgeBlockItem()]
+  }
+
+  /**
+   * Forge blocks use instanced rendering (not greedy meshing) to support rotation.
+   */
+  isGreedyMeshable(): boolean {
+    return false
   }
 
   /**

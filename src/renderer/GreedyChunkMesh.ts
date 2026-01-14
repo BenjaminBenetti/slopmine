@@ -6,6 +6,7 @@ import { getBlock } from '../world/blocks/BlockRegistry.ts'
 import type { MeshGroup, GreedyMeshResponse } from '../workers/GreedyMeshWorker.ts'
 import type { IChunkMesh } from './ChunkMesh.ts'
 import { getTextureAtlas } from './TextureAtlas.ts'
+import { getMetadataFacing, facingToRotationY } from '../world/blocks/BlockFacing.ts'
 
 // Atlas materials cache (1 opaque + 1 transparent = 2 materials total)
 // Normals are stored per-vertex, so we only need one material per transparency type
@@ -94,7 +95,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     }
 
     // Handle non-greedy blocks (torch, etc.) with InstancedMesh fallback
-    this.buildNonGreedyBlocks(response.nonGreedyBlocks, response.nonGreedyLights)
+    this.buildNonGreedyBlocks(response.nonGreedyBlocks, response.nonGreedyLights, response.nonGreedyMetadata)
   }
 
   /**
@@ -164,13 +165,15 @@ export class GreedyChunkMesh implements IChunkMesh {
    */
   private buildNonGreedyBlocks(
     nonGreedyBlocks: Array<[number, Float32Array]>,
-    nonGreedyLights: Array<[number, Uint8Array]>
+    nonGreedyLights: Array<[number, Uint8Array]>,
+    nonGreedyMetadata: Array<[number, Uint8Array]>
   ): void {
     const matrix = new THREE.Matrix4()
 
     for (let i = 0; i < nonGreedyBlocks.length; i++) {
       const [blockId, positions] = nonGreedyBlocks[i]
       const lights = nonGreedyLights[i]?.[1] ?? new Uint8Array(0)
+      const metadata = nonGreedyMetadata[i]?.[1] ?? new Uint8Array(0)
 
       const count = positions.length / 3
       if (count === 0) continue
@@ -183,7 +186,7 @@ export class GreedyChunkMesh implements IChunkMesh {
       const mat = Array.isArray(material) ? material[0] : material
       const needsDepthSort = mat && mat.transparent
 
-      this.buildInstancedMesh(blockId, geometry, material, positions, lights, count, matrix, mat)
+      this.buildInstancedMesh(blockId, geometry, material, positions, lights, metadata, count, matrix, mat)
     }
   }
 
@@ -252,6 +255,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     material: THREE.Material | THREE.Material[],
     positions: Float32Array,
     lights: Uint8Array,
+    metadata: Uint8Array,
     count: number,
     matrix: THREE.Matrix4,
     mat: THREE.Material | undefined
@@ -267,14 +271,31 @@ export class GreedyChunkMesh implements IChunkMesh {
     }
 
     const colors = new Float32Array(count * 3)
+    const rotationMatrix = new THREE.Matrix4()
+    const positionVector = new THREE.Vector3()
 
     for (let j = 0; j < count; j++) {
       const posIdx = j * 3
-      matrix.setPosition(
-        positions[posIdx] + 0.5,
-        positions[posIdx + 1] + 0.5,
-        positions[posIdx + 2] + 0.5
-      )
+      const x = positions[posIdx] + 0.5
+      const y = positions[posIdx + 1] + 0.5
+      const z = positions[posIdx + 2] + 0.5
+
+      // Get rotation from metadata (bits 0-1 = facing direction)
+      const blockMeta = metadata[j] ?? 0
+      const facing = getMetadataFacing(blockMeta)
+      const rotationY = facingToRotationY(facing)
+
+      // Build transformation matrix: rotation then translation
+      if (rotationY !== 0) {
+        rotationMatrix.makeRotationY(rotationY)
+        positionVector.set(x, y, z)
+        matrix.copy(rotationMatrix)
+        matrix.setPosition(positionVector)
+      } else {
+        matrix.identity()
+        matrix.setPosition(x, y, z)
+      }
+
       instancedMesh.setMatrixAt(j, matrix)
 
       // Calculate brightness from light level

@@ -73,9 +73,42 @@ export class RecipeRegistry {
 
   /**
    * Find all recipes that can be crafted with the given ingredients.
+   * Recipes are sorted by how many ingredient types match (highest first).
    */
   findCraftableRecipes(ingredients: IIngredientCounts): IRecipe[] {
-    return this.getAllRecipes().filter((recipe) => this.canCraft(recipe, ingredients))
+    const craftable = this.getAllRecipes().filter((recipe) => this.canCraft(recipe, ingredients))
+
+    // Sort by number of matching ingredient types (descending)
+    craftable.sort((a, b) => {
+      const matchA = this.countMatchingIngredients(a, ingredients)
+      const matchB = this.countMatchingIngredients(b, ingredients)
+      return matchB - matchA
+    })
+
+    return craftable
+  }
+
+  /**
+   * Count how many unique ingredient types in the recipe match items in the crafting grid.
+   */
+  private countMatchingIngredients(recipe: IRecipe, ingredients: IIngredientCounts): number {
+    let count = 0
+
+    for (const ingredient of recipe.ingredients) {
+      if (ingredient.itemId) {
+        // Check if item ID exists in the grid
+        if (ingredients.byId.has(ingredient.itemId)) {
+          count++
+        }
+      } else if (ingredient.tag) {
+        // Check if any item with this tag exists in the grid
+        if (ingredients.byTag.has(ingredient.tag)) {
+          count++
+        }
+      }
+    }
+
+    return count
   }
 
   /**

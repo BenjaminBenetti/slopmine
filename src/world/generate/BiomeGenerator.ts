@@ -170,6 +170,12 @@ export interface BiomeProperties {
    */
   readonly treeDensity: number
   /**
+   * Controls the maximum skylight level for this biome (0-15).
+   * Default is 15 (full brightness). Lower values create darker, spookier biomes.
+   * This affects the flood-fill lighting algorithm during world generation.
+   */
+  readonly skylightValue?: number
+  /**
    * A list of special geographical or structural elements (like custom rock formations, small ponds, or unique structures) that can appear in this biome.
    * These features are added on top of the base terrain.
    */
@@ -332,7 +338,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   async generate(chunk: IChunkData, world: WorldManager | null): Promise<void> {
     await this.generateTerrain(chunk)
     await this.generateCaves(chunk)
-    this.skylightPropagator.propagate(chunk)
+    this.skylightPropagator.propagate(chunk, this.properties.skylightValue ?? 15)
     await this.generateFeatures(chunk, world)
     await this.generateDecorations(chunk, world)
   }

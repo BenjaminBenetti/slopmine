@@ -1,5 +1,6 @@
 import type * as THREE from 'three'
 import type { IItem } from '../../items/Item.ts'
+import type { BlockFacing } from '../blocks/BlockFacing.ts'
 
 /**
  * Block ID type - uint16 supports 0-65535 block types.
@@ -72,8 +73,9 @@ export interface IBlock {
 
   /**
    * Called when this block is placed.
+   * @param facing The direction the block should face (for directional blocks)
    */
-  onPlace?(world: IWorld, x: bigint, y: bigint, z: bigint): void
+  onPlace?(world: IWorld, x: bigint, y: bigint, z: bigint, facing?: BlockFacing): void
 
   /**
    * Called when this block is broken.

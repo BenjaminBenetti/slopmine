@@ -31,10 +31,20 @@ export class SubChunk {
    */
   private readonly lightData: Uint8Array
 
+  /**
+   * Block metadata stored as flat Uint8Array.
+   * Each byte stores per-block metadata:
+   * - Bits 0-1: Horizontal facing (0=NORTH, 1=EAST, 2=SOUTH, 3=WEST)
+   * - Bits 2-7: Reserved for future use
+   * Size: 32 * 32 * 64 = 65,536 bytes = 64 KB per sub-chunk
+   */
+  private readonly metadata: Uint8Array
+
   constructor(coordinate: ISubChunkCoordinate) {
     this.coordinate = coordinate
     this.blocks = new Uint16Array(SUB_CHUNK_VOLUME)
     this.lightData = new Uint8Array(SUB_CHUNK_VOLUME)
+    this.metadata = new Uint8Array(SUB_CHUNK_VOLUME)
   }
 
   get state(): ChunkState {
@@ -122,6 +132,35 @@ export class SubChunk {
 
   getLightData(): Uint8Array {
     return this.lightData
+  }
+
+  getMetadataData(): Uint8Array {
+    return this.metadata
+  }
+
+  /**
+   * Get block metadata at local coordinates.
+   * Returns 0 for out-of-bounds (no metadata).
+   */
+  getMetadata(x: number, y: number, z: number): number {
+    if (!isValidSubChunkLocal(x, y, z)) {
+      return 0
+    }
+    return this.metadata[localToSubChunkIndex(x, y, z)]
+  }
+
+  /**
+   * Set block metadata at local coordinates.
+   * Returns true if metadata was set, false if out of bounds.
+   */
+  setMetadata(x: number, y: number, z: number, value: number): boolean {
+    if (!isValidSubChunkLocal(x, y, z)) {
+      return false
+    }
+    const index = localToSubChunkIndex(x, y, z)
+    this.metadata[index] = value
+    this._dirty = true
+    return true
   }
 
   /**
@@ -282,16 +321,22 @@ export class SubChunk {
   /**
    * Apply bulk data from worker generation result.
    */
-  applyWorkerData(blocks: Uint16Array, lightData: Uint8Array): void {
+  applyWorkerData(blocks: Uint16Array, lightData: Uint8Array, metadataData?: Uint8Array): void {
     if (!this._dirty) {
       this.blocks.set(blocks)
       this.lightData.set(lightData)
+      if (metadataData) {
+        this.metadata.set(metadataData)
+      }
     } else {
       // Merge: Keep existing non-air blocks, overwrite air with worker data
       for (let i = 0; i < SUB_CHUNK_VOLUME; i++) {
         if (this.blocks[i] === BlockIds.AIR) {
           this.blocks[i] = blocks[i]
           this.lightData[i] = lightData[i]
+          if (metadataData) {
+            this.metadata[i] = metadataData[i]
+          }
         }
       }
     }

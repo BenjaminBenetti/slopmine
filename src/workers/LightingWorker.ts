@@ -33,6 +33,8 @@ export interface LightingRequest {
   chunkZ: number
   /** Block data for each sub-chunk (indexed by subY 0-15). Null if sub-chunk doesn't exist. */
   subChunks: SubChunkData[]
+  /** Maximum skylight value for this biome (0-15). Default is 15. */
+  skylightValue?: number
 }
 
 /**
@@ -48,6 +50,8 @@ export interface BlockChangeLightingRequest {
   wasBlockRemoved: boolean
   subChunks: SubChunkData[]
   forceRemeshSubY: number // Always remesh this sub-chunk regardless of lighting changes
+  /** Maximum skylight value for this biome (0-15). Default is 15. */
+  skylightValue?: number
 }
 
 /**
@@ -97,7 +101,7 @@ function processBlockChangeRequest(
   request: BlockChangeLightingRequest
 ): LightingResponse | LightingError {
   try {
-    const { chunkX, chunkZ, localX, localY, localZ, wasBlockRemoved, subChunks } = request
+    const { chunkX, chunkZ, localX, localY, localZ, wasBlockRemoved, subChunks, skylightValue = 15 } = request
 
     // Create WorkerSubChunk instances
     const workerSubChunks: Map<number, WorkerSubChunk> = new Map()
@@ -127,7 +131,8 @@ function processBlockChangeRequest(
       localX,
       localY,
       localZ,
-      wasBlockRemoved
+      wasBlockRemoved,
+      skylightValue
     )
 
     // Handle blocklight changes
@@ -240,7 +245,7 @@ function processBlockChangeRequest(
  */
 function processLightingRequest(request: LightingRequest): LightingResponse | LightingError {
   try {
-    const { chunkX, chunkZ, subChunks } = request
+    const { chunkX, chunkZ, subChunks, skylightValue = 15 } = request
 
     // Sort sub-chunks by subY (highest first) for top-down processing
     const sortedSubChunks = [...subChunks].sort((a, b) => b.subY - a.subY)
@@ -280,8 +285,8 @@ function processLightingRequest(request: LightingRequest): LightingResponse | Li
         }
       }
 
-      // Propagate skylight for this sub-chunk
-      skylightPropagator.propagateSubChunk(workerSubChunk, aboveBoundaryLight)
+      // Propagate skylight for this sub-chunk (using biome's max skylight value)
+      skylightPropagator.propagateSubChunk(workerSubChunk, aboveBoundaryLight, skylightValue)
 
       // Get boundary light for the next sub-chunk below
       aboveBoundaryLight = skylightPropagator.getBottomBoundaryLight(workerSubChunk)
@@ -315,8 +320,8 @@ function processLightingRequest(request: LightingRequest): LightingResponse | Li
             const blockId = subChunk.getBlockId(x, localY, z)
 
             if (blockId === BlockIds.AIR && globalY > highestSolidY) {
-              // Air above all solid blocks - has true sky access
-              subChunk.setSkylight(x, localY, z, 15)
+              // Air above all solid blocks - has true sky access (use biome's skylight)
+              subChunk.setSkylight(x, localY, z, skylightValue)
             }
           }
         }
@@ -330,13 +335,13 @@ function processLightingRequest(request: LightingRequest): LightingResponse | Li
     for (const sc of sortedSubChunks) {
       const workerSubChunk = workerSubChunks.get(sc.subY)!
 
-      // Apply boundary light from sub-chunk above
+      // Apply boundary light from sub-chunk above (cap at biome's max skylight)
       if (aboveBoundaryLight) {
-        skylightPropagator.propagateFromAbove(workerSubChunk, aboveBoundaryLight)
+        skylightPropagator.propagateFromAbove(workerSubChunk, aboveBoundaryLight, skylightValue)
       }
 
-      // Spread horizontally within this sub-chunk
-      skylightPropagator.spreadSubChunkLight(workerSubChunk)
+      // Spread horizontally within this sub-chunk (cap at biome's max skylight)
+      skylightPropagator.spreadSubChunkLight(workerSubChunk, skylightValue)
 
       // Get boundary for next sub-chunk below
       aboveBoundaryLight = skylightPropagator.getBottomBoundaryLight(workerSubChunk)

@@ -6,6 +6,7 @@ import { BlockRaycaster } from './BlockRaycaster.ts'
 import { BlockRegistry } from '../world/blocks/BlockRegistry.ts'
 import { BlockFace } from '../world/interfaces/IBlock.ts'
 import { AABB } from '../physics/collision/AABB.ts'
+import { yawToFacing, setMetadataFacing, BlockFacing } from '../world/blocks/BlockFacing.ts'
 
 /** Maximum reach distance for block placement */
 const MAX_REACH_DISTANCE = 5
@@ -113,12 +114,18 @@ export class BlockPlacement {
     const existingBlock = this.worldManager.getBlock(placePos.x, placePos.y, placePos.z)
     if (existingBlock.properties.isSolid) return
 
-    // Place the block
-    this.worldManager.setBlock(placePos.x, placePos.y, placePos.z, blockId)
+    // Calculate facing direction from player's camera yaw
+    // Camera rotation.y is the yaw angle
+    const yaw = this.camera.rotation.y
+    const facing = yawToFacing(yaw)
+    const metadata = setMetadataFacing(0, facing)
+
+    // Place the block with facing metadata
+    this.worldManager.setBlock(placePos.x, placePos.y, placePos.z, blockId, metadata)
 
     // Call the block's onPlace hook if it exists
     if (block.onPlace) {
-      block.onPlace(this.worldManager, placePos.x, placePos.y, placePos.z)
+      block.onPlace(this.worldManager, placePos.x, placePos.y, placePos.z, facing)
     }
 
     // Decrease item stack count

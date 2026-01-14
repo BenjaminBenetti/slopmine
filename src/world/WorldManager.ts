@@ -204,11 +204,13 @@ export class WorldManager implements IModifiedChunkProvider {
     coordinate: ISubChunkCoordinate
     blocks: Uint16Array
     lightData: Uint8Array
+    metadata: Uint8Array
   }> {
     const chunks: Array<{
       coordinate: ISubChunkCoordinate
       blocks: Uint16Array
       lightData: Uint8Array
+      metadata: Uint8Array
     }> = []
 
     for (const subChunk of this.chunkManager.getLoadedSubChunks()) {
@@ -216,6 +218,7 @@ export class WorldManager implements IModifiedChunkProvider {
         coordinate: subChunk.coordinate,
         blocks: subChunk.getBlockData(),
         lightData: subChunk.getLightData(),
+        metadata: subChunk.getMetadataData(),
       })
     }
 
@@ -369,12 +372,16 @@ export class WorldManager implements IModifiedChunkProvider {
    * Apply worker-generated data to a sub-chunk.
    * Creates the sub-chunk and ChunkColumn if necessary.
    * @param isFullyOpaque - Opacity computed in worker (avoids main thread computation)
+   * @param skylightValue - Maximum skylight value for this chunk's biome (0-15)
+   * @param metadata - Block metadata (rotation, etc.) from persistence
    */
   async applySubChunkData(
     coordinate: ISubChunkCoordinate,
     blocks: Uint16Array,
     lightData: Uint8Array,
-    isFullyOpaque?: boolean
+    isFullyOpaque?: boolean,
+    skylightValue?: number,
+    metadata?: Uint8Array
   ): Promise<void> {
     // Get or create the chunk column
     const chunkCoord: IChunkCoordinate = { x: coordinate.x, z: coordinate.z }
@@ -384,11 +391,16 @@ export class WorldManager implements IModifiedChunkProvider {
       column = this.chunkManager.loadColumn(chunkCoord)
     }
 
+    // Set the biome's skylight value on the column (if provided)
+    if (skylightValue !== undefined) {
+      column.skylightValue = skylightValue
+    }
+
     // Get or create the sub-chunk
     const subChunk = column.getOrCreateSubChunk(coordinate.subY)
 
-    // Apply the block and light data
-    subChunk.applyWorkerData(blocks, lightData)
+    // Apply the block, light, and metadata data
+    subChunk.applyWorkerData(blocks, lightData, metadata)
 
     // Use worker-provided opacity or compute on main thread as fallback
     if (isFullyOpaque !== undefined) {
@@ -537,9 +549,10 @@ export class WorldManager implements IModifiedChunkProvider {
     const neighbors = this.getSubChunkNeighborData(coord)
     const neighborLights = this.getSubChunkNeighborLightData(coord)
 
-    // Copy block and light data
+    // Copy block, light, and metadata data
     const blocksCopy = new Uint16Array(subChunk.getBlockData())
     const lightCopy = new Uint8Array(subChunk.getLightData())
+    const metadataCopy = new Uint8Array(subChunk.getMetadataData())
 
     // Check if this worker needs initialization data
     const workerIndex = this.meshWorkers.indexOf(worker)
@@ -553,6 +566,7 @@ export class WorldManager implements IModifiedChunkProvider {
       minWorldY: coord.subY * SUB_CHUNK_HEIGHT,
       blocks: blocksCopy,
       lightData: lightCopy,
+      metadata: metadataCopy,
       neighbors,
       neighborLights,
       opaqueBlockIds: this.opaqueBlockIds,
@@ -570,7 +584,7 @@ export class WorldManager implements IModifiedChunkProvider {
     this.pendingSubChunks.set(subChunkKey, subChunk)
 
     // Transfer the copied data to worker
-    worker.postMessage(request, [blocksCopy.buffer, lightCopy.buffer])
+    worker.postMessage(request, [blocksCopy.buffer, lightCopy.buffer, metadataCopy.buffer])
   }
 
   /**
@@ -907,6 +921,49 @@ export class WorldManager implements IModifiedChunkProvider {
     return column.getBlockId(local.x, local.y, local.z)
   }
 
+  /**
+   * Get block metadata at world coordinates.
+   */
+  getBlockMetadata(x: bigint, y: bigint, z: bigint): number {
+    const world: IWorldCoordinate = { x, y, z }
+    const chunkCoord = worldToChunk(world)
+    const local = worldToLocal(world)
+
+    const column = this.chunkManager.getColumn(chunkCoord)
+    if (!column) {
+      return 0
+    }
+
+    return column.getMetadata(local.x, local.y, local.z)
+  }
+
+  /**
+   * Set block metadata at world coordinates.
+   * Returns true if the metadata was set.
+   */
+  setBlockMetadata(x: bigint, y: bigint, z: bigint, metadata: number): boolean {
+    const world: IWorldCoordinate = { x, y, z }
+    const chunkCoord = worldToChunk(world)
+    const local = worldToLocal(world)
+
+    const column = this.chunkManager.getColumn(chunkCoord)
+    if (!column) {
+      return false
+    }
+
+    const changed = column.setMetadata(local.x, local.y, local.z, metadata)
+    if (changed) {
+      const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
+      const subChunk = column.getSubChunk(subY)
+      if (subChunk) {
+        subChunk.markModifiedByPlayer()
+        this.persistenceManager?.markSubChunkModified(subChunk.coordinate)
+      }
+    }
+
+    return changed
+  }
+
   // Track pending block changes for bulk updates
   private readonly pendingBlockChanges: Map<string, { coord: IChunkCoordinate; subY: number; wasRemoval: boolean }> = new Map()
 
@@ -972,9 +1029,10 @@ export class WorldManager implements IModifiedChunkProvider {
 
   /**
    * Set block at world coordinates.
+   * Optionally set block metadata (for directional blocks like furnaces).
    * Returns true if the block was changed.
    */
-  setBlock(x: bigint, y: bigint, z: bigint, blockId: BlockId): boolean {
+  setBlock(x: bigint, y: bigint, z: bigint, blockId: BlockId, metadata?: number): boolean {
     const world: IWorldCoordinate = { x, y, z }
     const chunkCoord = worldToChunk(world)
     const local = worldToLocal(world)
@@ -990,6 +1048,12 @@ export class WorldManager implements IModifiedChunkProvider {
     const wasBlockRemoved = blockId === BlockIds.AIR && oldBlockId !== BlockIds.AIR
 
     const changed = column.setBlockId(local.x, local.y, local.z, blockId)
+
+    // Set metadata if provided (even if block didn't change - allows metadata updates)
+    if (metadata !== undefined) {
+      column.setMetadata(local.x, local.y, local.z, metadata)
+    }
+
     if (changed) {
       const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
 

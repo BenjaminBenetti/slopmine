@@ -3,6 +3,7 @@ import type { BlockId } from '../world/interfaces/IBlock.ts'
 import type { IChunkCoordinate, SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { createSubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
+import { getMetadataFacing, facingToRotationY } from '../world/blocks/BlockFacing.ts'
 
 /**
  * Common interface for chunk mesh types (ChunkMesh, GreedyChunkMesh).
@@ -26,6 +27,7 @@ export class ChunkMesh implements IChunkMesh {
   private readonly instancedMeshes: Map<BlockId, THREE.InstancedMesh> = new Map()
   private readonly blockPositions: Map<BlockId, number[]> = new Map()
   private readonly blockLights: Map<BlockId, number[]> = new Map()
+  private readonly blockMetadata: Map<BlockId, number[]> = new Map()
   private readonly group: THREE.Group = new THREE.Group()
 
   readonly chunkCoordinate: IChunkCoordinate
@@ -44,9 +46,9 @@ export class ChunkMesh implements IChunkMesh {
   }
 
   /**
-   * Add a block instance at the given world position with light level.
+   * Add a block instance at the given world position with light level and metadata.
    */
-  addBlock(blockId: BlockId, x: number, y: number, z: number, lightLevel: number = 15): void {
+  addBlock(blockId: BlockId, x: number, y: number, z: number, lightLevel: number = 15, metadata: number = 0): void {
     let positions = this.blockPositions.get(blockId)
     if (!positions) {
       positions = []
@@ -60,6 +62,13 @@ export class ChunkMesh implements IChunkMesh {
       this.blockLights.set(blockId, lights)
     }
     lights.push(lightLevel)
+
+    let metadataArr = this.blockMetadata.get(blockId)
+    if (!metadataArr) {
+      metadataArr = []
+      this.blockMetadata.set(blockId, metadataArr)
+    }
+    metadataArr.push(metadata)
   }
 
   /**
@@ -68,6 +77,8 @@ export class ChunkMesh implements IChunkMesh {
    */
   build(): void {
     const matrix = new THREE.Matrix4()
+    const rotationMatrix = new THREE.Matrix4()
+    const positionVector = new THREE.Vector3()
 
     for (const [blockId, positions] of this.blockPositions) {
       const count = positions.length / 3
@@ -83,22 +94,38 @@ export class ChunkMesh implements IChunkMesh {
       instancedMesh.castShadow = true
       instancedMesh.receiveShadow = true
 
-      // Get light levels for this block type
+      // Get light levels and metadata for this block type
       const lights = this.blockLights.get(blockId) ?? []
+      const metadata = this.blockMetadata.get(blockId) ?? []
 
       // Create instance colors for lighting
       const colors = new Float32Array(count * 3)
 
-      // Set position and color for each instance
+      // Set position, rotation, and color for each instance
       // Offset by 0.5 because geometry is centered at origin (-0.5 to 0.5)
       // but block coordinates represent the min corner (block occupies x to x+1)
       for (let i = 0; i < count; i++) {
         const posIdx = i * 3
-        matrix.setPosition(
-          positions[posIdx] + 0.5,
-          positions[posIdx + 1] + 0.5,
-          positions[posIdx + 2] + 0.5
-        )
+        const x = positions[posIdx] + 0.5
+        const y = positions[posIdx + 1] + 0.5
+        const z = positions[posIdx + 2] + 0.5
+
+        // Get rotation from metadata (bits 0-1 = facing direction)
+        const blockMeta = metadata[i] ?? 0
+        const facing = getMetadataFacing(blockMeta)
+        const rotationY = facingToRotationY(facing)
+
+        // Build transformation matrix: rotation then translation
+        if (rotationY !== 0) {
+          rotationMatrix.makeRotationY(rotationY)
+          positionVector.set(x, y, z)
+          matrix.copy(rotationMatrix)
+          matrix.setPosition(positionVector)
+        } else {
+          matrix.identity()
+          matrix.setPosition(x, y, z)
+        }
+
         instancedMesh.setMatrixAt(i, matrix)
 
         // Calculate brightness from light level (0-15)
@@ -168,6 +195,7 @@ export class ChunkMesh implements IChunkMesh {
     this.instancedMeshes.clear()
     this.blockPositions.clear()
     this.blockLights.clear()
+    this.blockMetadata.clear()
 
     // Clear group children to release references
     this.group.clear()

@@ -15,7 +15,6 @@ export class GameLoop {
   private static readonly MAX_UPDATES_PER_FRAME = 1
 
   private lastTime = 0
-  private lastRenderTime = 0
   private accumulator = 0
   private running = false
   private _paused = false
@@ -56,7 +55,6 @@ export class GameLoop {
     if (this.running) return
     this.running = true
     this.lastTime = performance.now()
-    this.lastRenderTime = this.lastTime
     this.accumulator = 0
     this.loop()
   }
@@ -68,22 +66,9 @@ export class GameLoop {
   private loop = (): void => {
     if (!this.running) return
 
-    const currentTime = performance.now()
-
-    // Non-blocking frame rate limiting for high refresh rate monitors
-    // Check if enough time has passed since last render
-    // Use 80% threshold to avoid skipping frames due to timing jitter
-    const timeSinceLastRender = currentTime - this.lastRenderTime
-    if (timeSinceLastRender < this.targetFrameMs * 0.8) {
-      // Not time to render yet - request another frame and return immediately
-      // This keeps the main thread responsive (no busy-wait blocking)
-      requestAnimationFrame(this.loop)
-      return
-    }
-
-    const frameTime = currentTime - this.lastTime
-    this.lastTime = currentTime
-    this.lastRenderTime = currentTime
+    const frameStartTime = performance.now()
+    const frameTime = frameStartTime - this.lastTime
+    this.lastTime = frameStartTime
 
     let tickCount = 0
 
@@ -106,10 +91,17 @@ export class GameLoop {
     }
 
     this.callback.render()
+
     // Update pre-allocated metrics object to avoid allocation
     this.metricsResult.tickCount = tickCount
     this.metricsResult.frameTime = frameTime
     this.onMetrics?.(this.metricsResult)
+
+    // Busy-wait for smooth frame pacing when FPS limit is set
+    const targetEndTime = frameStartTime + this.targetFrameMs
+    while (performance.now() < targetEndTime) {
+      // Spin
+    }
 
     requestAnimationFrame(this.loop)
   }

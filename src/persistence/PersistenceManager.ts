@@ -24,6 +24,7 @@ export interface IModifiedChunkProvider {
     coordinate: ISubChunkCoordinate
     blocks: Uint16Array
     lightData: Uint8Array
+    metadata: Uint8Array
   }>
   clearModifiedFlags(): void
 }
@@ -267,6 +268,7 @@ export class PersistenceManager {
       return {
         blocks: response.blocks,
         lightData: response.lightData,
+        metadata: response.metadata,
       }
     }
 
@@ -285,7 +287,8 @@ export class PersistenceManager {
   async saveSubChunk(
     coordinate: ISubChunkCoordinate,
     blocks: Uint16Array,
-    lightData: Uint8Array
+    lightData: Uint8Array,
+    metadata?: Uint8Array
   ): Promise<void> {
     if (!this.initialized || !this.worker) {
       return
@@ -294,6 +297,7 @@ export class PersistenceManager {
     // Copy buffers since they'll be transferred
     const blocksCopy = new Uint16Array(blocks)
     const lightCopy = new Uint8Array(lightData)
+    const metadataCopy = metadata ? new Uint8Array(metadata) : undefined
 
     await this.sendRequest({
       type: 'save-subchunk',
@@ -302,6 +306,7 @@ export class PersistenceManager {
       subY: coordinate.subY,
       blocks: blocksCopy,
       lightData: lightCopy,
+      metadata: metadataCopy,
     })
 
     // Update cache
@@ -331,6 +336,7 @@ export class PersistenceManager {
         subY: mc.coordinate.subY,
         blocks: new Uint16Array(mc.blocks), // Copy for transfer
         lightData: new Uint8Array(mc.lightData),
+        metadata: new Uint8Array(mc.metadata),
       }))
 
       await this.sendRequest({

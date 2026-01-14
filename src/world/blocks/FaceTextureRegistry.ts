@@ -22,7 +22,9 @@ export enum TextureId {
   GOLD_BLOCK = 11,
   DIAMOND_BLOCK = 12,
   TORCH = 13,        // Non-greedy, but defined
-  FORGE = 14,
+  FORGE_FRONT = 14,
+  FORGE_SIDE = 55,
+  FORGE_TOP = 56,
   WATER = 15,        // Non-greedy, transparent liquid
   WATER_THREE_QUARTER = 16,  // Non-greedy, partial liquid (3/4 height)
   WATER_HALF = 17,           // Non-greedy, partial liquid (1/2 height)
@@ -134,10 +136,11 @@ export function getFaceTextureId(
 }
 
 /**
- * Block IDs that should NOT use greedy meshing (custom geometry).
+ * Block IDs that should NOT use greedy meshing (custom geometry or rotation).
  */
 export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   11, // Torch - custom slim geometry
+  12, // Forge - directional block with rotation
   // Water (13-16) is now greedy-meshed to eliminate internal face z-fighting
 ])
 

@@ -135,6 +135,8 @@ export class SwampGenerator extends BiomeGenerator {
       brightness: 0.6, // 60% brightness for darker sky
       tint: { r: 0.85, g: 0.9, b: 0.75 }, // Slight greenish-brown tint
     },
+    // Reduced skylight for spooky atmosphere (default is 15)
+    skylightValue: 8,
   }
 
   // Mushroom placement grid size

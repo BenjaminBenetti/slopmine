@@ -13,6 +13,7 @@ const AIR = 0
 const reusableOpaqueSet = new Set<number>()
 const reusableBlockPositions = new Map<number, number[]>()
 const reusableBlockLights = new Map<number, number[]>()
+const reusableBlockMetadata = new Map<number, number[]>()
 
 /**
  * Calculate array index for local coordinates (full chunk).
@@ -159,6 +160,7 @@ export interface SubChunkMeshRequest {
   minWorldY: number  // subY * 64
   blocks: Uint16Array  // 65,536 elements (32x32x64)
   lightData: Uint8Array
+  metadata?: Uint8Array  // Block metadata for rotation etc.
   neighbors: SubChunkNeighborData
   neighborLights: SubChunkNeighborLightData
   opaqueBlockIds: number[]
@@ -171,6 +173,7 @@ export interface SubChunkMeshResponse {
   subY: number
   visibleBlocks: Array<[number, Float32Array]>
   lightLevels: Array<[number, Uint8Array]>
+  blockMetadata: Array<[number, Uint8Array]>
 }
 
 /**
@@ -515,7 +518,7 @@ function getSubChunkBlockRenderLight(
  * Process a sub-chunk and find all visible blocks.
  */
 function processSubChunk(request: SubChunkMeshRequest): SubChunkMeshResponse {
-  const { chunkX, chunkZ, subY, minWorldY, blocks, lightData, neighbors, neighborLights, opaqueBlockIds } = request
+  const { chunkX, chunkZ, subY, minWorldY, blocks, lightData, metadata, neighbors, neighborLights, opaqueBlockIds } = request
 
   // Clear and repopulate reusable set (avoids allocation)
   reusableOpaqueSet.clear()
@@ -527,8 +530,10 @@ function processSubChunk(request: SubChunkMeshRequest): SubChunkMeshResponse {
   // Clear and reuse maps (avoids allocation)
   reusableBlockPositions.clear()
   reusableBlockLights.clear()
+  reusableBlockMetadata.clear()
   const blockPositions = reusableBlockPositions
   const blockLights = reusableBlockLights
+  const blockMeta = reusableBlockMetadata
 
   // World offset for this sub-chunk
   const worldOffsetX = chunkX * CHUNK_SIZE_X
@@ -537,7 +542,8 @@ function processSubChunk(request: SubChunkMeshRequest): SubChunkMeshResponse {
   for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
     for (let z = 0; z < CHUNK_SIZE_Z; z++) {
       for (let x = 0; x < CHUNK_SIZE_X; x++) {
-        const blockId = blocks[localToSubChunkIndex(x, y, z)]
+        const idx = localToSubChunkIndex(x, y, z)
+        const blockId = blocks[idx]
 
         if (blockId === AIR) continue
 
@@ -561,6 +567,14 @@ function processSubChunk(request: SubChunkMeshRequest): SubChunkMeshResponse {
           blockLights.set(blockId, lights)
         }
         lights.push(getSubChunkBlockRenderLight(lightData, neighborLights, x, y, z))
+
+        // Collect metadata (for rotation etc.)
+        let metas = blockMeta.get(blockId)
+        if (!metas) {
+          metas = []
+          blockMeta.set(blockId, metas)
+        }
+        metas.push(metadata ? metadata[idx] : 0)
       }
     }
   }
@@ -568,11 +582,14 @@ function processSubChunk(request: SubChunkMeshRequest): SubChunkMeshResponse {
   // Convert to Float32Arrays
   const visibleBlocks: Array<[number, Float32Array]> = []
   const lightLevels: Array<[number, Uint8Array]> = []
+  const blockMetadata: Array<[number, Uint8Array]> = []
 
   for (const [blockId, positions] of blockPositions) {
     visibleBlocks.push([blockId, new Float32Array(positions)])
     const lights = blockLights.get(blockId) ?? []
     lightLevels.push([blockId, new Uint8Array(lights)])
+    const metas = blockMeta.get(blockId) ?? []
+    blockMetadata.push([blockId, new Uint8Array(metas)])
   }
 
   return {
@@ -582,6 +599,7 @@ function processSubChunk(request: SubChunkMeshRequest): SubChunkMeshResponse {
     subY,
     visibleBlocks,
     lightLevels,
+    blockMetadata,
   }
 }
 
@@ -604,6 +622,12 @@ self.onmessage = (event: MessageEvent<ChunkMeshRequest | SubChunkMeshRequest>) =
     }
     for (const [, lights] of result.lightLevels) {
       transfer.push(lights.buffer)
+    }
+    // Include metadata buffers if present (sub-chunk responses)
+    if ('blockMetadata' in result) {
+      for (const [, metas] of result.blockMetadata) {
+        transfer.push(metas.buffer)
+      }
     }
 
     self.postMessage(result, { transfer })

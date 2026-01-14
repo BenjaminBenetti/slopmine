@@ -35,10 +35,12 @@ export class SkylightPropagator {
   /**
    * Calculate skylight for an entire chunk.
    * Call after terrain and caves are generated.
+   * @param chunk The chunk data to calculate lighting for
+   * @param maxSkylight Maximum skylight level (0-15). Default is 15 (full brightness).
    */
-  propagate(chunk: IChunkData): void {
+  propagate(chunk: IChunkData, maxSkylight: number = 15): void {
     // Phase 1: Initialize columns from sky down
-    this.initializeColumns(chunk)
+    this.initializeColumns(chunk, maxSkylight)
 
     // Phase 2: Spread light horizontally into caves
     this.spreadLight(chunk)
@@ -63,13 +65,15 @@ export class SkylightPropagator {
 
   /**
    * Phase 1: Scan each column from top down.
-   * Set skylight=15 until hitting an opaque block, then 0 below.
+   * Set skylight until hitting an opaque block, then 0 below.
    * Uses internal 0-30 scale, stores as 0-15.
+   * @param maxSkylight Maximum skylight level (0-15)
    */
-  private initializeColumns(chunk: IChunkData): void {
+  private initializeColumns(chunk: IChunkData, maxSkylight: number): void {
+    const internalMax = maxSkylight * LIGHT_SCALE
     for (let x = 0; x < CHUNK_SIZE_X; x++) {
       for (let z = 0; z < CHUNK_SIZE_Z; z++) {
-        let skylight = INTERNAL_MAX_LIGHT // 30 internally
+        let skylight = internalMax
 
         // Scan from top down
         for (let y = CHUNK_HEIGHT - 1; y >= 0; y--) {
@@ -384,12 +388,14 @@ export class SkylightPropagator {
    * @param targetSubChunk The sub-chunk to update lighting in
    * @param sourceSubChunk The sub-chunk providing light
    * @param direction Which edge of target faces source: 'posX' | 'negX' | 'posZ' | 'negZ'
+   * @param maxSkylight Maximum skylight value for target biome (0-15). Default 15.
    * @returns true if any light values changed
    */
   propagateFromNeighborSubChunk(
     targetSubChunk: ISubChunkData,
     sourceSubChunk: ISubChunkData,
-    direction: 'posX' | 'negX' | 'posZ' | 'negZ'
+    direction: 'posX' | 'negX' | 'posZ' | 'negZ',
+    maxSkylight: number = 15
   ): boolean {
     const queue: LightNode[] = []
     let changed = false
@@ -418,11 +424,14 @@ export class SkylightPropagator {
             const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
             if (newInternalLight <= 0) continue
 
-            const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+            // Cap at target biome's max skylight
+            const newStoredLight = Math.min(Math.floor(newInternalLight / LIGHT_SCALE), maxSkylight)
 
             if (newStoredLight > targetLight) {
               targetSubChunk.setSkylight(targetX, y, z, newStoredLight)
-              queue.push({ x: targetX, y, z, level: newInternalLight })
+              // Use capped internal light for further propagation
+              const cappedInternalLight = Math.min(newInternalLight, maxSkylight * LIGHT_SCALE)
+              queue.push({ x: targetX, y, z, level: cappedInternalLight })
               changed = true
             }
           }
@@ -446,11 +455,14 @@ export class SkylightPropagator {
             const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
             if (newInternalLight <= 0) continue
 
-            const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+            // Cap at target biome's max skylight
+            const newStoredLight = Math.min(Math.floor(newInternalLight / LIGHT_SCALE), maxSkylight)
 
             if (newStoredLight > targetLight) {
               targetSubChunk.setSkylight(x, y, targetZ, newStoredLight)
-              queue.push({ x, y, z: targetZ, level: newInternalLight })
+              // Use capped internal light for further propagation
+              const cappedInternalLight = Math.min(newInternalLight, maxSkylight * LIGHT_SCALE)
+              queue.push({ x, y, z: targetZ, level: cappedInternalLight })
               changed = true
             }
           }
@@ -460,7 +472,7 @@ export class SkylightPropagator {
 
     // Propagate the edge light further into target sub-chunk
     if (queue.length > 0) {
-      this.processSubChunkQueue(targetSubChunk, queue)
+      this.processSubChunkQueue(targetSubChunk, queue, maxSkylight)
     }
 
     return changed
@@ -479,13 +491,14 @@ export class SkylightPropagator {
    *                   If not provided and subY < 15, defaults to 0 (dark) to prevent
    *                   underground sections from incorrectly receiving full sunlight
    *                   during partial updates.
+   * @param maxSkylight Maximum skylight level (0-15). Default is 15 (full brightness).
    */
-  propagateSubChunk(subChunk: ISubChunkData, aboveLight?: BoundaryLight): void {
+  propagateSubChunk(subChunk: ISubChunkData, aboveLight?: BoundaryLight, maxSkylight: number = 15): void {
     // Phase 1: Initialize columns from top down
-    this.initializeSubChunkColumns(subChunk, aboveLight)
+    this.initializeSubChunkColumns(subChunk, aboveLight, maxSkylight)
 
-    // Phase 2: Spread light horizontally into caves
-    this.spreadSubChunkLight(subChunk)
+    // Phase 2: Spread light horizontally into caves (cap at biome's max skylight)
+    this.spreadSubChunkLight(subChunk, maxSkylight)
   }
 
   /**
@@ -511,9 +524,10 @@ export class SkylightPropagator {
    *
    * @param targetSubChunk The sub-chunk to update lighting in
    * @param aboveLight Light values from bottom of the sub-chunk above
+   * @param maxSkylight Maximum skylight value to cap propagated light (0-15). Default 15.
    * @returns true if any light values changed
    */
-  propagateFromAbove(targetSubChunk: ISubChunkData, aboveLight: BoundaryLight): boolean {
+  propagateFromAbove(targetSubChunk: ISubChunkData, aboveLight: BoundaryLight, maxSkylight: number = 15): boolean {
     const queue: LightNode[] = []
     let changed = false
 
@@ -535,12 +549,15 @@ export class SkylightPropagator {
         const newInternalLight = incomingInternal - 1 - blocking * LIGHT_SCALE
         if (newInternalLight <= 0) continue
 
-        const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+        // Cap at biome's max skylight
+        const newStoredLight = Math.min(Math.floor(newInternalLight / LIGHT_SCALE), maxSkylight)
         const currentStoredLight = targetSubChunk.getSkylight(x, topY, z)
 
         if (newStoredLight > currentStoredLight) {
           targetSubChunk.setSkylight(x, topY, z, newStoredLight)
-          queue.push({ x, y: topY, z, level: newInternalLight })
+          // Use capped internal light for further propagation
+          const cappedInternalLight = Math.min(newInternalLight, maxSkylight * LIGHT_SCALE)
+          queue.push({ x, y: topY, z, level: cappedInternalLight })
           changed = true
         }
       }
@@ -548,7 +565,7 @@ export class SkylightPropagator {
 
     // Propagate the incoming light further into the sub-chunk
     if (queue.length > 0) {
-      this.processSubChunkQueue(targetSubChunk, queue)
+      this.processSubChunkQueue(targetSubChunk, queue, maxSkylight)
     }
 
     return changed
@@ -557,9 +574,11 @@ export class SkylightPropagator {
   /**
    * Initialize skylight columns for a sub-chunk, scanning from top down.
    * Uses internal 0-30 scale, stores as 0-15.
+   * @param maxSkylight Maximum skylight level (0-15)
    */
-  private initializeSubChunkColumns(subChunk: ISubChunkData, aboveLight?: BoundaryLight): void {
+  private initializeSubChunkColumns(subChunk: ISubChunkData, aboveLight?: BoundaryLight, maxSkylight: number = 15): void {
     const subY = subChunk.coordinate.subY
+    const internalMax = maxSkylight * LIGHT_SCALE
 
     for (let x = 0; x < CHUNK_SIZE_X; x++) {
       for (let z = 0; z < CHUNK_SIZE_Z; z++) {
@@ -570,8 +589,8 @@ export class SkylightPropagator {
           const index = z * CHUNK_SIZE_X + x
           skylight = aboveLight.values[index] * LIGHT_SCALE
         } else if (subY === SUB_CHUNK_COUNT - 1) {
-          // Topmost sub-chunk: start with full sky light
-          skylight = INTERNAL_MAX_LIGHT
+          // Topmost sub-chunk: start with biome's max skylight
+          skylight = internalMax
         } else {
           // Sub-chunk without above data: default to 0 (dark) to prevent
           // underground sections from incorrectly receiving full sunlight
@@ -586,8 +605,9 @@ export class SkylightPropagator {
 
           if (blockId === BlockIds.AIR) {
             // Store as 0-15, but preserve existing light if higher (from neighbors)
+            // Cap existing light at max skylight to enforce biome's lighting limit
             const newLight = Math.floor(skylight / LIGHT_SCALE)
-            const existingLight = subChunk.getSkylight(x, y, z)
+            const existingLight = Math.min(subChunk.getSkylight(x, y, z), maxSkylight)
             subChunk.setSkylight(x, y, z, Math.max(newLight, existingLight))
           } else {
             const block = getBlock(blockId)
@@ -596,7 +616,8 @@ export class SkylightPropagator {
             // Reduce light based on block's light blocking (scaled)
             skylight = Math.max(0, skylight - blocking * LIGHT_SCALE)
             const newLight = Math.floor(skylight / LIGHT_SCALE)
-            const existingLight = subChunk.getSkylight(x, y, z)
+            // Cap existing light at max skylight to enforce biome's lighting limit
+            const existingLight = Math.min(subChunk.getSkylight(x, y, z), maxSkylight)
             subChunk.setSkylight(x, y, z, Math.max(newLight, existingLight))
 
             // If fully opaque, no more sky light below
@@ -612,8 +633,9 @@ export class SkylightPropagator {
 
   /**
    * BFS flood-fill to spread light horizontally into caves within a sub-chunk.
+   * @param maxSkylight Maximum skylight value to cap propagated light (0-15). Default 15.
    */
-  spreadSubChunkLight(subChunk: ISubChunkData): void {
+  spreadSubChunkLight(subChunk: ISubChunkData, maxSkylight: number = 15): void {
     const queue: LightNode[] = []
 
     // Find all light sources that can spread
@@ -622,9 +644,11 @@ export class SkylightPropagator {
         for (let x = 0; x < CHUNK_SIZE_X; x++) {
           const storedLight = subChunk.getSkylight(x, y, z)
           if (storedLight > 0) {
-            const internalLight = storedLight * LIGHT_SCALE
+            // Cap the source light at max skylight
+            const cappedLight = Math.min(storedLight, maxSkylight)
+            const internalLight = cappedLight * LIGHT_SCALE
             // Check if any neighbor has lower light (potential spread target)
-            if (this.subChunkHasLowerNeighbor(subChunk, x, y, z, storedLight)) {
+            if (this.subChunkHasLowerNeighbor(subChunk, x, y, z, cappedLight)) {
               queue.push({ x, y, z, level: internalLight })
             }
           }
@@ -633,30 +657,32 @@ export class SkylightPropagator {
     }
 
     // BFS propagation
-    this.processSubChunkQueue(subChunk, queue)
+    this.processSubChunkQueue(subChunk, queue, maxSkylight)
   }
 
   /**
    * Process the light propagation queue for a sub-chunk.
+   * @param maxSkylight Optional max skylight to cap propagated values
    */
-  private processSubChunkQueue(subChunk: ISubChunkData, queue: LightNode[]): void {
+  private processSubChunkQueue(subChunk: ISubChunkData, queue: LightNode[], maxSkylight: number = 15): void {
     let head = 0
 
     while (head < queue.length) {
       const node = queue[head++]
 
       // Check all 6 neighbors
-      this.trySubChunkPropagate(subChunk, queue, node.x - 1, node.y, node.z, node.level)
-      this.trySubChunkPropagate(subChunk, queue, node.x + 1, node.y, node.z, node.level)
-      this.trySubChunkPropagate(subChunk, queue, node.x, node.y - 1, node.z, node.level)
-      this.trySubChunkPropagate(subChunk, queue, node.x, node.y + 1, node.z, node.level)
-      this.trySubChunkPropagate(subChunk, queue, node.x, node.y, node.z - 1, node.level)
-      this.trySubChunkPropagate(subChunk, queue, node.x, node.y, node.z + 1, node.level)
+      this.trySubChunkPropagate(subChunk, queue, node.x - 1, node.y, node.z, node.level, maxSkylight)
+      this.trySubChunkPropagate(subChunk, queue, node.x + 1, node.y, node.z, node.level, maxSkylight)
+      this.trySubChunkPropagate(subChunk, queue, node.x, node.y - 1, node.z, node.level, maxSkylight)
+      this.trySubChunkPropagate(subChunk, queue, node.x, node.y + 1, node.z, node.level, maxSkylight)
+      this.trySubChunkPropagate(subChunk, queue, node.x, node.y, node.z - 1, node.level, maxSkylight)
+      this.trySubChunkPropagate(subChunk, queue, node.x, node.y, node.z + 1, node.level, maxSkylight)
     }
   }
 
   /**
    * Try to propagate light to a neighbor position within a sub-chunk.
+   * @param maxSkylight Optional max skylight to cap propagated values
    */
   private trySubChunkPropagate(
     subChunk: ISubChunkData,
@@ -664,7 +690,8 @@ export class SkylightPropagator {
     nx: number,
     ny: number,
     nz: number,
-    sourceLevel: number
+    sourceLevel: number,
+    maxSkylight: number = 15
   ): void {
     // Bounds check (sub-chunk is 64 height)
     if (nx < 0 || nx >= CHUNK_SIZE_X) return
@@ -679,8 +706,8 @@ export class SkylightPropagator {
     const newInternalLight = sourceLevel - 1 - blocking * LIGHT_SCALE
     if (newInternalLight <= 0) return
 
-    // Convert to stored value (0-15)
-    const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+    // Convert to stored value (0-15) and cap at max skylight
+    const newStoredLight = Math.min(Math.floor(newInternalLight / LIGHT_SCALE), maxSkylight)
     const currentStoredLight = subChunk.getSkylight(nx, ny, nz)
 
     if (newStoredLight > currentStoredLight) {
@@ -699,6 +726,7 @@ export class SkylightPropagator {
    * @param localY Local Y coordinate in column (0-1023)
    * @param localZ Local Z coordinate (0-31)
    * @param wasBlockRemoved True if block was removed (air placed), false if block was placed
+   * @param maxSkylight Maximum skylight level for this biome (0-15). Default is 15.
    * @returns Array of subY indices that need remeshing due to light changes
    */
   updateSubChunkLightingAt(
@@ -706,7 +734,8 @@ export class SkylightPropagator {
     localX: number,
     localY: number,
     localZ: number,
-    wasBlockRemoved: boolean
+    wasBlockRemoved: boolean,
+    maxSkylight: number = 15
   ): number[] {
     const affectedSubChunks: Set<number> = new Set()
     const subY = Math.floor(localY / SUB_CHUNK_HEIGHT)
@@ -723,7 +752,7 @@ export class SkylightPropagator {
       // Check if there's direct sky access by scanning up
       const hasSkyAccess = SkylightPropagator.checkSubChunkSkyAccess(column, localX, localY, localZ)
       if (hasSkyAccess) {
-        incomingLight = 15
+        incomingLight = maxSkylight
       } else {
         // No sky access - find brightest neighbor and use that minus 1
         // Check above
@@ -1109,7 +1138,8 @@ export class SkylightPropagator {
   propagateSubChunkFromNeighbor(
     targetSubChunk: ISubChunkData,
     sourceSubChunk: ISubChunkData,
-    direction: 'posX' | 'negX' | 'posZ' | 'negZ'
+    direction: 'posX' | 'negX' | 'posZ' | 'negZ',
+    maxSkylight: number = 15
   ): boolean {
     const queue: LightNode[] = []
     let changed = false
@@ -1138,11 +1168,12 @@ export class SkylightPropagator {
             const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
             if (newInternalLight <= 0) continue
 
-            const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+            // Cap at the target biome's max skylight value
+            const newStoredLight = Math.min(Math.floor(newInternalLight / LIGHT_SCALE), maxSkylight)
 
             if (newStoredLight > targetLight) {
               targetSubChunk.setSkylight(targetX, y, z, newStoredLight)
-              queue.push({ x: targetX, y, z, level: newInternalLight })
+              queue.push({ x: targetX, y, z, level: newStoredLight * LIGHT_SCALE })
               changed = true
             }
           }
@@ -1166,11 +1197,12 @@ export class SkylightPropagator {
             const newInternalLight = internalLight - 1 - blocking * LIGHT_SCALE
             if (newInternalLight <= 0) continue
 
-            const newStoredLight = Math.floor(newInternalLight / LIGHT_SCALE)
+            // Cap at the target biome's max skylight value
+            const newStoredLight = Math.min(Math.floor(newInternalLight / LIGHT_SCALE), maxSkylight)
 
             if (newStoredLight > targetLight) {
               targetSubChunk.setSkylight(x, y, targetZ, newStoredLight)
-              queue.push({ x, y, z: targetZ, level: newInternalLight })
+              queue.push({ x, y, z: targetZ, level: newStoredLight * LIGHT_SCALE })
               changed = true
             }
           }
@@ -1180,7 +1212,7 @@ export class SkylightPropagator {
 
     // Propagate the edge light further into target sub-chunk
     if (queue.length > 0) {
-      this.processSubChunkQueue(targetSubChunk, queue)
+      this.processSubChunkQueue(targetSubChunk, queue, maxSkylight)
     }
 
     return changed

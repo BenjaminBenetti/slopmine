@@ -160,6 +160,7 @@ export class WorldGenerator {
       caves: props.caves,
       water: props.water,
       terrainConfig: props.terrainConfig,
+      skylightValue: props.skylightValue ?? 15,
     }
   }
 
@@ -534,15 +535,24 @@ export class WorldGenerator {
     key: SubChunkKey
   ): Promise<void> {
     try {
+      const chunkX = Number(coordinate.x)
+      const chunkZ = Number(coordinate.z)
+
+      // Get biome data early - needed for both loaded and generated chunks
+      const biomeData = this.getBlendDataForChunk(chunkX, chunkZ)
+
       // Check persistence first - load from storage if available
       if (this.persistenceManager) {
         const savedData = await this.persistenceManager.loadSubChunk(coordinate)
         if (savedData) {
-          // Apply saved data instead of generating
+          // Apply saved data instead of generating (include biome's skylight value and metadata)
           await this.world.applySubChunkData(
             coordinate,
             savedData.blocks,
-            savedData.lightData
+            savedData.lightData,
+            undefined, // isFullyOpaque - will be computed
+            biomeData.primary.skylightValue,
+            savedData.metadata
           )
           this.generatedSubChunks.add(key)
 
@@ -554,13 +564,8 @@ export class WorldGenerator {
         }
       }
 
-      const chunkX = Number(coordinate.x)
-      const chunkZ = Number(coordinate.z)
       const minWorldY = coordinate.subY * SUB_CHUNK_HEIGHT
       const maxWorldY = minWorldY + SUB_CHUNK_HEIGHT - 1
-
-      // Get biome blend data for this chunk
-      const biomeData = this.getBlendDataForChunk(chunkX, chunkZ)
 
       // Generate in worker with biome blending
       const workerResult = await this.world.generateSubChunkInWorker(
@@ -578,7 +583,8 @@ export class WorldGenerator {
         coordinate,
         workerResult.blocks,
         workerResult.lightData,
-        workerResult.isFullyOpaque
+        workerResult.isFullyOpaque,
+        biomeData.primary.skylightValue
       )
 
       // Generate decorations (trees, etc) for this sub-chunk using the primary biome

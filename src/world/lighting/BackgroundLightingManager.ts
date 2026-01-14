@@ -231,6 +231,7 @@ export class BackgroundLightingManager {
       wasBlockRemoved,
       subChunks,
       forceRemeshSubY: subY,
+      skylightValue: column.skylightValue,
     }
 
     // Find an available worker for high-priority block change
@@ -493,6 +494,7 @@ export class BackgroundLightingManager {
       chunkX: Number(coord.x),
       chunkZ: Number(coord.z),
       subChunks,
+      skylightValue: column.skylightValue,
     }
 
     // Only mark as pending AFTER we confirmed a worker is available
@@ -653,11 +655,12 @@ export class BackgroundLightingManager {
         const targetSub = neighborColumn.getSubChunk(subY)
         if (!sourceSub || !targetSub) continue
 
-        // Propagate skylight
+        // Propagate skylight (cap at target biome's max skylight)
         const skylightChanged = this.skylightPropagator.propagateFromNeighborSubChunk(
           targetSub,
           sourceSub,
-          dir
+          dir,
+          neighborColumn.skylightValue
         )
 
         // Clear blocklight that may have come from a now-removed source in neighbor
@@ -711,11 +714,12 @@ export class BackgroundLightingManager {
         const sourceSub = neighborColumn.getSubChunk(subY)
         if (!targetSub || !sourceSub) continue
 
-        // Propagate skylight from neighbor
+        // Propagate skylight from neighbor (cap at target biome's max skylight)
         this.skylightPropagator.propagateFromNeighborSubChunk(
           targetSub,
           sourceSub,
-          dir
+          dir,
+          targetColumn.skylightValue
         )
 
         // Propagate blocklight from neighbor
@@ -817,11 +821,12 @@ export class BackgroundLightingManager {
           const sourceSub = neighborColumn.getSubChunk(subY)
           if (!targetSub || !sourceSub) continue
 
-          // Propagate skylight
+          // Propagate skylight (cap at target biome's max skylight)
           const skylightChanged = this.skylightPropagator.propagateFromNeighborSubChunk(
             targetSub,
             sourceSub,
-            dir
+            dir,
+            column.skylightValue
           )
 
           // Propagate blocklight

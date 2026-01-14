@@ -90,6 +90,8 @@ export interface WorkerBiomeConfig {
   caves?: CaveSettings
   water?: WaterSettings
   terrainConfig: TerrainConfig
+  /** Maximum skylight level for this biome (0-15). Default is 15. */
+  skylightValue: number
 }
 
 /**
@@ -498,9 +500,9 @@ async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGene
     }
   }
 
-  // Phase 4: Calculate initial skylight (internal only)
+  // Phase 4: Calculate initial skylight (using biome's skylight value)
   const skylightPropagator = new SkylightPropagator()
-  skylightPropagator.propagate(chunk)
+  skylightPropagator.propagate(chunk, biomeConfig.skylightValue)
 
   return {
     type: 'generate-result',
@@ -875,7 +877,8 @@ function applyProvisionalSkylight(
   seaLevel: number,
   minWorldY: number,
   maxWorldY: number,
-  biomeData: BiomeBlendData
+  biomeData: BiomeBlendData,
+  skylightValue: number
 ): void {
   const coord = subChunk.coordinate
 
@@ -899,8 +902,8 @@ function applyProvisionalSkylight(
         if (blockId === 0) {
           // Air block
           if (worldY > terrainHeight) {
-            // Above terrain - full skylight
-            subChunk.setSkylight(localX, localY, localZ, 15)
+            // Above terrain - use biome's skylight value
+            subChunk.setSkylight(localX, localY, localZ, skylightValue)
           } else {
             // Below terrain (cave) - no skylight for now
             subChunk.setSkylight(localX, localY, localZ, 0)
@@ -975,8 +978,8 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     waterEdgeEffects = await waterFeature.scanWithEdgeEffects(waterContext)
   }
 
-  // Phase 3: Apply provisional skylight (uses blended height)
-  applyProvisionalSkylight(subChunk, noise, seaLevel, minWorldY, maxWorldY, biomeData)
+  // Phase 3: Apply provisional skylight (uses blended height and biome skylight value)
+  applyProvisionalSkylight(subChunk, noise, seaLevel, minWorldY, maxWorldY, biomeData, biomeConfig.skylightValue)
 
   // Phase 4: Apply all features (uses primary biome)
   const orePositions: OrePosition[] = []

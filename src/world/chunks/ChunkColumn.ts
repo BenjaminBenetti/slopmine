@@ -28,6 +28,12 @@ export class ChunkColumn {
   /** Whether liquid tracking has been initialized by scanning all subchunks */
   private liquidTrackingInitialized = false
 
+  /**
+   * Maximum skylight value for this chunk's biome (0-15).
+   * Set during generation based on the biome. Default is 15 (full brightness).
+   */
+  skylightValue: number = 15
+
   constructor(coordinate: IChunkCoordinate) {
     this.coordinate = coordinate
   }
@@ -196,6 +202,41 @@ export class ChunkColumn {
     }
 
     return changed
+  }
+
+  /**
+   * Get block metadata using world Y coordinate (0-1023).
+   */
+  getMetadata(x: number, worldY: number, z: number): number {
+    if (worldY < 0 || worldY >= CHUNK_HEIGHT) {
+      return 0
+    }
+
+    const subY = Math.floor(worldY / SUB_CHUNK_HEIGHT)
+    const localY = worldY % SUB_CHUNK_HEIGHT
+    const subChunk = this.subChunks[subY]
+
+    if (!subChunk) {
+      return 0
+    }
+
+    return subChunk.getMetadata(x, localY, z)
+  }
+
+  /**
+   * Set block metadata using world Y coordinate (0-1023).
+   * Returns true if the metadata was set.
+   */
+  setMetadata(x: number, worldY: number, z: number, value: number): boolean {
+    if (worldY < 0 || worldY >= CHUNK_HEIGHT) {
+      return false
+    }
+
+    const subY = Math.floor(worldY / SUB_CHUNK_HEIGHT)
+    const localY = worldY % SUB_CHUNK_HEIGHT
+    const subChunk = this.getOrCreateSubChunk(subY)
+
+    return subChunk.setMetadata(x, localY, z, value)
   }
 
   /**

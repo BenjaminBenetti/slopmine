@@ -24,7 +24,7 @@ export class BlueMushroomCapBlock extends SolidBlock {
     isSolid: true,
     isLiquid: false,
     hardness: 0.2,
-    lightLevel: 8,  // Bioluminescent glow from cap
+    lightLevel: 15,  // Bioluminescent glow from cap
     lightBlocking: 15,
     demolitionForceRequired: 0,
     tags: [BlockTags.WOOD],

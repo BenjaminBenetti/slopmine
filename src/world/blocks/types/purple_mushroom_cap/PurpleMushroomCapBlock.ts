@@ -24,7 +24,7 @@ export class PurpleMushroomCapBlock extends SolidBlock {
     isSolid: true,
     isLiquid: false,
     hardness: 0.2,
-    lightLevel: 8,  // Magical glow from cap
+    lightLevel: 15,  // Magical glow from cap
     lightBlocking: 15,
     demolitionForceRequired: 0,
     tags: [BlockTags.WOOD],

@@ -113,6 +113,7 @@ export interface GreedyMeshRequest {
   minWorldY: number
   blocks: Uint16Array
   lightData: Uint8Array
+  metadata?: Uint8Array
   neighbors: SubChunkNeighborData
   neighborLights: SubChunkNeighborLightData
   opaqueBlockIds: number[]
@@ -144,6 +145,7 @@ export interface GreedyMeshResponse {
   // Non-greedy blocks (torch, etc.) - positions only, like old worker
   nonGreedyBlocks: Array<[number, Float32Array]>
   nonGreedyLights: Array<[number, Uint8Array]>
+  nonGreedyMetadata: Array<[number, Uint8Array]>
 }
 
 export interface GreedyMeshError {
@@ -564,6 +566,8 @@ function processSubChunk(
   // Non-greedy blocks (torch, etc.)
   const nonGreedyPositions = new Map<number, number[]>()
   const nonGreedyLights = new Map<number, number[]>()
+  const nonGreedyMetadataMap = new Map<number, number[]>()
+  const metadata = request.metadata
 
   // Track which blocks have been processed for non-greedy
   const processedNonGreedy = new Set<number>()
@@ -669,6 +673,15 @@ function processSubChunk(
                 maxLight = Math.max(maxLight, getFaceLight(lightData, neighborLights, x, y, z, fd))
               }
               lights.push(maxLight)
+
+              // Collect metadata for this block
+              let metadataArr = nonGreedyMetadataMap.get(blockId)
+              if (!metadataArr) {
+                metadataArr = []
+                nonGreedyMetadataMap.set(blockId, metadataArr)
+              }
+              const blockMetadata = metadata ? metadata[posKey] : 0
+              metadataArr.push(blockMetadata)
             }
             continue
           }
@@ -858,11 +871,14 @@ function processSubChunk(
   // Convert non-greedy blocks to output format
   const nonGreedyBlocks: Array<[number, Float32Array]> = []
   const nonGreedyLightsOut: Array<[number, Uint8Array]> = []
+  const nonGreedyMetadataOut: Array<[number, Uint8Array]> = []
 
   for (const [blockId, positions] of nonGreedyPositions) {
     nonGreedyBlocks.push([blockId, new Float32Array(positions)])
     const lights = nonGreedyLights.get(blockId) ?? []
     nonGreedyLightsOut.push([blockId, new Uint8Array(lights)])
+    const metadataArr = nonGreedyMetadataMap.get(blockId) ?? []
+    nonGreedyMetadataOut.push([blockId, new Uint8Array(metadataArr)])
   }
 
   return {
@@ -874,6 +890,7 @@ function processSubChunk(
     transparentGroups,
     nonGreedyBlocks,
     nonGreedyLights: nonGreedyLightsOut,
+    nonGreedyMetadata: nonGreedyMetadataOut,
   }
 }
 
@@ -920,6 +937,9 @@ self.onmessage = (event: MessageEvent<GreedyMeshRequest>) => {
     }
     for (const [, lights] of result.nonGreedyLights) {
       transfer.push(lights.buffer)
+    }
+    for (const [, metadata] of result.nonGreedyMetadata) {
+      transfer.push(metadata.buffer)
     }
 
     self.postMessage(result, { transfer })

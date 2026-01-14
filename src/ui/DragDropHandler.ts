@@ -49,6 +49,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
   let enabled = false
   let dragging = false
   let dragSource: DragDropSlotInfo | null = null
+  let draggedStack: IItemStack | null = null // The actual items being dragged (may be partial)
   let ghostElement: HTMLDivElement | null = null
   let tooltipElement: HTMLDivElement | null = null
   let hoveredSlot: DragDropSlotInfo | null = null
@@ -272,14 +273,84 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     onStateChanged?.()
   }
 
+  /**
+   * Return items to the source slot, merging with any existing items there.
+   */
+  function returnToSource(source: DragDropSlotInfo, stack: IItemStack): void {
+    const current = getStackFromSlot(source)
+    if (current && current.item.id === stack.item.id) {
+      // Merge with existing
+      const newCount = current.count + stack.count
+      setStackInSlot(source, { item: stack.item, count: newCount })
+      renderStackInSlot(source.element, { item: stack.item, count: newCount })
+    } else if (!current) {
+      // Source is empty, place stack
+      setStackInSlot(source, stack)
+      renderStackInSlot(source.element, stack)
+    } else {
+      // Source has different item (shouldn't happen normally)
+      console.warn('Cannot return to source - different item in slot')
+    }
+  }
+
+  /**
+   * Handle dropping items on a target slot with merge/swap logic.
+   */
+  function performDrop(
+    source: DragDropSlotInfo,
+    target: DragDropSlotInfo,
+    dragged: IItemStack
+  ): void {
+    const targetStack = getStackFromSlot(target)
+
+    if (!targetStack) {
+      // Empty target: just place the dragged stack
+      setStackInSlot(target, dragged)
+      renderStackInSlot(target.element, dragged)
+    } else if (targetStack.item.id === dragged.item.id) {
+      // Same item type: try to merge
+      const maxStack = targetStack.item.maxStackSize
+      const spaceAvailable = maxStack - targetStack.count
+      const toTransfer = Math.min(spaceAvailable, dragged.count)
+
+      if (toTransfer > 0) {
+        // Merge what fits
+        const newTargetCount = targetStack.count + toTransfer
+        setStackInSlot(target, { item: targetStack.item, count: newTargetCount })
+        renderStackInSlot(target.element, { item: targetStack.item, count: newTargetCount })
+
+        // Return overflow to source
+        const overflow = dragged.count - toTransfer
+        if (overflow > 0) {
+          returnToSource(source, { item: dragged.item, count: overflow })
+        }
+      } else {
+        // No space - return all to source
+        returnToSource(source, dragged)
+      }
+    } else {
+      // Different items: put dragged in target, return target's items to source
+      setStackInSlot(target, dragged)
+      renderStackInSlot(target.element, dragged)
+      returnToSource(source, targetStack)
+    }
+
+    onStateChanged?.()
+  }
+
   function cancelDrag(): void {
     if (dragging && dragSource) {
       dragSource.element.style.opacity = '1'
+      // Return dragged items to source
+      if (draggedStack) {
+        returnToSource(dragSource, draggedStack)
+      }
     }
     removeGhost()
     hideTooltip()
     dragging = false
     dragSource = null
+    draggedStack = null
   }
 
   // Event handlers
@@ -297,11 +368,35 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     // Hide tooltip when starting to drag
     hideTooltip()
 
+    // Determine how many items to pick up based on modifiers
+    let pickupCount = stack.count
+
+    if (event.shiftKey) {
+      // Shift: pick up half (round up)
+      pickupCount = Math.ceil(stack.count / 2)
+    } else if (event.ctrlKey) {
+      // Ctrl: pick up 10 (or all if less)
+      pickupCount = Math.min(10, stack.count)
+    }
+
+    // Create the dragged stack
+    draggedStack = { item: stack.item, count: pickupCount }
+
+    // Update source slot (leave remainder, or clear if taking all)
+    const remaining = stack.count - pickupCount
+    if (remaining > 0) {
+      setStackInSlot(slot, { item: stack.item, count: remaining })
+      renderStackInSlot(slot.element, { item: stack.item, count: remaining })
+    } else {
+      setStackInSlot(slot, null)
+      renderStackInSlot(slot.element, null)
+    }
+
     dragging = true
     dragSource = slot
 
-    // Create ghost
-    ghostElement = createGhostElement(stack)
+    // Create ghost showing the dragged amount
+    ghostElement = createGhostElement(draggedStack)
     updateGhostPosition(event.clientX, event.clientY)
 
     // Dim source slot
@@ -332,7 +427,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
   }
 
   function onMouseUp(event: MouseEvent): void {
-    if (!dragging || !dragSource) {
+    if (!dragging || !dragSource || !draggedStack) {
       return
     }
 
@@ -342,15 +437,20 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     // Restore source slot opacity
     dragSource.element.style.opacity = '1'
 
-    // Perform swap if valid target (different from source)
+    // Handle drop
     if (targetSlot && (targetSlot.container !== dragSource.container || targetSlot.index !== dragSource.index)) {
-      performSwap(dragSource, targetSlot)
+      // Valid target - perform drop with merge logic
+      performDrop(dragSource, targetSlot, draggedStack)
+    } else {
+      // Dropped outside valid area or on same slot - return items to source
+      returnToSource(dragSource, draggedStack)
     }
 
     // Cleanup
     removeGhost()
     dragging = false
     dragSource = null
+    draggedStack = null
   }
 
   function onKeyDown(event: KeyboardEvent): void {

@@ -5,11 +5,12 @@
 
 // Binary format constants
 export const MAGIC_NUMBER = 0x534c4f50 // "SLOP" in ASCII
-export const PERSISTENCE_VERSION = 1
-export const HEADER_SIZE = 18 // 4 + 2 + 4 + 4 + 4 bytes
+export const PERSISTENCE_VERSION = 2
+export const HEADER_SIZE = 22 // 4 + 2 + 4 + 4 + 4 + 4 bytes (added metadata length)
 
 // Flags for sub-chunk binary format
 export const FLAG_HAS_LIGHT_DATA = 1 << 0
+export const FLAG_HAS_METADATA = 1 << 1
 
 /**
  * Serialized inventory slot (item ID + count).
@@ -52,6 +53,7 @@ export interface WorldMetadata {
 export interface PersistedSubChunkData {
   blocks: Uint16Array
   lightData: Uint8Array
+  metadata?: Uint8Array
 }
 
 // Worker request message types
@@ -64,6 +66,7 @@ export type PersistenceWorkerRequest =
       subY: number
       blocks: Uint16Array
       lightData: Uint8Array
+      metadata?: Uint8Array
     }
   | {
       type: 'load-subchunk'
@@ -95,6 +98,7 @@ export type PersistenceWorkerRequest =
         subY: number
         blocks: Uint16Array
         lightData: Uint8Array
+        metadata?: Uint8Array
       }>
     }
   | { type: 'clear-all' }
@@ -110,6 +114,7 @@ export type PersistenceWorkerResponse =
       subY: number
       blocks: Uint16Array
       lightData: Uint8Array
+      metadata?: Uint8Array
     }
   | { type: 'subchunk-not-found'; chunkX: string; chunkZ: string; subY: number }
   | {

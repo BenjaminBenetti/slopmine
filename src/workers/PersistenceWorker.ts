@@ -16,6 +16,7 @@ import {
   PERSISTENCE_VERSION,
   HEADER_SIZE,
   FLAG_HAS_LIGHT_DATA,
+  FLAG_HAS_METADATA,
 } from '../persistence/PersistenceTypes.ts'
 
 const DB_NAME = 'slopmine'
@@ -98,28 +99,37 @@ async function saveSubChunk(
   chunkZ: string,
   subY: number,
   blocks: Uint16Array,
-  lightData: Uint8Array
+  lightData: Uint8Array,
+  metadata?: Uint8Array
 ): Promise<void> {
   const database = await openDatabase()
 
   const blockDataLength = blocks.byteLength
   const lightDataLength = lightData.byteLength
-  const totalSize = HEADER_SIZE + blockDataLength + lightDataLength
+  const metadataLength = metadata?.byteLength ?? 0
+  const totalSize = HEADER_SIZE + blockDataLength + lightDataLength + metadataLength
 
   // Create buffer with header + data
   const buffer = new ArrayBuffer(totalSize)
   const view = new DataView(buffer)
+
+  let flags = FLAG_HAS_LIGHT_DATA
+  if (metadata) {
+    flags |= FLAG_HAS_METADATA
+  }
 
   let offset = 0
   view.setUint32(offset, MAGIC_NUMBER, true)
   offset += 4
   view.setUint16(offset, PERSISTENCE_VERSION, true)
   offset += 2
-  view.setUint32(offset, FLAG_HAS_LIGHT_DATA, true)
+  view.setUint32(offset, flags, true)
   offset += 4
   view.setUint32(offset, blockDataLength, true)
   offset += 4
   view.setUint32(offset, lightDataLength, true)
+  offset += 4
+  view.setUint32(offset, metadataLength, true)
   offset += 4
 
   const blockBytes = new Uint8Array(blocks.buffer, blocks.byteOffset, blocks.byteLength)
@@ -127,6 +137,11 @@ async function saveSubChunk(
   offset += blockDataLength
 
   new Uint8Array(buffer, offset, lightDataLength).set(lightData)
+  offset += lightDataLength
+
+  if (metadata) {
+    new Uint8Array(buffer, offset, metadataLength).set(metadata)
+  }
 
   return new Promise((resolve, reject) => {
     const tx = database.transaction(CHUNKS_STORE, 'readwrite')
@@ -142,12 +157,13 @@ async function saveSubChunk(
 
 /**
  * Load binary sub-chunk data from IndexedDB.
+ * Handles backwards compatibility with version 1 format (no metadata).
  */
 async function loadSubChunk(
   chunkX: string,
   chunkZ: string,
   subY: number
-): Promise<{ blocks: Uint16Array; lightData: Uint8Array } | null> {
+): Promise<{ blocks: Uint16Array; lightData: Uint8Array; metadata?: Uint8Array } | null> {
   const database = await openDatabase()
 
   return new Promise((resolve, reject) => {
@@ -165,7 +181,8 @@ async function loadSubChunk(
         return
       }
 
-      if (buffer.byteLength < HEADER_SIZE) {
+      // Minimum header size for version 1 is 18 bytes
+      if (buffer.byteLength < 18) {
         console.warn(`Sub-chunk data too small: ${buffer.byteLength} bytes`)
         resolve(null)
         return
@@ -186,7 +203,8 @@ async function loadSubChunk(
       const version = view.getUint16(offset, true)
       offset += 2
 
-      if (version !== PERSISTENCE_VERSION) {
+      // Support versions 1 and 2
+      if (version !== 1 && version !== 2) {
         console.warn(`Unsupported version: ${version}`)
         resolve(null)
         return
@@ -201,18 +219,32 @@ async function loadSubChunk(
       const lightDataLength = view.getUint32(offset, true)
       offset += 4
 
+      // Version 2 has metadata length field
+      let metadataLength = 0
+      if (version >= 2) {
+        metadataLength = view.getUint32(offset, true)
+        offset += 4
+      }
+
       const blocks = new Uint16Array(buffer.slice(offset, offset + blockDataLength))
       offset += blockDataLength
 
       let lightData: Uint8Array
       if (flags & FLAG_HAS_LIGHT_DATA) {
         lightData = new Uint8Array(buffer.slice(offset, offset + lightDataLength))
+        offset += lightDataLength
       } else {
         lightData = new Uint8Array(65536)
         lightData.fill(0xf0)
       }
 
-      resolve({ blocks, lightData })
+      // Load metadata if present (version 2+)
+      let metadata: Uint8Array | undefined
+      if ((flags & FLAG_HAS_METADATA) && metadataLength > 0) {
+        metadata = new Uint8Array(buffer.slice(offset, offset + metadataLength))
+      }
+
+      resolve({ blocks, lightData, metadata })
     }
 
     request.onerror = () => reject(new Error(`Failed to load chunk: ${request.error?.message}`))
@@ -337,13 +369,14 @@ async function batchSaveSubChunks(
     subY: number
     blocks: Uint16Array
     lightData: Uint8Array
+    metadata?: Uint8Array
   }>
 ): Promise<number> {
   let savedCount = 0
 
   for (const sc of subchunks) {
     try {
-      await saveSubChunk(sc.chunkX, sc.chunkZ, sc.subY, sc.blocks, sc.lightData)
+      await saveSubChunk(sc.chunkX, sc.chunkZ, sc.subY, sc.blocks, sc.lightData, sc.metadata)
       savedCount++
     } catch (error) {
       console.error(
@@ -376,7 +409,8 @@ self.onmessage = async (event: MessageEvent<PersistenceWorkerRequest>) => {
           request.chunkZ,
           request.subY,
           request.blocks,
-          request.lightData
+          request.lightData,
+          request.metadata
         )
         response = {
           type: 'subchunk-saved',
@@ -401,10 +435,13 @@ self.onmessage = async (event: MessageEvent<PersistenceWorkerRequest>) => {
             subY: request.subY,
             blocks: data.blocks,
             lightData: data.lightData,
+            metadata: data.metadata,
           }
-          self.postMessage(response, {
-            transfer: [data.blocks.buffer, data.lightData.buffer],
-          })
+          const transfer: ArrayBuffer[] = [data.blocks.buffer as ArrayBuffer, data.lightData.buffer as ArrayBuffer]
+          if (data.metadata) {
+            transfer.push(data.metadata.buffer as ArrayBuffer)
+          }
+          self.postMessage(response, { transfer })
           return
         } else {
           response = {
