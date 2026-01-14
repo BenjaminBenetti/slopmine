@@ -62,6 +62,9 @@ export class PigEntity extends Entity {
   private static texture: THREE.Texture | null = null
   private static textureLoading = false
 
+  // Track if this pig's materials have the texture applied
+  private textureApplied = false
+
   constructor(config: IEntityConfig) {
     super('pig', {
       ...config,
@@ -88,8 +91,7 @@ export class PigEntity extends Entity {
         texture.magFilter = THREE.NearestFilter
         texture.minFilter = THREE.NearestFilter
         PigEntity.texture = texture
-        // Update materials when texture loads
-        this.updateMaterials(group)
+        // Each pig will apply the texture in its update loop
       })
     }
 
@@ -146,6 +148,11 @@ export class PigEntity extends Entity {
       this.legs.push(leg)
     }
 
+    // Mark texture as applied if it was available during mesh creation
+    if (PigEntity.texture) {
+      this.textureApplied = true
+    }
+
     return group
   }
 
@@ -170,6 +177,15 @@ export class PigEntity extends Entity {
 
   update(deltaTime: number): void {
     super.update(deltaTime)
+
+    // Apply texture if it's loaded but not yet applied to this pig
+    if (PigEntity.texture && !this.textureApplied) {
+      const mesh = this.getMesh()
+      if (mesh) {
+        this.updateMaterials(mesh)
+        this.textureApplied = true
+      }
+    }
 
     // Update wander cooldown
     this.wanderCooldown -= deltaTime
