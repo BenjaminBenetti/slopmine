@@ -16,6 +16,9 @@ const WANDER_MIN_INTERVAL = 3.0 // seconds
 const WANDER_MAX_INTERVAL = 8.0 // seconds
 const WANDER_MIN_DISTANCE = 4.0 // blocks
 const WANDER_MAX_DISTANCE = 8.0 // blocks
+const JUMP_VELOCITY = 8.0 // blocks per second (slightly less than player)
+const STUCK_MOVEMENT_RATIO = 0.2 // if moving less than 20% of expected, we're stuck
+const STUCK_TIME_THRESHOLD = 0.4 // seconds of being stuck before reacting
 
 // Pig dimensions (in world units)
 const SCALE = 0.0625 // Each "pixel" is 1/16th of a block
@@ -40,6 +43,11 @@ export class PigEntity extends Entity {
   private wanderTarget: THREE.Vector3 | null = null
   private wanderCooldown: number = 0
   private readonly wanderDirection = new THREE.Vector3()
+
+  // Obstacle detection state
+  private readonly lastPosition = new THREE.Vector3()
+  private stuckTime: number = 0
+  private hasTriedJump: boolean = false
 
   // Animation state
   private legAnimPhase = 0
@@ -173,17 +181,55 @@ export class PigEntity extends Entity {
     }
 
     // Move toward wander target
-    if (this.wanderTarget && this.velocity) {
+    const body = this.getPhysicsBody()
+    if (this.wanderTarget && body) {
       this.wanderDirection.copy(this.wanderTarget).sub(this.position)
       this.wanderDirection.y = 0 // Only move horizontally
 
       const distance = this.wanderDirection.length()
 
       if (distance > 0.5) {
-        // Still moving toward target
+        // Check if we're stuck (trying to move but not moving in intended direction)
+        // Use dot product to measure movement in the direction we want to go
+        const actualMoveX = this.position.x - this.lastPosition.x
+        const actualMoveZ = this.position.z - this.lastPosition.z
+        const movementInDirection =
+          actualMoveX * this.wanderDirection.x + actualMoveZ * this.wanderDirection.z
+        const expectedMovement = WALK_SPEED * deltaTime
+
+        // Stuck if we're not making progress in our intended direction
+        if (this.isWalking && movementInDirection < expectedMovement * STUCK_MOVEMENT_RATIO) {
+          // We're stuck!
+          this.stuckTime += deltaTime
+
+          if (this.stuckTime >= STUCK_TIME_THRESHOLD) {
+            if (!this.hasTriedJump && body.isOnGround) {
+              // Try jumping over 1-block obstacle
+              body.velocity.y = JUMP_VELOCITY
+              this.hasTriedJump = true
+              this.stuckTime = 0
+            } else if (this.hasTriedJump || !body.isOnGround) {
+              // Already tried jumping or in the air - wait until we land
+              if (body.isOnGround && this.hasTriedJump) {
+                // We landed and are still stuck - obstacle is too high, pick new direction
+                this.pickNewWanderTarget()
+                this.hasTriedJump = false
+                this.stuckTime = 0
+              }
+            }
+          }
+        } else {
+          // We're moving, reset stuck tracking
+          this.stuckTime = 0
+          if (body.isOnGround) {
+            this.hasTriedJump = false
+          }
+        }
+
+        // Still moving toward target - set velocity on physics body
         this.wanderDirection.normalize()
-        this.velocity.x = this.wanderDirection.x * WALK_SPEED
-        this.velocity.z = this.wanderDirection.z * WALK_SPEED
+        body.velocity.x = this.wanderDirection.x * WALK_SPEED
+        body.velocity.z = this.wanderDirection.z * WALK_SPEED
         this.isWalking = true
 
         // Face movement direction
@@ -192,13 +238,22 @@ export class PigEntity extends Entity {
           mesh.rotation.y = Math.atan2(this.wanderDirection.x, this.wanderDirection.z)
         }
       } else {
-        // Reached target
+        // Reached target - stop moving
         this.wanderTarget = null
-        this.velocity.x = 0
-        this.velocity.z = 0
+        body.velocity.x = 0
+        body.velocity.z = 0
         this.isWalking = false
+        this.hasTriedJump = false
+        this.stuckTime = 0
       }
+    } else if (body && !this.wanderTarget) {
+      // No target, ensure stopped
+      body.velocity.x = 0
+      body.velocity.z = 0
     }
+
+    // Update last position for stuck detection
+    this.lastPosition.copy(this.position)
 
     // Update animations
     this.updateAnimations(deltaTime)
@@ -245,7 +300,8 @@ export class PigEntity extends Entity {
   }
 
   onSpawn(): void {
-    // Nothing special on spawn
+    // Initialize last position for stuck detection
+    this.lastPosition.copy(this.position)
   }
 
   dispose(): void {

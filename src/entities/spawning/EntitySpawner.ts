@@ -180,7 +180,7 @@ export class EntitySpawner implements ITask {
 
       if (groundY === null) continue
 
-      const spawnY = Number(groundY) + 1 // Spawn one block above ground
+      const spawnY = Number(groundY) + 1.25 // Spawn slightly above ground to avoid clipping
 
       // Check Y range constraints
       const minY = config.minY ?? 0
