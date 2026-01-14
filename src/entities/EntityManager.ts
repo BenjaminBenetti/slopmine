@@ -47,6 +47,14 @@ export class EntityManager implements ITask {
 
   private readonly callbacks: Set<IEntityCallbacks> = new Set()
 
+  // Adaptive update rates based on distance from player
+  // Tier 0: 0-32 blocks = 60 UPS (every frame)
+  // Tier 1: 32-128 blocks = 30 UPS
+  // Tier 2: 128+ blocks = 15 UPS
+  private readonly updateIntervals = [0, 1 / 30, 1 / 15]
+  private readonly updateAccumulators = [0, 0, 0]
+  private readonly tierDistancesSq = [32 * 32, 128 * 128] // squared distances for fast comparison
+
   private readonly taskResult: ITaskResult = {
     completed: true,
     elapsedMs: 0,
@@ -180,12 +188,39 @@ export class EntityManager implements ITask {
   }
 
   /**
-   * ITask.execute - Update all entities for this frame.
+   * ITask.execute - Update entities with adaptive rate based on distance.
+   * Close entities (0-1 chunks): 60 UPS
+   * Medium entities (2-5 chunks): 30 UPS
+   * Far entities (6+ chunks): 15 UPS
    */
   execute(deltaTime: number, _remainingBudgetMs: number): ITaskResult {
     const startTime = performance.now()
 
+    // Always process additions/removals immediately
     this.processAdditions()
+    this.processRemovals()
+
+    // Accumulate time for each tier
+    this.updateAccumulators[1] += deltaTime
+    this.updateAccumulators[2] += deltaTime
+
+    // Determine which tiers should update this frame
+    const shouldUpdateTier = [
+      true, // Tier 0 always updates (60 UPS)
+      this.updateAccumulators[1] >= this.updateIntervals[1],
+      this.updateAccumulators[2] >= this.updateIntervals[2],
+    ]
+
+    // Get deltaTime for each tier
+    const tierDeltaTimes = [
+      deltaTime,
+      shouldUpdateTier[1] ? this.updateAccumulators[1] : 0,
+      shouldUpdateTier[2] ? this.updateAccumulators[2] : 0,
+    ]
+
+    // Reset accumulators for tiers that updated
+    if (shouldUpdateTier[1]) this.updateAccumulators[1] = 0
+    if (shouldUpdateTier[2]) this.updateAccumulators[2] = 0
 
     // Calculate despawn distance (2 chunks before max chunk distance)
     const despawnDistanceSq = this.playerBody
@@ -193,30 +228,50 @@ export class EntityManager implements ITask {
       : Infinity
 
     let updatedCount = 0
-    for (const entity of this.entities.values()) {
-      if (entity.state === EntityState.ACTIVE && entity.isAlive) {
-        entity.update(deltaTime)
-        updatedCount++
 
-        // Check if entity died
-        if (!entity.isAlive && entity.state === EntityState.ACTIVE) {
+    for (const entity of this.entities.values()) {
+      if (entity.state !== EntityState.ACTIVE || !entity.isAlive) continue
+
+      // Calculate squared 3D distance from player for tier selection
+      let tier = 2 // Default to far tier
+      if (this.playerBody) {
+        const dx = entity.position.x - this.playerBody.position.x
+        const dy = entity.position.y - this.playerBody.position.y
+        const dz = entity.position.z - this.playerBody.position.z
+        const distSq = dx * dx + dy * dy + dz * dz
+
+        if (distSq <= this.tierDistancesSq[0]) {
+          tier = 0 // Close (0-32 blocks): 60 UPS
+        } else if (distSq <= this.tierDistancesSq[1]) {
+          tier = 1 // Medium (32-128 blocks): 30 UPS
+        }
+      }
+
+      // Skip if this tier isn't updating this frame
+      if (!shouldUpdateTier[tier]) continue
+
+      entity.update(tierDeltaTimes[tier])
+      updatedCount++
+
+      // Check if entity died
+      if (!entity.isAlive) {
+        entity.state = EntityState.DESPAWNING
+        this.entitiesToRemove.push(entity.id)
+        continue
+      }
+
+      // Check despawn distance from player
+      if (this.playerBody) {
+        this.tempVector.copy(entity.position).sub(this.playerBody.position)
+        const distSq = this.tempVector.x ** 2 + this.tempVector.z ** 2
+        if (distSq > despawnDistanceSq) {
           entity.state = EntityState.DESPAWNING
           this.entitiesToRemove.push(entity.id)
-          continue
-        }
-
-        // Check despawn distance from player
-        if (this.playerBody) {
-          this.tempVector.copy(entity.position).sub(this.playerBody.position)
-          const distSq = this.tempVector.x ** 2 + this.tempVector.z ** 2 // Horizontal distance only
-          if (distSq > despawnDistanceSq) {
-            entity.state = EntityState.DESPAWNING
-            this.entitiesToRemove.push(entity.id)
-          }
         }
       }
     }
 
+    // Process any removals from this update cycle
     this.processRemovals()
 
     this.taskResult.elapsedMs = performance.now() - startTime
