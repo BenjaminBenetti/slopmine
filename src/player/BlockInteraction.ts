@@ -344,7 +344,7 @@ export class BlockInteraction {
   }
 
   /**
-   * Hit an entity - call its interaction hook.
+   * Hit an entity - call its interaction hook and collect drops if it dies.
    */
   private hitEntity(entity: IEntity): void {
     // Get currently held item
@@ -353,6 +353,20 @@ export class BlockInteraction {
 
     // Call entity interaction hook
     entity.onPlayerInteract?.(this.rayOrigin, true, heldItem)
+
+    // Check if entity died (or is dying) and collect drops
+    // We check isDying because the entity plays a death animation before isAlive becomes false
+    if ((!entity.isAlive || entity.isDying) && entity.getDrops) {
+      const drops = entity.getDrops()
+      for (const item of drops) {
+        this.playerState.addItem(item)
+      }
+
+      // Notify listeners that items were collected
+      if (drops.length > 0) {
+        this.onItemsCollected?.()
+      }
+    }
   }
 
   /**

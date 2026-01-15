@@ -29,6 +29,19 @@ const DEFAULT_DEATH_FALL_DURATION = 0.5 // seconds to fall over
 const DEFAULT_DEATH_LINGER_DURATION = 1.0 // seconds to stay on ground before despawn
 
 /**
+ * Configurable drop for entities.
+ * Can specify a factory function to create items and min/max counts.
+ */
+export interface IEntityDrop {
+  /** Factory function to create the item instance */
+  createItem: () => IItem
+  /** Minimum count to drop (default 1) */
+  minCount?: number
+  /** Maximum count to drop (default = minCount) */
+  maxCount?: number
+}
+
+/**
  * Configuration for peaceful entities.
  */
 export interface IPeacefulEntityConfig extends IEntityConfig {
@@ -53,6 +66,10 @@ export interface IPeacefulEntityConfig extends IEntityConfig {
   // Death
   deathFallDuration?: number
   deathLingerDuration?: number
+
+  // Drops
+  /** Items to drop when entity dies */
+  drops?: IEntityDrop[]
 }
 
 /**
@@ -80,6 +97,7 @@ export abstract class PeacefulEntity extends Entity {
   protected readonly fleeDuration: number
   protected readonly deathFallDuration: number
   protected readonly deathLingerDuration: number
+  protected readonly drops: IEntityDrop[]
 
   // Wandering AI state
   private wanderTarget: THREE.Vector3 | null = null
@@ -99,8 +117,14 @@ export abstract class PeacefulEntity extends Entity {
   private knockbackTimer = 0
   private fleeTimer = 0
   private readonly fleeDirection = new THREE.Vector3()
-  private isDying = false
+  private _isDying = false
   private deathTimer = 0
+  private dropsCollected = false
+
+  /** Whether the entity is in the process of dying (death animation playing) */
+  get isDying(): boolean {
+    return this._isDying
+  }
 
   constructor(type: string, config: IPeacefulEntityConfig) {
     super(type, config)
@@ -120,6 +144,7 @@ export abstract class PeacefulEntity extends Entity {
     this.fleeDuration = config.fleeDuration ?? DEFAULT_FLEE_DURATION
     this.deathFallDuration = config.deathFallDuration ?? DEFAULT_DEATH_FALL_DURATION
     this.deathLingerDuration = config.deathLingerDuration ?? DEFAULT_DEATH_LINGER_DURATION
+    this.drops = config.drops ?? []
 
     // Initialize health
     this.health = this.maxHealth
@@ -146,7 +171,7 @@ export abstract class PeacefulEntity extends Entity {
     super.update(deltaTime)
 
     // Handle death animation
-    if (this.isDying) {
+    if (this._isDying) {
       this.deathTimer += deltaTime
       const mesh = this.getMesh()
       const body = this.getPhysicsBody()
@@ -311,9 +336,36 @@ export abstract class PeacefulEntity extends Entity {
    * Check if player can interact with this entity.
    */
   canPlayerInteract(playerPosition: THREE.Vector3, maxDistance: number): boolean {
-    if (!this.isAlive || this.isDying) return false
+    if (!this.isAlive || this._isDying) return false
     const dist = this.position.distanceTo(playerPosition)
     return dist <= maxDistance
+  }
+
+  /**
+   * Get items dropped when this entity dies.
+   * Uses the drops configuration to generate items with random counts.
+   * Only returns drops once per entity death.
+   */
+  getDrops(): IItem[] {
+    // Only return drops once
+    if (this.dropsCollected) {
+      return []
+    }
+    this.dropsCollected = true
+
+    const result: IItem[] = []
+
+    for (const drop of this.drops) {
+      const minCount = drop.minCount ?? 1
+      const maxCount = drop.maxCount ?? minCount
+      const count = Math.floor(this.randomRange(minCount, maxCount + 1))
+
+      for (let i = 0; i < count; i++) {
+        result.push(drop.createItem())
+      }
+    }
+
+    return result
   }
 
   /**
@@ -355,7 +407,7 @@ export abstract class PeacefulEntity extends Entity {
 
     // Check death - start death animation instead of immediate kill
     if (this.health <= 0) {
-      this.isDying = true
+      this._isDying = true
       this.deathTimer = 0
       // Clear other states
       this.knockbackTimer = 0

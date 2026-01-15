@@ -83,6 +83,12 @@ export interface IBlock {
   onBreak?(world: IWorld, x: bigint, y: bigint, z: bigint): void
 
   /**
+   * Called when this block is loaded from persistence.
+   * Used to restore runtime state (e.g., ForgeBlockState) that isn't persisted in block data.
+   */
+  onLoad?(world: IWorld, x: bigint, y: bigint, z: bigint): void
+
+  /**
    * Called when a neighbor block changes.
    */
   onNeighborChange?(world: IWorld, x: bigint, y: bigint, z: bigint, face: BlockFace): void

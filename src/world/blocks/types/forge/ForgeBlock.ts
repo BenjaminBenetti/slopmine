@@ -122,6 +122,27 @@ export class ForgeBlock extends SolidBlock {
   }
 
   /**
+   * Called when this block is loaded from persistence.
+   * Creates a ForgeBlockState for this position (same as onPlace).
+   */
+  onLoad(_world: IWorld, x: bigint, y: bigint, z: bigint): void {
+    const position = { x, y, z }
+
+    // Skip if state already exists (shouldn't happen, but defensive)
+    if (BlockStateManager.getInstance().hasState(position)) {
+      return
+    }
+
+    const state = new ForgeBlockState(position)
+    BlockStateManager.getInstance().setState(position, state)
+
+    // Register with tick manager if available
+    if (blockTickManager) {
+      blockTickManager.register(state)
+    }
+  }
+
+  /**
    * Called when this block is broken.
    * Removes the ForgeBlockState and drops contained items.
    */

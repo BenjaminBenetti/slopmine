@@ -52,6 +52,7 @@ import { BlockTickManager } from './world/blockstate/BlockTickManager.ts'
 import { setForgeBlockTickManager } from './world/blocks/types/forge/ForgeBlock.ts'
 import { smeltingRegistry } from './smelting/index.ts'
 import { IronBarItem, GoldBarItem, CopperBarItem, SteelBarItem } from './items/bars/index.ts'
+import { CookedPorkItem } from './items/food/cooked_pork/CookedPorkItem.ts'
 import { blockUIRegistry, createForgeUI } from './ui/blockui/index.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
 import { BlockInteractionHandler } from './player/BlockInteractionHandler.ts'
@@ -111,6 +112,14 @@ smeltingRegistry.register({
   createResult: () => new SteelBarItem(),
   resultCount: 1,
   smeltTime: 30, // 30 seconds - requires high heat to convert iron to steel
+})
+smeltingRegistry.register({
+  id: 'cook_raw_pork',
+  name: 'Cooked Pork',
+  inputId: 'raw_pork',
+  createResult: () => new CookedPorkItem(),
+  resultCount: 1,
+  smeltTime: 5, // 5 seconds - quick cooking time
 })
 
 // Register forge crafting recipe (4 stone -> 1 forge)

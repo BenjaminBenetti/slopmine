@@ -402,6 +402,12 @@ export class WorldManager implements IModifiedChunkProvider {
     // Apply the block, light, and metadata data
     subChunk.applyWorkerData(blocks, lightData, metadata)
 
+    // If this is data loaded from persistence (has metadata), restore block states
+    // by calling onLoad() for any blocks that need runtime state restoration
+    if (metadata !== undefined) {
+      this.restoreBlockStates(coordinate, blocks)
+    }
+
     // Use worker-provided opacity or compute on main thread as fallback
     if (isFullyOpaque !== undefined) {
       subChunk.setOpacity(isFullyOpaque)
@@ -423,6 +429,47 @@ export class WorldManager implements IModifiedChunkProvider {
 
     // Queue column for background lighting correction
     this.backgroundLightingManager.queueColumn(chunkCoord)
+  }
+
+  /**
+   * Restore runtime block states for blocks loaded from persistence.
+   * Iterates through all blocks and calls onLoad() for blocks that need state restoration.
+   */
+  private restoreBlockStates(coordinate: ISubChunkCoordinate, blocks: Uint16Array): void {
+    const worldYOffset = coordinate.subY * SUB_CHUNK_HEIGHT
+    const chunkWorldX = coordinate.x * BigInt(CHUNK_SIZE_X)
+    const chunkWorldZ = coordinate.z * BigInt(CHUNK_SIZE_Z)
+
+    // Create a minimal IWorld adapter for block callbacks
+    const worldAdapter = {
+      getBlock: (x: bigint, y: bigint, z: bigint) => this.getBlock(x, y, z),
+      setBlock: (x: bigint, y: bigint, z: bigint, blockId: BlockId) => this.setBlock(x, y, z, blockId),
+    }
+
+    // Iterate through all blocks in the sub-chunk
+    for (let localY = 0; localY < SUB_CHUNK_HEIGHT; localY++) {
+      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
+        for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
+          const index = localY * CHUNK_SIZE_X * CHUNK_SIZE_Z + localZ * CHUNK_SIZE_X + localX
+          const blockId = blocks[index]
+
+          // Skip air blocks
+          if (blockId === BlockIds.AIR) continue
+
+          // Get the block instance and check if it has onLoad
+          const block = getBlock(blockId)
+          if (block.onLoad) {
+            // Calculate world coordinates
+            const worldX = chunkWorldX + BigInt(localX)
+            const worldY = BigInt(worldYOffset + localY)
+            const worldZ = chunkWorldZ + BigInt(localZ)
+
+            // Call onLoad to restore runtime state
+            block.onLoad(worldAdapter, worldX, worldY, worldZ)
+          }
+        }
+      }
+    }
   }
 
   /**

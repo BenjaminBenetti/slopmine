@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
+import { RawPorkItem } from '../../../items/food/raw_pork/RawPorkItem.ts'
 
 // Import pig texture
 import pigTextureUrl from './assets/pig-texture.webp'
@@ -53,6 +54,9 @@ export class PigEntity extends PeacefulEntity {
       ...config,
       hasPhysics: true,
       hitboxSize: new THREE.Vector3(0.9, 1.0, 0.9),
+      drops: [
+        { createItem: () => new RawPorkItem(), minCount: 1, maxCount: 3 },
+      ],
     })
   }
 

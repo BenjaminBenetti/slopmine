@@ -41,6 +41,10 @@ import { CopperOreItem } from '../items/ores/copper/CopperOreItem.ts'
 import { GoldOreItem } from '../items/ores/gold/GoldOreItem.ts'
 import { DiamondItem } from '../items/ores/diamond/DiamondItem.ts'
 
+// Food items
+import { RawPorkItem } from '../items/food/raw_pork/RawPorkItem.ts'
+import { CookedPorkItem } from '../items/food/cooked_pork/CookedPorkItem.ts'
+
 // Bar items
 import { IronBarItem } from '../items/bars/iron/IronBarItem.ts'
 import { GoldBarItem } from '../items/bars/gold/GoldBarItem.ts'
@@ -147,6 +151,10 @@ export function initializeItemRegistry(): void {
   registerItemFactory('copper_ore', () => new CopperOreItem())
   registerItemFactory('gold_ore', () => new GoldOreItem())
   registerItemFactory('diamond', () => new DiamondItem())
+
+  // Food items
+  registerItemFactory('raw_pork', () => new RawPorkItem())
+  registerItemFactory('cooked_pork', () => new CookedPorkItem())
 
   // Bar items
   registerItemFactory('iron_bar', () => new IronBarItem())

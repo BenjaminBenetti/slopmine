@@ -51,6 +51,9 @@ export interface IEntity {
   /** Whether this entity is alive and should be updated */
   readonly isAlive: boolean
 
+  /** Whether this entity is in the process of dying (death animation playing) */
+  readonly isDying?: boolean
+
   /**
    * Get the visual mesh for this entity.
    * Returns null for invisible entities.
@@ -107,6 +110,12 @@ export interface IEntity {
    * @param maxDistance Maximum interaction distance
    */
   canPlayerInteract?(playerPosition: THREE.Vector3, maxDistance: number): boolean
+
+  /**
+   * Get items dropped when this entity dies.
+   * @returns Array of items to drop, or empty array if no drops
+   */
+  getDrops?(): IItem[]
 }
 
 /**
