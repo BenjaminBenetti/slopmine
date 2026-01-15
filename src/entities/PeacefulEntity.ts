@@ -1,0 +1,377 @@
+import * as THREE from 'three'
+import { Entity } from './Entity.ts'
+import type { IEntityConfig } from './interfaces/IEntityConfig.ts'
+import type { IItem } from '../items/Item.ts'
+
+// Default movement constants
+const DEFAULT_WALK_SPEED = 2.0 // blocks per second
+const DEFAULT_WANDER_MIN_INTERVAL = 3.0 // seconds
+const DEFAULT_WANDER_MAX_INTERVAL = 8.0 // seconds
+const DEFAULT_WANDER_MIN_DISTANCE = 4.0 // blocks
+const DEFAULT_WANDER_MAX_DISTANCE = 8.0 // blocks
+const DEFAULT_JUMP_VELOCITY = 8.0 // blocks per second
+const DEFAULT_STUCK_MOVEMENT_RATIO = 0.2 // if moving less than 20% of expected, we're stuck
+const DEFAULT_STUCK_TIME_THRESHOLD = 0.4 // seconds of being stuck before reacting
+
+// Default combat constants
+const DEFAULT_MAX_HEALTH = 10
+const DEFAULT_BASE_DAMAGE = 2 // Fist damage
+const DEFAULT_KNOCKBACK_HORIZONTAL = 6.0 // blocks/sec push away from player
+const DEFAULT_KNOCKBACK_VERTICAL = 5.0 // blocks/sec upward
+const DEFAULT_KNOCKBACK_STUN_TIME = 0.4 // seconds to disable AI after being hit
+
+// Default flee constants
+const DEFAULT_FLEE_SPEED = 4.0 // blocks per second (faster than walk)
+const DEFAULT_FLEE_DURATION = 3.0 // seconds to flee after being hit
+
+// Default death animation constants
+const DEFAULT_DEATH_FALL_DURATION = 0.5 // seconds to fall over
+const DEFAULT_DEATH_LINGER_DURATION = 1.0 // seconds to stay on ground before despawn
+
+/**
+ * Configuration for peaceful entities.
+ */
+export interface IPeacefulEntityConfig extends IEntityConfig {
+  // Movement
+  walkSpeed?: number
+  wanderMinInterval?: number
+  wanderMaxInterval?: number
+  wanderMinDistance?: number
+  wanderMaxDistance?: number
+  jumpVelocity?: number
+
+  // Combat
+  maxHealth?: number
+  knockbackHorizontal?: number
+  knockbackVertical?: number
+  knockbackStunTime?: number
+
+  // Flee
+  fleeSpeed?: number
+  fleeDuration?: number
+
+  // Death
+  deathFallDuration?: number
+  deathLingerDuration?: number
+}
+
+/**
+ * Base class for peaceful (non-hostile) entities like pigs, cows, sheep.
+ * Provides wandering AI, health system, knockback, flee behavior, and death animation.
+ *
+ * Subclasses should:
+ * 1. Override createMesh() to provide their visual representation
+ * 2. Override updateAnimations() for entity-specific animations
+ * 3. Override dispose() to clean up custom resources
+ */
+export abstract class PeacefulEntity extends Entity {
+  // Configuration (from constructor)
+  protected readonly walkSpeed: number
+  protected readonly wanderMinInterval: number
+  protected readonly wanderMaxInterval: number
+  protected readonly wanderMinDistance: number
+  protected readonly wanderMaxDistance: number
+  protected readonly jumpVelocity: number
+  protected readonly maxHealth: number
+  protected readonly knockbackHorizontal: number
+  protected readonly knockbackVertical: number
+  protected readonly knockbackStunTime: number
+  protected readonly fleeSpeed: number
+  protected readonly fleeDuration: number
+  protected readonly deathFallDuration: number
+  protected readonly deathLingerDuration: number
+
+  // Wandering AI state
+  private wanderTarget: THREE.Vector3 | null = null
+  private wanderCooldown: number = 0
+  private readonly wanderDirection = new THREE.Vector3()
+
+  // Obstacle detection state
+  private readonly lastPosition = new THREE.Vector3()
+  private stuckTime: number = 0
+  private hasTriedJump: boolean = false
+
+  // Animation state (protected for subclass access)
+  protected isWalking = false
+
+  // Health state
+  private health: number
+  private knockbackTimer = 0
+  private fleeTimer = 0
+  private readonly fleeDirection = new THREE.Vector3()
+  private isDying = false
+  private deathTimer = 0
+
+  constructor(type: string, config: IPeacefulEntityConfig) {
+    super(type, config)
+
+    // Apply configuration with defaults
+    this.walkSpeed = config.walkSpeed ?? DEFAULT_WALK_SPEED
+    this.wanderMinInterval = config.wanderMinInterval ?? DEFAULT_WANDER_MIN_INTERVAL
+    this.wanderMaxInterval = config.wanderMaxInterval ?? DEFAULT_WANDER_MAX_INTERVAL
+    this.wanderMinDistance = config.wanderMinDistance ?? DEFAULT_WANDER_MIN_DISTANCE
+    this.wanderMaxDistance = config.wanderMaxDistance ?? DEFAULT_WANDER_MAX_DISTANCE
+    this.jumpVelocity = config.jumpVelocity ?? DEFAULT_JUMP_VELOCITY
+    this.maxHealth = config.maxHealth ?? DEFAULT_MAX_HEALTH
+    this.knockbackHorizontal = config.knockbackHorizontal ?? DEFAULT_KNOCKBACK_HORIZONTAL
+    this.knockbackVertical = config.knockbackVertical ?? DEFAULT_KNOCKBACK_VERTICAL
+    this.knockbackStunTime = config.knockbackStunTime ?? DEFAULT_KNOCKBACK_STUN_TIME
+    this.fleeSpeed = config.fleeSpeed ?? DEFAULT_FLEE_SPEED
+    this.fleeDuration = config.fleeDuration ?? DEFAULT_FLEE_DURATION
+    this.deathFallDuration = config.deathFallDuration ?? DEFAULT_DEATH_FALL_DURATION
+    this.deathLingerDuration = config.deathLingerDuration ?? DEFAULT_DEATH_LINGER_DURATION
+
+    // Initialize health
+    this.health = this.maxHealth
+
+    // Set initial wander cooldown
+    this.wanderCooldown = this.randomRange(this.wanderMinInterval, this.wanderMaxInterval)
+  }
+
+  /**
+   * Generate a random number in range [min, max].
+   */
+  protected randomRange(min: number, max: number): number {
+    return min + Math.random() * (max - min)
+  }
+
+  /**
+   * Update animations for this entity.
+   * Subclasses must implement this for entity-specific animations.
+   * @param deltaTime Time since last frame in seconds
+   */
+  protected abstract updateAnimations(deltaTime: number): void
+
+  update(deltaTime: number): void {
+    super.update(deltaTime)
+
+    // Handle death animation
+    if (this.isDying) {
+      this.deathTimer += deltaTime
+      const mesh = this.getMesh()
+      const body = this.getPhysicsBody()
+
+      // Stop all movement
+      if (body) {
+        body.velocity.x = 0
+        body.velocity.z = 0
+      }
+
+      // Animate falling over (rotate on Z axis)
+      if (mesh) {
+        const fallProgress = Math.min(this.deathTimer / this.deathFallDuration, 1.0)
+        // Ease out for natural fall
+        const easedProgress = 1 - Math.pow(1 - fallProgress, 2)
+        mesh.rotation.z = easedProgress * (Math.PI / 2) // Rotate 90 degrees
+      }
+
+      // After fall + linger, actually die
+      if (this.deathTimer >= this.deathFallDuration + this.deathLingerDuration) {
+        this.kill()
+      }
+
+      return
+    }
+
+    // Handle knockback stun - skip AI while stunned
+    if (this.knockbackTimer > 0) {
+      this.knockbackTimer -= deltaTime
+      // Still update animations while stunned
+      this.updateAnimations(deltaTime)
+      return
+    }
+
+    // Handle flee state - run away from player at higher speed
+    if (this.fleeTimer > 0) {
+      this.fleeTimer -= deltaTime
+      const body = this.getPhysicsBody()
+      if (body) {
+        // Run in flee direction at flee speed
+        body.velocity.x = this.fleeDirection.x * this.fleeSpeed
+        body.velocity.z = this.fleeDirection.z * this.fleeSpeed
+        this.isWalking = true
+
+        // Face flee direction
+        const mesh = this.getMesh()
+        if (mesh && (this.fleeDirection.x !== 0 || this.fleeDirection.z !== 0)) {
+          mesh.rotation.y = Math.atan2(this.fleeDirection.x, this.fleeDirection.z)
+        }
+      }
+
+      // Update last position and animations
+      this.lastPosition.copy(this.position)
+      this.updateAnimations(deltaTime)
+      return
+    }
+
+    // Update wander cooldown
+    this.wanderCooldown -= deltaTime
+
+    // Check if we need a new wander target
+    if (this.wanderCooldown <= 0) {
+      this.pickNewWanderTarget()
+      this.wanderCooldown = this.randomRange(this.wanderMinInterval, this.wanderMaxInterval)
+    }
+
+    // Move toward wander target
+    const body = this.getPhysicsBody()
+    if (this.wanderTarget && body) {
+      this.wanderDirection.copy(this.wanderTarget).sub(this.position)
+      this.wanderDirection.y = 0 // Only move horizontally
+
+      const distance = this.wanderDirection.length()
+
+      if (distance > 0.5) {
+        // Check if we're stuck (trying to move but not moving in intended direction)
+        const actualMoveX = this.position.x - this.lastPosition.x
+        const actualMoveZ = this.position.z - this.lastPosition.z
+        const movementInDirection =
+          actualMoveX * this.wanderDirection.x + actualMoveZ * this.wanderDirection.z
+        const expectedMovement = this.walkSpeed * deltaTime
+
+        // Stuck if we're not making progress in our intended direction
+        if (this.isWalking && movementInDirection < expectedMovement * DEFAULT_STUCK_MOVEMENT_RATIO) {
+          this.stuckTime += deltaTime
+
+          if (this.stuckTime >= DEFAULT_STUCK_TIME_THRESHOLD) {
+            if (!this.hasTriedJump && body.isOnGround) {
+              // Try jumping over 1-block obstacle
+              body.velocity.y = this.jumpVelocity
+              this.hasTriedJump = true
+              this.stuckTime = 0
+            } else if (this.hasTriedJump || !body.isOnGround) {
+              // Already tried jumping or in the air - wait until we land
+              if (body.isOnGround && this.hasTriedJump) {
+                // We landed and are still stuck - obstacle is too high, pick new direction
+                this.pickNewWanderTarget()
+                this.hasTriedJump = false
+                this.stuckTime = 0
+              }
+            }
+          }
+        } else {
+          // We're moving, reset stuck tracking
+          this.stuckTime = 0
+          if (body.isOnGround) {
+            this.hasTriedJump = false
+          }
+        }
+
+        // Still moving toward target - set velocity on physics body
+        this.wanderDirection.normalize()
+        body.velocity.x = this.wanderDirection.x * this.walkSpeed
+        body.velocity.z = this.wanderDirection.z * this.walkSpeed
+        this.isWalking = true
+
+        // Face movement direction
+        const mesh = this.getMesh()
+        if (mesh && (this.wanderDirection.x !== 0 || this.wanderDirection.z !== 0)) {
+          mesh.rotation.y = Math.atan2(this.wanderDirection.x, this.wanderDirection.z)
+        }
+      } else {
+        // Reached target - stop moving
+        this.wanderTarget = null
+        body.velocity.x = 0
+        body.velocity.z = 0
+        this.isWalking = false
+        this.hasTriedJump = false
+        this.stuckTime = 0
+      }
+    } else if (body && !this.wanderTarget) {
+      // No target, ensure stopped
+      body.velocity.x = 0
+      body.velocity.z = 0
+    }
+
+    // Update last position for stuck detection
+    this.lastPosition.copy(this.position)
+
+    // Update animations
+    this.updateAnimations(deltaTime)
+  }
+
+  private pickNewWanderTarget(): void {
+    // Pick a random direction and distance
+    const angle = Math.random() * Math.PI * 2
+    const distance = this.randomRange(this.wanderMinDistance, this.wanderMaxDistance)
+
+    this.wanderTarget = new THREE.Vector3(
+      this.position.x + Math.cos(angle) * distance,
+      this.position.y,
+      this.position.z + Math.sin(angle) * distance
+    )
+  }
+
+  onSpawn(): void {
+    // Initialize last position for stuck detection
+    this.lastPosition.copy(this.position)
+  }
+
+  /**
+   * Check if player can interact with this entity.
+   */
+  canPlayerInteract(playerPosition: THREE.Vector3, maxDistance: number): boolean {
+    if (!this.isAlive || this.isDying) return false
+    const dist = this.position.distanceTo(playerPosition)
+    return dist <= maxDistance
+  }
+
+  /**
+   * Handle player hitting this entity.
+   */
+  onPlayerInteract(playerPosition: THREE.Vector3, isLeftClick: boolean, heldItem: IItem | null): boolean {
+    if (!isLeftClick) return false
+    if (!this.isAlive) return false
+
+    // Calculate damage from held item
+    let damage = DEFAULT_BASE_DAMAGE
+    if (heldItem && 'toolStats' in heldItem) {
+      const toolItem = heldItem as { toolStats: { damage: number } }
+      damage = toolItem.toolStats.damage
+    }
+
+    // Apply damage
+    this.health -= damage
+
+    // Calculate knockback direction (away from player)
+    const knockbackDir = new THREE.Vector3()
+      .copy(this.position)
+      .sub(playerPosition)
+    knockbackDir.y = 0
+    if (knockbackDir.lengthSq() > 0) {
+      knockbackDir.normalize()
+    } else {
+      // Player is exactly on entity, pick random direction
+      knockbackDir.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize()
+    }
+
+    // Apply knockback to physics body
+    const body = this.getPhysicsBody()
+    if (body) {
+      body.velocity.x = knockbackDir.x * this.knockbackHorizontal
+      body.velocity.z = knockbackDir.z * this.knockbackHorizontal
+      body.velocity.y = this.knockbackVertical
+    }
+
+    // Check death - start death animation instead of immediate kill
+    if (this.health <= 0) {
+      this.isDying = true
+      this.deathTimer = 0
+      // Clear other states
+      this.knockbackTimer = 0
+      this.fleeTimer = 0
+    } else {
+      // Only set flee/knockback if not dying
+      this.knockbackTimer = this.knockbackStunTime
+      this.fleeTimer = this.fleeDuration
+      this.fleeDirection.copy(knockbackDir)
+    }
+
+    return true
+  }
+
+  dispose(): void {
+    this.wanderTarget = null
+    super.dispose()
+  }
+}
