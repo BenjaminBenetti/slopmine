@@ -50,7 +50,9 @@ import { CookedPorkItem } from '../items/food/cooked_pork/CookedPorkItem.ts'
 import { RawFoxMeatItem } from '../items/food/raw_fox_meat/RawFoxMeatItem.ts'
 import { CookedFoxMeatItem } from '../items/food/cooked_fox_meat/CookedFoxMeatItem.ts'
 import { RawBeefItem } from '../items/food/raw_beef/RawBeefItem.ts'
+import { CookedBeefItem } from '../items/food/cooked_beef/CookedBeefItem.ts'
 import { RawRabbitItem } from '../items/food/raw_rabbit/RawRabbitItem.ts'
+import { CookedRabbitItem } from '../items/food/cooked_rabbit/CookedRabbitItem.ts'
 import { WheatItem } from '../items/food/wheat/WheatItem.ts'
 
 // Bar items
@@ -169,7 +171,9 @@ export function initializeItemRegistry(): void {
   registerItemFactory('raw_fox_meat', () => new RawFoxMeatItem())
   registerItemFactory('cooked_fox_meat', () => new CookedFoxMeatItem())
   registerItemFactory('raw_beef', () => new RawBeefItem())
+  registerItemFactory('cooked_beef', () => new CookedBeefItem())
   registerItemFactory('raw_rabbit', () => new RawRabbitItem())
+  registerItemFactory('cooked_rabbit', () => new CookedRabbitItem())
   registerItemFactory('wheat', () => new WheatItem())
 
   // Bar items

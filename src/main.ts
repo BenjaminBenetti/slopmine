@@ -53,6 +53,9 @@ import { setForgeBlockTickManager } from './world/blocks/types/forge/ForgeBlock.
 import { smeltingRegistry } from './smelting/index.ts'
 import { IronBarItem, GoldBarItem, CopperBarItem, SteelBarItem } from './items/bars/index.ts'
 import { CookedPorkItem } from './items/food/cooked_pork/CookedPorkItem.ts'
+import { CookedFoxMeatItem } from './items/food/cooked_fox_meat/CookedFoxMeatItem.ts'
+import { CookedBeefItem } from './items/food/cooked_beef/CookedBeefItem.ts'
+import { CookedRabbitItem } from './items/food/cooked_rabbit/CookedRabbitItem.ts'
 import { blockUIRegistry, createForgeUI } from './ui/blockui/index.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
 import { BlockInteractionHandler } from './player/BlockInteractionHandler.ts'
@@ -120,6 +123,30 @@ smeltingRegistry.register({
   createResult: () => new CookedPorkItem(),
   resultCount: 1,
   smeltTime: 5, // 5 seconds - quick cooking time
+})
+smeltingRegistry.register({
+  id: 'cook_raw_fox_meat',
+  name: 'Cooked Fox Meat',
+  inputId: 'raw_fox_meat',
+  createResult: () => new CookedFoxMeatItem(),
+  resultCount: 1,
+  smeltTime: 5, // 5 seconds - quick cooking time
+})
+smeltingRegistry.register({
+  id: 'cook_raw_beef',
+  name: 'Cooked Beef',
+  inputId: 'raw_beef',
+  createResult: () => new CookedBeefItem(),
+  resultCount: 1,
+  smeltTime: 6, // 6 seconds - slightly longer for beef
+})
+smeltingRegistry.register({
+  id: 'cook_raw_rabbit',
+  name: 'Cooked Rabbit',
+  inputId: 'raw_rabbit',
+  createResult: () => new CookedRabbitItem(),
+  resultCount: 1,
+  smeltTime: 4, // 4 seconds - rabbit is small so cooks quickly
 })
 
 // Register forge crafting recipe (4 stone -> 1 forge)
