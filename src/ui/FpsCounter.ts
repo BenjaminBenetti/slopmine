@@ -42,6 +42,11 @@ export interface LiquidPhysicsStats {
   columnsQueued: number
 }
 
+export interface EntityStats {
+  activeCount: number
+  pendingRemovalCount: number
+}
+
 export interface BiomeMiniMapData {
   grid: string[][] // 5x5 grid of 3-letter abbreviations (unrotated, north at top)
   yaw: number // Player yaw in radians (0 = north/-Z, positive = counter-clockwise)
@@ -57,6 +62,7 @@ export interface FpsCounterUI {
   setSchedulerStats(stats: SchedulerStats): void
   setRendererStats(stats: RendererStats): void
   setLiquidPhysicsStats(stats: LiquidPhysicsStats): void
+  setEntityStats(stats: EntityStats): void
   setBiomeMiniMap(data: BiomeMiniMapData): void
   show(): void
   hide(): void
@@ -143,6 +149,7 @@ export function createFpsCounterUI(
   let rendererStats: RendererStats | null = null
   let liquidPhysicsStats: LiquidPhysicsStats | null = null
   let liquidColumnsProcessedTotal = 0
+  let entityStats: EntityStats | null = null
 
   // Target frame budget for 60 FPS
   const frameBudgetMs = 16.67
@@ -205,6 +212,10 @@ export function createFpsCounterUI(
           lines.push(`Liquid: ${columnsPerSec}/s (${liquidPhysicsStats.columnsQueued} queued)`)
           liquidColumnsProcessedTotal = 0
         }
+        if (entityStats) {
+          const pendingColor = entityStats.pendingRemovalCount > 0 ? '#ffaa00' : '#00ff00'
+          lines.push(`Entities: ${entityStats.activeCount} <span style="color:${pendingColor}">(${entityStats.pendingRemovalCount} pending delete)</span>`)
+        }
         el.innerHTML = lines.join('<br>')
 
         frameCount = 0
@@ -244,6 +255,10 @@ export function createFpsCounterUI(
     setLiquidPhysicsStats(stats: LiquidPhysicsStats): void {
       liquidColumnsProcessedTotal += stats.columnsProcessed
       liquidPhysicsStats = stats
+    },
+
+    setEntityStats(stats: EntityStats): void {
+      entityStats = stats
     },
 
     setBiomeMiniMap(data: BiomeMiniMapData): void {

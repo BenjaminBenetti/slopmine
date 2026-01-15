@@ -55,4 +55,7 @@ export enum BlockIds {
   BLUE_MUSHROOM_CAP = 49,
   PURPLE_MUSHROOM = 50,
   PURPLE_MUSHROOM_CAP = 51,
+  WHEAT_1 = 52,
+  WHEAT_2 = 53,
+  WHEAT_3 = 54,
 }

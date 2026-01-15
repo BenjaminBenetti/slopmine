@@ -4,6 +4,7 @@ import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { PigEntity } from '../../../entities/animals/pig/index.ts'
+import { FoxEntity } from '../../../entities/animals/fox/index.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -13,6 +14,7 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/I
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
+import { WheatFeature } from '../features/WheatFeature.ts'
 
 /**
  * Jungle biome with grass surface, dirt subsurface, tall trees, and hanging vines.
@@ -84,6 +86,14 @@ export class JungleGenerator extends BiomeGenerator {
         ySpread: 4,
         replaceableBlocks: [BlockIds.STONE],
       }),
+      // Wheat patches - rare surface crop clusters
+      new WheatFeature({
+        density: 3.0,       // Much rarer than trees (trees are 3.0)
+        minPatchSize: 3,
+        maxPatchSize: 5,
+        gridSize: 16,       // Larger grid = more spread out
+        soilBlock: BlockIds.DIRT,  // Replace grass with dirt under wheat
+      }),
     ],
     caves: {
       enabled: true,
@@ -136,6 +146,12 @@ export class JungleGenerator extends BiomeGenerator {
         spawnRate: 0.2, // Less common in jungle
         maxNearby: 3,
         createEntity: (pos: THREE.Vector3) => new PigEntity({ position: pos }),
+      },
+      {
+        entityType: 'fox',
+        spawnRate: 0.03, // Rare in jungle (~1 fox per 33 chunks)
+        maxNearby: 4,
+        createEntity: (pos: THREE.Vector3) => new FoxEntity({ position: pos }),
       },
     ],
   }

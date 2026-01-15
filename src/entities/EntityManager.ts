@@ -5,8 +5,18 @@ import type { PhysicsEngine } from '../physics/PhysicsEngine.ts'
 import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
 import type { IEntity, EntityId } from './interfaces/IEntity.ts'
 import { EntityState } from './interfaces/IEntity.ts'
+import type { IBlockEntity } from './interfaces/IBlockEntity.ts'
+import { isBlockEntity } from './interfaces/IBlockEntity.ts'
 import type { IEntityCallbacks } from './interfaces/IEntityCallbacks.ts'
 import { CHUNK_SIZE_X } from '../world/interfaces/IChunk.ts'
+import type { IWorldCoordinate } from '../world/interfaces/ICoordinates.ts'
+
+/**
+ * Create a string key from world coordinates for block entity lookup.
+ */
+function blockPosKey(pos: IWorldCoordinate): string {
+  return `${pos.x},${pos.y},${pos.z}`
+}
 
 /**
  * Configuration for EntityManager.
@@ -35,8 +45,9 @@ export class EntityManager implements ITask {
   enabled = true
 
   private readonly entities: Map<EntityId, IEntity> = new Map()
+  private readonly blockEntityIndex: Map<string, IBlockEntity> = new Map()
   private readonly entitiesToAdd: IEntity[] = []
-  private readonly entitiesToRemove: EntityId[] = []
+  private readonly entitiesToRemove: Set<EntityId> = new Set()
 
   private readonly scene: THREE.Scene
   private readonly physicsEngine: PhysicsEngine | null
@@ -118,12 +129,13 @@ export class EntityManager implements ITask {
 
   /**
    * Queue an entity for removal on the next update.
+   * Entity will be skipped in updates while pending removal.
    */
   removeEntity(entityId: EntityId): boolean {
     if (!this.entities.has(entityId)) {
       return false
     }
-    this.entitiesToRemove.push(entityId)
+    this.entitiesToRemove.add(entityId)
     return true
   }
 
@@ -188,6 +200,46 @@ export class EntityManager implements ITask {
   }
 
   /**
+   * Get the number of entities pending removal.
+   */
+  get pendingRemovalCount(): number {
+    return this.entitiesToRemove.size
+  }
+
+  /**
+   * Get the number of active block entities.
+   */
+  get blockEntityCount(): number {
+    return this.blockEntityIndex.size
+  }
+
+  /**
+   * Get a block entity at a specific world position.
+   */
+  getBlockEntityAt(position: IWorldCoordinate): IBlockEntity | undefined {
+    return this.blockEntityIndex.get(blockPosKey(position))
+  }
+
+  /**
+   * Check if a block entity exists at a specific world position.
+   */
+  hasBlockEntityAt(position: IWorldCoordinate): boolean {
+    return this.blockEntityIndex.has(blockPosKey(position))
+  }
+
+  /**
+   * Remove all block entities in a specific chunk.
+   * Called when a chunk is unloaded.
+   */
+  removeBlockEntitiesInChunk(chunkX: bigint, chunkZ: bigint): void {
+    for (const [_key, entity] of this.blockEntityIndex) {
+      if (entity.chunkCoordinate.x === chunkX && entity.chunkCoordinate.z === chunkZ) {
+        this.entitiesToRemove.add(entity.id)
+      }
+    }
+  }
+
+  /**
    * ITask.execute - Update entities with adaptive rate based on distance.
    * Close entities (0-1 chunks): 60 UPS
    * Medium entities (2-5 chunks): 30 UPS
@@ -232,6 +284,9 @@ export class EntityManager implements ITask {
     for (const entity of this.entities.values()) {
       if (entity.state !== EntityState.ACTIVE || !entity.isAlive) continue
 
+      // Skip entities that are pending removal (prevents update after block destroyed)
+      if (this.entitiesToRemove.has(entity.id)) continue
+
       // Calculate squared 3D distance from player for tier selection
       let tier = 2 // Default to far tier
       if (this.playerBody) {
@@ -256,17 +311,17 @@ export class EntityManager implements ITask {
       // Check if entity died
       if (!entity.isAlive) {
         entity.state = EntityState.DESPAWNING
-        this.entitiesToRemove.push(entity.id)
+        this.entitiesToRemove.add(entity.id)
         continue
       }
 
-      // Check despawn distance from player
-      if (this.playerBody) {
+      // Check despawn distance from player (skip for block entities - they despawn with chunks)
+      if (this.playerBody && !isBlockEntity(entity)) {
         this.tempVector.copy(entity.position).sub(this.playerBody.position)
         const distSq = this.tempVector.x ** 2 + this.tempVector.z ** 2
         if (distSq > despawnDistanceSq) {
           entity.state = EntityState.DESPAWNING
-          this.entitiesToRemove.push(entity.id)
+          this.entitiesToRemove.add(entity.id)
         }
       }
     }
@@ -291,7 +346,7 @@ export class EntityManager implements ITask {
     for (const entityId of this.entitiesToRemove) {
       this.despawnEntity(entityId)
     }
-    this.entitiesToRemove.length = 0
+    this.entitiesToRemove.clear()
   }
 
   private spawnEntity(entity: IEntity): void {
@@ -306,6 +361,12 @@ export class EntityManager implements ITask {
     }
 
     this.entities.set(entity.id, entity)
+
+    // Add to block entity index if applicable
+    if (isBlockEntity(entity)) {
+      this.blockEntityIndex.set(blockPosKey(entity.blockPosition), entity)
+    }
+
     entity.state = EntityState.ACTIVE
 
     entity.onSpawn()
@@ -338,6 +399,12 @@ export class EntityManager implements ITask {
     }
 
     this.entities.delete(entityId)
+
+    // Remove from block entity index if applicable
+    if (isBlockEntity(entity)) {
+      this.blockEntityIndex.delete(blockPosKey(entity.blockPosition))
+    }
+
     entity.state = EntityState.DISPOSED
 
     entity.dispose()
@@ -348,7 +415,7 @@ export class EntityManager implements ITask {
    */
   clear(): void {
     this.entitiesToAdd.length = 0
-    this.entitiesToRemove.length = 0
+    this.entitiesToRemove.clear()
 
     for (const entityId of this.entities.keys()) {
       this.despawnEntity(entityId)

@@ -22,3 +22,5 @@ export { EntitySpawner } from './spawning/EntitySpawner.ts'
 
 // Animals
 export { PigEntity } from './animals/pig/index.ts'
+export { CowEntity } from './animals/cow/index.ts'
+export { RabbitEntity } from './animals/rabbit/index.ts'

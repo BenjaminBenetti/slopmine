@@ -280,6 +280,9 @@ export class BlockInteraction {
       this.onItemsCollected?.()
     }
 
+    // Remove block entity if it exists (before onBreak hook)
+    this.worldManager.removeBlockEntityAt(worldX, worldY, worldZ)
+
     // Call the block's onBreak hook if it exists (before removing the block)
     if (block.onBreak) {
       block.onBreak(this.worldManager, worldX, worldY, worldZ)

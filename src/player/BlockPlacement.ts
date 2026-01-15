@@ -128,6 +128,8 @@ export class BlockPlacement {
       block.onPlace(this.worldManager, placePos.x, placePos.y, placePos.z, facing)
     }
 
+    // Note: Block entity is created automatically by setBlock() if the block supports it
+
     // Decrease item stack count
     if (stack.count <= 1) {
       this.playerState.inventory.toolbar.clearSlot(selectedIndex)

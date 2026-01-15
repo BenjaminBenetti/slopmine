@@ -3,7 +3,11 @@ import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
+import { WheatFeature } from '../features/WheatFeature.ts'
 import { PigEntity } from '../../../entities/animals/pig/index.ts'
+import { CowEntity } from '../../../entities/animals/cow/index.ts'
+import { FoxEntity } from '../../../entities/animals/fox/index.ts'
+import { RabbitEntity } from '../../../entities/animals/rabbit/index.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -84,6 +88,14 @@ export class PlainsGenerator extends BiomeGenerator {
         ySpread: 4,
         replaceableBlocks: [BlockIds.STONE],
       }),
+      // Wheat patches - rare surface crop clusters
+      new WheatFeature({
+        density: 3.0,       // Much rarer than trees (trees are 3.0)
+        minPatchSize: 3,
+        maxPatchSize: 5,
+        gridSize: 16,       // Larger grid = more spread out
+        soilBlock: BlockIds.DIRT,  // Replace grass with dirt under wheat
+      }),
     ],
     caves: {
       enabled: true,
@@ -128,6 +140,24 @@ export class PlainsGenerator extends BiomeGenerator {
         spawnRate: 0.1,
         maxNearby: 16,
         createEntity: (pos: THREE.Vector3) => new PigEntity({ position: pos }),
+      },
+      {
+        entityType: 'cow',
+        spawnRate: 0.08,
+        maxNearby: 12,
+        createEntity: (pos: THREE.Vector3) => new CowEntity({ position: pos }),
+      },
+      {
+        entityType: 'rabbit',
+        spawnRate: 0.15,
+        maxNearby: 12,
+        createEntity: (pos: THREE.Vector3) => new RabbitEntity({ position: pos }),
+      },
+      {
+        entityType: 'fox',
+        spawnRate: 0.03, // Rarer than pigs (~1 fox per 33 chunks)
+        maxNearby: 8,
+        createEntity: (pos: THREE.Vector3) => new FoxEntity({ position: pos }),
       },
     ],
   }

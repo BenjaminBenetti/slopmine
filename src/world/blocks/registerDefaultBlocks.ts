@@ -50,6 +50,9 @@ import { BlueMushroomBlock } from './types/blue_mushroom/BlueMushroomBlock.ts'
 import { BlueMushroomCapBlock } from './types/blue_mushroom_cap/BlueMushroomCapBlock.ts'
 import { PurpleMushroomBlock } from './types/purple_mushroom/PurpleMushroomBlock.ts'
 import { PurpleMushroomCapBlock } from './types/purple_mushroom_cap/PurpleMushroomCapBlock.ts'
+import { Wheat1Block } from './types/wheat/Wheat1Block.ts'
+import { Wheat2Block } from './types/wheat/Wheat2Block.ts'
+import { Wheat3Block } from './types/wheat/Wheat3Block.ts'
 
 /**
  * Register all default block types.
@@ -126,4 +129,9 @@ export function registerDefaultBlocks(): void {
   registerBlock(new SwampWaterThreeEighthBlock())
   registerBlock(new SwampWaterQuarterBlock())
   registerBlock(new SwampWaterEighthBlock())
+
+  // Crop blocks
+  registerBlock(new Wheat1Block())
+  registerBlock(new Wheat2Block())
+  registerBlock(new Wheat3Block())
 }

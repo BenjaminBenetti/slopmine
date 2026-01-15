@@ -4,6 +4,9 @@ import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { PigEntity } from '../../../entities/animals/pig/index.ts'
+import { CowEntity } from '../../../entities/animals/cow/index.ts'
+import { FoxEntity } from '../../../entities/animals/fox/index.ts'
+import { RabbitEntity } from '../../../entities/animals/rabbit/index.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -128,6 +131,24 @@ export class GrassyHillsGenerator extends BiomeGenerator {
         spawnRate: 0.3, // ~1 pig per 3 chunks
         maxNearby: 4,
         createEntity: (pos: THREE.Vector3) => new PigEntity({ position: pos }),
+      },
+      {
+        entityType: 'cow',
+        spawnRate: 0.2, // ~1 cow per 5 chunks
+        maxNearby: 6,
+        createEntity: (pos: THREE.Vector3) => new CowEntity({ position: pos }),
+      },
+      {
+        entityType: 'fox',
+        spawnRate: 0.05, // Rarer than pigs (~1 fox per 20 chunks)
+        maxNearby: 4,
+        createEntity: (pos: THREE.Vector3) => new FoxEntity({ position: pos }),
+      },
+      {
+        entityType: 'rabbit',
+        spawnRate: 0.2, // Common in grassy hills
+        maxNearby: 10,
+        createEntity: (pos: THREE.Vector3) => new RabbitEntity({ position: pos }),
       },
     ],
   }

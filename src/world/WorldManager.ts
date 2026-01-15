@@ -29,6 +29,7 @@ import type { WaterEdgeEffects } from './generate/features/WaterFeature.ts'
 import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
 import { BackgroundLiquidPhysicsManager } from './liquid/BackgroundLiquidPhysicsManager.ts'
 import type { PersistenceManager, IModifiedChunkProvider } from '../persistence/PersistenceManager.ts'
+import type { EntityManager } from '../entities/EntityManager.ts'
 
 /**
  * Main world coordinator.
@@ -94,6 +95,9 @@ export class WorldManager implements IModifiedChunkProvider {
 
   // Persistence manager for saving/loading world data
   private persistenceManager: PersistenceManager | null = null
+
+  // Entity manager for block entities
+  private entityManager: EntityManager | null = null
 
   // Web Worker pool for chunk generation (terrain, caves, lighting)
   private readonly generationWorkers: Worker[] = []
@@ -194,6 +198,45 @@ export class WorldManager implements IModifiedChunkProvider {
    */
   setPersistenceManager(manager: PersistenceManager): void {
     this.persistenceManager = manager
+  }
+
+  /**
+   * Set the entity manager for block entity management.
+   */
+  setEntityManager(manager: EntityManager): void {
+    this.entityManager = manager
+  }
+
+  /**
+   * Create a block entity for a block at the given position.
+   * Call this after placing a block that supports block entities.
+   */
+  createBlockEntityAt(x: bigint, y: bigint, z: bigint, block: IBlock): void {
+    if (!this.entityManager || !block.createBlockEntity) return
+
+    // Create IWorld adapter for block entity to use
+    const worldAdapter = {
+      getBlock: (wx: bigint, wy: bigint, wz: bigint) => this.getBlock(wx, wy, wz),
+      setBlock: (wx: bigint, wy: bigint, wz: bigint, blockId: BlockId) => this.setBlock(wx, wy, wz, blockId),
+    }
+
+    const blockEntity = block.createBlockEntity({ x, y, z }, worldAdapter)
+    if (blockEntity) {
+      this.entityManager.addEntity(blockEntity)
+    }
+  }
+
+  /**
+   * Remove a block entity at the given position.
+   * Call this before breaking a block that may have a block entity.
+   */
+  removeBlockEntityAt(x: bigint, y: bigint, z: bigint): void {
+    if (!this.entityManager) return
+
+    const entity = this.entityManager.getBlockEntityAt({ x, y, z })
+    if (entity) {
+      this.entityManager.removeEntity(entity.id)
+    }
   }
 
   /**
@@ -406,6 +449,9 @@ export class WorldManager implements IModifiedChunkProvider {
     // by calling onLoad() for any blocks that need runtime state restoration
     if (metadata !== undefined) {
       this.restoreBlockStates(coordinate, blocks)
+    } else {
+      // For freshly generated chunks, still create block entities
+      this.createBlockEntitiesForChunk(coordinate, blocks)
     }
 
     // Use worker-provided opacity or compute on main thread as fallback
@@ -456,16 +502,71 @@ export class WorldManager implements IModifiedChunkProvider {
           // Skip air blocks
           if (blockId === BlockIds.AIR) continue
 
-          // Get the block instance and check if it has onLoad
+          // Calculate world coordinates
+          const worldX = chunkWorldX + BigInt(localX)
+          const worldY = BigInt(worldYOffset + localY)
+          const worldZ = chunkWorldZ + BigInt(localZ)
+
+          // Get the block instance
           const block = getBlock(blockId)
+
+          // Call onLoad to restore runtime state
           if (block.onLoad) {
-            // Calculate world coordinates
+            block.onLoad(worldAdapter, worldX, worldY, worldZ)
+          }
+
+          // Create block entity if the block type supports it
+          if (this.entityManager && block.createBlockEntity) {
+            const blockEntity = block.createBlockEntity({ x: worldX, y: worldY, z: worldZ }, worldAdapter)
+            if (blockEntity) {
+              this.entityManager.addEntity(blockEntity)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Create block entities for blocks in a freshly generated chunk.
+   * Similar to restoreBlockStates but only creates entities, no onLoad() calls.
+   */
+  private createBlockEntitiesForChunk(coordinate: ISubChunkCoordinate, blocks: Uint16Array): void {
+    if (!this.entityManager) return
+
+    const worldYOffset = coordinate.subY * SUB_CHUNK_HEIGHT
+    const chunkWorldX = coordinate.x * BigInt(CHUNK_SIZE_X)
+    const chunkWorldZ = coordinate.z * BigInt(CHUNK_SIZE_Z)
+
+    // Create a minimal IWorld adapter for block entity callbacks
+    const worldAdapter = {
+      getBlock: (x: bigint, y: bigint, z: bigint) => this.getBlock(x, y, z),
+      setBlock: (x: bigint, y: bigint, z: bigint, blockId: BlockId) => this.setBlock(x, y, z, blockId),
+    }
+
+    // Iterate through all blocks in the sub-chunk
+    for (let localY = 0; localY < SUB_CHUNK_HEIGHT; localY++) {
+      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
+        for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
+          const index = localY * CHUNK_SIZE_X * CHUNK_SIZE_Z + localZ * CHUNK_SIZE_X + localX
+          const blockId = blocks[index]
+
+          // Skip air blocks
+          if (blockId === BlockIds.AIR) continue
+
+          // Get the block instance
+          const block = getBlock(blockId)
+
+          // Create block entity if the block type supports it
+          if (block.createBlockEntity) {
             const worldX = chunkWorldX + BigInt(localX)
             const worldY = BigInt(worldYOffset + localY)
             const worldZ = chunkWorldZ + BigInt(localZ)
 
-            // Call onLoad to restore runtime state
-            block.onLoad(worldAdapter, worldX, worldY, worldZ)
+            const blockEntity = block.createBlockEntity({ x: worldX, y: worldY, z: worldZ }, worldAdapter)
+            if (blockEntity) {
+              this.entityManager.addEntity(blockEntity)
+            }
           }
         }
       }
@@ -1137,6 +1238,18 @@ export class WorldManager implements IModifiedChunkProvider {
       if (isLiquid || wasLiquid || wasBlockRemoved) {
         this.liquidPhysicsManager.queueColumnAndNeighbors(x, z)
       }
+
+      // Handle block entities: remove old one and create new one if needed
+      if (this.entityManager) {
+        // Remove existing block entity at this position
+        this.removeBlockEntityAt(x, y, z)
+
+        // Create new block entity if the new block supports it
+        const newBlock = getBlock(blockId)
+        if (newBlock.createBlockEntity) {
+          this.createBlockEntityAt(x, y, z, newBlock)
+        }
+      }
     }
 
     return changed
@@ -1392,6 +1505,11 @@ export class WorldManager implements IModifiedChunkProvider {
 
     // Remove from background lighting queue
     this.backgroundLightingManager.unloadColumn(coordinate)
+
+    // Remove all block entities in this chunk
+    if (this.entityManager) {
+      this.entityManager.removeBlockEntitiesInChunk(coordinate.x, coordinate.z)
+    }
 
     // Then unload the column data
     this.chunkManager.unloadColumn(coordinate)

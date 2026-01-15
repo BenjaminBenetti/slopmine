@@ -65,6 +65,9 @@ export enum TextureId {
   BLUE_MUSHROOM_CAP = 52,
   PURPLE_MUSHROOM = 53,
   PURPLE_MUSHROOM_CAP = 54,
+  WHEAT_1 = 57,              // wheat-1.webp (seedling)
+  WHEAT_2 = 58,              // wheat-2.webp (growing)
+  WHEAT_3 = 59,              // wheat-3.webp (mature)
 }
 
 // Cache for the face texture map

@@ -1,6 +1,8 @@
 import type * as THREE from 'three'
 import type { IItem } from '../../items/Item.ts'
 import type { BlockFacing } from '../blocks/BlockFacing.ts'
+import type { IBlockEntity } from '../../entities/interfaces/IBlockEntity.ts'
+import type { IWorldCoordinate } from './ICoordinates.ts'
 
 /**
  * Block ID type - uint16 supports 0-65535 block types.
@@ -98,6 +100,15 @@ export interface IBlock {
    * Block handles any random drop logic internally.
    */
   getDrops?(): IItem[]
+
+  /**
+   * Create a block entity for this block when placed or loaded.
+   * Block entities receive per-frame updates and despawn when their chunk unloads.
+   * Returns null for blocks that don't need entity behavior.
+   * @param position The world position of the block
+   * @param world The world interface for block operations (e.g., replacing self with another block)
+   */
+  createBlockEntity?(position: IWorldCoordinate, world: IWorld): IBlockEntity | null
 
   /**
    * Create a Three.js mesh for this block.

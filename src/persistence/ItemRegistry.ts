@@ -33,6 +33,9 @@ import { VineBlockItem } from '../items/blocks/vine/VineBlockItem.ts'
 import { ClayBlockItem } from '../items/blocks/clay/ClayBlockItem.ts'
 import { MushroomBlockItem } from '../items/blocks/mushroom/MushroomBlockItem.ts'
 import { MushroomCapBlockItem } from '../items/blocks/mushroom-cap/MushroomCapBlockItem.ts'
+import { Wheat1BlockItem } from '../items/blocks/wheat/Wheat1BlockItem.ts'
+import { Wheat2BlockItem } from '../items/blocks/wheat/Wheat2BlockItem.ts'
+import { Wheat3BlockItem } from '../items/blocks/wheat/Wheat3BlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -44,6 +47,11 @@ import { DiamondItem } from '../items/ores/diamond/DiamondItem.ts'
 // Food items
 import { RawPorkItem } from '../items/food/raw_pork/RawPorkItem.ts'
 import { CookedPorkItem } from '../items/food/cooked_pork/CookedPorkItem.ts'
+import { RawFoxMeatItem } from '../items/food/raw_fox_meat/RawFoxMeatItem.ts'
+import { CookedFoxMeatItem } from '../items/food/cooked_fox_meat/CookedFoxMeatItem.ts'
+import { RawBeefItem } from '../items/food/raw_beef/RawBeefItem.ts'
+import { RawRabbitItem } from '../items/food/raw_rabbit/RawRabbitItem.ts'
+import { WheatItem } from '../items/food/wheat/WheatItem.ts'
 
 // Bar items
 import { IronBarItem } from '../items/bars/iron/IronBarItem.ts'
@@ -144,6 +152,9 @@ export function initializeItemRegistry(): void {
   registerItemFactory('clay_block', () => new ClayBlockItem())
   registerItemFactory('mushroom_block', () => new MushroomBlockItem())
   registerItemFactory('mushroom_cap_block', () => new MushroomCapBlockItem())
+  registerItemFactory('wheat_1_block', () => new Wheat1BlockItem())
+  registerItemFactory('wheat_2_block', () => new Wheat2BlockItem())
+  registerItemFactory('wheat_3_block', () => new Wheat3BlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())
@@ -155,6 +166,11 @@ export function initializeItemRegistry(): void {
   // Food items
   registerItemFactory('raw_pork', () => new RawPorkItem())
   registerItemFactory('cooked_pork', () => new CookedPorkItem())
+  registerItemFactory('raw_fox_meat', () => new RawFoxMeatItem())
+  registerItemFactory('cooked_fox_meat', () => new CookedFoxMeatItem())
+  registerItemFactory('raw_beef', () => new RawBeefItem())
+  registerItemFactory('raw_rabbit', () => new RawRabbitItem())
+  registerItemFactory('wheat', () => new WheatItem())
 
   // Bar items
   registerItemFactory('iron_bar', () => new IronBarItem())

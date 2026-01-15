@@ -380,6 +380,9 @@ const entityManager = new EntityManager(renderer.scene, physicsEngine, {
 })
 entityManager.setPlayerBody(playerBody)
 
+// Connect entity manager to world for block entities
+world.setEntityManager(entityManager)
+
 // Create entity spawner
 const entitySpawner = new EntitySpawner(
   entityManager,
@@ -765,6 +768,10 @@ const gameLoop = new GameLoop({
     fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
     fpsCounter.setRendererStats(rendererStats)
     fpsCounter.setLiquidPhysicsStats(world.getLiquidPhysicsStats())
+    fpsCounter.setEntityStats({
+      activeCount: entityManager.entityCount,
+      pendingRemovalCount: entityManager.pendingRemovalCount,
+    })
     // Add scheduler stats for debug display (reuse pre-allocated object)
     const schedulerMetrics = scheduler.getMetrics()
     if (schedulerMetrics) {
