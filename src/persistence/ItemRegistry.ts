@@ -56,9 +56,20 @@ import { CookedRabbitItem } from '../items/food/cooked_rabbit/CookedRabbitItem.t
 import { WheatItem } from '../items/food/wheat/WheatItem.ts'
 import { GroundWheatItem } from '../items/food/ground_wheat/GroundWheatItem.ts'
 import { BreadItem } from '../items/food/bread/BreadItem.ts'
+import { RawAlligatorMeatItem } from '../items/food/raw_alligator_meat/RawAlligatorMeatItem.ts'
+import { CookedAlligatorMeatItem } from '../items/food/cooked_alligator_meat/CookedAlligatorMeatItem.ts'
+import { RawSnakeItem } from '../items/food/raw_snake/RawSnakeItem.ts'
+import { CookedSnakeItem } from '../items/food/cooked_snake/CookedSnakeItem.ts'
+import { RawKomodoMeatItem } from '../items/food/raw_komodo_meat/RawKomodoMeatItem.ts'
+import { CookedKomodoMeatItem } from '../items/food/cooked_komodo_meat/CookedKomodoMeatItem.ts'
 
 // Bar items
 import { IronBarItem } from '../items/bars/iron/IronBarItem.ts'
+
+// Material items
+import { SlimeBallItem } from '../items/materials/slime_ball/SlimeBallItem.ts'
+import { AlligatorLeatherItem } from '../items/materials/alligator_leather/AlligatorLeatherItem.ts'
+import { KomodoScalesItem } from '../items/materials/komodo_scales/KomodoScalesItem.ts'
 import { GoldBarItem } from '../items/bars/gold/GoldBarItem.ts'
 import { CopperBarItem } from '../items/bars/copper/CopperBarItem.ts'
 import { SteelBarItem } from '../items/bars/steel/SteelBarItem.ts'
@@ -179,12 +190,23 @@ export function initializeItemRegistry(): void {
   registerItemFactory('wheat', () => new WheatItem())
   registerItemFactory('ground_wheat', () => new GroundWheatItem())
   registerItemFactory('bread', () => new BreadItem())
+  registerItemFactory('raw_alligator_meat', () => new RawAlligatorMeatItem())
+  registerItemFactory('cooked_alligator_meat', () => new CookedAlligatorMeatItem())
+  registerItemFactory('raw_snake', () => new RawSnakeItem())
+  registerItemFactory('cooked_snake', () => new CookedSnakeItem())
+  registerItemFactory('raw_komodo_meat', () => new RawKomodoMeatItem())
+  registerItemFactory('cooked_komodo_meat', () => new CookedKomodoMeatItem())
 
   // Bar items
   registerItemFactory('iron_bar', () => new IronBarItem())
   registerItemFactory('gold_bar', () => new GoldBarItem())
   registerItemFactory('copper_bar', () => new CopperBarItem())
   registerItemFactory('steel_bar', () => new SteelBarItem())
+
+  // Material items
+  registerItemFactory('slime_ball', () => new SlimeBallItem())
+  registerItemFactory('alligator_leather', () => new AlligatorLeatherItem())
+  registerItemFactory('komodo_scales', () => new KomodoScalesItem())
 
   // Pickaxes
   registerItemFactory('wood_pickaxe', () => new WoodPickaxeItem())

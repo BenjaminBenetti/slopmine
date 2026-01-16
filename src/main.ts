@@ -56,6 +56,9 @@ import { CookedPorkItem } from './items/food/cooked_pork/CookedPorkItem.ts'
 import { CookedFoxMeatItem } from './items/food/cooked_fox_meat/CookedFoxMeatItem.ts'
 import { CookedBeefItem } from './items/food/cooked_beef/CookedBeefItem.ts'
 import { CookedRabbitItem } from './items/food/cooked_rabbit/CookedRabbitItem.ts'
+import { CookedAlligatorMeatItem } from './items/food/cooked_alligator_meat/CookedAlligatorMeatItem.ts'
+import { CookedSnakeItem } from './items/food/cooked_snake/CookedSnakeItem.ts'
+import { CookedKomodoMeatItem } from './items/food/cooked_komodo_meat/CookedKomodoMeatItem.ts'
 import { BreadItem } from './items/food/bread/BreadItem.ts'
 import { blockUIRegistry, createForgeUI } from './ui/blockui/index.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
@@ -72,6 +75,7 @@ import {
 } from './persistence/index.ts'
 import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
 import { EntityManager, EntitySpawner } from './entities/index.ts'
+import { MagmaSlimeEntity } from './entities/animals/magma_slime/index.ts'
 
 // Initialize world system
 registerDefaultBlocks()
@@ -156,6 +160,30 @@ smeltingRegistry.register({
   createResult: () => new BreadItem(),
   resultCount: 1,
   smeltTime: 12, // 12 seconds to bake bread
+})
+smeltingRegistry.register({
+  id: 'cook_raw_alligator_meat',
+  name: 'Cooked Alligator Meat',
+  inputId: 'raw_alligator_meat',
+  createResult: () => new CookedAlligatorMeatItem(),
+  resultCount: 1,
+  smeltTime: 7, // 7 seconds - alligator meat is tough
+})
+smeltingRegistry.register({
+  id: 'cook_raw_snake',
+  name: 'Cooked Snake',
+  inputId: 'raw_snake',
+  createResult: () => new CookedSnakeItem(),
+  resultCount: 1,
+  smeltTime: 6, // 6 seconds - snake meat cooks quickly
+})
+smeltingRegistry.register({
+  id: 'cook_raw_komodo_meat',
+  name: 'Cooked Komodo Meat',
+  inputId: 'raw_komodo_meat',
+  createResult: () => new CookedKomodoMeatItem(),
+  resultCount: 1,
+  smeltTime: 7, // 7 seconds - komodo meat is thick
 })
 
 // Register forge crafting recipe (4 stone -> 1 forge)
@@ -629,6 +657,25 @@ scheduler.registerTask(entityManager)
 
 // Register entity spawner
 scheduler.registerTask(entitySpawner)
+
+// Update magma slime contact damage
+scheduler.createTask({
+  id: 'magma-slime-contact',
+  priority: TaskPriority.NORMAL,
+  update: () => {
+    const magmaSlimes = entityManager.getEntitiesByType('magma_slime')
+    for (const entity of magmaSlimes) {
+      const slime = entity as MagmaSlimeEntity
+      slime.updatePlayerPosition(playerBody.position)
+      slime.setPlayerDamageCallback((damage, knockback) => {
+        // Apply knockback to player
+        playerBody.velocity.x += knockback.x
+        playerBody.velocity.y += knockback.y
+        playerBody.velocity.z += knockback.z
+      })
+    }
+  },
+})
 
 // Update block UI when open
 scheduler.createTask({

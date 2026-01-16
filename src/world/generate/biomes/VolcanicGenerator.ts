@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
@@ -11,6 +12,8 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
+import { MagmaSlimeEntity } from '../../../entities/animals/magma_slime/index.ts'
+import { KomodoDragonEntity } from '../../../entities/animals/komodo_dragon/index.ts'
 
 /**
  * Volcanic biome with basalt surface, magma subsurface, and lava pools.
@@ -143,6 +146,25 @@ export class VolcanicGenerator extends BiomeGenerator {
       brightness: 0.55, // Dark, smoky sky
       tint: { r: 1.0, g: 0.7, b: 0.5 }, // Reddish-orange tint from volcanic ash/glow
     },
+    // Creatures that thrive in the volcanic environment
+    entitySpawns: [
+      {
+        entityType: 'magma_slime',
+        spawnRate: 0.15,
+        minY: 200,
+        maxY: 280,
+        maxNearby: 8,
+        createEntity: (pos: THREE.Vector3) => new MagmaSlimeEntity({ position: pos }),
+      },
+      {
+        entityType: 'komodo_dragon',
+        spawnRate: 0.1,
+        minY: 200,
+        maxY: 280,
+        maxNearby: 6,
+        createEntity: (pos: THREE.Vector3) => new KomodoDragonEntity({ position: pos }),
+      },
+    ],
   }
 
   /**

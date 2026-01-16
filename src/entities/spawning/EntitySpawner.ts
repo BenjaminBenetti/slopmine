@@ -8,8 +8,10 @@ import type { IPhysicsBody } from '../../physics/interfaces/IPhysicsBody.ts'
 import type { EntitySpawnConfig } from './EntitySpawnConfig.ts'
 
 // Spawning constants
-const SPAWN_CHECK_INTERVAL = 60.0 // seconds between spawn checks
-const SPAWN_CHUNK_RADIUS = 4 // chunks from player to check for spawning
+const SPAWN_CHECK_INTERVAL = 20.0 // seconds between spawn checks (faster cycle)
+const SPAWN_CHUNK_RADIUS = 6 // chunks from player to check for spawning (matches despawn distance)
+const CHUNKS_PER_CYCLE = (2 * SPAWN_CHUNK_RADIUS + 1) ** 2 // 169 chunks in 13x13 grid
+const SLOT_INTERVAL = SPAWN_CHECK_INTERVAL / CHUNKS_PER_CYCLE // ~0.12s per chunk
 const MIN_SPAWN_DISTANCE = 24 // minimum distance from player to spawn
 const CHUNK_SIZE = 32 // blocks per chunk
 const DEFAULT_MAX_NEARBY = 8 // default max entities of one type nearby
@@ -28,8 +30,14 @@ export class EntitySpawner implements ITask {
   private readonly worldManager: WorldManager
   private readonly playerBody: IPhysicsBody
 
-  // Timer for spawn checks (start at interval to trigger immediately)
-  private spawnTimer = SPAWN_CHECK_INTERVAL
+  // Cycle state for staggered spawning
+  private cycleTimer = SPAWN_CHECK_INTERVAL // Start at max to trigger first cycle
+  private currentSlotIndex = CHUNKS_PER_CYCLE // Start past end to trigger reset
+  private cyclePlayerChunkX = 0 // Player chunk X at cycle start
+  private cyclePlayerChunkZ = 0 // Player chunk Z at cycle start
+
+  // Pre-allocated chunk offsets for the 9x9 grid around player
+  private readonly chunkOffsets: Array<{ dx: number; dz: number }> = []
 
   // Pre-allocated result object
   private readonly taskResult: ITaskResult = {
@@ -51,54 +59,83 @@ export class EntitySpawner implements ITask {
     this.worldGenerator = worldGenerator
     this.worldManager = worldManager
     this.playerBody = playerBody
+
+    // Populate chunk offsets for the 9x9 grid around player
+    for (let dx = -SPAWN_CHUNK_RADIUS; dx <= SPAWN_CHUNK_RADIUS; dx++) {
+      for (let dz = -SPAWN_CHUNK_RADIUS; dz <= SPAWN_CHUNK_RADIUS; dz++) {
+        this.chunkOffsets.push({ dx, dz })
+      }
+    }
   }
 
   execute(deltaTime: number, _remainingBudgetMs: number): ITaskResult {
     const startTime = performance.now()
 
-    this.spawnTimer += deltaTime
+    this.cycleTimer += deltaTime
 
-    if (this.spawnTimer >= SPAWN_CHECK_INTERVAL) {
-      this.spawnTimer = 0
-      this.checkSpawns()
+    // Check if we need to start a new cycle
+    if (this.currentSlotIndex >= CHUNKS_PER_CYCLE) {
+      this.startNewCycle()
     }
 
+    // Calculate which time slot we should be at based on elapsed time
+    const targetSlot = Math.min(
+      Math.floor(this.cycleTimer / SLOT_INTERVAL),
+      CHUNKS_PER_CYCLE
+    )
+
+    // Process all slots from currentSlotIndex to targetSlot (handles frame drops)
+    let spawnsAttempted = 0
+    while (this.currentSlotIndex < targetSlot) {
+      spawnsAttempted += this.evaluateChunkAtSlot(this.currentSlotIndex)
+      this.currentSlotIndex++
+    }
+
+    this.taskResult.workUnits = spawnsAttempted
     this.taskResult.elapsedMs = performance.now() - startTime
     return this.taskResult
   }
 
   /**
-   * Check for possible entity spawns around the player.
+   * Start a new spawn cycle by snapshotting player position.
    */
-  private checkSpawns(): void {
+  private startNewCycle(): void {
+    this.cycleTimer = 0
+    this.currentSlotIndex = 0
+
+    // Snapshot player chunk position for this cycle
     const playerPos = this.playerBody.position
-    const playerChunkX = Math.floor(playerPos.x / CHUNK_SIZE)
-    const playerChunkZ = Math.floor(playerPos.z / CHUNK_SIZE)
+    this.cyclePlayerChunkX = Math.floor(playerPos.x / CHUNK_SIZE)
+    this.cyclePlayerChunkZ = Math.floor(playerPos.z / CHUNK_SIZE)
+  }
 
+  /**
+   * Evaluate spawning for a single chunk at the given slot index.
+   * Returns the number of spawn attempts made.
+   */
+  private evaluateChunkAtSlot(slotIndex: number): number {
+    const offset = this.chunkOffsets[slotIndex]
+    const chunkX = this.cyclePlayerChunkX + offset.dx
+    const chunkZ = this.cyclePlayerChunkZ + offset.dz
+
+    // Get spawn configs for this chunk's biome
+    const worldX = chunkX * CHUNK_SIZE + CHUNK_SIZE / 2
+    const worldZ = chunkZ * CHUNK_SIZE + CHUNK_SIZE / 2
+    const spawnConfigs = this.worldGenerator.getEntitySpawnsAtPosition(worldX, worldZ)
+
+    if (!spawnConfigs || spawnConfigs.length === 0) {
+      return 0
+    }
+
+    // Try to spawn entities based on configs
     let spawnsAttempted = 0
-
-    for (let dx = -SPAWN_CHUNK_RADIUS; dx <= SPAWN_CHUNK_RADIUS; dx++) {
-      for (let dz = -SPAWN_CHUNK_RADIUS; dz <= SPAWN_CHUNK_RADIUS; dz++) {
-        const chunkX = playerChunkX + dx
-        const chunkZ = playerChunkZ + dz
-
-        // Get spawn configs for this chunk's biome
-        const worldX = chunkX * CHUNK_SIZE + CHUNK_SIZE / 2
-        const worldZ = chunkZ * CHUNK_SIZE + CHUNK_SIZE / 2
-        const spawnConfigs = this.worldGenerator.getEntitySpawnsAtPosition(worldX, worldZ)
-
-        if (!spawnConfigs || spawnConfigs.length === 0) continue
-
-        // Try to spawn entities based on configs
-        for (const config of spawnConfigs) {
-          if (this.trySpawnEntity(config, chunkX, chunkZ)) {
-            spawnsAttempted++
-          }
-        }
+    for (const config of spawnConfigs) {
+      if (this.trySpawnEntity(config, chunkX, chunkZ)) {
+        spawnsAttempted++
       }
     }
 
-    this.taskResult.workUnits = spawnsAttempted
+    return spawnsAttempted
   }
 
   /**
@@ -180,9 +217,10 @@ export class EntitySpawner implements ITask {
   }
 
   /**
-   * Reset spawn timer to trigger spawn check on next update.
+   * Reset spawn cycle to trigger a new cycle on next update.
    */
   clear(): void {
-    this.spawnTimer = SPAWN_CHECK_INTERVAL
+    this.cycleTimer = SPAWN_CHECK_INTERVAL
+    this.currentSlotIndex = CHUNKS_PER_CYCLE
   }
 }

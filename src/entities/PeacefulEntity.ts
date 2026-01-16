@@ -113,12 +113,12 @@ export abstract class PeacefulEntity extends Entity {
   protected isWalking = false
 
   // Health state
-  private health: number
-  private knockbackTimer = 0
-  private fleeTimer = 0
-  private readonly fleeDirection = new THREE.Vector3()
-  private _isDying = false
-  private deathTimer = 0
+  protected health: number
+  protected knockbackTimer = 0
+  protected fleeTimer = 0
+  protected readonly fleeDirection = new THREE.Vector3()
+  protected _isDying = false
+  protected deathTimer = 0
   private dropsCollected = false
 
   /** Whether the entity is in the process of dying (death animation playing) */

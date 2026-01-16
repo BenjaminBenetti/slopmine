@@ -1,4 +1,7 @@
+import * as THREE from 'three'
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
+import { SlugEntity } from '../../../entities/animals/slug/index.ts'
+import { AlligatorEntity } from '../../../entities/animals/alligator/index.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
@@ -137,6 +140,24 @@ export class SwampGenerator extends BiomeGenerator {
     },
     // Reduced skylight for spooky atmosphere (default is 15)
     skylightValue: 8,
+
+    // Entity spawns for swamp biome
+    entitySpawns: [
+      {
+        entityType: 'slug',
+        spawnRate: 0.12, // Moderate spawn rate
+        maxNearby: 8, // Don't overcrowd
+        createEntity: (pos: THREE.Vector3) => new SlugEntity({ position: pos }),
+      },
+      {
+        entityType: 'alligator',
+        spawnRate: 0.08, // Slightly rarer than slugs
+        minY: 230, // Near/below swamp water level (234)
+        maxY: 250,
+        maxNearby: 6, // Fewer alligators - they're dangerous
+        createEntity: (pos: THREE.Vector3) => new AlligatorEntity({ position: pos }),
+      },
+    ],
   }
 
   // Mushroom placement grid size

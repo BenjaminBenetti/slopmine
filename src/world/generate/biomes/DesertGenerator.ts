@@ -1,4 +1,6 @@
+import * as THREE from 'three'
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
+import { SnakeEntity } from '../../../entities/animals/snake/index.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { OasisFeature, type OasisLocation } from '../features/OasisFeature.ts'
@@ -143,6 +145,14 @@ export class DesertGenerator extends BiomeGenerator {
       heightScale: 12, // Slightly more dramatic than plains
       combineMode: 'add',
     } as TerrainConfig,
+    entitySpawns: [
+      {
+        entityType: 'snake',
+        spawnRate: 0.02, // ~1 per 50 chunks (pretty rare)
+        maxNearby: 4,
+        createEntity: (pos: THREE.Vector3) => new SnakeEntity({ position: pos }),
+      },
+    ],
   }
 
   // Cactus placement grid size

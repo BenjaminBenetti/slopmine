@@ -367,6 +367,12 @@ export class EntityManager implements ITask {
       this.blockEntityIndex.set(blockPosKey(entity.blockPosition), entity)
     }
 
+    // Set player position reference for entities that need it (e.g., alligators for tracking)
+    if (this.playerBody && 'setPlayerPositionRef' in entity) {
+      const trackingEntity = entity as { setPlayerPositionRef: (pos: THREE.Vector3) => void }
+      trackingEntity.setPlayerPositionRef(this.playerBody.position)
+    }
+
     entity.state = EntityState.ACTIVE
 
     entity.onSpawn()
