@@ -5,6 +5,7 @@ import { ironToolRecipes } from './IronToolRecipes.ts'
 import { steelToolRecipes } from './SteelToolRecipes.ts'
 import { diamondToolRecipes } from './DiamondToolRecipes.ts'
 import { torchRecipes } from './TorchRecipe.ts'
+import { groundWheatRecipe } from './WheatRecipe.ts'
 
 /**
  * Register all default recipes.
@@ -29,6 +30,7 @@ export function registerDefaultRecipes(): void {
   for (const recipe of torchRecipes) {
     recipeRegistry.register(recipe)
   }
+  recipeRegistry.register(groundWheatRecipe)
 }
 
 export { woodToolRecipes } from './WoodToolRecipes.ts'

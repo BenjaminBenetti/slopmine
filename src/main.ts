@@ -56,6 +56,7 @@ import { CookedPorkItem } from './items/food/cooked_pork/CookedPorkItem.ts'
 import { CookedFoxMeatItem } from './items/food/cooked_fox_meat/CookedFoxMeatItem.ts'
 import { CookedBeefItem } from './items/food/cooked_beef/CookedBeefItem.ts'
 import { CookedRabbitItem } from './items/food/cooked_rabbit/CookedRabbitItem.ts'
+import { BreadItem } from './items/food/bread/BreadItem.ts'
 import { blockUIRegistry, createForgeUI } from './ui/blockui/index.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
 import { BlockInteractionHandler } from './player/BlockInteractionHandler.ts'
@@ -147,6 +148,14 @@ smeltingRegistry.register({
   createResult: () => new CookedRabbitItem(),
   resultCount: 1,
   smeltTime: 4, // 4 seconds - rabbit is small so cooks quickly
+})
+smeltingRegistry.register({
+  id: 'bake_bread',
+  name: 'Bread',
+  inputId: 'ground_wheat',
+  createResult: () => new BreadItem(),
+  resultCount: 1,
+  smeltTime: 12, // 12 seconds to bake bread
 })
 
 // Register forge crafting recipe (4 stone -> 1 forge)
