@@ -75,7 +75,7 @@ export class RabbitEntity extends PeacefulEntity {
       hasPhysics: true,
       hitboxSize: new THREE.Vector3(0.4, 0.5, 0.4),
       walkSpeed: 4.0, // Fast burst speed during hops
-      jumpVelocity: 7.0,
+      jumpVelocity: 8.75,
       wanderMinDistance: 2.0,
       wanderMaxDistance: 5.0,
       wanderMinInterval: 1.0,
