@@ -17,6 +17,7 @@ import { InventoryInputHandler } from './player/InventoryInput.ts'
 import { SettingsInputHandler } from './player/SettingsInput.ts'
 import { BlockInteraction } from './player/BlockInteraction.ts'
 import { BlockPlacement } from './player/BlockPlacement.ts'
+import { ItemConsumption } from './player/ItemConsumption.ts'
 import { createCrosshairUI } from './ui/Crosshair.ts'
 import { createToolbarUI } from './ui/Toolbar.ts'
 import { createInventoryUI } from './ui/Inventory.ts'
@@ -643,6 +644,23 @@ const blockPlacement = new BlockPlacement(
   }
 )
 
+// Item consumption system (right-click hold to consume food)
+const itemConsumption = new ItemConsumption(
+  renderer.renderer.domElement,
+  playerState,
+  playerHealth,
+  heldItemRenderer,
+  {
+    onItemConsumed: () => {
+      toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
+      updateHeldItem() // Update held item when inventory changes
+    },
+  }
+)
+
+// Connect item consumption to block placement for priority handling
+blockPlacement.setItemConsumption(itemConsumption)
+
 // Block raycaster for E-key interaction
 const blockRaycaster = new BlockRaycaster(world)
 
@@ -729,6 +747,12 @@ scheduler.createTask({
   id: 'block-interaction',
   priority: TaskPriority.CRITICAL,
   update: (dt) => blockInteraction.update(dt),
+})
+
+scheduler.createTask({
+  id: 'item-consumption',
+  priority: TaskPriority.CRITICAL,
+  update: (dt) => itemConsumption.update(dt),
 })
 
 // Register block tick manager (for forge smelting, etc.)

@@ -488,6 +488,14 @@ export class AlligatorEntity extends PeacefulEntity {
 
       this.updateAnimations(deltaTime)
 
+      // Sync position from physics body (aggressive mode bypasses super.update)
+      if (body) {
+        this.position.copy(body.position)
+      }
+      if (mesh) {
+        mesh.position.copy(this.position)
+      }
+
       // Reset aggressive state when timer runs out
       if (this.aggressiveTimer <= 0) {
         this.aggressiveTarget = null

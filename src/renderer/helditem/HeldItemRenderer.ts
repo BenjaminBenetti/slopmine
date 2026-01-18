@@ -56,6 +56,36 @@ const TOOL_SWING_CONFIG: SwingAnimationConfig = {
 }
 
 /**
+ * Eating animation configuration
+ */
+interface EatingAnimationConfig {
+  /** Amount to raise item toward mouth (positive Y) */
+  raiseAmplitude: number
+  /** Amount to move item toward camera (positive Z) */
+  forwardAmplitude: number
+  /** Amount to move item left toward center/mouth (negative X) */
+  leftAmplitude: number
+  /** Tilt angle in radians (X rotation, pitch up toward mouth) */
+  tiltAngle: number
+  /** Nibble oscillation frequency in Hz */
+  bobFrequency: number
+  /** Nibble oscillation amplitude */
+  bobAmplitude: number
+  /** Speed to return to idle position when eating stops */
+  returnSpeed: number
+}
+
+const EATING_CONFIG: EatingAnimationConfig = {
+  raiseAmplitude: 0.15,      // Raise toward mouth
+  forwardAmplitude: 0.12,    // Bring closer to face
+  leftAmplitude: 0.2,        // Move left toward center/mouth
+  tiltAngle: 0.4,            // Tilt up toward mouth (~23 degrees)
+  bobFrequency: 2.5,         // Gentle chewing rhythm
+  bobAmplitude: 0.015,       // Subtle bite motion
+  returnSpeed: 8,
+}
+
+/**
  * Determines the type of item for rendering purposes.
  */
 function isBlockItem(item: IItem): boolean {
@@ -102,6 +132,16 @@ export class HeldItemRenderer {
   private readonly swingRotation = new THREE.Euler()
   /** Base rotation of the mesh (saved when setting item) */
   private readonly baseRotation = new THREE.Euler()
+
+  // Eating animation state
+  private isEating = false
+  private eatingPhase = 0
+  /** Stores the current eating offset applied to position */
+  private readonly eatingOffset = new THREE.Vector3()
+  /** Stores the current eating rotation applied to mesh */
+  private readonly eatingRotation = new THREE.Euler()
+  /** Bite oscillation offset (computed fresh each frame, not accumulated) */
+  private currentBiteOffset = 0
 
   private readonly config: HeldItemRendererConfig
   private readonly basePosition: THREE.Vector3
@@ -196,6 +236,14 @@ export class HeldItemRenderer {
   }
 
   /**
+   * Set whether the player is currently eating.
+   * Controls the eating animation.
+   */
+  setEating(eating: boolean): void {
+    this.isEating = eating
+  }
+
+  /**
    * Set the currently held item.
    * Updates the rendered mesh accordingly.
    */
@@ -237,6 +285,10 @@ export class HeldItemRenderer {
     this.swingPhase = 0
     this.swingOffset.set(0, 0, 0)
     this.swingRotation.set(0, 0, 0)
+    this.eatingPhase = 0
+    this.eatingOffset.set(0, 0, 0)
+    this.eatingRotation.set(0, 0, 0)
+    this.currentBiteOffset = 0
   }
 
   /**
@@ -271,18 +323,21 @@ export class HeldItemRenderer {
     // Update swing animation
     this.updateSwingAnimation(deltaTime)
 
-    // Compose final position: base + bob + swing
+    // Update eating animation
+    this.updateEatingAnimation(deltaTime)
+
+    // Compose final position: base + bob + swing + eating + bite
     this.currentMesh.position.set(
-      this.basePosition.x + bobX + this.swingOffset.x,
-      this.basePosition.y + bobY + this.swingOffset.y,
-      this.basePosition.z + this.swingOffset.z
+      this.basePosition.x + bobX + this.swingOffset.x + this.eatingOffset.x,
+      this.basePosition.y + bobY + this.swingOffset.y + this.eatingOffset.y,
+      this.basePosition.z + this.swingOffset.z + this.eatingOffset.z + this.currentBiteOffset
     )
 
-    // Compose final rotation: base + swing rotation
+    // Compose final rotation: base + swing + eating rotation
     this.currentMesh.rotation.set(
-      this.baseRotation.x + this.swingRotation.x,
-      this.baseRotation.y + this.swingRotation.y,
-      this.baseRotation.z + this.swingRotation.z
+      this.baseRotation.x + this.swingRotation.x + this.eatingRotation.x,
+      this.baseRotation.y + this.swingRotation.y + this.eatingRotation.y,
+      this.baseRotation.z + this.swingRotation.z + this.eatingRotation.z
     )
   }
 
@@ -356,6 +411,83 @@ export class HeldItemRenderer {
         this.swingOffset.set(0, 0, 0)
         this.swingRotation.set(0, 0, 0)
         this.swingPhase = 0
+      }
+    }
+  }
+
+  /**
+   * Update the eating animation state.
+   */
+  private updateEatingAnimation(deltaTime: number): void {
+    if (this.isEating) {
+      // Smoothly interpolate toward eating position
+      const approachSpeed = 6
+      const approachFactor = 1 - Math.exp(-deltaTime * approachSpeed)
+
+      // Target position: raised up, moved left, brought toward camera (mouth)
+      const targetX = -EATING_CONFIG.leftAmplitude   // Negative = move left toward center
+      const targetY = EATING_CONFIG.raiseAmplitude   // Positive = raise up
+      const targetZ = EATING_CONFIG.forwardAmplitude // Positive = toward camera
+
+      // Target rotation: tilt food toward mouth
+      const targetRotX = -EATING_CONFIG.tiltAngle    // Negative = pitch up toward mouth
+
+      // Smoothly move toward target position
+      this.eatingOffset.x += (targetX - this.eatingOffset.x) * approachFactor
+      this.eatingOffset.y += (targetY - this.eatingOffset.y) * approachFactor
+      this.eatingOffset.z += (targetZ - this.eatingOffset.z) * approachFactor
+
+      // Smoothly rotate toward target
+      this.eatingRotation.x += (targetRotX - this.eatingRotation.x) * approachFactor
+
+      // Only add bite motion once mostly in position
+      const distanceToTarget = Math.abs(this.eatingOffset.x - targetX) +
+                               Math.abs(this.eatingOffset.y - targetY) +
+                               Math.abs(this.eatingOffset.z - targetZ)
+      if (distanceToTarget < 0.05) {
+        // Advance eating phase for bite animation
+        const eatingSpeed = EATING_CONFIG.bobFrequency * Math.PI * 2
+        this.eatingPhase += deltaTime * eatingSpeed
+
+        // Keep phase in [0, 2π] range
+        if (this.eatingPhase > Math.PI * 2) {
+          this.eatingPhase -= Math.PI * 2
+        }
+
+        // Smooth in-and-out bite motion using sine wave
+        // sin gives us -1 to 1, we want 0 to 1 to 0 pattern
+        const biteProgress = (Math.sin(this.eatingPhase) + 1) * 0.5
+        this.currentBiteOffset = biteProgress * EATING_CONFIG.bobAmplitude
+      } else {
+        this.currentBiteOffset = 0
+      }
+    } else {
+      // Not eating - smoothly return to idle
+      const returnFactor = 1 - Math.exp(-deltaTime * EATING_CONFIG.returnSpeed)
+
+      // Lerp offset back to zero
+      this.eatingOffset.x *= 1 - returnFactor
+      this.eatingOffset.y *= 1 - returnFactor
+      this.eatingOffset.z *= 1 - returnFactor
+
+      // Lerp rotation back to zero
+      this.eatingRotation.x *= 1 - returnFactor
+      this.eatingRotation.y *= 1 - returnFactor
+      this.eatingRotation.z *= 1 - returnFactor
+
+      // Smoothly reduce bite offset
+      this.currentBiteOffset *= 1 - returnFactor
+
+      // Reset phase when values are near zero
+      const offsetMagnitude = this.eatingOffset.length()
+      const rotationMagnitude = Math.abs(this.eatingRotation.x) +
+                                Math.abs(this.eatingRotation.y) +
+                                Math.abs(this.eatingRotation.z)
+      if (offsetMagnitude < 0.001 && rotationMagnitude < 0.001) {
+        this.eatingOffset.set(0, 0, 0)
+        this.eatingRotation.set(0, 0, 0)
+        this.currentBiteOffset = 0
+        this.eatingPhase = 0
       }
     }
   }

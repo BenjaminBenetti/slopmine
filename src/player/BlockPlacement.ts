@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { WorldManager } from '../world/WorldManager.ts'
 import type { IPlayerState } from './PlayerState.ts'
 import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
+import type { ItemConsumption } from './ItemConsumption.ts'
 import { BlockRaycaster } from './BlockRaycaster.ts'
 import { BlockRegistry } from '../world/blocks/BlockRegistry.ts'
 import { BlockFace } from '../world/interfaces/IBlock.ts'
@@ -35,6 +36,9 @@ export class BlockPlacement {
   private readonly maxReachDistance: number
   private readonly onBlockPlaced?: () => void
 
+  /** Optional ItemConsumption reference to check if player is consuming */
+  private itemConsumption?: ItemConsumption
+
   constructor(
     camera: THREE.PerspectiveCamera,
     worldManager: WorldManager,
@@ -61,6 +65,14 @@ export class BlockPlacement {
     this.removeEventListeners()
   }
 
+  /**
+   * Set the ItemConsumption reference for consumption priority checking.
+   * When set, block placement will be skipped if the player is consuming an item.
+   */
+  setItemConsumption(itemConsumption: ItemConsumption): void {
+    this.itemConsumption = itemConsumption
+  }
+
   private setupEventListeners(): void {
     this.domElement.addEventListener('mousedown', this.onMouseDown)
   }
@@ -83,6 +95,9 @@ export class BlockPlacement {
   }
 
   private tryPlaceBlock(): void {
+    // Skip if player is currently consuming an item
+    if (this.itemConsumption?.isConsuming()) return
+
     // Get the currently selected item
     const selectedIndex = this.playerState.inventory.toolbar.selectedIndex
     const stack = this.playerState.inventory.toolbar.getStack(selectedIndex)

@@ -1,8 +1,14 @@
 import { Item } from '../../Item.ts'
+import type { IPlayerHealth } from '../../../player/PlayerHealth.ts'
+import type { IConsumable, IConsumableStats } from '../../interfaces/IConsumable.ts'
 
-export class BreadItem extends Item {
+export class BreadItem extends Item implements IConsumable {
   readonly id = 'bread'
   readonly name = 'bread'
+
+  readonly consumableStats: IConsumableStats = {
+    consumeTime: 2.0,
+  }
 
   override get displayName(): string {
     return 'Bread'
@@ -14,5 +20,9 @@ export class BreadItem extends Item {
 
   override get tags(): ReadonlyArray<string> {
     return ['food']
+  }
+
+  onConsume(playerHealth: IPlayerHealth): void {
+    playerHealth.heal(6)
   }
 }

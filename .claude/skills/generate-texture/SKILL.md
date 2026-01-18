@@ -1,6 +1,6 @@
 ---
 name: generate-texture
-description: Generate seamless block textures for the Slopmine voxel game. Use when creating new block textures, game assets, or when the user asks to generate a texture for a block.
+description: Generate seamless block textures. You must use this skill when creating game assets / textures / art.
 allowed-tools: mcp__art-gen__generate_image, Bash, Read
 ---
 
