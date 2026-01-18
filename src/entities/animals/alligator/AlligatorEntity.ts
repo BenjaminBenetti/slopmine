@@ -47,7 +47,8 @@ const AGGRESSIVE_DURATION = 10.0 // seconds to chase
 const AGGRESSIVE_SPEED = 5.0 // faster than walk
 const ATTACK_RANGE = 2.0 // blocks
 const ATTACK_COOLDOWN = 1.5 // seconds between attacks
-const PUSHBACK_FORCE = 8.0 // knockback when attacking player
+const PUSHBACK_HORIZONTAL = 3.0 // horizontal knockback force
+const PUSHBACK_VERTICAL = 5.0 // vertical knockback force
 
 /**
  * An alligator entity that lives in swamps.
@@ -514,8 +515,9 @@ export class AlligatorEntity extends PeacefulEntity {
       if (knockbackDir.lengthSq() > 0) {
         knockbackDir.normalize()
       }
-      knockbackDir.multiplyScalar(PUSHBACK_FORCE)
-      knockbackDir.y = 3.0 // Small upward push
+      // Apply horizontal and vertical knockback separately
+      knockbackDir.multiplyScalar(PUSHBACK_HORIZONTAL)
+      knockbackDir.y = PUSHBACK_VERTICAL
 
       // Call player damage callback if set
       if (this.playerCallback) {

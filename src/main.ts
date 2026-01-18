@@ -73,9 +73,14 @@ import {
   serializeInventory,
   deserializeInventory,
 } from './persistence/index.ts'
+import { PlayerHealth } from './player/PlayerHealth.ts'
+import { FallDamageTracker } from './player/FallDamageTracker.ts'
+import { createHealthDisplayUI } from './ui/HealthDisplay.ts'
 import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
 import { EntityManager, EntitySpawner } from './entities/index.ts'
 import { MagmaSlimeEntity } from './entities/animals/magma_slime/index.ts'
+import { AlligatorEntity } from './entities/animals/alligator/AlligatorEntity.ts'
+import { PlayerDamageHandler } from './entities/PlayerDamageHandler.ts'
 
 // Initialize world system
 registerDefaultBlocks()
@@ -230,6 +235,10 @@ renderer.setGraphicsSettings(graphicsSettings)
 // Player state (including toolbar/inventory)
 const playerState = new PlayerState(10)
 
+// Player health system (20 hearts = 40 HP)
+const playerHealth = new PlayerHealth({ maxHealth: 40 })
+const fallDamageTracker = new FallDamageTracker()
+
 // Give player diamond tools in dev mode
 if (import.meta.env.DEV) {
   playerState.addItem(new DiamondPickaxeItem())
@@ -256,6 +265,15 @@ toolbarUI.root.style.display = 'none' // Hidden during loading
 const inventoryUI = createInventoryUI(undefined, {
   columns: playerState.inventory.inventory.width,
   rows: playerState.inventory.inventory.height,
+})
+
+// Health display UI (hearts above hotbar)
+const healthDisplay = createHealthDisplayUI()
+healthDisplay.root.style.display = 'none' // Hidden during loading
+
+// Wire health system callbacks
+playerHealth.setOnHealthChanged((current, max) => {
+  healthDisplay.updateHealth(current, max)
 })
 
 // First-person camera controls
@@ -336,6 +354,12 @@ persistenceManager.initialize().then(async () => {
     console.log(`Loaded saved position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`)
   }
 
+  // Load saved player health if exists
+  if (savedMetadata?.playerHealth !== undefined) {
+    playerHealth.setHealth(savedMetadata.playerHealth)
+    console.log(`Loaded saved health: ${savedMetadata.playerHealth}`)
+  }
+
   // Start auto-save (every 5 minutes)
   persistenceManager.startAutoSave(() => ({
     inventory: serializeInventory(playerState.inventory),
@@ -345,6 +369,7 @@ persistenceManager.initialize().then(async () => {
       y: playerBody.position.y,
       z: playerBody.position.z,
     },
+    playerHealth: playerHealth.currentHealth,
   }))
 }).catch((error) => {
   console.error('Failed to initialize persistence:', error)
@@ -363,7 +388,8 @@ window.addEventListener('beforeunload', () => {
       x: playerBody.position.x,
       y: playerBody.position.y,
       z: playerBody.position.z,
-    }
+    },
+    playerHealth.currentHealth
   )
 })
 
@@ -409,7 +435,8 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
         x: playerBody.position.x,
         y: playerBody.position.y,
         z: playerBody.position.z,
-      }
+      },
+      playerHealth.currentHealth
     )
   },
   onNewGame: async () => {
@@ -455,8 +482,43 @@ const entitySpawner = new EntitySpawner(
   playerBody
 )
 
+// Create player damage handler for entities to use
+const playerDamageHandler = new PlayerDamageHandler(
+  playerHealth,
+  healthDisplay,
+  playerBody,
+  cameraControls
+)
+
 // Connect camera controls to physics
 cameraControls.setPhysics(playerBody, physicsEngine)
+
+// Wire death callback for respawn
+playerHealth.setOnDeath(() => {
+  // Disable player input during respawn
+  cameraControls.setInputEnabled(false)
+
+  // Short delay before respawn
+  setTimeout(() => {
+    // Reset position to spawn point
+    playerBody.position.copy(spawnPosition)
+    playerBody.velocity.set(0, 0, 0)
+    renderer.camera.position.set(
+      spawnPosition.x,
+      spawnPosition.y + EYE_HEIGHT,
+      spawnPosition.z
+    )
+
+    // Reset fall damage tracker to prevent false damage after teleport
+    fallDamageTracker.reset(spawnPosition.y)
+
+    // Reset health to full
+    playerHealth.reset()
+
+    // Re-enable player input
+    cameraControls.setInputEnabled(true)
+  }, 1500)
+})
 
 // Position camera at player spawn with eye height offset
 renderer.camera.position.set(
@@ -643,6 +705,26 @@ scheduler.createTask({
   update: (dt) => physicsEngine.update(dt),
 })
 
+// Player health and fall damage (runs after physics to detect landing)
+scheduler.createTask({
+  id: 'player-health',
+  priority: TaskPriority.CRITICAL,
+  update: (dt) => {
+    // Update invincibility timer
+    playerHealth.update(dt)
+
+    // Check for fall damage after physics
+    const damage = fallDamageTracker.update(
+      playerBody.position.y,
+      playerBody.isOnGround
+    )
+    if (damage > 0) {
+      playerHealth.takeDamage(damage)
+      healthDisplay.flash()
+    }
+  },
+})
+
 scheduler.createTask({
   id: 'block-interaction',
   priority: TaskPriority.CRITICAL,
@@ -658,21 +740,25 @@ scheduler.registerTask(entityManager)
 // Register entity spawner
 scheduler.registerTask(entitySpawner)
 
-// Update magma slime contact damage
+// Update hostile entity damage - wire up damage callbacks for all hostile entities
 scheduler.createTask({
-  id: 'magma-slime-contact',
+  id: 'hostile-entity-damage',
   priority: TaskPriority.NORMAL,
   update: () => {
+    // Magma slimes - contact damage
     const magmaSlimes = entityManager.getEntitiesByType('magma_slime')
     for (const entity of magmaSlimes) {
       const slime = entity as MagmaSlimeEntity
       slime.updatePlayerPosition(playerBody.position)
-      slime.setPlayerDamageCallback((damage, knockback) => {
-        // Apply knockback to player
-        playerBody.velocity.x += knockback.x
-        playerBody.velocity.y += knockback.y
-        playerBody.velocity.z += knockback.z
-      })
+      slime.setPlayerDamageCallback(playerDamageHandler.createCallback())
+    }
+
+    // Alligators - attack damage when aggressive
+    const alligators = entityManager.getEntitiesByType('alligator')
+    for (const entity of alligators) {
+      const alligator = entity as AlligatorEntity
+      alligator.setPlayerPositionRef(playerBody.position)
+      alligator.setPlayerAttackCallback(playerDamageHandler.createCallback())
     }
   },
 })
@@ -786,6 +872,7 @@ function finishLoading(): void {
   crosshair.element.style.display = ''
   fpsCounter.element.style.display = ''
   toolbarUI.root.style.display = 'flex'
+  healthDisplay.root.style.display = 'flex'
 }
 
 const gameLoop = new GameLoop({

@@ -320,7 +320,8 @@ export class PersistenceManager {
   async saveAll(
     inventory: SerializedInventory,
     chunkProvider: IModifiedChunkProvider,
-    playerPosition?: { x: number; y: number; z: number }
+    playerPosition?: { x: number; y: number; z: number },
+    playerHealth?: number
   ): Promise<void> {
     if (!this.initialized || !this.worker) {
       return
@@ -369,6 +370,7 @@ export class PersistenceManager {
         createdAt: new Date().toISOString(),
         lastSavedAt: new Date().toISOString(),
         playerPosition,
+        playerHealth,
       },
     })
   }
@@ -431,7 +433,7 @@ export class PersistenceManager {
 
       try {
         const result = callback()
-        await this.saveAll(result.inventory, result.chunkProvider, result.playerPosition)
+        await this.saveAll(result.inventory, result.chunkProvider, result.playerPosition, result.playerHealth)
         console.log('Auto-save complete')
       } catch (error) {
         console.error('Auto-save failed:', error)
@@ -460,10 +462,11 @@ export class PersistenceManager {
   async saveBeforeUnload(
     inventory: SerializedInventory,
     chunkProvider: IModifiedChunkProvider,
-    playerPosition?: { x: number; y: number; z: number }
+    playerPosition?: { x: number; y: number; z: number },
+    playerHealth?: number
   ): Promise<void> {
     try {
-      await this.saveAll(inventory, chunkProvider, playerPosition)
+      await this.saveAll(inventory, chunkProvider, playerPosition, playerHealth)
     } catch (error) {
       console.error('Save before unload failed:', error)
     }

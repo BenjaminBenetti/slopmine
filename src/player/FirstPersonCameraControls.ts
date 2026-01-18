@@ -12,6 +12,7 @@ export interface CameraControls {
   update(deltaTime: number): void
   dispose(): void
   setInputEnabled(enabled: boolean): void
+  applyKnockback(knockback: THREE.Vector3): void
 }
 
 /**
@@ -54,6 +55,10 @@ export class FirstPersonCameraControls implements CameraControls {
   private readonly tempDirection = new THREE.Vector3()
   private readonly tempForward = new THREE.Vector3()
   private readonly tempRight = new THREE.Vector3()
+
+  // External velocity from knockback, decays over time
+  private readonly knockbackVelocity = new THREE.Vector3()
+  private static readonly KNOCKBACK_DECAY = 8.0 // How fast knockback decays per second
 
   constructor(
     camera: THREE.PerspectiveCamera,
@@ -202,6 +207,16 @@ export class FirstPersonCameraControls implements CameraControls {
     }
   }
 
+  /**
+   * Apply an external knockback impulse to the player.
+   * This velocity is added to movement and decays over time.
+   */
+  applyKnockback(knockback: THREE.Vector3): void {
+    this.knockbackVelocity.x += knockback.x
+    this.knockbackVelocity.y += knockback.y
+    this.knockbackVelocity.z += knockback.z
+  }
+
   update(_deltaTime: number): void {
     // Apply yaw/pitch rotation to the camera
     this.camera.rotation.x = this.pitch
@@ -236,9 +251,28 @@ export class FirstPersonCameraControls implements CameraControls {
       this.tempDirection.multiplyScalar(this.movementSpeed)
     }
 
-    // Set horizontal velocity (physics handles vertical via gravity)
-    this.physicsBody.velocity.x = this.tempDirection.x
-    this.physicsBody.velocity.z = this.tempDirection.z
+    // Set horizontal velocity = movement + knockback
+    this.physicsBody.velocity.x = this.tempDirection.x + this.knockbackVelocity.x
+    this.physicsBody.velocity.z = this.tempDirection.z + this.knockbackVelocity.z
+
+    // Apply vertical knockback (added to existing velocity, not replacing it)
+    if (this.knockbackVelocity.y !== 0) {
+      this.physicsBody.velocity.y += this.knockbackVelocity.y
+      this.knockbackVelocity.y = 0 // Vertical knockback is instant impulse
+    }
+
+    // Decay horizontal knockback over time
+    const decay = FirstPersonCameraControls.KNOCKBACK_DECAY * _deltaTime
+    if (Math.abs(this.knockbackVelocity.x) > 0.01) {
+      this.knockbackVelocity.x -= Math.sign(this.knockbackVelocity.x) * Math.min(decay, Math.abs(this.knockbackVelocity.x))
+    } else {
+      this.knockbackVelocity.x = 0
+    }
+    if (Math.abs(this.knockbackVelocity.z) > 0.01) {
+      this.knockbackVelocity.z -= Math.sign(this.knockbackVelocity.z) * Math.min(decay, Math.abs(this.knockbackVelocity.z))
+    } else {
+      this.knockbackVelocity.z = 0
+    }
 
     // Handle jump
     if (this.jumpPressed) {

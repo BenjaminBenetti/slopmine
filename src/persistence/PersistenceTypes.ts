@@ -45,6 +45,7 @@ export interface WorldMetadata {
   createdAt: string
   lastSavedAt: string
   playerPosition?: { x: number; y: number; z: number }
+  playerHealth?: number
 }
 
 /**

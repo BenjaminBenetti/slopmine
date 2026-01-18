@@ -17,3 +17,12 @@ export const EYE_HEIGHT = 1.62
 
 /** Small epsilon for floating point comparisons */
 export const EPSILON = 0.001
+
+/** Fall damage threshold in blocks (no damage below this) */
+export const FALL_DAMAGE_THRESHOLD = 6.0
+
+/** Damage per block fallen above threshold */
+export const FALL_DAMAGE_PER_BLOCK = 1.0
+
+/** Invincibility duration in seconds after taking damage */
+export const INVINCIBILITY_DURATION = 1.0
