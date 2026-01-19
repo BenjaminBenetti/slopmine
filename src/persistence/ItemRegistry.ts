@@ -37,6 +37,7 @@ import { Wheat1BlockItem } from '../items/blocks/wheat/Wheat1BlockItem.ts'
 import { Wheat2BlockItem } from '../items/blocks/wheat/Wheat2BlockItem.ts'
 import { Wheat3BlockItem } from '../items/blocks/wheat/Wheat3BlockItem.ts'
 import { HellRockBlockItem } from '../items/blocks/hell_rock/HellRockBlockItem.ts'
+import { HellMagmaBlockItem } from '../items/blocks/hell_magma/HellMagmaBlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -172,6 +173,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('wheat_2_block', () => new Wheat2BlockItem())
   registerItemFactory('wheat_3_block', () => new Wheat3BlockItem())
   registerItemFactory('hell_rock_block', () => new HellRockBlockItem())
+  registerItemFactory('hell_magma_block', () => new HellMagmaBlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())

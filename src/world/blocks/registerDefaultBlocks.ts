@@ -54,6 +54,7 @@ import { Wheat1Block } from './types/wheat/Wheat1Block.ts'
 import { Wheat2Block } from './types/wheat/Wheat2Block.ts'
 import { Wheat3Block } from './types/wheat/Wheat3Block.ts'
 import { HellRockBlock } from './types/hell_rock/HellRockBlock.ts'
+import { HellMagmaBlock } from './types/hell_magma/HellMagmaBlock.ts'
 
 /**
  * Register all default block types.
@@ -138,4 +139,5 @@ export function registerDefaultBlocks(): void {
 
   // Hell biome blocks
   registerBlock(new HellRockBlock())
+  registerBlock(new HellMagmaBlock())
 }

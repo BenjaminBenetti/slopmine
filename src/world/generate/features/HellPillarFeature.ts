@@ -18,6 +18,10 @@ export interface HellPillarFeatureConfig {
   maxRadius: number
   /** The Y level pillars reach up to (Layer 1 floor). */
   targetTopY: number
+  /** Frequency of magma veins (higher = more veins). Default: 0.15 */
+  magmaVeinFrequency?: number
+  /** Noise threshold for magma placement (0.0-1.0). Default: 0.6 */
+  magmaThreshold?: number
 }
 
 /**
@@ -128,7 +132,18 @@ export class HellPillarFeature extends Feature {
               // Only replace air blocks (don't carve into terrain)
               const currentBlock = chunk.getBlockId(localX, localY, localZ)
               if (currentBlock === BlockIds.AIR) {
-                chunk.setBlockId(localX, localY, localZ, BlockIds.HELL_ROCK)
+                // Determine if this block should be magma using 3D noise
+                const magmaFreq = this.config.magmaVeinFrequency ?? 0.15
+                const magmaThreshold = this.config.magmaThreshold ?? 0.6
+                const magmaNoise = noise.noise3D(
+                  blockWorldX * magmaFreq,
+                  worldY * magmaFreq,
+                  blockWorldZ * magmaFreq
+                )
+
+                // Place hell magma for high noise values, hell rock otherwise
+                const blockId = magmaNoise > magmaThreshold ? BlockIds.HELL_MAGMA : BlockIds.HELL_ROCK
+                chunk.setBlockId(localX, localY, localZ, blockId)
               }
             }
           }
