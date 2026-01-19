@@ -38,7 +38,7 @@ const DEFAULT_CONFIG: BackgroundLightingConfig = {
   columnsPerUpdate: 20,
   reprocessCooldown: 10000, // 10 seconds
   nearbyReprocessCooldown: 1000, // 1 seconds
-  nearbyDistance: 2,
+  nearbyDistance: 4,
   maxDistance: 8,
   enabled: true,
 }

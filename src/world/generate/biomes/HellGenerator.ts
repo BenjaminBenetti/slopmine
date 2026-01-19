@@ -5,7 +5,6 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/I
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
-import { LavaFeature } from '../features/LavaFeature.ts'
 import { HellPillarFeature } from '../features/HellPillarFeature.ts'
 
 /**
@@ -29,12 +28,6 @@ export class HellGenerator extends BiomeGenerator {
     layer: 0, // Underground layer (Y=0-127)
     skylightValue: 0, // Complete darkness
     features: [
-      // Lava pools in terrain depressions
-      new LavaFeature({
-        frequency: 0.4,
-        minDepth: 2,
-        lavaLevel: 42, // Below average terrain (48) to fill only deeper depressions
-      }),
       // Massive pillars in the air gap
       new HellPillarFeature({
         gridSize: 20,
@@ -59,13 +52,13 @@ export class HellGenerator extends BiomeGenerator {
       entrancesEnabled: false,
       entranceMinWidth: 0,
     },
-    // No water in Hell - only lava!
+    // Lava fills all terrain depressions below waterLevel
     water: {
-      enabled: false,
+      enabled: true,
       liquidBlock: BlockIds.LAVA,
-      waterLevel: 42,
+      waterLevel: 46,
       frequency: 0,
-      minDepth: 10,
+      minDepth: 0,
     },
     terrainConfig: {
       layers: [
