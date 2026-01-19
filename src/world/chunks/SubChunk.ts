@@ -18,6 +18,13 @@ export class SubChunk {
   private _modifiedByPlayer = false
 
   /**
+   * Maximum skylight value for this sub-chunk's biome (0-15).
+   * Set during generation based on the biome's layer.
+   * Default is 15 (full brightness for surface biomes).
+   */
+  skylightValue: number = 15
+
+  /**
    * Block data stored as flat Uint16Array.
    * Size: 32 * 32 * 64 = 65,536 blocks
    * Memory: 65,536 * 2 bytes = 128 KB per sub-chunk

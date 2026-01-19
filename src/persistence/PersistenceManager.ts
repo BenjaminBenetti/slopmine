@@ -417,6 +417,7 @@ export class PersistenceManager {
       inventory: SerializedInventory
       chunkProvider: IModifiedChunkProvider
       playerPosition?: { x: number; y: number; z: number }
+      playerHealth?: number
     }
   ): void {
     if (this.autoSaveInterval) {

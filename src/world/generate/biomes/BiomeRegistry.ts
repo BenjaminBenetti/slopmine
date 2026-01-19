@@ -7,6 +7,7 @@ import { DesertGenerator } from './DesertGenerator.ts'
 import { VolcanicGenerator } from './VolcanicGenerator.ts'
 import { JungleGenerator } from './JungleGenerator.ts'
 import { SwampGenerator } from './SwampGenerator.ts'
+import { RockyGenerator } from './RockyGenerator.ts'
 
 /**
  * Information about a registered biome.
@@ -14,6 +15,8 @@ import { SwampGenerator } from './SwampGenerator.ts'
 export interface BiomeRegistration {
   readonly type: BiomeType
   readonly frequency: number
+  /** Which vertical layer this biome belongs to. 0 = underground, 1 = surface. */
+  readonly layer: 0 | 1
   createGenerator(config: GenerationConfig): BiomeGenerator
 }
 
@@ -29,6 +32,10 @@ export const BIOME_REGION_SIZE = 16
 export class BiomeRegistry {
   private readonly biomes: Map<BiomeType, BiomeRegistration> = new Map()
   private totalFrequency: number = 0
+  private readonly layerFrequencies: Map<0 | 1, number> = new Map([
+    [0, 0],
+    [1, 0],
+  ])
 
   constructor() {
     this.registerDefaultBiomes()
@@ -37,15 +44,18 @@ export class BiomeRegistry {
   /**
    * Register default biomes.
    * Frequencies are read from the biome's properties for consistency.
+   * Surface biomes (layer 1) and underground biomes (layer 0) are registered separately.
    */
   private registerDefaultBiomes(): void {
     // Create temporary generators to read their frequency properties
     const defaultConfig = new GenerationConfig({ seed: 0 })
 
+    // Layer 1 (surface) biomes
     const plainsGen = new PlainsGenerator(defaultConfig)
     this.register({
       type: 'plains',
       frequency: plainsGen.getBiomeProperties().frequency,
+      layer: 1,
       createGenerator: (config) => new PlainsGenerator(config),
     })
 
@@ -53,6 +63,7 @@ export class BiomeRegistry {
     this.register({
       type: 'grassy-hills',
       frequency: hillsGen.getBiomeProperties().frequency,
+      layer: 1,
       createGenerator: (config) => new GrassyHillsGenerator(config),
     })
 
@@ -60,6 +71,7 @@ export class BiomeRegistry {
     this.register({
       type: 'desert',
       frequency: desertGen.getBiomeProperties().frequency,
+      layer: 1,
       createGenerator: (config) => new DesertGenerator(config),
     })
 
@@ -67,6 +79,7 @@ export class BiomeRegistry {
     this.register({
       type: 'volcanic',
       frequency: volcanicGen.getBiomeProperties().frequency,
+      layer: 1,
       createGenerator: (config) => new VolcanicGenerator(config),
     })
 
@@ -74,6 +87,7 @@ export class BiomeRegistry {
     this.register({
       type: 'jungle',
       frequency: jungleGen.getBiomeProperties().frequency,
+      layer: 1,
       createGenerator: (config) => new JungleGenerator(config),
     })
 
@@ -81,7 +95,17 @@ export class BiomeRegistry {
     this.register({
       type: 'swamp',
       frequency: swampGen.getBiomeProperties().frequency,
+      layer: 1,
       createGenerator: (config) => new SwampGenerator(config),
+    })
+
+    // Layer 0 (underground) biomes
+    const rockyGen = new RockyGenerator(defaultConfig)
+    this.register({
+      type: 'rocky',
+      frequency: rockyGen.getBiomeProperties().frequency,
+      layer: 0,
+      createGenerator: (config) => new RockyGenerator(config),
     })
   }
 
@@ -95,11 +119,17 @@ export class BiomeRegistry {
 
   /**
    * Recalculate total frequency for weighted selection.
+   * Also calculates per-layer frequencies for layer-specific selection.
    */
   private recalculateTotalFrequency(): void {
     this.totalFrequency = 0
+    this.layerFrequencies.set(0, 0)
+    this.layerFrequencies.set(1, 0)
+
     for (const biome of this.biomes.values()) {
       this.totalFrequency += biome.frequency
+      const currentLayerFreq = this.layerFrequencies.get(biome.layer) ?? 0
+      this.layerFrequencies.set(biome.layer, currentLayerFreq + biome.frequency)
     }
   }
 
@@ -111,10 +141,60 @@ export class BiomeRegistry {
   }
 
   /**
+   * Get all biomes for a specific layer.
+   * @param layer - 0 for underground, 1 for surface
+   */
+  getBiomesForLayer(layer: 0 | 1): BiomeRegistration[] {
+    return Array.from(this.biomes.values()).filter((b) => b.layer === layer)
+  }
+
+  /**
    * Get a specific biome registration.
    */
   get(type: BiomeType): BiomeRegistration | undefined {
     return this.biomes.get(type)
+  }
+
+  /**
+   * Deterministically select a biome for a specific layer at a biome region.
+   * Uses frequency-weighted selection within the layer.
+   *
+   * @param biomeRegionX - X coordinate of the biome region (chunkX / 16)
+   * @param biomeRegionZ - Z coordinate of the biome region (chunkZ / 16)
+   * @param seed - World seed for determinism
+   * @param layer - Which layer to select from (0 = underground, 1 = surface)
+   * @returns The selected biome type
+   */
+  selectBiomeForLayer(
+    biomeRegionX: number,
+    biomeRegionZ: number,
+    seed: number,
+    layer: 0 | 1
+  ): BiomeType {
+    const layerBiomes = this.getBiomesForLayer(layer)
+    if (layerBiomes.length === 0) {
+      // Fallback to any biome if layer is empty
+      return this.selectBiome(biomeRegionX, biomeRegionZ, seed)
+    }
+
+    const layerTotalFreq = this.layerFrequencies.get(layer) ?? 0
+    if (layerTotalFreq === 0) {
+      return layerBiomes[0].type
+    }
+
+    // Use a different seed offset for each layer to avoid correlation
+    const hash = this.hashRegion(biomeRegionX, biomeRegionZ, seed + layer * 12345)
+    const normalized = (hash & 0x7fffffff) / 0x7fffffff
+
+    let accumulated = 0
+    for (const biome of layerBiomes) {
+      accumulated += biome.frequency / layerTotalFreq
+      if (normalized < accumulated) {
+        return biome.type
+      }
+    }
+
+    return layerBiomes[layerBiomes.length - 1].type
   }
 
   /**

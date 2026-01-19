@@ -1,6 +1,28 @@
 const STORAGE_KEY = 'slopmine:worldConfig'
 
-export type BiomeType = 'plains' | 'grassy-hills' | 'desert' | 'volcanic' | 'jungle' | 'swamp'
+export type BiomeType = 'plains' | 'grassy-hills' | 'desert' | 'volcanic' | 'jungle' | 'swamp' | 'rocky'
+
+/**
+ * Vertical layer boundary Y coordinate.
+ * Layer 0: Y=0 to LAYER_BOUNDARY_Y-1 (sub-chunks 0-3)
+ * Layer 1: Y=LAYER_BOUNDARY_Y to 511 (sub-chunks 4-15)
+ */
+export const LAYER_BOUNDARY_Y = 128
+
+/**
+ * Sub-chunk index threshold for layer boundary.
+ * Sub-chunks 0-3 are Layer 0, 4-15 are Layer 1.
+ */
+export const LAYER_BOUNDARY_SUB_CHUNK = 4
+
+/**
+ * Get the layer (0 or 1) for a given sub-chunk Y index.
+ * @param subY Sub-chunk index (0-15)
+ * @returns 0 for underground layer, 1 for surface layer
+ */
+export function getLayerForSubChunk(subY: number): 0 | 1 {
+  return subY < LAYER_BOUNDARY_SUB_CHUNK ? 0 : 1
+}
 
 export interface IGenerationConfig {
   seed: number

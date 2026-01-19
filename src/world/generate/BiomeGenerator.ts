@@ -166,6 +166,14 @@ export interface BiomeProperties {
    */
   readonly frequency: number
   /**
+   * Which vertical layer this biome belongs to.
+   * - Layer 1 (default): Surface biomes (Y=128-511, sub-chunks 4-15)
+   * - Layer 0: Underground biomes (Y=0-127, sub-chunks 0-3)
+   *
+   * If not specified, defaults to 1 (surface layer).
+   */
+  readonly layer?: 0 | 1
+  /**
    * Determines how many trees (or other large vegetation features) will attempt to generate in each chunk within this biome.
    * A higher density value means more trees will be scattered across the landscape.
    */

@@ -5,7 +5,7 @@ import { createSubChunkKey, type SubChunkKey } from '../interfaces/ICoordinates.
 import { worldToChunk, localToWorld } from '../coordinates/CoordinateUtils.ts'
 import { SUB_CHUNK_HEIGHT, SUB_CHUNK_COUNT, CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
-import { GenerationConfig, type IGenerationConfig, type BiomeType } from './GenerationConfig.ts'
+import { GenerationConfig, type IGenerationConfig, type BiomeType, getLayerForSubChunk } from './GenerationConfig.ts'
 import type { BiomeGenerator, WaterSettings } from './BiomeGenerator.ts'
 import { biomeRegistry, BIOME_REGION_SIZE } from './biomes/BiomeRegistry.ts'
 import { CliffFeature } from './features/CliffFeature.ts'
@@ -94,12 +94,16 @@ export class WorldGenerator {
   }
 
   /**
-   * Get the biome type for a chunk based on its biome region.
+   * Get the biome type for a chunk based on its biome region and vertical layer.
    * Biome regions are 16x16 chunks in size.
+   *
+   * @param chunkX - Chunk X coordinate
+   * @param chunkZ - Chunk Z coordinate
+   * @param layer - Vertical layer (0 = underground, 1 = surface). Defaults to 1.
    */
-  private getBiomeForChunk(chunkX: number, chunkZ: number): BiomeType {
+  private getBiomeForChunk(chunkX: number, chunkZ: number, layer: 0 | 1 = 1): BiomeType {
     const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
-    return biomeRegistry.selectBiome(regionX, regionZ, this.config.seed)
+    return biomeRegistry.selectBiomeForLayer(regionX, regionZ, this.config.seed, layer)
   }
 
   /**
@@ -183,26 +187,30 @@ export class WorldGenerator {
 
   /**
    * Create BiomeBlendData for a chunk, including adjacent biome configs for blending.
+   *
+   * @param chunkX - Chunk X coordinate
+   * @param chunkZ - Chunk Z coordinate
+   * @param layer - Vertical layer (0 = underground, 1 = surface). Defaults to 1.
    */
-  private getBlendDataForChunk(chunkX: number, chunkZ: number): BiomeBlendData {
+  private getBlendDataForChunk(chunkX: number, chunkZ: number, layer: 0 | 1 = 1): BiomeBlendData {
     const { localX, localZ } = biomeRegistry.getLocalChunkCoords(chunkX, chunkZ)
     const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
 
-    // Get primary biome
-    const primaryType = biomeRegistry.selectBiome(regionX, regionZ, this.config.seed)
+    // Get primary biome for this layer
+    const primaryType = biomeRegistry.selectBiomeForLayer(regionX, regionZ, this.config.seed, layer)
     const primary = this.getWorkerBiomeConfig(primaryType)
 
-    // Get adjacent biomes for blending (cardinal directions)
-    const northType = biomeRegistry.selectBiome(regionX, regionZ - 1, this.config.seed)
-    const southType = biomeRegistry.selectBiome(regionX, regionZ + 1, this.config.seed)
-    const westType = biomeRegistry.selectBiome(regionX - 1, regionZ, this.config.seed)
-    const eastType = biomeRegistry.selectBiome(regionX + 1, regionZ, this.config.seed)
+    // Get adjacent biomes for blending (cardinal directions) - same layer
+    const northType = biomeRegistry.selectBiomeForLayer(regionX, regionZ - 1, this.config.seed, layer)
+    const southType = biomeRegistry.selectBiomeForLayer(regionX, regionZ + 1, this.config.seed, layer)
+    const westType = biomeRegistry.selectBiomeForLayer(regionX - 1, regionZ, this.config.seed, layer)
+    const eastType = biomeRegistry.selectBiomeForLayer(regionX + 1, regionZ, this.config.seed, layer)
 
-    // Get diagonal corner biomes for proper corner blending
-    const northeastType = biomeRegistry.selectBiome(regionX + 1, regionZ - 1, this.config.seed)
-    const northwestType = biomeRegistry.selectBiome(regionX - 1, regionZ - 1, this.config.seed)
-    const southeastType = biomeRegistry.selectBiome(regionX + 1, regionZ + 1, this.config.seed)
-    const southwestType = biomeRegistry.selectBiome(regionX - 1, regionZ + 1, this.config.seed)
+    // Get diagonal corner biomes for proper corner blending - same layer
+    const northeastType = biomeRegistry.selectBiomeForLayer(regionX + 1, regionZ - 1, this.config.seed, layer)
+    const northwestType = biomeRegistry.selectBiomeForLayer(regionX - 1, regionZ - 1, this.config.seed, layer)
+    const southeastType = biomeRegistry.selectBiomeForLayer(regionX + 1, regionZ + 1, this.config.seed, layer)
+    const southwestType = biomeRegistry.selectBiomeForLayer(regionX - 1, regionZ + 1, this.config.seed, layer)
 
     return {
       primary,
@@ -555,14 +563,18 @@ export class WorldGenerator {
       const chunkX = Number(coordinate.x)
       const chunkZ = Number(coordinate.z)
 
-      // Get biome data early - needed for both loaded and generated chunks
-      const biomeData = this.getBlendDataForChunk(chunkX, chunkZ)
+      // Determine which vertical layer this sub-chunk belongs to
+      const layer = getLayerForSubChunk(coordinate.subY)
+
+      // Get biome data for the appropriate layer - needed for both loaded and generated chunks
+      const biomeData = this.getBlendDataForChunk(chunkX, chunkZ, layer)
 
       // Check persistence first - load from storage if available
       if (this.persistenceManager) {
         const savedData = await this.persistenceManager.loadSubChunk(coordinate)
         if (savedData) {
-          // Apply saved data instead of generating (include biome's skylight value and metadata)
+          // Apply saved data instead of generating
+          // Pass the biome's skylight value for this sub-chunk's layer
           await this.world.applySubChunkData(
             coordinate,
             savedData.blocks,
@@ -601,6 +613,7 @@ export class WorldGenerator {
       )
 
       // Apply results to the sub-chunk (pass worker-computed opacity to avoid main thread work)
+      // Pass the biome's skylight value for this sub-chunk's layer
       await this.world.applySubChunkData(
         coordinate,
         workerResult.blocks,
@@ -612,7 +625,7 @@ export class WorldGenerator {
       // Generate decorations (trees, etc) for this sub-chunk using the primary biome
       const subChunk = this.world.getSubChunk(coordinate)
       if (subChunk) {
-        const biomeType = this.getBiomeForChunk(chunkX, chunkZ)
+        const biomeType = this.getBiomeForChunk(chunkX, chunkZ, layer)
         const generator = this.getGeneratorForBiome(biomeType)
         await generator.generateSubChunkDecorations(subChunk, this.world)
       }

@@ -286,6 +286,7 @@ export class BackgroundLightingManager {
   /**
    * Serialize sub-chunks from a column for worker transfer.
    * Must copy arrays since SubChunk needs to retain its data after transfer.
+   * Includes per-sub-chunk skylightValue for layer-aware lighting.
    */
   private serializeSubChunks(column: ChunkColumn): SubChunkData[] {
     const subChunks: SubChunkData[] = []
@@ -297,6 +298,7 @@ export class BackgroundLightingManager {
           subY,
           blocks: new Uint16Array(subChunk.getBlockData()),
           lightData: new Uint8Array(subChunk.getLightData()),
+          skylightValue: subChunk.skylightValue,
         })
       }
     }

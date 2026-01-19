@@ -511,7 +511,7 @@ playerHealth.setOnDeath(() => {
     )
 
     // Reset fall damage tracker to prevent false damage after teleport
-    fallDamageTracker.reset(spawnPosition.y)
+    fallDamageTracker.reset()
 
     // Reset health to full
     playerHealth.reset()
@@ -731,9 +731,9 @@ scheduler.createTask({
     // Update invincibility timer
     playerHealth.update(dt)
 
-    // Check for fall damage after physics
+    // Check for fall damage after physics (based on impact velocity)
     const damage = fallDamageTracker.update(
-      playerBody.position.y,
+      playerBody.velocity.y,
       playerBody.isOnGround
     )
     if (damage > 0) {

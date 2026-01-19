@@ -434,13 +434,16 @@ export class WorldManager implements IModifiedChunkProvider {
       column = this.chunkManager.loadColumn(chunkCoord)
     }
 
-    // Set the biome's skylight value on the column (if provided)
-    if (skylightValue !== undefined) {
-      column.skylightValue = skylightValue
-    }
-
     // Get or create the sub-chunk
     const subChunk = column.getOrCreateSubChunk(coordinate.subY)
+
+    // Set the biome's skylight value on the sub-chunk (if provided)
+    // Each sub-chunk can have a different skylight value based on its layer/biome
+    if (skylightValue !== undefined) {
+      subChunk.skylightValue = skylightValue
+      // Also update column for backward compatibility (use max of all sub-chunks)
+      column.skylightValue = Math.max(column.skylightValue, skylightValue)
+    }
 
     // Apply the block, light, and metadata data
     subChunk.applyWorkerData(blocks, lightData, metadata)
