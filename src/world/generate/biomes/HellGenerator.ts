@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
@@ -6,6 +7,8 @@ import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { HellPillarFeature } from '../features/HellPillarFeature.ts'
+import { MagmaSlimeEntity } from '../../../entities/animals/magma_slime/index.ts'
+import { SkeletonEntity } from '../../../entities/enemies/skeleton/index.ts'
 
 /**
  * Hell biome - the first true underground biome.
@@ -75,6 +78,25 @@ export class HellGenerator extends BiomeGenerator {
       combineMode: 'add',
       absoluteHeight: true, // Skip seaLevel for underground biome
     } as TerrainConfig,
+    // Magma slimes and skeletons spawn in Hell
+    entitySpawns: [
+      {
+        entityType: 'magma_slime',
+        spawnRate: 0.25, // Fairly common in Hell
+        minY: 48, // On the Hell terrain surface
+        maxY: 120, // Up through the air gap (below ceiling)
+        maxNearby: 10,
+        createEntity: (pos: THREE.Vector3) => new MagmaSlimeEntity({ position: pos }),
+      },
+      {
+        entityType: 'skeleton',
+        spawnRate: 0.12, // Less common than magma slimes
+        minY: 48, // On the Hell terrain surface
+        maxY: 120, // Up through the air gap (below ceiling)
+        maxNearby: 5,
+        createEntity: (pos: THREE.Vector3) => new SkeletonEntity({ position: pos }),
+      },
+    ],
   }
 
   /**

@@ -400,6 +400,57 @@ export class ChunkColumn {
   }
 
   /**
+   * Find ground level near a specific Y position.
+   * Scans downward from startY to find a solid block with air above it.
+   * This is useful for underground biomes where getHighestBlockAt would return the ceiling.
+   *
+   * @param x Local X coordinate
+   * @param z Local Z coordinate
+   * @param startY World Y coordinate to start scanning from
+   * @returns World Y of the ground (solid block), or null if none found
+   */
+  getGroundNearY(x: number, z: number, startY: number): number | null {
+    if (x < 0 || x >= CHUNK_SIZE_X || z < 0 || z >= CHUNK_SIZE_Z) {
+      return null
+    }
+
+    // Clamp startY to valid range
+    const clampedStartY = Math.min(Math.max(0, startY), CHUNK_HEIGHT - 1)
+
+    // Scan downward from startY looking for a solid block with air above
+    for (let worldY = clampedStartY; worldY >= 0; worldY--) {
+      const subY = Math.floor(worldY / SUB_CHUNK_HEIGHT)
+      const localY = worldY % SUB_CHUNK_HEIGHT
+
+      const subChunk = this.subChunks[subY]
+      if (!subChunk) continue
+
+      const blockId = subChunk.getBlockId(x, localY, z)
+
+      // Found a solid block - check if there's air above
+      if (blockId !== BlockIds.AIR) {
+        // Check block above
+        const aboveY = worldY + 1
+        if (aboveY >= CHUNK_HEIGHT) {
+          // At top of world, consider it valid ground
+          return worldY
+        }
+
+        const aboveSubY = Math.floor(aboveY / SUB_CHUNK_HEIGHT)
+        const aboveLocalY = aboveY % SUB_CHUNK_HEIGHT
+        const aboveSubChunk = this.subChunks[aboveSubY]
+
+        if (!aboveSubChunk || aboveSubChunk.getBlockId(x, aboveLocalY, z) === BlockIds.AIR) {
+          return worldY
+        }
+        // Block above is also solid, keep scanning down
+      }
+    }
+
+    return null
+  }
+
+  /**
    * Get all sub-chunks that are dirty (need remeshing).
    * Returns array of sub-chunk Y indices.
    */

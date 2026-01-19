@@ -18,6 +18,10 @@ const DEFAULT_PROVOKED_DURATION = 10.0 // seconds of aggression when provoked
 // Damage constants
 const DEFAULT_BASE_DAMAGE = 2 // Fist damage
 
+// Stuck detection constants for chase behavior
+const CHASE_STUCK_MOVEMENT_RATIO = 0.2 // If moving less than 20% of expected, we're stuck
+const CHASE_STUCK_TIME_THRESHOLD = 0.3 // Seconds of being stuck before jumping
+
 /**
  * Base class for aggressive/hostile entities that attack the player.
  * Extends PeacefulEntity to reuse wandering, health, knockback, and death animation.
@@ -57,6 +61,11 @@ export abstract class AggressiveEntity extends PeacefulEntity {
   // Reusable vectors to avoid allocation
   private readonly chaseDirection = new THREE.Vector3()
   private readonly knockbackDirection = new THREE.Vector3()
+
+  // Stuck detection for chase behavior
+  private readonly lastChasePosition = new THREE.Vector3()
+  private chaseStuckTime = 0
+  private chaseHasTriedJump = false
 
   constructor(type: string, config: IAggressiveEntityConfig) {
     // Disable flee behavior for aggressive entities
@@ -182,17 +191,55 @@ export abstract class AggressiveEntity extends PeacefulEntity {
       body.velocity.z = 0
       this.isWalking = false
 
+      // Reset stuck state when in attack range
+      this.chaseStuckTime = 0
+      this.chaseHasTriedJump = false
+
       // Attack if cooldown is ready
       if (this.attackCooldown <= 0) {
         this.performAttack()
         this.attackCooldown = this.attackCooldownDuration
       }
     } else {
+      // Check if we're stuck (trying to move but not making progress)
+      const actualMoveX = this.position.x - this.lastChasePosition.x
+      const actualMoveZ = this.position.z - this.lastChasePosition.z
+      const movementInDirection =
+        actualMoveX * this.chaseDirection.x + actualMoveZ * this.chaseDirection.z
+      const expectedMovement = this.chaseSpeed * deltaTime
+
+      // Stuck if we're not making progress in our intended direction
+      if (this.isWalking && movementInDirection < expectedMovement * CHASE_STUCK_MOVEMENT_RATIO) {
+        this.chaseStuckTime += deltaTime
+
+        if (this.chaseStuckTime >= CHASE_STUCK_TIME_THRESHOLD) {
+          if (!this.chaseHasTriedJump && body.isOnGround) {
+            // Try jumping over 1-block obstacle
+            body.velocity.y = this.jumpVelocity
+            this.chaseHasTriedJump = true
+            this.chaseStuckTime = 0
+          } else if (this.chaseHasTriedJump && body.isOnGround) {
+            // We landed and are still stuck - reset and try again
+            this.chaseHasTriedJump = false
+            this.chaseStuckTime = 0
+          }
+        }
+      } else {
+        // We're making progress, reset stuck tracking
+        this.chaseStuckTime = 0
+        if (body.isOnGround) {
+          this.chaseHasTriedJump = false
+        }
+      }
+
       // Chase at aggressive speed
       body.velocity.x = this.chaseDirection.x * this.chaseSpeed
       body.velocity.z = this.chaseDirection.z * this.chaseSpeed
       this.isWalking = true
     }
+
+    // Update last position for stuck detection
+    this.lastChasePosition.copy(this.position)
 
     // Face movement direction
     const mesh = this.getMesh()
@@ -238,9 +285,20 @@ export abstract class AggressiveEntity extends PeacefulEntity {
       return
     }
 
-    // Handle knockback stun - skip AI while stunned
+    // Handle knockback stun - skip AI while stunned but sync position
     if (this.knockbackTimer > 0) {
       this.knockbackTimer -= deltaTime
+
+      // Sync position from physics body during knockback
+      const body = this.getPhysicsBody()
+      const mesh = this.getMesh()
+      if (body) {
+        this.position.copy(body.position)
+      }
+      if (mesh) {
+        mesh.position.copy(this.position)
+      }
+
       this.updateAnimations(deltaTime)
       return
     }

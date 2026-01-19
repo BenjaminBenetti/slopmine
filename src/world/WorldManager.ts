@@ -1373,6 +1373,30 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Find ground level near a specific Y position at world coordinates.
+   * Scans downward from startY to find a solid block with air above it.
+   * This is useful for underground biomes where getHighestBlockAt would return the ceiling.
+   *
+   * @param x World X coordinate
+   * @param z World Z coordinate
+   * @param startY World Y coordinate to start scanning from
+   * @returns World Y of the ground (solid block), or null if none found
+   */
+  getGroundNearY(x: bigint, z: bigint, startY: number): bigint | null {
+    const world: IWorldCoordinate = { x, y: 0n, z }
+    const chunkCoord = worldToChunk(world)
+    const local = worldToLocal(world)
+
+    const column = this.chunkManager.getColumn(chunkCoord)
+    if (!column) {
+      return null
+    }
+
+    const worldY = column.getGroundNearY(local.x, local.z, startY)
+    return worldY !== null ? BigInt(worldY) : null
+  }
+
+  /**
    * Fill a region with a block type.
    * Coordinates are inclusive (both corners are filled).
    */

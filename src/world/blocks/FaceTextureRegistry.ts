@@ -70,6 +70,7 @@ export enum TextureId {
   WHEAT_3 = 59,              // wheat-3.webp (mature)
   HELL_ROCK = 60,            // hell-rock.webp
   HELL_MAGMA = 61,           // hell-magma.webp
+  CORRUPTED_HELL_ROCK = 62,  // corrupted-hell-rock.webp
 }
 
 // Cache for the face texture map

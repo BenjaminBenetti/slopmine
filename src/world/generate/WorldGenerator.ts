@@ -110,11 +110,20 @@ export class WorldGenerator {
   /**
    * Get entity spawn configurations for a world position.
    * Returns the spawn configs from the biome at that position.
+   *
+   * @param worldX - World X coordinate
+   * @param worldZ - World Z coordinate
+   * @param worldY - World Y coordinate (used to determine biome layer)
    */
-  getEntitySpawnsAtPosition(worldX: number, worldZ: number): EntitySpawnConfig[] | undefined {
+  getEntitySpawnsAtPosition(worldX: number, worldZ: number, worldY: number): EntitySpawnConfig[] | undefined {
     const chunkX = Math.floor(worldX / 32)
     const chunkZ = Math.floor(worldZ / 32)
-    const biomeType = this.getBiomeForChunk(chunkX, chunkZ)
+
+    // Determine layer from Y position
+    const subY = Math.floor(worldY / SUB_CHUNK_HEIGHT)
+    const layer = getLayerForSubChunk(subY)
+
+    const biomeType = this.getBiomeForChunk(chunkX, chunkZ, layer)
     const generator = this.getGeneratorForBiome(biomeType)
     return generator.getBiomeProperties().entitySpawns
   }

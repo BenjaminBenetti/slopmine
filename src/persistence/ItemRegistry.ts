@@ -38,6 +38,7 @@ import { Wheat2BlockItem } from '../items/blocks/wheat/Wheat2BlockItem.ts'
 import { Wheat3BlockItem } from '../items/blocks/wheat/Wheat3BlockItem.ts'
 import { HellRockBlockItem } from '../items/blocks/hell_rock/HellRockBlockItem.ts'
 import { HellMagmaBlockItem } from '../items/blocks/hell_magma/HellMagmaBlockItem.ts'
+import { CorruptedHellRockBlockItem } from '../items/blocks/corrupted_hell_rock/CorruptedHellRockBlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -72,6 +73,8 @@ import { IronBarItem } from '../items/bars/iron/IronBarItem.ts'
 import { SlimeBallItem } from '../items/materials/slime_ball/SlimeBallItem.ts'
 import { AlligatorLeatherItem } from '../items/materials/alligator_leather/AlligatorLeatherItem.ts'
 import { KomodoScalesItem } from '../items/materials/komodo_scales/KomodoScalesItem.ts'
+import { CorruptedEssenceItem } from '../items/materials/corrupted_essence/CorruptedEssenceItem.ts'
+import { BoneItem } from '../items/materials/bone/BoneItem.ts'
 import { GoldBarItem } from '../items/bars/gold/GoldBarItem.ts'
 import { CopperBarItem } from '../items/bars/copper/CopperBarItem.ts'
 import { SteelBarItem } from '../items/bars/steel/SteelBarItem.ts'
@@ -174,6 +177,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('wheat_3_block', () => new Wheat3BlockItem())
   registerItemFactory('hell_rock_block', () => new HellRockBlockItem())
   registerItemFactory('hell_magma_block', () => new HellMagmaBlockItem())
+  registerItemFactory('corrupted_hell_rock_block', () => new CorruptedHellRockBlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())
@@ -211,6 +215,8 @@ export function initializeItemRegistry(): void {
   registerItemFactory('slime_ball', () => new SlimeBallItem())
   registerItemFactory('alligator_leather', () => new AlligatorLeatherItem())
   registerItemFactory('komodo_scales', () => new KomodoScalesItem())
+  registerItemFactory('corrupted_essence', () => new CorruptedEssenceItem())
+  registerItemFactory('bone', () => new BoneItem())
 
   // Pickaxes
   registerItemFactory('wood_pickaxe', () => new WoodPickaxeItem())

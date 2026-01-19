@@ -132,17 +132,40 @@ export class HellPillarFeature extends Feature {
               // Only replace air blocks (don't carve into terrain)
               const currentBlock = chunk.getBlockId(localX, localY, localZ)
               if (currentBlock === BlockIds.AIR) {
-                // Determine if this block should be magma using 3D noise
-                const magmaFreq = this.config.magmaVeinFrequency ?? 0.15
-                const magmaThreshold = this.config.magmaThreshold ?? 0.6
-                const magmaNoise = noise.noise3D(
-                  blockWorldX * magmaFreq,
-                  worldY * magmaFreq,
-                  blockWorldZ * magmaFreq
-                )
+                let blockId: number
 
-                // Place hell magma for high noise values, hell rock otherwise
-                const blockId = magmaNoise > magmaThreshold ? BlockIds.HELL_MAGMA : BlockIds.HELL_ROCK
+                // Center column gets corrupted hell rock (the pillar's "spine")
+                if (dx === 0 && dz === 0) {
+                  blockId = BlockIds.CORRUPTED_HELL_ROCK
+                } else {
+                  // Determine if this block should be magma using vein-like noise
+                  // Use stretched coordinates for vertical vein patterns
+                  const veinFreq = this.config.magmaVeinFrequency ?? 0.08
+
+                  // Primary vein noise - stretched in Y for vertical veins
+                  const veinNoise1 = noise.noise3D(
+                    blockWorldX * veinFreq,
+                    worldY * veinFreq * 0.3, // Stretch vertically
+                    blockWorldZ * veinFreq
+                  )
+
+                  // Secondary vein noise at different angle for crossing veins
+                  const veinNoise2 = noise.noise3D(
+                    (blockWorldX + worldY * 0.5) * veinFreq * 0.7,
+                    worldY * veinFreq * 0.4,
+                    (blockWorldZ + worldY * 0.3) * veinFreq * 0.7
+                  )
+
+                  // Use narrow band threshold for thin veins (~5% coverage)
+                  // Veins appear where noise is close to 0
+                  const veinWidth = 0.04 // Very narrow band for sparse veins
+                  const isVein1 = Math.abs(veinNoise1) < veinWidth
+                  const isVein2 = Math.abs(veinNoise2) < veinWidth * 0.5
+
+                  // Place hell magma where veins occur, otherwise hell rock
+                  blockId = (isVein1 || isVein2) ? BlockIds.HELL_MAGMA : BlockIds.HELL_ROCK
+                }
+
                 chunk.setBlockId(localX, localY, localZ, blockId)
               }
             }

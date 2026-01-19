@@ -118,10 +118,11 @@ export class EntitySpawner implements ITask {
     const chunkX = this.cyclePlayerChunkX + offset.dx
     const chunkZ = this.cyclePlayerChunkZ + offset.dz
 
-    // Get spawn configs for this chunk's biome
+    // Get spawn configs for biome at player's Y level
     const worldX = chunkX * CHUNK_SIZE + CHUNK_SIZE / 2
     const worldZ = chunkZ * CHUNK_SIZE + CHUNK_SIZE / 2
-    const spawnConfigs = this.worldGenerator.getEntitySpawnsAtPosition(worldX, worldZ)
+    const worldY = this.playerBody.position.y
+    const spawnConfigs = this.worldGenerator.getEntitySpawnsAtPosition(worldX, worldZ, worldY)
 
     if (!spawnConfigs || spawnConfigs.length === 0) {
       return 0
@@ -178,6 +179,8 @@ export class EntitySpawner implements ITask {
 
   /**
    * Find a valid spawn position within a chunk.
+   * Uses player's Y position to find ground level, which correctly handles
+   * underground biomes where getHighestBlockAt would return the ceiling.
    */
   private findSpawnPosition(
     chunkX: number,
@@ -186,6 +189,7 @@ export class EntitySpawner implements ITask {
   ): THREE.Vector3 | null {
     // Try a few random positions within the chunk
     const attempts = 5
+    const playerY = this.playerBody.position.y
 
     for (let i = 0; i < attempts; i++) {
       const localX = Math.random() * CHUNK_SIZE
@@ -193,10 +197,12 @@ export class EntitySpawner implements ITask {
       const worldX = chunkX * CHUNK_SIZE + localX
       const worldZ = chunkZ * CHUNK_SIZE + localZ
 
-      // Get ground height at this position
-      const groundY = this.worldManager.getHighestBlockAt(
+      // Get ground height near player's Y level
+      // This correctly finds the floor in underground biomes instead of the ceiling
+      const groundY = this.worldManager.getGroundNearY(
         BigInt(Math.floor(worldX)),
-        BigInt(Math.floor(worldZ))
+        BigInt(Math.floor(worldZ)),
+        Math.floor(playerY)
       )
 
       if (groundY === null) continue

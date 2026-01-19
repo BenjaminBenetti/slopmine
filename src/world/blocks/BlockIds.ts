@@ -60,4 +60,5 @@ export enum BlockIds {
   WHEAT_3 = 54,
   HELL_ROCK = 55,
   HELL_MAGMA = 56,
+  CORRUPTED_HELL_ROCK = 57,
 }
