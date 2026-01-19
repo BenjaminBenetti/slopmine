@@ -249,8 +249,50 @@ Procedural terrain generation with biomes, caves, and features.
 8. Carve cave entrances on main thread
 
 **Biomes:**
-- **Plains**: Flat terrain, dense trees, lava pools at Y=238
-- **Grassy Hills**: Higher terrain, dramatic hills, water at Y=238
+- **Layer 1 (Surface, Y=128-1023)**: Plains, Grassy Hills, Desert, Volcanic, Jungle, Swamp
+- **Layer 0 (Underground, Y=0-127)**: Hell
+
+**Biome Layer System:**
+Biomes are assigned to vertical layers:
+- **Layer 0**: Underground biomes (Y=0-127, sub-chunks 0-1)
+- **Layer 1**: Surface biomes (Y=128-1023, sub-chunks 2-15)
+
+When creating a new biome:
+1. Set `layer: 0` or `layer: 1` in `BiomeProperties`
+2. Register in `BiomeRegistry.ts` with the correct layer
+3. Add biome type to `BiomeType` union in `GenerationConfig.ts`
+
+The biome mini-map HUD automatically shows biomes for the player's current layer.
+
+**CRITICAL: Feature Registration for Workers**
+
+When creating a new Feature class (extends `Feature`), you **MUST** register it in TWO places for worker communication:
+
+1. **`src/world/generate/WorldGenerator.ts`** - Serialization (main thread → worker)
+   - Import the feature class
+   - Add a case in `createWorkerBiomeConfig()` to serialize the feature to a plain object
+
+2. **`src/workers/ChunkGenerationWorker.ts`** - Deserialization (worker reconstruction)
+   - Import the feature class and its config type
+   - Add the feature type to the `FeatureConfig` type union
+   - Add a case in the feature reconstruction switch to instantiate the feature
+
+Example for a new `MyFeature`:
+```typescript
+// WorldGenerator.ts - add serialization case
+if (feature instanceof MyFeature) {
+  return { type: 'myFeature', settings: (feature as any).config }
+}
+
+// ChunkGenerationWorker.ts - add to FeatureConfig type
+| { type: 'myFeature'; settings: MyFeatureConfig }
+
+// ChunkGenerationWorker.ts - add reconstruction case
+case 'myFeature':
+  return new MyFeature(config.settings)
+```
+
+Failure to register in both places causes: `Error: Unknown feature type: MyFeature`
 
 ---
 

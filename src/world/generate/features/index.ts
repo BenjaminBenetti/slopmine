@@ -4,3 +4,4 @@ export { OreFeature, type OreFeatureSettings, type OrePosition } from './OreFeat
 export { WaterFeature, type WaterEdgeEffects } from './WaterFeature.ts'
 export { OasisFeature, type OasisSettings, type OasisLocation } from './OasisFeature.ts'
 export { LavaFeature, type LavaFeatureConfig } from './LavaFeature.ts'
+export { HellPillarFeature, type HellPillarFeatureConfig } from './HellPillarFeature.ts'

@@ -1,7 +1,7 @@
 import * as THREE from 'three'
-import { PeacefulEntity } from '../../PeacefulEntity.ts'
-import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
-import type { IItem } from '../../../items/Item.ts'
+import { AggressiveEntity } from '../../AggressiveEntity.ts'
+import { AggressionMode } from '../../interfaces/IAggressiveEntityConfig.ts'
+import type { IAggressiveEntityConfig } from '../../interfaces/IAggressiveEntityConfig.ts'
 import { RawAlligatorMeatItem } from '../../../items/food/raw_alligator_meat/RawAlligatorMeatItem.ts'
 import { AlligatorLeatherItem } from '../../../items/materials/alligator_leather/AlligatorLeatherItem.ts'
 
@@ -39,23 +39,12 @@ const TAIL_TIP_HEIGHT = 3 * SCALE
 const TAIL_TIP_DEPTH = 12 * SCALE
 const EYE_SIZE = 2 * SCALE
 
-// Combat constants
-const DEFAULT_BASE_DAMAGE = 2
-
-// Aggressive behavior constants
-const AGGRESSIVE_DURATION = 10.0 // seconds to chase
-const AGGRESSIVE_SPEED = 5.0 // faster than walk
-const ATTACK_RANGE = 2.0 // blocks
-const ATTACK_COOLDOWN = 1.5 // seconds between attacks
-const PUSHBACK_HORIZONTAL = 3.0 // horizontal knockback force
-const PUSHBACK_VERTICAL = 5.0 // vertical knockback force
-
 /**
  * An alligator entity that lives in swamps.
  * Unlike other peaceful mobs, alligators become aggressive when hit
  * and will chase and attack the player.
  */
-export class AlligatorEntity extends PeacefulEntity {
+export class AlligatorEntity extends AggressiveEntity {
   readonly type = 'alligator'
 
   // Animation state
@@ -70,50 +59,33 @@ export class AlligatorEntity extends PeacefulEntity {
   private tail: THREE.Object3D | null = null
   private jaw: THREE.Object3D | null = null
 
-  // Aggressive behavior state
-  private aggressiveTimer = 0
-  private aggressiveTarget: THREE.Vector3 | null = null
-  private attackCooldown = 0
-  private playerCallback: ((damage: number, knockback: THREE.Vector3) => void) | null = null
-
-  // Reference to live player position (updated each frame by EntityManager)
-  private playerPositionRef: THREE.Vector3 | null = null
-
   // Shared texture (loaded once)
   private static texture: THREE.Texture | null = null
   private static textureLoading = false
   private textureApplied = false
 
-  constructor(config: IPeacefulEntityConfig) {
+  constructor(config: IAggressiveEntityConfig) {
     super('alligator', {
       ...config,
       hasPhysics: true,
       hitboxSize: new THREE.Vector3(1.0, 0.6, 2.5), // Long, low hitbox
       walkSpeed: 1.5, // Slow when wandering
-      fleeSpeed: 0, // No fleeing - replaced with aggression
-      fleeDuration: 0,
       maxHealth: 20, // Tougher than most animals
+      // Aggressive behavior config
+      aggressionMode: AggressionMode.AGGRESSIVE_WHEN_PROVOKED,
+      chaseSpeed: 5.0, // Fast when chasing
+      attackRange: 2.0,
+      attackCooldown: 1.5,
+      attackDamage: 4, // 2 hearts
+      attackKnockbackHorizontal: 3.0,
+      attackKnockbackVertical: 5.0,
+      provokedDuration: 10.0,
+      // Drops
       drops: [
         { createItem: () => new RawAlligatorMeatItem(), minCount: 2, maxCount: 4 },
         { createItem: () => new AlligatorLeatherItem(), minCount: 1, maxCount: 2 },
       ],
     })
-  }
-
-  /**
-   * Set a callback for when the alligator attacks the player.
-   * This allows the game to apply damage to the player when health system is implemented.
-   */
-  setPlayerAttackCallback(callback: (damage: number, knockback: THREE.Vector3) => void): void {
-    this.playerCallback = callback
-  }
-
-  /**
-   * Set the player position reference for continuous tracking while aggressive.
-   * The alligator will follow this position reference while in aggressive mode.
-   */
-  setPlayerPositionRef(positionRef: THREE.Vector3): void {
-    this.playerPositionRef = positionRef
   }
 
   protected createMesh(): THREE.Object3D {
@@ -341,56 +313,15 @@ export class AlligatorEntity extends PeacefulEntity {
   }
 
   /**
-   * Override onPlayerInteract to trigger aggressive behavior instead of fleeing.
+   * Override performAttack to trigger bite animation.
    */
-  onPlayerInteract(playerPosition: THREE.Vector3, isLeftClick: boolean, heldItem: IItem | null): boolean {
-    if (!isLeftClick) return false
-    if (!this.isAlive) return false
+  protected performAttack(): void {
+    // Trigger bite animation
+    this.isBiting = true
+    this.bitePhase = 0
 
-    // Calculate damage from held item
-    let damage = DEFAULT_BASE_DAMAGE
-    if (heldItem && 'toolStats' in heldItem) {
-      const toolItem = heldItem as { toolStats: { damage: number } }
-      damage = toolItem.toolStats.damage
-    }
-
-    // Apply damage
-    this.health -= damage
-
-    // Calculate knockback direction (away from player)
-    const knockbackDir = new THREE.Vector3()
-      .copy(this.position)
-      .sub(playerPosition)
-    knockbackDir.y = 0
-    if (knockbackDir.lengthSq() > 0) {
-      knockbackDir.normalize()
-    } else {
-      knockbackDir.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize()
-    }
-
-    // Apply knockback to physics body
-    const body = this.getPhysicsBody()
-    if (body) {
-      body.velocity.x = knockbackDir.x * 6.0
-      body.velocity.z = knockbackDir.z * 6.0
-      body.velocity.y = 5.0
-    }
-
-    // Check death
-    if (this.health <= 0) {
-      this._isDying = true
-      this.deathTimer = 0
-      this.knockbackTimer = 0
-      this.aggressiveTimer = 0
-      this.aggressiveTarget = null
-    } else {
-      // AGGRESSIVE BEHAVIOR instead of flee
-      this.knockbackTimer = 0.4 // Short stun
-      this.aggressiveTimer = AGGRESSIVE_DURATION
-      this.aggressiveTarget = playerPosition.clone()
-    }
-
-    return true
+    // Call parent to deal damage
+    super.performAttack()
   }
 
   update(deltaTime: number): void {
@@ -403,135 +334,8 @@ export class AlligatorEntity extends PeacefulEntity {
       }
     }
 
-    // Handle death animation (from parent)
-    if (this._isDying) {
-      this.deathTimer += deltaTime
-      const mesh = this.getMesh()
-      const body = this.getPhysicsBody()
-
-      if (body) {
-        body.velocity.x = 0
-        body.velocity.z = 0
-      }
-
-      if (mesh) {
-        const fallProgress = Math.min(this.deathTimer / 0.5, 1.0)
-        const easedProgress = 1 - Math.pow(1 - fallProgress, 2)
-        mesh.rotation.z = easedProgress * (Math.PI / 2)
-      }
-
-      if (this.deathTimer >= 1.5) {
-        this.kill()
-      }
-
-      return
-    }
-
-    // Handle knockback stun
-    if (this.knockbackTimer > 0) {
-      this.knockbackTimer -= deltaTime
-      this.updateAnimations(deltaTime)
-      return
-    }
-
-    // Handle AGGRESSIVE state - continuously track player's current position
-    if (this.aggressiveTimer > 0) {
-      this.aggressiveTimer -= deltaTime
-      this.attackCooldown = Math.max(0, this.attackCooldown - deltaTime)
-
-      // Use live player position reference if available, otherwise use last known position
-      const targetPosition = this.playerPositionRef || this.aggressiveTarget
-      if (!targetPosition) {
-        // No target, exit aggressive mode
-        this.aggressiveTimer = 0
-        super.update(deltaTime)
-        return
-      }
-
-      // Calculate direction TO player's CURRENT position
-      const chaseDirection = new THREE.Vector3()
-        .copy(targetPosition)
-        .sub(this.position)
-      chaseDirection.y = 0
-      const distanceToTarget = chaseDirection.length()
-
-      if (distanceToTarget > 0.1) {
-        chaseDirection.normalize()
-      }
-
-      const body = this.getPhysicsBody()
-      if (body) {
-        if (distanceToTarget <= ATTACK_RANGE) {
-          // Stop moving when in attack range
-          body.velocity.x = 0
-          body.velocity.z = 0
-          this.isWalking = false
-
-          // Attack if cooldown is ready
-          if (this.attackCooldown <= 0) {
-            this.performAttack()
-            this.attackCooldown = ATTACK_COOLDOWN
-          }
-        } else {
-          // Chase player at aggressive speed
-          body.velocity.x = chaseDirection.x * AGGRESSIVE_SPEED
-          body.velocity.z = chaseDirection.z * AGGRESSIVE_SPEED
-          this.isWalking = true
-        }
-      }
-
-      // Face chase direction
-      const mesh = this.getMesh()
-      if (mesh && (chaseDirection.x !== 0 || chaseDirection.z !== 0)) {
-        mesh.rotation.y = Math.atan2(chaseDirection.x, chaseDirection.z)
-      }
-
-      this.updateAnimations(deltaTime)
-
-      // Sync position from physics body (aggressive mode bypasses super.update)
-      if (body) {
-        this.position.copy(body.position)
-      }
-      if (mesh) {
-        mesh.position.copy(this.position)
-      }
-
-      // Reset aggressive state when timer runs out
-      if (this.aggressiveTimer <= 0) {
-        this.aggressiveTarget = null
-      }
-
-      return
-    }
-
-    // Normal wandering behavior (call parent)
+    // Call parent update (handles aggression, wandering, death, etc.)
     super.update(deltaTime)
-  }
-
-  private performAttack(): void {
-    // Trigger bite animation
-    this.isBiting = true
-    this.bitePhase = 0
-
-    // Use live player position for accurate knockback direction
-    const targetPosition = this.playerPositionRef || this.aggressiveTarget
-    if (targetPosition) {
-      const knockbackDir = new THREE.Vector3()
-        .copy(targetPosition)
-        .sub(this.position)
-      knockbackDir.y = 0
-      if (knockbackDir.lengthSq() > 0) {
-        knockbackDir.normalize()
-      }
-      // Apply horizontal and vertical knockback separately
-      knockbackDir.multiplyScalar(PUSHBACK_HORIZONTAL)
-      knockbackDir.y = PUSHBACK_VERTICAL
-
-      // Call player damage callback if set
-      if (this.playerCallback) {
-        this.playerCallback(4, knockbackDir) // 4 damage (2 hearts)
-      }
-    }
   }
 
   protected updateAnimations(deltaTime: number): void {
@@ -587,8 +391,6 @@ export class AlligatorEntity extends PeacefulEntity {
     this.head = null
     this.tail = null
     this.jaw = null
-    this.aggressiveTarget = null
-    this.playerCallback = null
     super.dispose()
   }
 }

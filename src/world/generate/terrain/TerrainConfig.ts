@@ -66,6 +66,13 @@ export interface TerrainConfig {
 
   /** How to combine multiple layers */
   readonly combineMode: CombineMode
+
+  /**
+   * If true, baseHeight is an absolute world Y coordinate (seaLevel not added).
+   * Use this for underground biomes where terrain is at low Y values.
+   * Default: false (baseHeight is relative to seaLevel)
+   */
+  readonly absoluteHeight?: boolean
 }
 
 /**

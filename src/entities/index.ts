@@ -7,11 +7,14 @@ export type {
 export { EntityState } from './interfaces/IEntity.ts'
 export type { IEntityConfig } from './interfaces/IEntityConfig.ts'
 export type { IEntityCallbacks } from './interfaces/IEntityCallbacks.ts'
+export type { IAggressiveEntityConfig } from './interfaces/IAggressiveEntityConfig.ts'
+export { AggressionMode } from './interfaces/IAggressiveEntityConfig.ts'
 
 // Classes
 export { EntityManager } from './EntityManager.ts'
 export type { EntityManagerConfig } from './EntityManager.ts'
 export { Entity } from './Entity.ts'
+export { AggressiveEntity } from './AggressiveEntity.ts'
 
 // Constants
 export * from './constants.ts'

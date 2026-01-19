@@ -7,7 +7,7 @@ import { DesertGenerator } from './DesertGenerator.ts'
 import { VolcanicGenerator } from './VolcanicGenerator.ts'
 import { JungleGenerator } from './JungleGenerator.ts'
 import { SwampGenerator } from './SwampGenerator.ts'
-import { RockyGenerator } from './RockyGenerator.ts'
+import { HellGenerator } from './HellGenerator.ts'
 
 /**
  * Information about a registered biome.
@@ -100,12 +100,12 @@ export class BiomeRegistry {
     })
 
     // Layer 0 (underground) biomes
-    const rockyGen = new RockyGenerator(defaultConfig)
+    const hellGen = new HellGenerator(defaultConfig)
     this.register({
-      type: 'rocky',
-      frequency: rockyGen.getBiomeProperties().frequency,
+      type: 'hell',
+      frequency: hellGen.getBiomeProperties().frequency,
       layer: 0,
-      createGenerator: (config) => new RockyGenerator(config),
+      createGenerator: (config) => new HellGenerator(config),
     })
   }
 

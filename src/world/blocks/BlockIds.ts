@@ -58,4 +58,5 @@ export enum BlockIds {
   WHEAT_1 = 52,
   WHEAT_2 = 53,
   WHEAT_3 = 54,
+  HELL_ROCK = 55,
 }

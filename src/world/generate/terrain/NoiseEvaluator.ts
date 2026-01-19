@@ -87,7 +87,9 @@ export function combineNoise(values: number[], mode: CombineMode): number {
  * Evaluate a complete terrain configuration at a world position.
  * Returns the final height value (not floored).
  *
- * The height formula is: seaLevel + baseHeight + combinedNoise * heightScale
+ * The height formula is:
+ * - absoluteHeight=false (default): seaLevel + baseHeight + combinedNoise * heightScale
+ * - absoluteHeight=true: baseHeight + combinedNoise * heightScale
  *
  * @param noise - The SimplexNoise instance (seeded)
  * @param config - Complete terrain configuration
@@ -112,6 +114,7 @@ export function evaluateTerrainConfig(
   // Combine all layer values
   const combinedNoise = combineNoise(layerValues, config.combineMode)
 
-  // Apply the height formula: seaLevel + baseHeight + noise * heightScale
-  return seaLevel + config.baseHeight + combinedNoise * config.heightScale
+  // Use absolute height for underground biomes, seaLevel-relative for surface
+  const base = config.absoluteHeight ? 0 : seaLevel
+  return base + config.baseHeight + combinedNoise * config.heightScale
 }

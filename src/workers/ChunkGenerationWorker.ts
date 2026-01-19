@@ -17,6 +17,7 @@ import { WaterFeature, type WaterEdgeEffects } from '../world/generate/features/
 import { OasisFeature, type OasisSettings } from '../world/generate/features/OasisFeature.ts'
 import { LavaFeature, type LavaFeatureConfig } from '../world/generate/features/LavaFeature.ts'
 import { WheatFeature, type WheatFeatureSettings } from '../world/generate/features/WheatFeature.ts'
+import { HellPillarFeature, type HellPillarFeatureConfig } from '../world/generate/features/HellPillarFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
@@ -81,6 +82,7 @@ export type FeatureConfig =
   | { type: 'oasis'; settings: OasisSettings }
   | { type: 'lava'; settings: LavaFeatureConfig }
   | { type: 'wheat'; settings: WheatFeatureSettings }
+  | { type: 'hellPillar'; settings: HellPillarFeatureConfig }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -279,6 +281,8 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new LavaFeature(config.settings)
       case 'wheat':
         return new WheatFeature(config.settings)
+      case 'hellPillar':
+        return new HellPillarFeature(config.settings)
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }

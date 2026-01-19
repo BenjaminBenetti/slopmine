@@ -53,6 +53,7 @@ import { PurpleMushroomCapBlock } from './types/purple_mushroom_cap/PurpleMushro
 import { Wheat1Block } from './types/wheat/Wheat1Block.ts'
 import { Wheat2Block } from './types/wheat/Wheat2Block.ts'
 import { Wheat3Block } from './types/wheat/Wheat3Block.ts'
+import { HellRockBlock } from './types/hell_rock/HellRockBlock.ts'
 
 /**
  * Register all default block types.
@@ -134,4 +135,7 @@ export function registerDefaultBlocks(): void {
   registerBlock(new Wheat1Block())
   registerBlock(new Wheat2Block())
   registerBlock(new Wheat3Block())
+
+  // Hell biome blocks
+  registerBlock(new HellRockBlock())
 }

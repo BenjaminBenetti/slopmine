@@ -33,6 +33,7 @@ import {
 import { registerDefaultRecipes } from './crafting/index.ts'
 import { WorldGenerator } from './world/generate/index.ts'
 import { biomeRegistry } from './world/generate/biomes/BiomeRegistry.ts'
+import { LAYER_BOUNDARY_Y } from './world/generate/GenerationConfig.ts'
 import { GraphicsSettings } from './settings/index.ts'
 import * as THREE from 'three'
 import {
@@ -80,7 +81,6 @@ import { createHealthDisplayUI } from './ui/HealthDisplay.ts'
 import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
 import { EntityManager, EntitySpawner } from './entities/index.ts'
 import { MagmaSlimeEntity } from './entities/animals/magma_slime/index.ts'
-import { AlligatorEntity } from './entities/animals/alligator/AlligatorEntity.ts'
 import { PlayerDamageHandler } from './entities/PlayerDamageHandler.ts'
 
 // Initialize world system
@@ -209,17 +209,20 @@ function getBiomeAbbreviation(biomeType: string): string {
   return biomeType.substring(0, 3).toUpperCase()
 }
 
-function calculateBiomeMiniMap(worldX: number, worldZ: number, seed: number): string[][] {
+function calculateBiomeMiniMap(worldX: number, worldY: number, worldZ: number, seed: number): string[][] {
   const chunkX = Math.floor(worldX / 32)
   const chunkZ = Math.floor(worldZ / 32)
   const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
+
+  // Determine which layer the player is in (0 = underground, 1 = surface)
+  const layer: 0 | 1 = worldY < LAYER_BOUNDARY_Y ? 0 : 1
 
   // 5x5 grid with player's region at center [2][2]
   const grid: string[][] = []
   for (let dz = -2; dz <= 2; dz++) {
     const row: string[] = []
     for (let dx = -2; dx <= 2; dx++) {
-      const biome = biomeRegistry.selectBiome(regionX + dx, regionZ + dz, seed)
+      const biome = biomeRegistry.selectBiomeForLayer(regionX + dx, regionZ + dz, seed, layer)
       row.push(getBiomeAbbreviation(biome))
     }
     grid.push(row)
@@ -490,6 +493,9 @@ const playerDamageHandler = new PlayerDamageHandler(
   playerBody,
   cameraControls
 )
+
+// Set player damage callback on entity manager so aggressive entities can deal damage
+entityManager.setPlayerDamageCallback(playerDamageHandler.createCallback())
 
 // Connect camera controls to physics
 cameraControls.setPhysics(playerBody, physicsEngine)
@@ -764,25 +770,16 @@ scheduler.registerTask(entityManager)
 // Register entity spawner
 scheduler.registerTask(entitySpawner)
 
-// Update hostile entity damage - wire up damage callbacks for all hostile entities
+// Update magma slime player tracking (they have special contact damage)
 scheduler.createTask({
-  id: 'hostile-entity-damage',
+  id: 'magma-slime-tracking',
   priority: TaskPriority.NORMAL,
   update: () => {
-    // Magma slimes - contact damage
     const magmaSlimes = entityManager.getEntitiesByType('magma_slime')
     for (const entity of magmaSlimes) {
       const slime = entity as MagmaSlimeEntity
       slime.updatePlayerPosition(playerBody.position)
       slime.setPlayerDamageCallback(playerDamageHandler.createCallback())
-    }
-
-    // Alligators - attack damage when aggressive
-    const alligators = entityManager.getEntitiesByType('alligator')
-    for (const entity of alligators) {
-      const alligator = entity as AlligatorEntity
-      alligator.setPlayerPositionRef(playerBody.position)
-      alligator.setPlayerAttackCallback(playerDamageHandler.createCallback())
     }
   },
 })
@@ -955,7 +952,7 @@ const gameLoop = new GameLoop({
     fpsCounter.setRenderResolution(renderRes.width, renderRes.height)
     fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
     fpsCounter.setBiomeMiniMap({
-      grid: calculateBiomeMiniMap(playerBody.position.x, playerBody.position.z, worldGenerator.getConfig().seed),
+      grid: calculateBiomeMiniMap(playerBody.position.x, playerBody.position.y, playerBody.position.z, worldGenerator.getConfig().seed),
       yaw: cameraControls.getYaw(),
     })
     fpsCounter.setLightingStats(world.getBackgroundLightingStats())

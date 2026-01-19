@@ -68,6 +68,7 @@ export enum TextureId {
   WHEAT_1 = 57,              // wheat-1.webp (seedling)
   WHEAT_2 = 58,              // wheat-2.webp (growing)
   WHEAT_3 = 59,              // wheat-3.webp (mature)
+  HELL_ROCK = 60,            // hell-rock.webp
 }
 
 // Cache for the face texture map

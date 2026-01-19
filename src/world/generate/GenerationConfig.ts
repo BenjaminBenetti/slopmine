@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'slopmine:worldConfig'
 
-export type BiomeType = 'plains' | 'grassy-hills' | 'desert' | 'volcanic' | 'jungle' | 'swamp' | 'rocky'
+export type BiomeType = 'plains' | 'grassy-hills' | 'desert' | 'volcanic' | 'jungle' | 'swamp' | 'hell'
 
 /**
  * Vertical layer boundary Y coordinate.

@@ -52,6 +52,7 @@ export class EntityManager implements ITask {
   private readonly scene: THREE.Scene
   private readonly physicsEngine: PhysicsEngine | null
   private playerBody: IPhysicsBody | null = null
+  private playerDamageCallback: ((damage: number, knockback: THREE.Vector3) => void) | null = null
 
   private readonly maxEntities: number
   private readonly getChunkDistance: () => number
@@ -90,6 +91,14 @@ export class EntityManager implements ITask {
    */
   setPlayerBody(playerBody: IPhysicsBody): void {
     this.playerBody = playerBody
+  }
+
+  /**
+   * Set the callback for player damage from aggressive entities.
+   * This callback will be automatically passed to any entity with a setPlayerDamageCallback method.
+   */
+  setPlayerDamageCallback(callback: (damage: number, knockback: THREE.Vector3) => void): void {
+    this.playerDamageCallback = callback
   }
 
   /**
@@ -367,10 +376,16 @@ export class EntityManager implements ITask {
       this.blockEntityIndex.set(blockPosKey(entity.blockPosition), entity)
     }
 
-    // Set player position reference for entities that need it (e.g., alligators for tracking)
+    // Set player position reference for entities that need it (e.g., aggressive mobs for tracking)
     if (this.playerBody && 'setPlayerPositionRef' in entity) {
       const trackingEntity = entity as { setPlayerPositionRef: (pos: THREE.Vector3) => void }
       trackingEntity.setPlayerPositionRef(this.playerBody.position)
+    }
+
+    // Set player damage callback for aggressive entities
+    if (this.playerDamageCallback && 'setPlayerDamageCallback' in entity) {
+      const aggressiveEntity = entity as { setPlayerDamageCallback: (cb: (damage: number, knockback: THREE.Vector3) => void) => void }
+      aggressiveEntity.setPlayerDamageCallback(this.playerDamageCallback)
     }
 
     entity.state = EntityState.ACTIVE

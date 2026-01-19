@@ -1,0 +1,126 @@
+import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
+import type { IChunkData } from '../../interfaces/IChunkData.ts'
+import { BlockIds } from '../../blocks/BlockIds.ts'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
+import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
+import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
+import type { SimplexNoise } from '../SimplexNoise.ts'
+import { LavaFeature } from '../features/LavaFeature.ts'
+import { HellPillarFeature } from '../features/HellPillarFeature.ts'
+
+/**
+ * Hell biome - the first true underground biome.
+ *
+ * Structure (Layer 0: Y=0-127):
+ * - Y=0-63: Hell Rock terrain with noise-based surface around Y=48-58
+ * - Y=64-127: Air gap with massive pillars reaching up to Y=127
+ *
+ * Features:
+ * - Hell Rock terrain with fractal noise
+ * - Lava pools in terrain depressions
+ * - Massive pillars shooting up through the air gap
+ * - Complete darkness (no skylight)
+ */
+export class HellGenerator extends BiomeGenerator {
+  protected readonly properties: BiomeProperties = {
+    name: 'hell',
+    frequency: 1.0, // Only layer 0 biome, so 100% of underground
+    treeDensity: 0, // No trees underground
+    layer: 0, // Underground layer (Y=0-127)
+    skylightValue: 0, // Complete darkness
+    features: [
+      // Lava pools in terrain depressions
+      new LavaFeature({
+        frequency: 0.4,
+        minDepth: 2,
+        lavaLevel: 42, // Below average terrain (48) to fill only deeper depressions
+      }),
+      // Massive pillars in the air gap
+      new HellPillarFeature({
+        gridSize: 20,
+        density: 0.15,
+        minRadius: 2,
+        maxRadius: 5,
+        targetTopY: 127,
+      }),
+    ],
+    caves: {
+      enabled: false, // No caves in Hell
+      frequency: 0,
+      threshold: 0,
+      minY: 0,
+      maxY: 0,
+      layerCount: 0,
+      layerSpacing: 0,
+      layerPeakY: 0,
+      cheeseEnabled: false,
+      cheeseFrequency: 0,
+      cheeseThreshold: 0,
+      entrancesEnabled: false,
+      entranceMinWidth: 0,
+    },
+    // No water in Hell - only lava!
+    water: {
+      enabled: false,
+      liquidBlock: BlockIds.LAVA,
+      waterLevel: 42,
+      frequency: 0,
+      minDepth: 10,
+    },
+    terrainConfig: {
+      layers: [
+        {
+          type: 'fractal',
+          octaves: 3,
+          persistence: 0.5,
+          scale: 0.02,
+          weight: 1.0,
+        },
+      ],
+      baseHeight: 48,      // Actual world Y coordinate
+      heightScale: 10,
+      combineMode: 'add',
+      absoluteHeight: true, // Skip seaLevel for underground biome
+    } as TerrainConfig,
+  }
+
+  /**
+   * Fill the Hell terrain with Hell Rock from Y=0 up to the noise-based surface.
+   * The area above the surface (up to Y=127) is left as air for pillars to fill.
+   *
+   * @param chunk The chunk data to fill
+   * @param minY Minimum world Y coordinate of this sub-chunk
+   * @param maxY Maximum world Y coordinate of this sub-chunk
+   */
+  protected fillChunk(
+    chunk: IChunkData,
+    minY: number,
+    _maxY: number,
+    _noise: SimplexNoise,
+    _getHeightAt: (worldX: number, worldZ: number) => number
+  ): void {
+    const coord = chunk.coordinate
+
+    for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
+      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
+        const worldCoord = localToWorld(coord, { x: localX, y: 0, z: localZ })
+        const worldX = Number(worldCoord.x)
+        const worldZ = Number(worldCoord.z)
+
+        // Get surface height at this position
+        const surfaceHeight = this.getHeightAt(worldX, worldZ)
+
+        // Fill from minY to surfaceHeight with Hell Rock
+        for (let localY = 0; localY < SUB_CHUNK_HEIGHT; localY++) {
+          const worldY = minY + localY
+
+          // Only fill below or at surface level
+          if (worldY <= surfaceHeight) {
+            chunk.setBlockId(localX, localY, localZ, BlockIds.HELL_ROCK)
+          }
+          // Above surface is air (default, no need to set)
+        }
+      }
+    }
+  }
+}
