@@ -231,10 +231,13 @@ export class GreedyChunkMesh implements IChunkMesh {
     blockGeometry.computeBoundingBox()
     const box = blockGeometry.boundingBox!
 
-    // Extract min/max from bounding box
-    const minX = box.min.x, maxX = box.max.x
-    const minY = box.min.y, maxY = box.max.y
-    const minZ = box.min.z, maxZ = box.max.z
+    // Small inset to prevent z-fighting with adjacent solid blocks
+    const INSET = 0.004
+
+    // Extract min/max from bounding box with inset applied
+    const minX = box.min.x + INSET, maxX = box.max.x - INSET
+    const minY = box.min.y + INSET, maxY = box.max.y - INSET
+    const minZ = box.min.z + INSET, maxZ = box.max.z - INSET
 
     // Calculate UV scale for side faces based on height ratio
     const height = maxY - minY
