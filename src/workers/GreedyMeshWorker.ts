@@ -715,8 +715,9 @@ function processSubChunk(
 
               if (LIQUID_FAMILIES.has(blockId)) {
                 // Compute which faces are visible
-                // Hide face only if neighbor is EXACTLY the same block ID (same liquid at same level)
-                // This allows faces between different liquid levels to render (depth testing handles occlusion)
+                // Interior faces: hide only if neighbor is exact same block ID (allows height variation)
+                // Horizontal boundary faces (NSEW): always hide at chunk edges to prevent seams
+                // Vertical boundary faces (TOP/BOTTOM): hide if same liquid family
                 let visibleFaces = 0
                 const neighborOffsets: [number, number, number][] = [
                   [0, 1, 0],  // TOP (bit 0)
@@ -726,12 +727,43 @@ function processSubChunk(
                   [1, 0, 0],  // EAST (bit 4)
                   [-1, 0, 0], // WEST (bit 5)
                 ]
+
+                // Horizontal chunk boundaries - always hide these faces for liquids
+                const atHorizontalBoundary = [
+                  false,                        // TOP - not horizontal boundary
+                  false,                        // BOTTOM - not horizontal boundary
+                  z === 0,                      // NORTH at Z boundary
+                  z === CHUNK_SIZE_Z - 1,       // SOUTH at Z boundary
+                  x === CHUNK_SIZE_X - 1,       // EAST at X boundary
+                  x === 0,                      // WEST at X boundary
+                ]
+
+                // Vertical sub-chunk boundaries
+                const atVerticalBoundary = [
+                  y === SUB_CHUNK_HEIGHT - 1,   // TOP at sub-chunk boundary
+                  y === 0,                       // BOTTOM at sub-chunk boundary
+                  false, false, false, false,   // Horizontal faces
+                ]
+
                 for (let f = 0; f < 6; f++) {
+                  if (atHorizontalBoundary[f]) {
+                    // At horizontal chunk boundary - always hide to prevent seams
+                    continue
+                  }
+
                   const [dx, dy, dz] = neighborOffsets[f]
                   const neighborId = getBlockAt(blocks, neighbors, x + dx, y + dy, z + dz)
-                  // Show face if neighbor is NOT the exact same block ID
-                  if (neighborId !== blockId) {
-                    visibleFaces |= (1 << f)
+
+                  if (atVerticalBoundary[f]) {
+                    // At vertical sub-chunk boundary: hide if same liquid family
+                    if (!areSameLiquidFamily(blockId, neighborId)) {
+                      visibleFaces |= (1 << f)
+                    }
+                  } else {
+                    // Interior: hide only if exact same block ID
+                    if (neighborId !== blockId) {
+                      visibleFaces |= (1 << f)
+                    }
                   }
                 }
                 faceVisArr.push(visibleFaces)
