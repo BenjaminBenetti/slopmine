@@ -110,6 +110,13 @@ export class RabbitEntity extends PeacefulEntity {
     const darkMaterial = new THREE.MeshLambertMaterial({ color: RABBIT_DARK })
     const pinkMaterial = new THREE.MeshLambertMaterial({ color: RABBIT_PINK })
 
+    // Register materials for light-based dimming
+    this.registerMaterialForLighting(brownMaterial)
+    this.registerMaterialForLighting(lightMaterial)
+    this.registerMaterialForLighting(whiteMaterial)
+    this.registerMaterialForLighting(darkMaterial)
+    this.registerMaterialForLighting(pinkMaterial)
+
     // Body group (for squash/stretch animation)
     const bodyGroup = new THREE.Group()
 

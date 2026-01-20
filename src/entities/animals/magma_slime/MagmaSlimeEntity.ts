@@ -105,6 +105,10 @@ export class MagmaSlimeEntity extends PeacefulEntity {
   protected createMesh(): THREE.Object3D {
     const group = new THREE.Group()
 
+    // Note: MagmaSlime does NOT register materials for lighting.
+    // The emissive materials should keep it glowing in the dark,
+    // which is thematically appropriate for a living lava creature.
+
     // Outer body - semi-transparent orange/red
     this.outerMaterial = new THREE.MeshLambertMaterial({
       color: MAGMA_RED,

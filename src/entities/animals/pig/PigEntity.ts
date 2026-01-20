@@ -79,6 +79,10 @@ export class PigEntity extends PeacefulEntity {
     const bodyMaterial = this.createMaterial(PIG_PINK)
     const snoutMaterial = this.createMaterial(PIG_SNOUT)
 
+    // Register materials for light-based dimming
+    this.registerMaterialForLighting(bodyMaterial)
+    this.registerMaterialForLighting(snoutMaterial)
+
     // Body
     const bodyGeometry = new THREE.BoxGeometry(BODY_WIDTH, BODY_HEIGHT, BODY_DEPTH)
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial)

@@ -110,6 +110,13 @@ export class KomodoDragonEntity extends PeacefulEntity {
     const darkMaterial = new THREE.MeshLambertMaterial({ color: KOMODO_DARK })
     const tongueMaterial = new THREE.MeshLambertMaterial({ color: KOMODO_TONGUE })
 
+    // Register materials for light-based dimming
+    this.registerMaterialForLighting(bodyMaterial)
+    this.registerMaterialForLighting(patternMaterial)
+    this.registerMaterialForLighting(bellyMaterial)
+    this.registerMaterialForLighting(darkMaterial)
+    this.registerMaterialForLighting(tongueMaterial)
+
     // Body (long, low rectangle)
     const bodyGeometry = new THREE.BoxGeometry(BODY_WIDTH, BODY_HEIGHT, BODY_DEPTH)
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial)

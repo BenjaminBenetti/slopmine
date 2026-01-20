@@ -69,6 +69,11 @@ export class FoxEntity extends PeacefulEntity {
     const whiteMaterial = new THREE.MeshLambertMaterial({ color: FOX_WHITE })
     const darkMaterial = new THREE.MeshLambertMaterial({ color: FOX_DARK })
 
+    // Register materials for light-based dimming
+    this.registerMaterialForLighting(orangeMaterial)
+    this.registerMaterialForLighting(whiteMaterial)
+    this.registerMaterialForLighting(darkMaterial)
+
     // Body (orange)
     const bodyGeometry = new THREE.BoxGeometry(BODY_WIDTH, BODY_HEIGHT, BODY_DEPTH)
     const body = new THREE.Mesh(bodyGeometry, orangeMaterial)

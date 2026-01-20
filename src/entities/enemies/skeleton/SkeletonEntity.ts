@@ -124,6 +124,11 @@ export class SkeletonEntity extends AggressiveEntity {
       emissiveIntensity: 1.0,
     })
 
+    // Register bone materials for light-based dimming
+    // Note: Eye material is NOT registered - it should glow in the dark
+    this.registerMaterialForLighting(boneLightMaterial)
+    this.registerMaterialForLighting(boneDarkMaterial)
+
     // Calculate heights for positioning
     const footHeight = FOOT_HEIGHT
     const lowerLegTop = footHeight + LEG_LOWER_LENGTH

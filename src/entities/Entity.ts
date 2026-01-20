@@ -6,6 +6,18 @@ import { EntityState } from './interfaces/IEntity.ts'
 import type { IEntityConfig } from './interfaces/IEntityConfig.ts'
 
 /**
+ * Minimum brightness threshold for entity dimming.
+ * Matches the value used for block vertex colors.
+ */
+const MIN_BRIGHTNESS = 0.02
+
+/**
+ * Threshold for skipping redundant brightness updates.
+ * If the change is smaller than this, we don't update materials.
+ */
+const BRIGHTNESS_UPDATE_THRESHOLD = 0.01
+
+/**
  * Counter for generating unique entity IDs.
  */
 let entityIdCounter = 0
@@ -40,6 +52,18 @@ export abstract class Entity implements IEntity {
   private meshCreated = false
 
   private physicsBody: IPhysicsBody | null = null
+
+  /**
+   * Map of materials registered for light-based dimming.
+   * Stores the original base color of each material.
+   */
+  private baseMaterialColors: Map<THREE.MeshLambertMaterial, THREE.Color> = new Map()
+
+  /**
+   * Current brightness level applied to materials (0-1).
+   * Used to skip redundant updates when brightness hasn't changed significantly.
+   */
+  private currentBrightness = 1.0
 
   constructor(type: string, config: IEntityConfig) {
     this.id = generateEntityId(type)
@@ -141,5 +165,46 @@ export abstract class Entity implements IEntity {
       }
     }
     object.children.forEach((child) => this.disposeMeshRecursive(child))
+  }
+
+  /**
+   * Register a material for light-based dimming.
+   * Call this from createMesh() for each material that should respond to world light levels.
+   * The material's current color is stored as the base color.
+   *
+   * @param material The MeshLambertMaterial to register
+   */
+  protected registerMaterialForLighting(material: THREE.MeshLambertMaterial): void {
+    if (!this.baseMaterialColors.has(material)) {
+      this.baseMaterialColors.set(material, material.color.clone())
+    }
+  }
+
+  /**
+   * Update the entity's appearance based on the world light level.
+   * Uses the same brightness formula as voxel blocks.
+   *
+   * @param lightLevel The combined light level (0-15) at the entity's position
+   */
+  updateLightLevel(lightLevel: number): void {
+    // Calculate brightness using the same formula as block vertex colors
+    const normalized = lightLevel / 15
+    const brightness = MIN_BRIGHTNESS + Math.pow(normalized, 2.2) * (1 - MIN_BRIGHTNESS)
+
+    // Skip update if brightness hasn't changed significantly
+    if (Math.abs(brightness - this.currentBrightness) < BRIGHTNESS_UPDATE_THRESHOLD) {
+      return
+    }
+
+    this.currentBrightness = brightness
+
+    // Apply brightness to all registered materials
+    for (const [material, baseColor] of this.baseMaterialColors) {
+      material.color.setRGB(
+        baseColor.r * brightness,
+        baseColor.g * brightness,
+        baseColor.b * brightness
+      )
+    }
   }
 }

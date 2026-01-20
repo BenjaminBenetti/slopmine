@@ -90,6 +90,12 @@ export class CowEntity extends PeacefulEntity {
     const hornMaterial = new THREE.MeshLambertMaterial({ color: COW_HORN })
     const udderMaterial = new THREE.MeshLambertMaterial({ color: COW_UDDER })
 
+    // Register materials for light-based dimming
+    this.registerMaterialForLighting(bodyMaterial)
+    this.registerMaterialForLighting(snoutMaterial)
+    this.registerMaterialForLighting(hornMaterial)
+    this.registerMaterialForLighting(udderMaterial)
+
     // Body
     const bodyGeometry = new THREE.BoxGeometry(BODY_WIDTH, BODY_HEIGHT, BODY_DEPTH)
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial)

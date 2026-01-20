@@ -497,6 +497,9 @@ const playerDamageHandler = new PlayerDamageHandler(
 // Set player damage callback on entity manager so aggressive entities can deal damage
 entityManager.setPlayerDamageCallback(playerDamageHandler.createCallback())
 
+// Set light query for entity dimming based on world light levels
+entityManager.setLightQuery((x, y, z) => world.getLightLevelAtWorld(x, y, z))
+
 // Connect camera controls to physics
 cameraControls.setPhysics(playerBody, physicsEngine)
 

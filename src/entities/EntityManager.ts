@@ -10,6 +10,7 @@ import { isBlockEntity } from './interfaces/IBlockEntity.ts'
 import type { IEntityCallbacks } from './interfaces/IEntityCallbacks.ts'
 import { CHUNK_SIZE_X } from '../world/interfaces/IChunk.ts'
 import type { IWorldCoordinate } from '../world/interfaces/ICoordinates.ts'
+import { Entity } from './Entity.ts'
 
 /**
  * Create a string key from world coordinates for block entity lookup.
@@ -59,6 +60,12 @@ export class EntityManager implements ITask {
 
   private readonly callbacks: Set<IEntityCallbacks> = new Set()
 
+  /**
+   * Function to query world light level at a position.
+   * Set via setLightQuery() from main.ts.
+   */
+  private lightQueryFn: ((x: number, y: number, z: number) => number) | null = null
+
   // Adaptive update rates based on distance from player
   // Tier 0: 0-32 blocks = 60 UPS (every frame)
   // Tier 1: 32-128 blocks = 30 UPS
@@ -99,6 +106,14 @@ export class EntityManager implements ITask {
    */
   setPlayerDamageCallback(callback: (damage: number, knockback: THREE.Vector3) => void): void {
     this.playerDamageCallback = callback
+  }
+
+  /**
+   * Set the function to query world light levels.
+   * Used to dim entities based on the light level at their position.
+   */
+  setLightQuery(fn: (x: number, y: number, z: number) => number): void {
+    this.lightQueryFn = fn
   }
 
   /**
@@ -316,6 +331,16 @@ export class EntityManager implements ITask {
 
       entity.update(tierDeltaTimes[tier])
       updatedCount++
+
+      // Update entity lighting based on world light level
+      if (this.lightQueryFn && entity instanceof Entity) {
+        const lightLevel = this.lightQueryFn(
+          entity.position.x,
+          entity.position.y,
+          entity.position.z
+        )
+        entity.updateLightLevel(lightLevel)
+      }
 
       // Check if entity died
       if (!entity.isAlive) {

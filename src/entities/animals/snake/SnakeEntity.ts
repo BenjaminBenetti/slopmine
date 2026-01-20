@@ -81,6 +81,13 @@ export class SnakeEntity extends PeacefulEntity {
     const darkMaterial = new THREE.MeshLambertMaterial({ color: SNAKE_DARK })
     const tongueMaterial = new THREE.MeshLambertMaterial({ color: SNAKE_TONGUE })
 
+    // Register materials for light-based dimming
+    this.registerMaterialForLighting(baseMaterial)
+    this.registerMaterialForLighting(patternMaterial)
+    this.registerMaterialForLighting(bellyMaterial)
+    this.registerMaterialForLighting(darkMaterial)
+    this.registerMaterialForLighting(tongueMaterial)
+
     // Head group
     const headGroup = new THREE.Group()
 

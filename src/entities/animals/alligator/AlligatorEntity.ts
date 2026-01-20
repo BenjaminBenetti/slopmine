@@ -112,6 +112,12 @@ export class AlligatorEntity extends AggressiveEntity {
     const darkMaterial = new THREE.MeshLambertMaterial({ color: GATOR_DARK })
     const teethMaterial = new THREE.MeshLambertMaterial({ color: GATOR_TEETH })
 
+    // Register materials for light-based dimming
+    this.registerMaterialForLighting(bodyMaterial)
+    this.registerMaterialForLighting(bellyMaterial)
+    this.registerMaterialForLighting(darkMaterial)
+    this.registerMaterialForLighting(teethMaterial)
+
     // Body (long, low rectangle)
     const bodyGeometry = new THREE.BoxGeometry(BODY_WIDTH, BODY_HEIGHT, BODY_DEPTH)
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial)

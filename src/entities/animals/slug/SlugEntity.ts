@@ -87,6 +87,12 @@ export class SlugEntity extends PeacefulEntity {
 
     const eyeMaterial = new THREE.MeshLambertMaterial({ color: SLUG_EYE })
 
+    // Register materials for light-based dimming
+    this.registerMaterialForLighting(bodyMaterial)
+    this.registerMaterialForLighting(underbellyMaterial)
+    this.registerMaterialForLighting(spotMaterial)
+    this.registerMaterialForLighting(eyeMaterial)
+
     // Body group for squish animation
     const bodyGroup = new THREE.Group()
 
