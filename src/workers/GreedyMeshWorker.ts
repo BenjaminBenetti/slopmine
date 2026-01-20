@@ -146,6 +146,9 @@ export interface GreedyMeshResponse {
   nonGreedyBlocks: Array<[number, Float32Array]>
   nonGreedyLights: Array<[number, Uint8Array]>
   nonGreedyMetadata: Array<[number, Uint8Array]>
+  // Face visibility for liquid blocks (6-bit mask per instance)
+  // Bit order: TOP(0), BOTTOM(1), NORTH(2), SOUTH(3), EAST(4), WEST(5)
+  nonGreedyFaceVisibility: Array<[number, Uint8Array]>
 }
 
 export interface GreedyMeshError {
@@ -290,14 +293,33 @@ function getFaceLight(
   }
 }
 
-// Water block IDs for liquid-to-liquid face culling
-const WATER_BLOCK_IDS = new Set([13, 14, 15, 16])
+// Liquid family mappings for face culling between same-family liquids
+// Water family (13-20), Lava family (21-28), Swamp water family (39-46)
+const LIQUID_FAMILIES: Map<number, string> = new Map([
+  // Water family (13-20)
+  [13, 'water'], [14, 'water'], [15, 'water'], [16, 'water'],
+  [17, 'water'], [18, 'water'], [19, 'water'], [20, 'water'],
+  // Lava family (21-28)
+  [21, 'lava'], [22, 'lava'], [23, 'lava'], [24, 'lava'],
+  [25, 'lava'], [26, 'lava'], [27, 'lava'], [28, 'lava'],
+  // Swamp water family (39-46)
+  [39, 'swamp'], [40, 'swamp'], [41, 'swamp'], [42, 'swamp'],
+  [43, 'swamp'], [44, 'swamp'], [45, 'swamp'], [46, 'swamp'],
+])
 
 /**
- * Check if a block is a liquid (water).
+ * Check if two blocks belong to the same liquid family.
+ */
+function areSameLiquidFamily(a: number, b: number): boolean {
+  const familyA = LIQUID_FAMILIES.get(a)
+  return familyA !== undefined && familyA === LIQUID_FAMILIES.get(b)
+}
+
+/**
+ * Check if a block is a liquid (water, lava, or swamp water).
  */
 function isLiquid(blockId: number): boolean {
-  return WATER_BLOCK_IDS.has(blockId)
+  return LIQUID_FAMILIES.has(blockId)
 }
 
 /**
@@ -326,8 +348,8 @@ function shouldRenderFace(
     default:          return false
   }
 
-  // Skip faces between liquid blocks (water-to-water)
-  if (isLiquid(currentBlockId) && isLiquid(neighborBlock)) {
+  // Skip faces between blocks of the same liquid family
+  if (areSameLiquidFamily(currentBlockId, neighborBlock)) {
     return false
   }
 
@@ -567,6 +589,7 @@ function processSubChunk(
   const nonGreedyPositions = new Map<number, number[]>()
   const nonGreedyLights = new Map<number, number[]>()
   const nonGreedyMetadataMap = new Map<number, number[]>()
+  const nonGreedyFaceVisibility = new Map<number, number[]>()
   const metadata = request.metadata
 
   // Track which blocks have been processed for non-greedy
@@ -682,6 +705,40 @@ function processSubChunk(
               }
               const blockMetadata = metadata ? metadata[posKey] : 0
               metadataArr.push(blockMetadata)
+
+              // Compute face visibility for liquid blocks
+              let faceVisArr = nonGreedyFaceVisibility.get(blockId)
+              if (!faceVisArr) {
+                faceVisArr = []
+                nonGreedyFaceVisibility.set(blockId, faceVisArr)
+              }
+
+              if (LIQUID_FAMILIES.has(blockId)) {
+                // Compute which faces are visible
+                // Hide face only if neighbor is EXACTLY the same block ID (same liquid at same level)
+                // This allows faces between different liquid levels to render (depth testing handles occlusion)
+                let visibleFaces = 0
+                const neighborOffsets: [number, number, number][] = [
+                  [0, 1, 0],  // TOP (bit 0)
+                  [0, -1, 0], // BOTTOM (bit 1)
+                  [0, 0, -1], // NORTH (bit 2)
+                  [0, 0, 1],  // SOUTH (bit 3)
+                  [1, 0, 0],  // EAST (bit 4)
+                  [-1, 0, 0], // WEST (bit 5)
+                ]
+                for (let f = 0; f < 6; f++) {
+                  const [dx, dy, dz] = neighborOffsets[f]
+                  const neighborId = getBlockAt(blocks, neighbors, x + dx, y + dy, z + dz)
+                  // Show face if neighbor is NOT the exact same block ID
+                  if (neighborId !== blockId) {
+                    visibleFaces |= (1 << f)
+                  }
+                }
+                faceVisArr.push(visibleFaces)
+              } else {
+                // Non-liquid blocks show all faces (0x3F = all 6 bits set)
+                faceVisArr.push(0x3F)
+              }
             }
             continue
           }
@@ -872,6 +929,7 @@ function processSubChunk(
   const nonGreedyBlocks: Array<[number, Float32Array]> = []
   const nonGreedyLightsOut: Array<[number, Uint8Array]> = []
   const nonGreedyMetadataOut: Array<[number, Uint8Array]> = []
+  const nonGreedyFaceVisOut: Array<[number, Uint8Array]> = []
 
   for (const [blockId, positions] of nonGreedyPositions) {
     nonGreedyBlocks.push([blockId, new Float32Array(positions)])
@@ -879,6 +937,8 @@ function processSubChunk(
     nonGreedyLightsOut.push([blockId, new Uint8Array(lights)])
     const metadataArr = nonGreedyMetadataMap.get(blockId) ?? []
     nonGreedyMetadataOut.push([blockId, new Uint8Array(metadataArr)])
+    const faceVisArr = nonGreedyFaceVisibility.get(blockId) ?? []
+    nonGreedyFaceVisOut.push([blockId, new Uint8Array(faceVisArr)])
   }
 
   return {
@@ -891,6 +951,7 @@ function processSubChunk(
     nonGreedyBlocks,
     nonGreedyLights: nonGreedyLightsOut,
     nonGreedyMetadata: nonGreedyMetadataOut,
+    nonGreedyFaceVisibility: nonGreedyFaceVisOut,
   }
 }
 
@@ -940,6 +1001,9 @@ self.onmessage = (event: MessageEvent<GreedyMeshRequest>) => {
     }
     for (const [, metadata] of result.nonGreedyMetadata) {
       transfer.push(metadata.buffer)
+    }
+    for (const [, faceVis] of result.nonGreedyFaceVisibility) {
+      transfer.push(faceVis.buffer)
     }
 
     self.postMessage(result, { transfer })

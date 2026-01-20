@@ -8,6 +8,16 @@ import type { IChunkMesh } from './ChunkMesh.ts'
 import { getTextureAtlas } from './TextureAtlas.ts'
 import { getMetadataFacing, facingToRotationY } from '../world/blocks/BlockFacing.ts'
 
+// Liquid block ID ranges for identifying liquid blocks
+const LIQUID_BLOCK_IDS = new Set([
+  // Water (13-20)
+  13, 14, 15, 16, 17, 18, 19, 20,
+  // Lava (21-28)
+  21, 22, 23, 24, 25, 26, 27, 28,
+  // Swamp water (39-46)
+  39, 40, 41, 42, 43, 44, 45, 46,
+])
+
 // Atlas materials cache (1 opaque + 1 transparent = 2 materials total)
 // Normals are stored per-vertex, so we only need one material per transparency type
 let opaqueAtlasMaterial: THREE.MeshLambertMaterial | null = null
@@ -95,7 +105,12 @@ export class GreedyChunkMesh implements IChunkMesh {
     }
 
     // Handle non-greedy blocks (torch, etc.) with InstancedMesh fallback
-    this.buildNonGreedyBlocks(response.nonGreedyBlocks, response.nonGreedyLights, response.nonGreedyMetadata)
+    this.buildNonGreedyBlocks(
+      response.nonGreedyBlocks,
+      response.nonGreedyLights,
+      response.nonGreedyMetadata,
+      response.nonGreedyFaceVisibility
+    )
   }
 
   /**
@@ -160,34 +175,205 @@ export class GreedyChunkMesh implements IChunkMesh {
 
   /**
    * Build instanced meshes for non-greedy blocks (torch, etc.).
-   * Uses BatchedMesh for transparent blocks with depthWrite:false (water)
-   * to enable per-instance depth sorting.
+   * Uses per-face geometry for liquid blocks to eliminate internal faces.
    */
   private buildNonGreedyBlocks(
     nonGreedyBlocks: Array<[number, Float32Array]>,
     nonGreedyLights: Array<[number, Uint8Array]>,
-    nonGreedyMetadata: Array<[number, Uint8Array]>
+    nonGreedyMetadata: Array<[number, Uint8Array]>,
+    nonGreedyFaceVisibility: Array<[number, Uint8Array]>
   ): void {
     const matrix = new THREE.Matrix4()
+    const faceVisMap = new Map(nonGreedyFaceVisibility)
 
     for (let i = 0; i < nonGreedyBlocks.length; i++) {
       const [blockId, positions] = nonGreedyBlocks[i]
       const lights = nonGreedyLights[i]?.[1] ?? new Uint8Array(0)
       const metadata = nonGreedyMetadata[i]?.[1] ?? new Uint8Array(0)
+      const faceVis = faceVisMap.get(blockId)
 
       const count = positions.length / 3
       if (count === 0) continue
 
       const block = getBlock(blockId)
       const material = block.getInstanceMaterial()
-      const geometry = block.getInstanceGeometry()
-
-      // Check if this needs depth-sorted rendering (blended transparency)
       const mat = Array.isArray(material) ? material[0] : material
-      const needsDepthSort = mat && mat.transparent
 
-      this.buildInstancedMesh(blockId, geometry, material, positions, lights, metadata, count, matrix, mat)
+      // Check if this is a liquid block with face visibility data
+      if (LIQUID_BLOCK_IDS.has(blockId) && faceVis) {
+        this.buildLiquidMesh(blockId, positions, lights, faceVis, material, mat)
+      } else {
+        const geometry = block.getInstanceGeometry()
+        this.buildInstancedMesh(blockId, geometry, material, positions, lights, metadata, count, matrix, mat)
+      }
     }
+  }
+
+  /**
+   * Build a single merged mesh for liquid blocks with per-face visibility.
+   * Emits only visible faces as direct geometry (one draw call per liquid type).
+   * Extracts bounding box from block geometry to respect height variations.
+   */
+  private buildLiquidMesh(
+    blockId: BlockId,
+    positions: Float32Array,
+    lights: Uint8Array,
+    faceVisibility: Uint8Array,
+    material: THREE.Material | THREE.Material[],
+    mat: THREE.Material | undefined
+  ): void {
+    const count = positions.length / 3
+    if (count === 0) return
+
+    // Get the block's actual geometry bounding box for correct dimensions
+    const block = getBlock(blockId)
+    const blockGeometry = block.getInstanceGeometry()
+    blockGeometry.computeBoundingBox()
+    const box = blockGeometry.boundingBox!
+
+    // Extract min/max from bounding box
+    const minX = box.min.x, maxX = box.max.x
+    const minY = box.min.y, maxY = box.max.y
+    const minZ = box.min.z, maxZ = box.max.z
+
+    // Calculate UV scale for side faces based on height ratio
+    const height = maxY - minY
+    const uvHeight = height // Side face UVs scale with height
+
+    // Face vertex definitions using actual bounding box dimensions
+    // Each face has 4 vertices in CCW winding from outside
+    const FACE_VERTS: number[][][] = [
+      // TOP (bit 0) - +Y face
+      [[minX, maxY, minZ], [maxX, maxY, minZ], [maxX, maxY, maxZ], [minX, maxY, maxZ]],
+      // BOTTOM (bit 1) - -Y face
+      [[minX, minY, maxZ], [maxX, minY, maxZ], [maxX, minY, minZ], [minX, minY, minZ]],
+      // NORTH (bit 2) - -Z face
+      [[maxX, minY, minZ], [minX, minY, minZ], [minX, maxY, minZ], [maxX, maxY, minZ]],
+      // SOUTH (bit 3) - +Z face
+      [[minX, minY, maxZ], [maxX, minY, maxZ], [maxX, maxY, maxZ], [minX, maxY, maxZ]],
+      // EAST (bit 4) - +X face
+      [[maxX, minY, maxZ], [maxX, minY, minZ], [maxX, maxY, minZ], [maxX, maxY, maxZ]],
+      // WEST (bit 5) - -X face
+      [[minX, minY, minZ], [minX, minY, maxZ], [minX, maxY, maxZ], [minX, maxY, minZ]],
+    ]
+
+    const FACE_NORMALS: number[][] = [
+      [0, 1, 0], [0, -1, 0], [0, 0, -1], [0, 0, 1], [1, 0, 0], [-1, 0, 0]
+    ]
+
+    // UVs - top/bottom use full texture, sides use height-scaled V
+    const FACE_UVS: number[][][] = [
+      // TOP - full texture
+      [[0, 0], [1, 0], [1, 1], [0, 1]],
+      // BOTTOM - full texture
+      [[0, 0], [1, 0], [1, 1], [0, 1]],
+      // NORTH - height-scaled (bottom portion of texture)
+      [[0, 0], [1, 0], [1, uvHeight], [0, uvHeight]],
+      // SOUTH - height-scaled
+      [[0, 0], [1, 0], [1, uvHeight], [0, uvHeight]],
+      // EAST - height-scaled
+      [[0, 0], [1, 0], [1, uvHeight], [0, uvHeight]],
+      // WEST - height-scaled
+      [[0, 0], [1, 0], [1, uvHeight], [0, uvHeight]],
+    ]
+
+    // Pre-count total faces for allocation
+    let totalFaces = 0
+    for (let i = 0; i < count; i++) {
+      const pattern = faceVisibility[i]
+      for (let f = 0; f < 6; f++) {
+        if (pattern & (1 << f)) totalFaces++
+      }
+    }
+
+    if (totalFaces === 0) return
+
+    // Allocate arrays (4 verts per face, 6 indices per face)
+    const posArr = new Float32Array(totalFaces * 4 * 3)
+    const normArr = new Float32Array(totalFaces * 4 * 3)
+    const uvArr = new Float32Array(totalFaces * 4 * 2)
+    const colorArr = new Float32Array(totalFaces * 4 * 3)
+    const indices: number[] = []
+
+    let vertOffset = 0
+
+    for (let i = 0; i < count; i++) {
+      const pattern = faceVisibility[i]
+      if (pattern === 0) continue
+
+      // Block position (center offset)
+      const px = positions[i * 3] + 0.5
+      const py = positions[i * 3 + 1] + 0.5
+      const pz = positions[i * 3 + 2] + 0.5
+
+      // Calculate brightness
+      const light = lights[i] ?? 15
+      const minBrightness = 0.02
+      const normalized = light / 15
+      const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
+
+      for (let f = 0; f < 6; f++) {
+        if (!(pattern & (1 << f))) continue
+
+        const verts = FACE_VERTS[f]
+        const uvs = FACE_UVS[f]
+        const norm = FACE_NORMALS[f]
+        const baseVert = vertOffset
+
+        // Emit 4 vertices for this face
+        for (let v = 0; v < 4; v++) {
+          const vi = vertOffset * 3
+          const ui = vertOffset * 2
+
+          posArr[vi] = px + verts[v][0]
+          posArr[vi + 1] = py + verts[v][1]
+          posArr[vi + 2] = pz + verts[v][2]
+
+          normArr[vi] = norm[0]
+          normArr[vi + 1] = norm[1]
+          normArr[vi + 2] = norm[2]
+
+          uvArr[ui] = uvs[v][0]
+          uvArr[ui + 1] = uvs[v][1]
+
+          colorArr[vi] = brightness
+          colorArr[vi + 1] = brightness
+          colorArr[vi + 2] = brightness
+
+          vertOffset++
+        }
+
+        // Emit 2 triangles (6 indices)
+        indices.push(
+          baseVert, baseVert + 1, baseVert + 2,
+          baseVert, baseVert + 2, baseVert + 3
+        )
+      }
+    }
+
+    // Create geometry
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normArr, 3))
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2))
+    geometry.setAttribute('color', new THREE.BufferAttribute(colorArr, 3))
+
+    // Use Uint32Array if needed
+    const indexArray = vertOffset > 65535 ? new Uint32Array(indices) : new Uint16Array(indices)
+    geometry.setIndex(new THREE.BufferAttribute(indexArray, 1))
+
+    // Create mesh
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.frustumCulled = true
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+
+    if (mat && mat.transparent) {
+      mesh.renderOrder = 1
+    }
+
+    this.meshes.push(mesh)
+    this.group.add(mesh)
   }
 
   /**

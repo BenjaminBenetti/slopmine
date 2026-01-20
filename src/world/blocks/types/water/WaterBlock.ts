@@ -19,7 +19,7 @@ const waterTexture = loadBlockTexture(waterTexUrl)
 const waterMaterial = new THREE.MeshLambertMaterial({
   map: waterTexture,
   transparent: true,
-  opacity: 0.75,
+  opacity: 0.95,
   side: THREE.DoubleSide,
   depthWrite: true,
 })

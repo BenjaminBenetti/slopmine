@@ -19,7 +19,7 @@ const lavaTexture = loadBlockTexture(lavaTexUrl)
 const lavaMaterial = new THREE.MeshLambertMaterial({
   map: lavaTexture,
   transparent: true,
-  opacity: 0.9,
+  opacity: 0.95,
   side: THREE.DoubleSide,
   depthWrite: true,
   emissive: new THREE.Color(0xff4400),

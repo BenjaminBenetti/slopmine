@@ -19,7 +19,7 @@ const swampWaterTexture = loadBlockTexture(swampWaterTexUrl)
 const swampWaterMaterial = new THREE.MeshLambertMaterial({
   map: swampWaterTexture,
   transparent: true,
-  opacity: 0.8,
+  opacity: 0.95,
   side: THREE.DoubleSide,
   depthWrite: true,
 })
