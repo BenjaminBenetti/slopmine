@@ -66,6 +66,18 @@ export class EntityManager implements ITask {
    */
   private lightQueryFn: ((x: number, y: number, z: number) => number) | null = null
 
+  /**
+   * Function to query block ID at a position.
+   * Used by entities that need to detect specific blocks (like HellBug for pillars).
+   */
+  private blockQueryFn: ((x: number, y: number, z: number) => number) | null = null
+
+  /**
+   * Function to check if a block is solid at a position.
+   * Used by entities that need collision info (like HellBug for pillar detection).
+   */
+  private solidQueryFn: ((x: number, y: number, z: number) => boolean) | null = null
+
   // Adaptive update rates based on distance from player
   // Tier 0: 0-32 blocks = 60 UPS (every frame)
   // Tier 1: 32-128 blocks = 30 UPS
@@ -114,6 +126,22 @@ export class EntityManager implements ITask {
    */
   setLightQuery(fn: (x: number, y: number, z: number) => number): void {
     this.lightQueryFn = fn
+  }
+
+  /**
+   * Set the function to query block IDs at world positions.
+   * Used by entities that need to detect specific block types.
+   */
+  setBlockQuery(fn: (x: number, y: number, z: number) => number): void {
+    this.blockQueryFn = fn
+  }
+
+  /**
+   * Set the function to check if blocks are solid.
+   * Used by entities that need collision/navigation info.
+   */
+  setSolidQuery(fn: (x: number, y: number, z: number) => boolean): void {
+    this.solidQueryFn = fn
   }
 
   /**
@@ -411,6 +439,17 @@ export class EntityManager implements ITask {
     if (this.playerDamageCallback && 'setPlayerDamageCallback' in entity) {
       const aggressiveEntity = entity as { setPlayerDamageCallback: (cb: (damage: number, knockback: THREE.Vector3) => void) => void }
       aggressiveEntity.setPlayerDamageCallback(this.playerDamageCallback)
+    }
+
+    // Set world query functions for entities that need them (e.g., HellBug for pillar detection)
+    if (this.blockQueryFn && this.solidQueryFn && 'setWorldQueryFns' in entity) {
+      const worldAwareEntity = entity as {
+        setWorldQueryFns: (
+          blockQuery: (x: number, y: number, z: number) => number,
+          solidQuery: (x: number, y: number, z: number) => boolean
+        ) => void
+      }
+      worldAwareEntity.setWorldQueryFns(this.blockQueryFn, this.solidQueryFn)
     }
 
     entity.state = EntityState.ACTIVE

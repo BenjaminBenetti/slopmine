@@ -9,6 +9,7 @@ import type { SimplexNoise } from '../SimplexNoise.ts'
 import { HellPillarFeature } from '../features/HellPillarFeature.ts'
 import { MagmaSlimeEntity } from '../../../entities/animals/magma_slime/index.ts'
 import { SkeletonEntity } from '../../../entities/enemies/skeleton/index.ts'
+import { HellBugEntity } from '../../../entities/enemies/hell_bug/index.ts'
 
 /**
  * Hell biome - the first true underground biome.
@@ -95,6 +96,14 @@ export class HellGenerator extends BiomeGenerator {
         maxY: 120, // Up through the air gap (below ceiling)
         maxNearby: 5,
         createEntity: (pos: THREE.Vector3) => new SkeletonEntity({ position: pos }),
+      },
+      {
+        entityType: 'hell_bug',
+        spawnRate: 0.18, // Flying cockroaches around pillars
+        minY: 48, // In the air gap above terrain
+        maxY: 120, // Below ceiling
+        maxNearby: 6,
+        createEntity: (pos: THREE.Vector3) => new HellBugEntity({ position: pos }),
       },
     ],
   }

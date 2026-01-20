@@ -30,3 +30,4 @@ export { RabbitEntity } from './animals/rabbit/index.ts'
 
 // Enemies
 export { SkeletonEntity } from './enemies/skeleton/index.ts'
+export { HellBugEntity, type IHellBugEntityConfig, PillarDetector, type PillarClingPoint } from './enemies/hell_bug/index.ts'
