@@ -3,13 +3,13 @@ import { Entity } from '../../Entity.ts'
 import type { IEntityConfig } from '../../interfaces/IEntityConfig.ts'
 import type { IItem } from '../../../items/Item.ts'
 import { PillarDetector, type PillarClingPoint } from './PillarDetector.ts'
-import { HellBugWingItem } from '../../../items/materials/hell_bug_wing/HellBugWingItem.ts'
+import { EmberRoachWingItem } from '../../../items/materials/ember_roach_wing/EmberRoachWingItem.ts'
 import { CorruptedEssenceItem } from '../../../items/materials/corrupted_essence/CorruptedEssenceItem.ts'
 
 /**
- * State machine states for Hell Bug behavior.
+ * State machine states for Ember Roach behavior.
  */
-enum HellBugState {
+enum EmberRoachState {
   /** Clinging to a pillar, waiting to detect player */
   IDLE_ON_PILLAR = 'idle_on_pillar',
   /** Diving at the player in an attack arc */
@@ -31,7 +31,7 @@ const FLIGHT_SPEED = 8.0
 // Timing constants
 const MIN_CLING_DURATION = 3.0 // seconds
 const MAX_CLING_DURATION = 8.0 // seconds
-const SWOOP_DURATION = 2.0 // seconds for full swoop arc (slower so player can react)
+const SWOOP_DURATION = 1.5 // seconds for full swoop arc (slower so player can react)
 const ATTACK_COOLDOWN = 4.0 // seconds after attack before can attack again
 
 // Damage constants
@@ -45,7 +45,7 @@ const DEATH_FALL_DURATION = 0.5
 const DEATH_LINGER_DURATION = 1.0
 const DEATH_GRAVITY = -20.0 // blocks/sec^2
 
-// Hell Bug colors
+// Ember Roach colors
 const CARAPACE_COLOR = 0x2a1810 // Dark brown-red
 const LEG_COLOR = 0x1a0808 // Near-black
 const WING_COLOR = 0x3a2018 // Semi-transparent brown
@@ -81,9 +81,9 @@ const LEG_IDLE_SPEED = 2.0
 const LEG_FLIGHT_SPEED = 8.0
 
 /**
- * Configuration for HellBugEntity.
+ * Configuration for EmberRoachEntity.
  */
-export interface IHellBugEntityConfig extends Omit<IEntityConfig, 'hasPhysics' | 'hitboxSize'> {
+export interface IEmberRoachEntityConfig extends Omit<IEntityConfig, 'hasPhysics' | 'hitboxSize'> {
   /** Initial pillar detector (optional, usually set after spawn) */
   pillarDetector?: PillarDetector
 }
@@ -95,18 +95,18 @@ export interface IHellBugEntityConfig extends Omit<IEntityConfig, 'hasPhysics' |
  * Stats:
  * - 16 HP (8 hearts)
  * - 5 damage (2.5 hearts)
- * - 18 block detection range
- * - Fast swoop attack (14 blocks/sec)
+ * - 36 block detection range
+ * - Fast swoop attack
  *
  * Drops:
- * - 1-2 Hell Bug Wings
+ * - 1-2 Ember Roach Wings
  * - 0-1 Corrupted Essence
  */
-export class HellBugEntity extends Entity {
-  readonly type = 'hell_bug'
+export class EmberRoachEntity extends Entity {
+  readonly type = 'ember_roach'
 
   // State machine
-  private currentState: HellBugState = HellBugState.FLYING_TO_PILLAR
+  private currentState: EmberRoachState = EmberRoachState.FLYING_TO_PILLAR
   private stateTimer = 0
 
   // Combat
@@ -160,8 +160,8 @@ export class HellBugEntity extends Entity {
   private readonly tempVec = new THREE.Vector3()
   private readonly knockbackDir = new THREE.Vector3()
 
-  constructor(config: IHellBugEntityConfig) {
-    super('hell_bug', {
+  constructor(config: IEmberRoachEntityConfig) {
+    super('ember_roach', {
       ...config,
       hasPhysics: true, // Need physics body for hitbox detection
       hitboxSize: new THREE.Vector3(1.2, 0.8, 1.5), // Larger hitbox for easier hitting
@@ -451,13 +451,13 @@ export class HellBugEntity extends Entity {
 
     // State machine update
     switch (this.currentState) {
-      case HellBugState.IDLE_ON_PILLAR:
+      case EmberRoachState.IDLE_ON_PILLAR:
         this.updateIdleOnPillar(deltaTime)
         break
-      case HellBugState.SWOOPING_ATTACK:
+      case EmberRoachState.SWOOPING_ATTACK:
         this.updateSwoopingAttack(deltaTime)
         break
-      case HellBugState.FLYING_TO_PILLAR:
+      case EmberRoachState.FLYING_TO_PILLAR:
         this.updateFlyingToPillar(deltaTime)
         break
     }
@@ -587,7 +587,7 @@ export class HellBugEntity extends Entity {
   }
 
   private startIdleOnPillar(clingPoint: PillarClingPoint): void {
-    this.currentState = HellBugState.IDLE_ON_PILLAR
+    this.currentState = EmberRoachState.IDLE_ON_PILLAR
     this.stateTimer = 0
     this.currentClingPoint = clingPoint
     this.clingNormal.copy(clingPoint.normal)
@@ -605,7 +605,7 @@ export class HellBugEntity extends Entity {
   private startSwoopAttack(): void {
     if (!this.playerPositionRef) return
 
-    this.currentState = HellBugState.SWOOPING_ATTACK
+    this.currentState = EmberRoachState.SWOOPING_ATTACK
     this.swoopProgress = 0
     this.hasDealtDamage = false
     this.isFlying = true
@@ -623,7 +623,7 @@ export class HellBugEntity extends Entity {
   }
 
   private startFlyingToPillar(): void {
-    this.currentState = HellBugState.FLYING_TO_PILLAR
+    this.currentState = EmberRoachState.FLYING_TO_PILLAR
     this.stateTimer = 0
     this.targetClingPoint = null
     this.findNewTargetPillar()
@@ -789,10 +789,10 @@ export class HellBugEntity extends Entity {
 
     const result: IItem[] = []
 
-    // 1-2 Hell Bug Wings
+    // 1-2 Ember Roach Wings
     const wingCount = 1 + Math.floor(Math.random() * 2)
     for (let i = 0; i < wingCount; i++) {
-      result.push(new HellBugWingItem())
+      result.push(new EmberRoachWingItem())
     }
 
     // 0-1 Corrupted Essence
@@ -848,12 +848,12 @@ export class HellBugEntity extends Entity {
       this.stateTimer = 0 // Reset for wiggle animation
 
       // Cancel swoop attack if in progress - bug will retreat to pillar after stun
-      if (this.currentState === HellBugState.SWOOPING_ATTACK) {
+      if (this.currentState === EmberRoachState.SWOOPING_ATTACK) {
         this.hasDealtDamage = true // Prevent dealing damage after being interrupted
       }
 
       // After stun ends, bug will fly to pillar (set state now, knockback handler will let it play out)
-      this.currentState = HellBugState.FLYING_TO_PILLAR
+      this.currentState = EmberRoachState.FLYING_TO_PILLAR
       this.targetClingPoint = null // Find a new pillar
       this.attackCooldown = ATTACK_COOLDOWN // Reset attack cooldown
     }

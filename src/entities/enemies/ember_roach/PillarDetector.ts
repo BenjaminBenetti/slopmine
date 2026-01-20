@@ -3,7 +3,7 @@ import type { IPhysicsWorld } from '../../../physics/interfaces/IPhysicsWorld.ts
 import { BlockIds } from '../../../world/blocks/BlockIds.ts'
 
 /**
- * Represents a valid point on a pillar where a Hell Bug can cling.
+ * Represents a valid point on a pillar where an Ember Roach can cling.
  */
 export interface PillarClingPoint {
   /** Position where the entity should be when clinging */

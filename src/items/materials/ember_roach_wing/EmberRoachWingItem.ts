@@ -1,19 +1,19 @@
 import { Item } from '../../Item.ts'
 
 /**
- * Hell Bug Wing item dropped by Hell Bugs when killed.
+ * Ember Roach Wing item dropped by Ember Roaches when killed.
  * A chitinous wing from the Hell biome's flying cockroach creatures.
  */
-export class HellBugWingItem extends Item {
-  readonly id = 'hell_bug_wing'
-  readonly name = 'hell_bug_wing'
+export class EmberRoachWingItem extends Item {
+  readonly id = 'ember_roach_wing'
+  readonly name = 'ember_roach_wing'
 
   override get displayName(): string {
-    return 'Hell Bug Wing'
+    return 'Ember Roach Wing'
   }
 
   override get iconUrl(): string {
-    return new URL('./assets/hell-bug-wing-icon.webp', import.meta.url).href
+    return new URL('./assets/ember-roach-wing-icon.webp', import.meta.url).href
   }
 
   override get tags(): ReadonlyArray<string> {

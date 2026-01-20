@@ -75,7 +75,7 @@ import { AlligatorLeatherItem } from '../items/materials/alligator_leather/Allig
 import { KomodoScalesItem } from '../items/materials/komodo_scales/KomodoScalesItem.ts'
 import { CorruptedEssenceItem } from '../items/materials/corrupted_essence/CorruptedEssenceItem.ts'
 import { BoneItem } from '../items/materials/bone/BoneItem.ts'
-import { HellBugWingItem } from '../items/materials/hell_bug_wing/HellBugWingItem.ts'
+import { EmberRoachWingItem } from '../items/materials/ember_roach_wing/EmberRoachWingItem.ts'
 import { GoldBarItem } from '../items/bars/gold/GoldBarItem.ts'
 import { CopperBarItem } from '../items/bars/copper/CopperBarItem.ts'
 import { SteelBarItem } from '../items/bars/steel/SteelBarItem.ts'
@@ -218,7 +218,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('komodo_scales', () => new KomodoScalesItem())
   registerItemFactory('corrupted_essence', () => new CorruptedEssenceItem())
   registerItemFactory('bone', () => new BoneItem())
-  registerItemFactory('hell_bug_wing', () => new HellBugWingItem())
+  registerItemFactory('ember_roach_wing', () => new EmberRoachWingItem())
 
   // Pickaxes
   registerItemFactory('wood_pickaxe', () => new WoodPickaxeItem())

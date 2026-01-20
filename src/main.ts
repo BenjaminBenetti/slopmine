@@ -500,7 +500,7 @@ entityManager.setPlayerDamageCallback(playerDamageHandler.createCallback())
 // Set light query for entity dimming based on world light levels
 entityManager.setLightQuery((x, y, z) => world.getLightLevelAtWorld(x, y, z))
 
-// Set block query functions for entities that need world access (e.g., HellBug for pillar detection)
+// Set block query functions for entities that need world access (e.g., EmberRoach for pillar detection)
 entityManager.setBlockQuery((x, y, z) =>
   world.getBlockId(BigInt(Math.floor(x)), BigInt(Math.floor(y)), BigInt(Math.floor(z)))
 )

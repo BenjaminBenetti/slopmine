@@ -68,13 +68,13 @@ export class EntityManager implements ITask {
 
   /**
    * Function to query block ID at a position.
-   * Used by entities that need to detect specific blocks (like HellBug for pillars).
+   * Used by entities that need to detect specific blocks (like EmberRoach for pillars).
    */
   private blockQueryFn: ((x: number, y: number, z: number) => number) | null = null
 
   /**
    * Function to check if a block is solid at a position.
-   * Used by entities that need collision info (like HellBug for pillar detection).
+   * Used by entities that need collision info (like EmberRoach for pillar detection).
    */
   private solidQueryFn: ((x: number, y: number, z: number) => boolean) | null = null
 
@@ -441,7 +441,7 @@ export class EntityManager implements ITask {
       aggressiveEntity.setPlayerDamageCallback(this.playerDamageCallback)
     }
 
-    // Set world query functions for entities that need them (e.g., HellBug for pillar detection)
+    // Set world query functions for entities that need them (e.g., EmberRoach for pillar detection)
     if (this.blockQueryFn && this.solidQueryFn && 'setWorldQueryFns' in entity) {
       const worldAwareEntity = entity as {
         setWorldQueryFns: (
