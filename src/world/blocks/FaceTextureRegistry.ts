@@ -71,6 +71,16 @@ export enum TextureId {
   HELL_ROCK = 60,            // hell-rock.webp
   HELL_MAGMA = 61,           // hell-magma.webp
   CORRUPTED_HELL_ROCK = 62,  // corrupted-hell-rock.webp
+  GLASS = 63,                // glass.webp
+  HERB_1 = 64,               // herb-1.webp (seedling)
+  HERB_2 = 65,               // herb-2.webp (growing)
+  HERB_3 = 66,               // herb-3.webp (mature)
+  APOTHECARY_FRONT = 67,     // apothecary-front.webp
+  APOTHECARY_SIDE = 68,      // apothecary-side.webp
+  APOTHECARY_TOP = 69,       // apothecary-top.webp
+  YELLOW_FLOWER = 70,        // yellow-flower.webp
+  BLUE_FLOWER = 71,          // blue-flower.webp
+  RED_FLOWER = 72,           // red-flower.webp
 }
 
 // Cache for the face texture map
@@ -147,6 +157,8 @@ export function getFaceTextureId(
 export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   11, // Torch - custom slim geometry
   12, // Forge - directional block with rotation
+  58, // Glass - needs blended transparency (not alphaTest)
+  62, // Apothecary Workbench - directional block with rotation
   // Water (13-16) is now greedy-meshed to eliminate internal face z-fighting
 ])
 

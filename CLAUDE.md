@@ -206,6 +206,29 @@ types/{block_name}/
 └── BlockNameBlock.ts
 ```
 
+**Creating Texture Assets with AI:**
+
+When generating textures using AI image generation tools (like the `generate_image` MCP tool), transparent blocks (flowers, crops, plants, etc.) require special handling:
+
+1. **Request transparent/alpha backgrounds explicitly** in your prompt:
+   - Include phrases like "on a transparent background", "PNG with alpha transparency", "cut out with no background"
+   - Example prompt: "Pixel art yellow flower with green stem, cut out on transparent background, 32x32 pixels"
+
+2. **Post-process generated images** to remove backgrounds:
+   - AI tools often generate images with solid backgrounds even when transparency is requested
+   - Use ImageMagick to remove backgrounds before converting to webp:
+   ```bash
+   # Remove white/light backgrounds and convert to webp with transparency
+   convert input.png -fuzz 10% -transparent white -quality 90 output.webp
+
+   # For more complex backgrounds, use flood fill from corners
+   convert input.png -fuzz 15% -fill none -draw "alpha 0,0 floodfill" -quality 90 output.webp
+   ```
+
+3. **Verify transparency** before committing:
+   - Open the webp file and confirm the background is transparent, not white/gray
+   - Test in-game to ensure cross-billboard geometry displays correctly
+
 **Block Types:**
 - **Solid**: Stone, Dirt, Grass, Oak Log, Ore blocks
 - **Transparent**: Glass, Water (8 levels), Lava (8 levels)

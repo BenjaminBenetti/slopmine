@@ -17,7 +17,11 @@ import { WaterFeature, type WaterEdgeEffects } from '../world/generate/features/
 import { OasisFeature, type OasisSettings } from '../world/generate/features/OasisFeature.ts'
 import { LavaFeature, type LavaFeatureConfig } from '../world/generate/features/LavaFeature.ts'
 import { WheatFeature, type WheatFeatureSettings } from '../world/generate/features/WheatFeature.ts'
+import { HerbFeature, type HerbFeatureSettings } from '../world/generate/features/HerbFeature.ts'
 import { HellPillarFeature, type HellPillarFeatureConfig } from '../world/generate/features/HellPillarFeature.ts'
+import { JungleTreeFeature, type JungleTreeFeatureSettings } from '../world/generate/features/JungleTreeFeature.ts'
+import { MegaTreeFeature, type MegaTreeFeatureSettings } from '../world/generate/features/MegaTreeFeature.ts'
+import { FlowerPatchFeature, type FlowerPatchFeatureSettings } from '../world/generate/features/FlowerPatchFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
@@ -82,7 +86,11 @@ export type FeatureConfig =
   | { type: 'oasis'; settings: OasisSettings }
   | { type: 'lava'; settings: LavaFeatureConfig }
   | { type: 'wheat'; settings: WheatFeatureSettings }
+  | { type: 'herb'; settings: HerbFeatureSettings }
   | { type: 'hellPillar'; settings: HellPillarFeatureConfig }
+  | { type: 'jungleTree'; settings: JungleTreeFeatureSettings }
+  | { type: 'megaTree'; settings: MegaTreeFeatureSettings }
+  | { type: 'flowerPatch'; settings: FlowerPatchFeatureSettings }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -281,8 +289,16 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new LavaFeature(config.settings)
       case 'wheat':
         return new WheatFeature(config.settings)
+      case 'herb':
+        return new HerbFeature(config.settings)
       case 'hellPillar':
         return new HellPillarFeature(config.settings)
+      case 'jungleTree':
+        return new JungleTreeFeature(config.settings)
+      case 'megaTree':
+        return new MegaTreeFeature(config.settings)
+      case 'flowerPatch':
+        return new FlowerPatchFeature(config.settings)
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }

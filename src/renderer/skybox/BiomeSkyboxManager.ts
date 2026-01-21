@@ -1,6 +1,7 @@
 import type { Skybox } from './Skybox.ts'
 import type { BiomeRegistry } from '../../world/generate/biomes/BiomeRegistry.ts'
 import type { GenerationConfig } from '../../world/generate/GenerationConfig.ts'
+import { LAYER_BOUNDARY_Y } from '../../world/generate/GenerationConfig.ts'
 import type { SkyboxSettings } from '../../world/generate/BiomeGenerator.ts'
 
 /**
@@ -68,6 +69,7 @@ export class BiomeSkyboxManager {
    */
   private calculateBlendedSettings(
     worldX: number,
+    worldY: number,
     worldZ: number
   ): { brightness: number; tint: { r: number; g: number; b: number } } {
     // Sample points in a grid pattern around the player
@@ -79,13 +81,25 @@ export class BiomeSkyboxManager {
     let weightedTintR = 0
     let weightedTintG = 0
     let weightedTintB = 0
+    
+    // Determine layer based on player height (using same boundary as WorldGenerator)
+    // If player is underground, use underground biomes. If surface, use surface biomes.
+    const layer: 0 | 1 = worldY < LAYER_BOUNDARY_Y ? 0 : 1
 
     for (const point of samplePoints) {
       // Get the biome at this sample point
       const chunkX = Math.floor(point.x / this.CHUNK_SIZE)
       const chunkZ = Math.floor(point.z / this.CHUNK_SIZE)
       const { regionX, regionZ } = this.biomeRegistry.getRegionCoords(chunkX, chunkZ)
-      const biomeType = this.biomeRegistry.selectBiome(regionX, regionZ, this.config.seed)
+      
+      // Use selectBiomeForLayer to ensure we get the biome that matches the terrain generation
+      // for the current layer (surface or underground)
+      const biomeType = this.biomeRegistry.selectBiomeForLayer(
+        regionX, 
+        regionZ, 
+        this.config.seed, 
+        layer
+      )
 
       // Get skybox settings for this biome
       const settings = this.getSkyboxSettingsForBiome(biomeType)
@@ -156,8 +170,8 @@ export class BiomeSkyboxManager {
    * Update the skybox based on player position.
    * Call this each frame with the player's world coordinates.
    */
-  update(worldX: number, worldZ: number): void {
-    const blended = this.calculateBlendedSettings(worldX, worldZ)
+  update(worldX: number, worldY: number, worldZ: number): void {
+    const blended = this.calculateBlendedSettings(worldX, worldY, worldZ)
     this.skybox.setBiomeModifiers(blended.brightness, blended.tint)
   }
 }

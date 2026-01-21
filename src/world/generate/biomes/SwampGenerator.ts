@@ -4,6 +4,7 @@ import { SlugEntity } from '../../../entities/animals/slug/index.ts'
 import { AlligatorEntity } from '../../../entities/animals/alligator/index.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
+import { HerbFeature } from '../features/HerbFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -85,6 +86,14 @@ export class SwampGenerator extends BiomeGenerator {
         peakY: 164,
         ySpread: 4,
         replaceableBlocks: [BlockIds.STONE],
+      }),
+      // Herb patches - moderate density on muddy grass
+      new HerbFeature({
+        density: 2.5,
+        minPatchSize: 2,
+        maxPatchSize: 5,
+        gridSize: 14,
+        validGroundBlocks: [BlockIds.MUDDY_GRASS],
       }),
     ],
     caves: {

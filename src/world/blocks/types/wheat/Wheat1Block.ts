@@ -28,34 +28,22 @@ function createCropCrossGeometry(height: number = 1.0, width: number = 0.8): THR
   const bottom = -0.5   // Bottom of block
   const top = bottom + height // Top based on height
 
-  // Two intersecting diagonal planes
+  // Two intersecting diagonal planes (DoubleSide handles back faces)
   const vertices = new Float32Array([
     // First plane (diagonal from -X,-Z to +X,+Z)
     -w, bottom, -w,  w, bottom, w,  w, top, w,
     -w, bottom, -w,  w, top, w,  -w, top, -w,
-    // Back face of first plane
-    w, bottom, w,  -w, bottom, -w,  -w, top, -w,
-    w, bottom, w,  -w, top, -w,  w, top, w,
     // Second plane (diagonal from -X,+Z to +X,-Z)
     -w, bottom, w,  w, bottom, -w,  w, top, -w,
     -w, bottom, w,  w, top, -w,  -w, top, w,
-    // Back face of second plane
-    w, bottom, -w,  -w, bottom, w,  -w, top, w,
-    w, bottom, -w,  -w, top, w,  w, top, -w,
   ])
 
   // UV coordinates for texture mapping
   const uvs = new Float32Array([
-    // First plane front
+    // First plane
     0, 0,  1, 0,  1, 1,
     0, 0,  1, 1,  0, 1,
-    // First plane back
-    0, 0,  1, 0,  1, 1,
-    0, 0,  1, 1,  0, 1,
-    // Second plane front
-    0, 0,  1, 0,  1, 1,
-    0, 0,  1, 1,  0, 1,
-    // Second plane back
+    // Second plane
     0, 0,  1, 0,  1, 1,
     0, 0,  1, 1,  0, 1,
   ])

@@ -53,9 +53,17 @@ import { PurpleMushroomCapBlock } from './types/purple_mushroom_cap/PurpleMushro
 import { Wheat1Block } from './types/wheat/Wheat1Block.ts'
 import { Wheat2Block } from './types/wheat/Wheat2Block.ts'
 import { Wheat3Block } from './types/wheat/Wheat3Block.ts'
+import { Herb1Block } from './types/herb/Herb1Block.ts'
+import { Herb2Block } from './types/herb/Herb2Block.ts'
+import { Herb3Block } from './types/herb/Herb3Block.ts'
 import { HellRockBlock } from './types/hell_rock/HellRockBlock.ts'
 import { HellMagmaBlock } from './types/hell_magma/HellMagmaBlock.ts'
 import { CorruptedHellRockBlock } from './types/corrupted_hell_rock/CorruptedHellRockBlock.ts'
+import { GlassBlock } from './types/glass/GlassBlock.ts'
+import { ApothecaryWorkbenchBlock } from './types/apothecary_workbench/ApothecaryWorkbenchBlock.ts'
+import { YellowFlowerBlock } from './types/yellow_flower/YellowFlowerBlock.ts'
+import { BlueFlowerBlock } from './types/blue_flower/BlueFlowerBlock.ts'
+import { RedFlowerBlock } from './types/red_flower/RedFlowerBlock.ts'
 
 /**
  * Register all default block types.
@@ -79,6 +87,7 @@ export function registerDefaultBlocks(): void {
   // Utility blocks
   registerBlock(new TorchBlock())
   registerBlock(new ForgeBlock())
+  registerBlock(new ApothecaryWorkbenchBlock())
 
   // Water blocks
   registerBlock(new WaterBlock())
@@ -137,9 +146,20 @@ export function registerDefaultBlocks(): void {
   registerBlock(new Wheat1Block())
   registerBlock(new Wheat2Block())
   registerBlock(new Wheat3Block())
+  registerBlock(new Herb1Block())
+  registerBlock(new Herb2Block())
+  registerBlock(new Herb3Block())
 
   // Hell biome blocks
   registerBlock(new HellRockBlock())
   registerBlock(new HellMagmaBlock())
   registerBlock(new CorruptedHellRockBlock())
+
+  // Transparent blocks
+  registerBlock(new GlassBlock())
+
+  // Flower blocks
+  registerBlock(new YellowFlowerBlock())
+  registerBlock(new BlueFlowerBlock())
+  registerBlock(new RedFlowerBlock())
 }

@@ -3,6 +3,8 @@ import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
+import { HerbFeature } from '../features/HerbFeature.ts'
+import { FlowerPatchFeature } from '../features/FlowerPatchFeature.ts'
 import { PigEntity } from '../../../entities/animals/pig/index.ts'
 import { CowEntity } from '../../../entities/animals/cow/index.ts'
 import { FoxEntity } from '../../../entities/animals/fox/index.ts'
@@ -86,6 +88,21 @@ export class GrassyHillsGenerator extends BiomeGenerator {
         peakY: 164,
         ySpread: 4,
         replaceableBlocks: [BlockIds.STONE],
+      }),
+      // Herb patches - slightly rarer than plains due to hilly terrain
+      new HerbFeature({
+        density: 1.5,
+        minPatchSize: 2,
+        maxPatchSize: 4,
+        gridSize: 16,
+      }),
+      // Flower patches - slightly less dense than plains due to hilly terrain
+      new FlowerPatchFeature({
+        density: 1.5,
+        minPatchSize: 2,
+        maxPatchSize: 5,
+        gridSize: 12,
+        flowerBlockIds: [BlockIds.YELLOW_FLOWER, BlockIds.BLUE_FLOWER, BlockIds.RED_FLOWER],
       }),
     ],
     caves: {

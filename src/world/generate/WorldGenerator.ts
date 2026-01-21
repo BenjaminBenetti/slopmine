@@ -13,7 +13,11 @@ import { OreFeature } from './features/OreFeature.ts'
 import { OasisFeature } from './features/OasisFeature.ts'
 import { LavaFeature } from './features/LavaFeature.ts'
 import { WheatFeature } from './features/WheatFeature.ts'
+import { HerbFeature } from './features/HerbFeature.ts'
 import { HellPillarFeature } from './features/HellPillarFeature.ts'
+import { JungleTreeFeature } from './features/JungleTreeFeature.ts'
+import { MegaTreeFeature } from './features/MegaTreeFeature.ts'
+import { FlowerPatchFeature } from './features/FlowerPatchFeature.ts'
 import type { WaterEdgeEffects } from './features/WaterFeature.ts'
 import { EntranceGenerator } from './caves/EntranceGenerator.ts'
 import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../workers/ChunkGenerationWorker.ts'
@@ -181,8 +185,20 @@ export class WorldGenerator {
       if (feature instanceof WheatFeature) {
         return { type: 'wheat', settings: feature.settings }
       }
+      if (feature instanceof HerbFeature) {
+        return { type: 'herb', settings: feature.settings }
+      }
       if (feature instanceof HellPillarFeature) {
         return { type: 'hellPillar', settings: (feature as any).config }
+      }
+      if (feature instanceof JungleTreeFeature) {
+        return { type: 'jungleTree', settings: feature.settings }
+      }
+      if (feature instanceof MegaTreeFeature) {
+        return { type: 'megaTree', settings: feature.settings }
+      }
+      if (feature instanceof FlowerPatchFeature) {
+        return { type: 'flowerPatch', settings: feature.settings }
       }
       throw new Error(`Unknown feature type: ${feature.constructor.name}`)
     })

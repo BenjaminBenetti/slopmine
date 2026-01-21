@@ -10,6 +10,7 @@ export default defineConfig({
 		outDir: 'dist',
 	},
 	server: {
-		sourcemapIgnoreList: false
+		sourcemapIgnoreList: false,
+		hmr: false,
 	}
 })

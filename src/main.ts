@@ -53,8 +53,15 @@ import {
 } from './items/tools/index.ts'
 import { BlockTickManager } from './world/blockstate/BlockTickManager.ts'
 import { setForgeBlockTickManager } from './world/blocks/types/forge/ForgeBlock.ts'
+import { setApothecaryWorkbenchBlockTickManager } from './world/blocks/types/apothecary_workbench/ApothecaryWorkbenchBlock.ts'
 import { smeltingRegistry } from './smelting/index.ts'
+import { brewingRegistry } from './brewing/index.ts'
 import { IronBarItem, GoldBarItem, CopperBarItem, SteelBarItem } from './items/bars/index.ts'
+import { GlassBlockItem } from './items/blocks/glass/GlassBlockItem.ts'
+import { ApothecaryWorkbenchBlockItem } from './items/blocks/apothecary_workbench/ApothecaryWorkbenchBlockItem.ts'
+import { HealthPotion1Item } from './items/potions/health_potion_1/HealthPotion1Item.ts'
+import { HealthPotion2Item } from './items/potions/health_potion_2/HealthPotion2Item.ts'
+import { HealthPotion3Item } from './items/potions/health_potion_3/HealthPotion3Item.ts'
 import { CookedPorkItem } from './items/food/cooked_pork/CookedPorkItem.ts'
 import { CookedFoxMeatItem } from './items/food/cooked_fox_meat/CookedFoxMeatItem.ts'
 import { CookedBeefItem } from './items/food/cooked_beef/CookedBeefItem.ts'
@@ -63,11 +70,12 @@ import { CookedAlligatorMeatItem } from './items/food/cooked_alligator_meat/Cook
 import { CookedSnakeItem } from './items/food/cooked_snake/CookedSnakeItem.ts'
 import { CookedKomodoMeatItem } from './items/food/cooked_komodo_meat/CookedKomodoMeatItem.ts'
 import { BreadItem } from './items/food/bread/BreadItem.ts'
-import { blockUIRegistry, createForgeUI } from './ui/blockui/index.ts'
+import { blockUIRegistry, createForgeUI, createApothecaryWorkbenchUI } from './ui/blockui/index.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
 import { BlockInteractionHandler } from './player/BlockInteractionHandler.ts'
 import { BlockRaycaster } from './player/BlockRaycaster.ts'
 import type { ForgeBlockState } from './world/blocks/types/forge/ForgeBlockState.ts'
+import type { ApothecaryWorkbenchState } from './world/blocks/types/apothecary_workbench/ApothecaryWorkbenchState.ts'
 import { ForgeBlockItem } from './items/blocks/forge/ForgeBlockItem.ts'
 import { recipeRegistry } from './crafting/RecipeRegistry.ts'
 import {
@@ -94,6 +102,7 @@ initializeItemRegistry()
 // Initialize block tick manager (for forge smelting, etc.)
 const blockTickManager = new BlockTickManager()
 setForgeBlockTickManager(blockTickManager)
+setApothecaryWorkbenchBlockTickManager(blockTickManager)
 
 // Register smelting recipes
 smeltingRegistry.register({
@@ -192,6 +201,47 @@ smeltingRegistry.register({
   resultCount: 1,
   smeltTime: 7, // 7 seconds - komodo meat is thick
 })
+smeltingRegistry.register({
+  id: 'smelt_sand',
+  name: 'Glass',
+  inputId: 'sand_block',
+  createResult: () => new GlassBlockItem(),
+  resultCount: 1,
+  smeltTime: 10, // 10 seconds - melting sand into glass
+})
+
+// Register brewing recipes
+brewingRegistry.register({
+  id: 'brew_health_potion_1',
+  name: 'Healing Potion I',
+  ingredients: [{ itemId: 'herb', count: 1 }],
+  createResult: () => new HealthPotion1Item(),
+  resultCount: 1,
+  brewTime: 10, // 10 seconds
+})
+brewingRegistry.register({
+  id: 'brew_health_potion_2',
+  name: 'Healing Potion II',
+  ingredients: [
+    { itemId: 'herb', count: 1 },
+    { itemId: 'mushroom_cap_block', count: 1 },
+  ],
+  createResult: () => new HealthPotion2Item(),
+  resultCount: 1,
+  brewTime: 15, // 15 seconds
+})
+brewingRegistry.register({
+  id: 'brew_health_potion_3',
+  name: 'Healing Potion III',
+  ingredients: [
+    { itemId: 'herb', count: 1 },
+    { itemId: 'mushroom_cap_block', count: 1 },
+    { itemId: 'corrupted_essence', count: 1 },
+  ],
+  createResult: () => new HealthPotion3Item(),
+  resultCount: 1,
+  brewTime: 20, // 20 seconds
+})
 
 // Register forge crafting recipe (4 stone -> 1 forge)
 recipeRegistry.register({
@@ -202,8 +252,23 @@ recipeRegistry.register({
   resultCount: 1,
 })
 
+// Register apothecary workbench crafting recipe (4 stone + 2 glass -> 1 apothecary workbench)
+recipeRegistry.register({
+  id: 'craft_apothecary_workbench',
+  name: 'Apothecary Workbench',
+  ingredients: [
+    { itemId: 'stone_block', count: 4 },
+    { itemId: 'glass_block', count: 2 },
+  ],
+  createResult: () => new ApothecaryWorkbenchBlockItem(),
+  resultCount: 1,
+})
+
 // Register block UI for forge
 blockUIRegistry.register(BlockIds.FORGE, (state) => createForgeUI(state as ForgeBlockState))
+
+// Register block UI for apothecary workbench
+blockUIRegistry.register(BlockIds.APOTHECARY_WORKBENCH, (state) => createApothecaryWorkbenchUI(state as ApothecaryWorkbenchState))
 
 // Biome mini-map helpers
 function getBiomeAbbreviation(biomeType: string): string {
@@ -816,7 +881,7 @@ scheduler.createTask({
   priority: TaskPriority.NORMAL,
   update: (dt) => {
     // Update biome-based skybox modifiers
-    biomeSkyboxManager.update(playerBody.position.x, playerBody.position.z)
+    biomeSkyboxManager.update(playerBody.position.x, playerBody.position.y, playerBody.position.z)
     // Update skybox position and apply modifiers
     skybox.update(renderer.camera, dt)
   },

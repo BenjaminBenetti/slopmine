@@ -6,3 +6,4 @@ export { BlockUIRegistry, blockUIRegistry } from './BlockUIRegistry.ts'
 
 // Specific block UIs
 export { createForgeUI } from './ForgeUI.ts'
+export { createApothecaryWorkbenchUI } from './ApothecaryWorkbenchUI.ts'

@@ -4,6 +4,8 @@ import { OakTree, type TreeParams } from '../structures/OakTree.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { WheatFeature } from '../features/WheatFeature.ts'
+import { HerbFeature } from '../features/HerbFeature.ts'
+import { FlowerPatchFeature } from '../features/FlowerPatchFeature.ts'
 import { PigEntity } from '../../../entities/animals/pig/index.ts'
 import { CowEntity } from '../../../entities/animals/cow/index.ts'
 import { FoxEntity } from '../../../entities/animals/fox/index.ts'
@@ -95,6 +97,21 @@ export class PlainsGenerator extends BiomeGenerator {
         maxPatchSize: 5,
         gridSize: 16,       // Larger grid = more spread out
         soilBlock: BlockIds.DIRT,  // Replace grass with dirt under wheat
+      }),
+      // Herb patches - slightly rarer than wheat
+      new HerbFeature({
+        density: 2.0,
+        minPatchSize: 2,
+        maxPatchSize: 4,
+        gridSize: 16,
+      }),
+      // Flower patches - scattered colorful flowers
+      new FlowerPatchFeature({
+        density: 2.0,
+        minPatchSize: 2,
+        maxPatchSize: 5,
+        gridSize: 12,
+        flowerBlockIds: [BlockIds.YELLOW_FLOWER, BlockIds.BLUE_FLOWER, BlockIds.RED_FLOWER],
       }),
     ],
     caves: {

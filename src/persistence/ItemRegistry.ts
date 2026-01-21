@@ -39,6 +39,12 @@ import { Wheat3BlockItem } from '../items/blocks/wheat/Wheat3BlockItem.ts'
 import { HellRockBlockItem } from '../items/blocks/hell_rock/HellRockBlockItem.ts'
 import { HellMagmaBlockItem } from '../items/blocks/hell_magma/HellMagmaBlockItem.ts'
 import { CorruptedHellRockBlockItem } from '../items/blocks/corrupted_hell_rock/CorruptedHellRockBlockItem.ts'
+import { GlassBlockItem } from '../items/blocks/glass/GlassBlockItem.ts'
+import { ApothecaryWorkbenchBlockItem } from '../items/blocks/apothecary_workbench/ApothecaryWorkbenchBlockItem.ts'
+import { YellowFlowerBlockItem } from '../items/blocks/yellow_flower/YellowFlowerBlockItem.ts'
+import { BlueFlowerBlockItem } from '../items/blocks/blue_flower/BlueFlowerBlockItem.ts'
+import { RedFlowerBlockItem } from '../items/blocks/red_flower/RedFlowerBlockItem.ts'
+import { Herb1BlockItem } from '../items/blocks/herb/Herb1BlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -76,9 +82,15 @@ import { KomodoScalesItem } from '../items/materials/komodo_scales/KomodoScalesI
 import { CorruptedEssenceItem } from '../items/materials/corrupted_essence/CorruptedEssenceItem.ts'
 import { BoneItem } from '../items/materials/bone/BoneItem.ts'
 import { EmberRoachWingItem } from '../items/materials/ember_roach_wing/EmberRoachWingItem.ts'
+import { HerbItem } from '../items/materials/herb/HerbItem.ts'
 import { GoldBarItem } from '../items/bars/gold/GoldBarItem.ts'
 import { CopperBarItem } from '../items/bars/copper/CopperBarItem.ts'
 import { SteelBarItem } from '../items/bars/steel/SteelBarItem.ts'
+
+// Potion items
+import { HealthPotion1Item } from '../items/potions/health_potion_1/HealthPotion1Item.ts'
+import { HealthPotion2Item } from '../items/potions/health_potion_2/HealthPotion2Item.ts'
+import { HealthPotion3Item } from '../items/potions/health_potion_3/HealthPotion3Item.ts'
 
 // Tool items - Pickaxes
 import { WoodPickaxeItem } from '../items/tools/pickaxe/WoodPickaxeItem.ts'
@@ -179,6 +191,12 @@ export function initializeItemRegistry(): void {
   registerItemFactory('hell_rock_block', () => new HellRockBlockItem())
   registerItemFactory('hell_magma_block', () => new HellMagmaBlockItem())
   registerItemFactory('corrupted_hell_rock_block', () => new CorruptedHellRockBlockItem())
+  registerItemFactory('glass_block', () => new GlassBlockItem())
+  registerItemFactory('apothecary_workbench_block', () => new ApothecaryWorkbenchBlockItem())
+  registerItemFactory('yellow_flower_block', () => new YellowFlowerBlockItem())
+  registerItemFactory('blue_flower_block', () => new BlueFlowerBlockItem())
+  registerItemFactory('red_flower_block', () => new RedFlowerBlockItem())
+  registerItemFactory('herb_1_block', () => new Herb1BlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())
@@ -219,6 +237,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('corrupted_essence', () => new CorruptedEssenceItem())
   registerItemFactory('bone', () => new BoneItem())
   registerItemFactory('ember_roach_wing', () => new EmberRoachWingItem())
+  registerItemFactory('herb', () => new HerbItem())
 
   // Pickaxes
   registerItemFactory('wood_pickaxe', () => new WoodPickaxeItem())
@@ -240,6 +259,11 @@ export function initializeItemRegistry(): void {
   registerItemFactory('iron_axe', () => new IronAxeItem())
   registerItemFactory('steel_axe', () => new SteelAxeItem())
   registerItemFactory('diamond_axe', () => new DiamondAxeItem())
+
+  // Potions
+  registerItemFactory('health_potion_1', () => new HealthPotion1Item())
+  registerItemFactory('health_potion_2', () => new HealthPotion2Item())
+  registerItemFactory('health_potion_3', () => new HealthPotion3Item())
 
   console.log(`Item registry initialized with ${itemFactories.size} items`)
 }
