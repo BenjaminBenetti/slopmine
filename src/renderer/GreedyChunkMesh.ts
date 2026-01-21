@@ -232,7 +232,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     const box = blockGeometry.boundingBox!
 
     // Small inset to prevent z-fighting with adjacent solid blocks
-    const INSET = 0.004
+    const INSET = 0.002
 
     // Extract min/max from bounding box with inset applied
     const minX = box.min.x + INSET, maxX = box.max.x - INSET
