@@ -232,11 +232,12 @@ export class GreedyChunkMesh implements IChunkMesh {
     const box = blockGeometry.boundingBox!
 
     // Small inset to prevent z-fighting with adjacent solid blocks
+    // No inset on top face (maxY) to avoid gaps in water surface when viewed from below
     const INSET = 0.002
 
-    // Extract min/max from bounding box with inset applied
+    // Extract min/max from bounding box with inset (except top face)
     const minX = box.min.x + INSET, maxX = box.max.x - INSET
-    const minY = box.min.y + INSET, maxY = box.max.y - INSET
+    const minY = box.min.y + INSET, maxY = box.max.y  // No inset on top
     const minZ = box.min.z + INSET, maxZ = box.max.z - INSET
 
     // Calculate UV scale for side faces based on height ratio

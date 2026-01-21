@@ -8,6 +8,7 @@ import { WorldLighting } from './renderer/WorldLighting.ts'
 import { Skybox } from './renderer/skybox/Skybox.ts'
 import { BiomeSkyboxManager } from './renderer/skybox/BiomeSkyboxManager.ts'
 import { HeldItemRenderer } from './renderer/helditem/index.ts'
+import { LiquidOverlay } from './renderer/LiquidOverlay.ts'
 import {
 	  FirstPersonCameraControls,
 	} from './player/FirstPersonCameraControls.ts'
@@ -618,6 +619,9 @@ const heldItemRenderer = new HeldItemRenderer(
   renderer.camera
 )
 
+// Liquid overlay (underwater tint effect with distance fog)
+const liquidOverlay = new LiquidOverlay(renderer.renderer, renderer.scene)
+
 // Track toolbar selection changes
 let lastSelectedIndex = playerState.inventory.toolbar.selectedIndex
 const updateHeldItem = () => {
@@ -839,6 +843,14 @@ scheduler.createTask({
 })
 
 scheduler.createTask({
+  id: 'liquid-overlay',
+  priority: TaskPriority.CRITICAL,
+  update: (dt) => {
+    liquidOverlay.update(renderer.camera.position, world, dt)
+  },
+})
+
+scheduler.createTask({
   id: 'lighting-queue',
   priority: TaskPriority.NORMAL,
   update: () =>
@@ -946,6 +958,8 @@ const gameLoop = new GameLoop({
     const rendererStats = renderer.getRendererStats()
     // Render held item on top of world
     heldItemRenderer.render()
+    // Render liquid overlay (underwater tint)
+    liquidOverlay.render()
     // Update wireframe colors based on culling (after culling runs in render)
     wireframeManager.updateColors(world.getChunkMeshes())
     // Update liquid physics indicators (blue circles at chunk corners when processing water)
