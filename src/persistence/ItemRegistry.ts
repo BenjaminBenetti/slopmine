@@ -44,6 +44,7 @@ import { ApothecaryWorkbenchBlockItem } from '../items/blocks/apothecary_workben
 import { YellowFlowerBlockItem } from '../items/blocks/yellow_flower/YellowFlowerBlockItem.ts'
 import { BlueFlowerBlockItem } from '../items/blocks/blue_flower/BlueFlowerBlockItem.ts'
 import { RedFlowerBlockItem } from '../items/blocks/red_flower/RedFlowerBlockItem.ts'
+import { JungleFernBlockItem } from '../items/blocks/jungle_fern/JungleFernBlockItem.ts'
 import { Herb1BlockItem } from '../items/blocks/herb/Herb1BlockItem.ts'
 
 // Ore/resource items
@@ -196,6 +197,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('yellow_flower_block', () => new YellowFlowerBlockItem())
   registerItemFactory('blue_flower_block', () => new BlueFlowerBlockItem())
   registerItemFactory('red_flower_block', () => new RedFlowerBlockItem())
+  registerItemFactory('jungle_fern_block', () => new JungleFernBlockItem())
   registerItemFactory('herb_1_block', () => new Herb1BlockItem())
 
   // Ore/resource items

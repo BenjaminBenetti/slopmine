@@ -18,6 +18,9 @@ import { HellPillarFeature } from './features/HellPillarFeature.ts'
 import { JungleTreeFeature } from './features/JungleTreeFeature.ts'
 import { MegaTreeFeature } from './features/MegaTreeFeature.ts'
 import { FlowerPatchFeature } from './features/FlowerPatchFeature.ts'
+import { RiverbankMudFeature } from './features/RiverbankMudFeature.ts'
+import { JungleFernFeature } from './features/JungleFernFeature.ts'
+import { RiverbankClayFeature } from './features/RiverbankClayFeature.ts'
 import type { WaterEdgeEffects } from './features/WaterFeature.ts'
 import { EntranceGenerator } from './caves/EntranceGenerator.ts'
 import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../workers/ChunkGenerationWorker.ts'
@@ -199,6 +202,15 @@ export class WorldGenerator {
       }
       if (feature instanceof FlowerPatchFeature) {
         return { type: 'flowerPatch', settings: feature.settings }
+      }
+      if (feature instanceof RiverbankMudFeature) {
+        return { type: 'riverbankMud', settings: feature.settings }
+      }
+      if (feature instanceof JungleFernFeature) {
+        return { type: 'jungleFern', settings: feature.settings }
+      }
+      if (feature instanceof RiverbankClayFeature) {
+        return { type: 'riverbankClay', settings: feature.settings }
       }
       throw new Error(`Unknown feature type: ${feature.constructor.name}`)
     })
@@ -643,12 +655,14 @@ export class WorldGenerator {
 
       // Apply results to the sub-chunk (pass worker-computed opacity to avoid main thread work)
       // Pass the biome's skylight value for this sub-chunk's layer
+      // Pass metadata for directional blocks (vines, etc.)
       await this.world.applySubChunkData(
         coordinate,
         workerResult.blocks,
         workerResult.lightData,
         workerResult.isFullyOpaque,
-        biomeData.primary.skylightValue
+        biomeData.primary.skylightValue,
+        workerResult.metadataData
       )
 
       // Generate decorations (trees, etc) for this sub-chunk using the primary biome

@@ -22,6 +22,9 @@ import { HellPillarFeature, type HellPillarFeatureConfig } from '../world/genera
 import { JungleTreeFeature, type JungleTreeFeatureSettings } from '../world/generate/features/JungleTreeFeature.ts'
 import { MegaTreeFeature, type MegaTreeFeatureSettings } from '../world/generate/features/MegaTreeFeature.ts'
 import { FlowerPatchFeature, type FlowerPatchFeatureSettings } from '../world/generate/features/FlowerPatchFeature.ts'
+import { RiverbankMudFeature, type RiverbankMudFeatureSettings } from '../world/generate/features/RiverbankMudFeature.ts'
+import { JungleFernFeature, type JungleFernFeatureSettings } from '../world/generate/features/JungleFernFeature.ts'
+import { RiverbankClayFeature, type RiverbankClayFeatureSettings } from '../world/generate/features/RiverbankClayFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
@@ -91,6 +94,9 @@ export type FeatureConfig =
   | { type: 'jungleTree'; settings: JungleTreeFeatureSettings }
   | { type: 'megaTree'; settings: MegaTreeFeatureSettings }
   | { type: 'flowerPatch'; settings: FlowerPatchFeatureSettings }
+  | { type: 'riverbankMud'; settings: RiverbankMudFeatureSettings }
+  | { type: 'jungleFern'; settings: JungleFernFeatureSettings }
+  | { type: 'riverbankClay'; settings: RiverbankClayFeatureSettings }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -253,6 +259,7 @@ export interface SubChunkGenerationResponse {
   subY: number
   blocks: Uint16Array
   lightData: Uint8Array
+  metadataData: Uint8Array // Block metadata (facing direction, etc.)
   hasTerrainAbove: boolean // True if terrain extends above this sub-chunk
   maxSolidY: number // Highest solid block world Y in this sub-chunk (-1 if empty)
   orePositions: OrePosition[] // Debug: positions of all ore blocks placed
@@ -299,6 +306,12 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new MegaTreeFeature(config.settings)
       case 'flowerPatch':
         return new FlowerPatchFeature(config.settings)
+      case 'riverbankMud':
+        return new RiverbankMudFeature(config.settings)
+      case 'jungleFern':
+        return new JungleFernFeature(config.settings)
+      case 'riverbankClay':
+        return new RiverbankClayFeature(config.settings)
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }
@@ -1065,6 +1078,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     subY,
     blocks: blockData,
     lightData: subChunk.getLightData(),
+    metadataData: subChunk.getMetadataData(),
     hasTerrainAbove,
     maxSolidY,
     orePositions,
@@ -1086,7 +1100,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
       // Transfer buffers back (zero-copy)
       self.postMessage(result, {
-        transfer: [result.blocks.buffer, result.lightData.buffer],
+        transfer: [result.blocks.buffer, result.lightData.buffer, result.metadataData.buffer],
       })
     } else {
       // Handle full chunk generation (legacy)

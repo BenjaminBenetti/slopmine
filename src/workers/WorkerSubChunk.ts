@@ -20,17 +20,20 @@ export class WorkerSubChunk implements ISubChunkData {
 
   private readonly blocks: Uint16Array
   private readonly lightData: Uint8Array
+  private readonly metadata: Uint8Array
 
   constructor(
     chunkX: number,
     chunkZ: number,
     subY: number,
     blocks: Uint16Array,
-    lightData: Uint8Array
+    lightData: Uint8Array,
+    metadata?: Uint8Array
   ) {
     this.coordinate = { x: BigInt(chunkX), z: BigInt(chunkZ), subY }
     this.blocks = blocks
     this.lightData = lightData
+    this.metadata = metadata ?? new Uint8Array(SUB_CHUNK_VOLUME)
   }
 
   /**
@@ -42,6 +45,7 @@ export class WorkerSubChunk implements ISubChunkData {
       chunkZ,
       subY,
       new Uint16Array(SUB_CHUNK_VOLUME),
+      new Uint8Array(SUB_CHUNK_VOLUME),
       new Uint8Array(SUB_CHUNK_VOLUME)
     )
   }
@@ -86,6 +90,33 @@ export class WorkerSubChunk implements ISubChunkData {
 
   getLightData(): Uint8Array {
     return this.lightData
+  }
+
+  getMetadataData(): Uint8Array {
+    return this.metadata
+  }
+
+  /**
+   * Get block metadata at local coordinates.
+   * Returns 0 for out-of-bounds (no metadata).
+   */
+  getMetadata(x: number, y: number, z: number): number {
+    if (!isValidSubChunkLocal(x, y, z)) {
+      return 0
+    }
+    return this.metadata[localToSubChunkIndex(x, y, z)]
+  }
+
+  /**
+   * Set block metadata at local coordinates.
+   * Returns true if metadata was set, false if out of bounds.
+   */
+  setMetadata(x: number, y: number, z: number, value: number): boolean {
+    if (!isValidSubChunkLocal(x, y, z)) {
+      return false
+    }
+    this.metadata[localToSubChunkIndex(x, y, z)] = value
+    return true
   }
 
   /**

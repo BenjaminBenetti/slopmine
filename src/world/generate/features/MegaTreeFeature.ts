@@ -1,7 +1,35 @@
 import { Feature, type FeatureContext } from './Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
+import { BlockFacing, setMetadataFacing } from '../../blocks/BlockFacing.ts'
 import type { ISubChunkCoordinate } from '../../interfaces/ICoordinates.ts'
+
+/**
+ * Chunk interface with metadata support for vine placement.
+ */
+interface ChunkWithMetadata {
+  getBlockId: (x: number, y: number, z: number) => number
+  setBlockId: (x: number, y: number, z: number, id: number) => void
+  setMetadata?: (x: number, y: number, z: number, value: number) => boolean
+}
+
+/**
+ * Convert offset from tree center to vine facing direction.
+ * Vine faces AWAY from the attachment block (toward the player viewing from outside).
+ *
+ * @param dx X offset from tree center (positive = vine is to the east)
+ * @param dz Z offset from tree center (positive = vine is to the south)
+ * @returns BlockFacing direction the vine should face
+ */
+function offsetToFacing(dx: number, dz: number): BlockFacing {
+  // Use the axis with larger absolute value
+  // Vine faces AWAY from trunk (outward toward player)
+  if (Math.abs(dx) >= Math.abs(dz)) {
+    return dx > 0 ? BlockFacing.EAST : BlockFacing.WEST
+  } else {
+    return dz > 0 ? BlockFacing.SOUTH : BlockFacing.NORTH
+  }
+}
 
 /**
  * Maximum possible tree height including canopy and roots for cross-chunk boundary detection.
@@ -346,7 +374,7 @@ export class MegaTreeFeature extends Feature {
    * Only places blocks that fall within the sub-chunk's Y range and chunk XZ bounds.
    */
   private placeTree(
-    chunk: { getBlockId: (x: number, y: number, z: number) => number; setBlockId: (x: number, y: number, z: number, id: number) => void },
+    chunk: ChunkWithMetadata,
     treeWorldX: number,
     treeWorldZ: number,
     treeBaseY: number,
@@ -641,7 +669,7 @@ export class MegaTreeFeature extends Feature {
    * Place hanging vines from leaf edges.
    */
   private placeVines(
-    chunk: { getBlockId: (x: number, y: number, z: number) => number; setBlockId: (x: number, y: number, z: number, id: number) => void },
+    chunk: ChunkWithMetadata,
     treeWorldX: number,
     treeWorldZ: number,
     treeBaseY: number,
@@ -676,6 +704,10 @@ export class MegaTreeFeature extends Feature {
         const lengthRoll = this.positionRandom(vineWorldX, vineWorldZ, 801)
         const vineLength = Math.floor(3 + lengthRoll * (maxVineLength - 3))
 
+        // Calculate facing direction for canopy vines (face toward tree center)
+        const canopyVineFacing = offsetToFacing(dx, dz)
+        const canopyVineMetadata = setMetadataFacing(0, canopyVineFacing)
+
         // Place vine blocks
         for (let vdy = 0; vdy < vineLength; vdy++) {
           const worldY = startY - vdy
@@ -690,6 +722,7 @@ export class MegaTreeFeature extends Feature {
           const currentBlock = chunk.getBlockId(localX, localY, localZ)
           if (currentBlock === BlockIds.AIR) {
             chunk.setBlockId(localX, localY, localZ, BlockIds.VINE)
+            chunk.setMetadata?.(localX, localY, localZ, canopyVineMetadata)
           } else if (currentBlock !== BlockIds.VINE && currentBlock !== BlockIds.OAK_LEAVES) {
             // Stop if we hit something solid
             break
@@ -720,6 +753,10 @@ export class MegaTreeFeature extends Feature {
           const lengthRoll = this.positionRandom(vineWorldX, vineWorldZ, 851)
           const vineLength = Math.floor(2 + lengthRoll * (maxVineLength * 0.5))
 
+          // Calculate facing direction for branch vines (face toward branch center)
+          const branchVineFacing = offsetToFacing(dx, dz)
+          const branchVineMetadata = setMetadataFacing(0, branchVineFacing)
+
           for (let vdy = 0; vdy < vineLength; vdy++) {
             const worldY = startY - vdy
             if (worldY < subChunkMinY || worldY > subChunkMaxY) continue
@@ -733,6 +770,7 @@ export class MegaTreeFeature extends Feature {
             const currentBlock = chunk.getBlockId(localX, localY, localZ)
             if (currentBlock === BlockIds.AIR) {
               chunk.setBlockId(localX, localY, localZ, BlockIds.VINE)
+              chunk.setMetadata?.(localX, localY, localZ, branchVineMetadata)
             } else if (currentBlock !== BlockIds.VINE && currentBlock !== BlockIds.OAK_LEAVES) {
               break
             }

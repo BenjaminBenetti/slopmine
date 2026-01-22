@@ -1,7 +1,35 @@
 import { Feature, type FeatureContext } from './Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
+import { BlockFacing, setMetadataFacing } from '../../blocks/BlockFacing.ts'
 import type { ISubChunkCoordinate } from '../../interfaces/ICoordinates.ts'
+
+/**
+ * Chunk interface with metadata support for vine placement.
+ */
+interface ChunkWithMetadata {
+  getBlockId: (x: number, y: number, z: number) => number
+  setBlockId: (x: number, y: number, z: number, id: number) => void
+  setMetadata?: (x: number, y: number, z: number, value: number) => boolean
+}
+
+/**
+ * Convert offset from tree center to vine facing direction.
+ * Vine faces AWAY from the attachment block (toward the player viewing from outside).
+ *
+ * @param dx X offset from tree center (positive = vine is to the east)
+ * @param dz Z offset from tree center (positive = vine is to the south)
+ * @returns BlockFacing direction the vine should face
+ */
+function offsetToFacing(dx: number, dz: number): BlockFacing {
+  // Use the axis with larger absolute value
+  // Vine faces AWAY from trunk (outward toward player)
+  if (Math.abs(dx) >= Math.abs(dz)) {
+    return dx > 0 ? BlockFacing.EAST : BlockFacing.WEST
+  } else {
+    return dz > 0 ? BlockFacing.SOUTH : BlockFacing.NORTH
+  }
+}
 
 /**
  * Configuration for jungle tree generation.
@@ -250,7 +278,7 @@ export class JungleTreeFeature extends Feature {
    * Only places blocks that fall within the sub-chunk's Y range.
    */
   private placeTree(
-    chunk: { getBlockId: (x: number, y: number, z: number) => number; setBlockId: (x: number, y: number, z: number, id: number) => void },
+    chunk: ChunkWithMetadata,
     localX: number,
     localZ: number,
     treeBaseY: number,
@@ -531,7 +559,7 @@ export class JungleTreeFeature extends Feature {
    * Place vines on leaves and trunk.
    */
   private placeVines(
-    chunk: { getBlockId: (x: number, y: number, z: number) => number; setBlockId: (x: number, y: number, z: number, id: number) => void },
+    chunk: ChunkWithMetadata,
     localX: number,
     localZ: number,
     treeBaseY: number,
@@ -578,6 +606,10 @@ export class JungleTreeFeature extends Feature {
         const vineLength = minVineLength +
           Math.floor(this.positionRandom(vineWorldX, vineWorldZ, 6) * (maxVineLength - minVineLength + 1))
 
+        // Calculate facing direction for leaf perimeter vines (face toward tree center)
+        const leafVineFacing = offsetToFacing(dx, dz)
+        const leafVineMetadata = setMetadataFacing(0, leafVineFacing)
+
         for (let vdy = 1; vdy <= vineLength; vdy++) {
           const vineWorldY = startY - vdy
           if (vineWorldY < subChunkMinY || vineWorldY > subChunkMaxY) continue
@@ -587,6 +619,7 @@ export class JungleTreeFeature extends Feature {
 
           if (blockBelow === BlockIds.AIR) {
             chunk.setBlockId(lx, vineLocalY, lz, BlockIds.VINE)
+            chunk.setMetadata?.(lx, vineLocalY, lz, leafVineMetadata)
           } else {
             break
           }
@@ -615,7 +648,11 @@ export class JungleTreeFeature extends Feature {
 
         const currentBlock = chunk.getBlockId(sideLocalX, trunkLocalY, sideLocalZ)
         if (currentBlock === BlockIds.AIR) {
+          // Trunk vines face toward the trunk (opposite of their offset direction)
+          const trunkVineFacing = offsetToFacing(sdx, sdz)
+          const trunkVineMetadata = setMetadataFacing(0, trunkVineFacing)
           chunk.setBlockId(sideLocalX, trunkLocalY, sideLocalZ, BlockIds.VINE)
+          chunk.setMetadata?.(sideLocalX, trunkLocalY, sideLocalZ, trunkVineMetadata)
         }
       }
     }

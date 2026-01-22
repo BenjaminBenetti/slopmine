@@ -359,7 +359,7 @@ export class WorldManager implements IModifiedChunkProvider {
     minWorldY: number,
     maxWorldY: number,
     biomeData: BiomeBlendData
-  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; orePositions: OrePosition[]; isFullyOpaque: boolean; waterEdgeEffects?: WaterEdgeEffects }> {
+  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; metadataData: Uint8Array; orePositions: OrePosition[]; isFullyOpaque: boolean; waterEdgeEffects?: WaterEdgeEffects }> {
     const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
 
     // Pre-allocate buffers (will be transferred to worker)
@@ -393,6 +393,7 @@ export class WorldManager implements IModifiedChunkProvider {
           resolve({
             blocks: response.blocks,
             lightData: response.lightData,
+            metadataData: response.metadataData,
             orePositions: response.orePositions,
             isFullyOpaque: response.isFullyOpaque,
             waterEdgeEffects: response.waterEdgeEffects,

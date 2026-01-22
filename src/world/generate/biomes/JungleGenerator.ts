@@ -4,8 +4,11 @@ import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { WheatFeature } from '../features/WheatFeature.ts'
 import { HerbFeature } from '../features/HerbFeature.ts'
+import { RiverbankMudFeature } from '../features/RiverbankMudFeature.ts'
+import { RiverbankClayFeature } from '../features/RiverbankClayFeature.ts'
 import { JungleTreeFeature } from '../features/JungleTreeFeature.ts'
 import { MegaTreeFeature } from '../features/MegaTreeFeature.ts'
+import { JungleFernFeature } from '../features/JungleFernFeature.ts'
 import { PigEntity } from '../../../entities/animals/pig/index.ts'
 import { FoxEntity } from '../../../entities/animals/fox/index.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
@@ -99,6 +102,32 @@ export class JungleGenerator extends BiomeGenerator {
         minPatchSize: 3,
         maxPatchSize: 6,
         gridSize: 12,
+      }),
+      // Mud patches along river banks
+      new RiverbankMudFeature({
+        waterLevel: 238,
+        maxHeightAboveWater: 1,
+        maxDepthBelowSurface: 4,
+        zoneFrequency: 0.03,
+        patchFrequency: 0.12,
+        threshold: 0.35,
+      }),
+      // Clay patches along river banks (rarer than mud)
+      new RiverbankClayFeature({
+        waterLevel: 238,
+        maxHeightAboveWater: 1,
+        maxDepthBelowSurface: 3,
+        zoneFrequency: 0.025,
+        patchFrequency: 0.1,
+        threshold: 0.45,
+      }),
+      // Dense jungle ferns in clumps covering the ground
+      new JungleFernFeature({
+        density: 20.0,      // Patch frequency (5x more frequent)
+        gridSize: 8,        // Space between patch centers
+        minPatchSize: 8,    // Min ferns per clump
+        maxPatchSize: 16,   // Max ferns per clump
+        patchRadius: 3,     // Radius of each clump in blocks
       }),
       // Mega trees - massive trees with thick trunks, walkable branches, and sprawling roots
       new MegaTreeFeature({

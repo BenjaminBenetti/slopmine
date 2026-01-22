@@ -64,6 +64,7 @@ import { ApothecaryWorkbenchBlock } from './types/apothecary_workbench/Apothecar
 import { YellowFlowerBlock } from './types/yellow_flower/YellowFlowerBlock.ts'
 import { BlueFlowerBlock } from './types/blue_flower/BlueFlowerBlock.ts'
 import { RedFlowerBlock } from './types/red_flower/RedFlowerBlock.ts'
+import { JungleFernBlock } from './types/jungle_fern/JungleFernBlock.ts'
 
 /**
  * Register all default block types.
@@ -162,4 +163,7 @@ export function registerDefaultBlocks(): void {
   registerBlock(new YellowFlowerBlock())
   registerBlock(new BlueFlowerBlock())
   registerBlock(new RedFlowerBlock())
+
+  // Jungle vegetation
+  registerBlock(new JungleFernBlock())
 }
