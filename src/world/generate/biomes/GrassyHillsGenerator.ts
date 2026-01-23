@@ -9,6 +9,7 @@ import { PigEntity } from '../../../entities/animals/pig/index.ts'
 import { CowEntity } from '../../../entities/animals/cow/index.ts'
 import { FoxEntity } from '../../../entities/animals/fox/index.ts'
 import { RabbitEntity } from '../../../entities/animals/rabbit/index.ts'
+import { CaveSlimeEntity } from '../../../entities/animals/cave_slime/index.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -166,6 +167,13 @@ export class GrassyHillsGenerator extends BiomeGenerator {
         spawnRate: 0.2, // Common in grassy hills
         maxNearby: 10,
         createEntity: (pos: THREE.Vector3) => new RabbitEntity({ position: pos }),
+      },
+      {
+        entityType: 'cave_slime',
+        spawnRate: 0.15, // Common in dark caves
+        maxNearby: 8,
+        maxLightLevel: 7, // Only spawn in dark areas
+        createEntity: (pos: THREE.Vector3) => new CaveSlimeEntity({ position: pos }),
       },
     ],
   }

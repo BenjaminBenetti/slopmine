@@ -321,7 +321,9 @@ export class PersistenceManager {
     inventory: SerializedInventory,
     chunkProvider: IModifiedChunkProvider,
     playerPosition?: { x: number; y: number; z: number },
-    playerHealth?: number
+    playerHealth?: number,
+    originalSpawnPoint?: { x: number; y: number; z: number },
+    bedSpawnPoint?: { x: number; y: number; z: number }
   ): Promise<void> {
     if (!this.initialized || !this.worker) {
       return
@@ -371,6 +373,8 @@ export class PersistenceManager {
         lastSavedAt: new Date().toISOString(),
         playerPosition,
         playerHealth,
+        originalSpawnPoint,
+        bedSpawnPoint,
       },
     })
   }
@@ -418,6 +422,8 @@ export class PersistenceManager {
       chunkProvider: IModifiedChunkProvider
       playerPosition?: { x: number; y: number; z: number }
       playerHealth?: number
+      originalSpawnPoint?: { x: number; y: number; z: number }
+      bedSpawnPoint?: { x: number; y: number; z: number }
     }
   ): void {
     if (this.autoSaveInterval) {
@@ -434,7 +440,14 @@ export class PersistenceManager {
 
       try {
         const result = callback()
-        await this.saveAll(result.inventory, result.chunkProvider, result.playerPosition, result.playerHealth)
+        await this.saveAll(
+          result.inventory,
+          result.chunkProvider,
+          result.playerPosition,
+          result.playerHealth,
+          result.originalSpawnPoint,
+          result.bedSpawnPoint
+        )
         console.log('Auto-save complete')
       } catch (error) {
         console.error('Auto-save failed:', error)
@@ -464,10 +477,19 @@ export class PersistenceManager {
     inventory: SerializedInventory,
     chunkProvider: IModifiedChunkProvider,
     playerPosition?: { x: number; y: number; z: number },
-    playerHealth?: number
+    playerHealth?: number,
+    originalSpawnPoint?: { x: number; y: number; z: number },
+    bedSpawnPoint?: { x: number; y: number; z: number }
   ): Promise<void> {
     try {
-      await this.saveAll(inventory, chunkProvider, playerPosition, playerHealth)
+      await this.saveAll(
+        inventory,
+        chunkProvider,
+        playerPosition,
+        playerHealth,
+        originalSpawnPoint,
+        bedSpawnPoint
+      )
     } catch (error) {
       console.error('Save before unload failed:', error)
     }

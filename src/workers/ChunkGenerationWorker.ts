@@ -18,6 +18,7 @@ import { OasisFeature, type OasisSettings } from '../world/generate/features/Oas
 import { LavaFeature, type LavaFeatureConfig } from '../world/generate/features/LavaFeature.ts'
 import { WheatFeature, type WheatFeatureSettings } from '../world/generate/features/WheatFeature.ts'
 import { HerbFeature, type HerbFeatureSettings } from '../world/generate/features/HerbFeature.ts'
+import { HempFeature, type HempFeatureSettings } from '../world/generate/features/HempFeature.ts'
 import { HellPillarFeature, type HellPillarFeatureConfig } from '../world/generate/features/HellPillarFeature.ts'
 import { JungleTreeFeature, type JungleTreeFeatureSettings } from '../world/generate/features/JungleTreeFeature.ts'
 import { MegaTreeFeature, type MegaTreeFeatureSettings } from '../world/generate/features/MegaTreeFeature.ts'
@@ -97,6 +98,7 @@ export type FeatureConfig =
   | { type: 'riverbankMud'; settings: RiverbankMudFeatureSettings }
   | { type: 'jungleFern'; settings: JungleFernFeatureSettings }
   | { type: 'riverbankClay'; settings: RiverbankClayFeatureSettings }
+  | { type: 'hemp'; settings: HempFeatureSettings }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -312,6 +314,8 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new JungleFernFeature(config.settings)
       case 'riverbankClay':
         return new RiverbankClayFeature(config.settings)
+      case 'hemp':
+        return new HempFeature(config.settings)
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }

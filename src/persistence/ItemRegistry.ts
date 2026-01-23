@@ -41,12 +41,18 @@ import { HellMagmaBlockItem } from '../items/blocks/hell_magma/HellMagmaBlockIte
 import { CorruptedHellRockBlockItem } from '../items/blocks/corrupted_hell_rock/CorruptedHellRockBlockItem.ts'
 import { GlassBlockItem } from '../items/blocks/glass/GlassBlockItem.ts'
 import { ApothecaryWorkbenchBlockItem } from '../items/blocks/apothecary_workbench/ApothecaryWorkbenchBlockItem.ts'
+import { WoodworkingBenchBlockItem } from '../items/blocks/woodworking_bench/WoodworkingBenchBlockItem.ts'
 import { YellowFlowerBlockItem } from '../items/blocks/yellow_flower/YellowFlowerBlockItem.ts'
 import { BlueFlowerBlockItem } from '../items/blocks/blue_flower/BlueFlowerBlockItem.ts'
 import { RedFlowerBlockItem } from '../items/blocks/red_flower/RedFlowerBlockItem.ts'
 import { JungleFernBlockItem } from '../items/blocks/jungle_fern/JungleFernBlockItem.ts'
 import { Herb1BlockItem } from '../items/blocks/herb/Herb1BlockItem.ts'
 import { LadderBlockItem } from '../items/blocks/ladder/LadderBlockItem.ts'
+import { RopeLadderBlockItem } from '../items/blocks/rope_ladder/RopeLadderBlockItem.ts'
+import { Hemp1BlockItem } from '../items/blocks/hemp/Hemp1BlockItem.ts'
+import { Hemp2BlockItem } from '../items/blocks/hemp/Hemp2BlockItem.ts'
+import { Hemp3BlockItem } from '../items/blocks/hemp/Hemp3BlockItem.ts'
+import { BedBlockItem } from '../items/blocks/bed/BedBlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -85,6 +91,8 @@ import { CorruptedEssenceItem } from '../items/materials/corrupted_essence/Corru
 import { BoneItem } from '../items/materials/bone/BoneItem.ts'
 import { EmberRoachWingItem } from '../items/materials/ember_roach_wing/EmberRoachWingItem.ts'
 import { HerbItem } from '../items/materials/herb/HerbItem.ts'
+import { HempFiberItem } from '../items/materials/hemp_fiber/HempFiberItem.ts'
+import { RopeItem } from '../items/materials/rope/RopeItem.ts'
 import { GoldBarItem } from '../items/bars/gold/GoldBarItem.ts'
 import { CopperBarItem } from '../items/bars/copper/CopperBarItem.ts'
 import { SteelBarItem } from '../items/bars/steel/SteelBarItem.ts'
@@ -195,12 +203,18 @@ export function initializeItemRegistry(): void {
   registerItemFactory('corrupted_hell_rock_block', () => new CorruptedHellRockBlockItem())
   registerItemFactory('glass_block', () => new GlassBlockItem())
   registerItemFactory('apothecary_workbench_block', () => new ApothecaryWorkbenchBlockItem())
+  registerItemFactory('woodworking_bench_block', () => new WoodworkingBenchBlockItem())
   registerItemFactory('yellow_flower_block', () => new YellowFlowerBlockItem())
   registerItemFactory('blue_flower_block', () => new BlueFlowerBlockItem())
   registerItemFactory('red_flower_block', () => new RedFlowerBlockItem())
   registerItemFactory('jungle_fern_block', () => new JungleFernBlockItem())
   registerItemFactory('herb_1_block', () => new Herb1BlockItem())
   registerItemFactory('ladder_block', () => new LadderBlockItem())
+  registerItemFactory('rope_ladder_block', () => new RopeLadderBlockItem())
+  registerItemFactory('hemp_1_block', () => new Hemp1BlockItem())
+  registerItemFactory('hemp_2_block', () => new Hemp2BlockItem())
+  registerItemFactory('hemp_3_block', () => new Hemp3BlockItem())
+  registerItemFactory('bed_head_block', () => new BedBlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())
@@ -242,6 +256,8 @@ export function initializeItemRegistry(): void {
   registerItemFactory('bone', () => new BoneItem())
   registerItemFactory('ember_roach_wing', () => new EmberRoachWingItem())
   registerItemFactory('herb', () => new HerbItem())
+  registerItemFactory('hemp_fiber', () => new HempFiberItem())
+  registerItemFactory('rope', () => new RopeItem())
 
   // Pickaxes
   registerItemFactory('wood_pickaxe', () => new WoodPickaxeItem())

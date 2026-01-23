@@ -9,8 +9,10 @@ import { RiverbankClayFeature } from '../features/RiverbankClayFeature.ts'
 import { JungleTreeFeature } from '../features/JungleTreeFeature.ts'
 import { MegaTreeFeature } from '../features/MegaTreeFeature.ts'
 import { JungleFernFeature } from '../features/JungleFernFeature.ts'
+import { HempFeature } from '../features/HempFeature.ts'
 import { PigEntity } from '../../../entities/animals/pig/index.ts'
 import { FoxEntity } from '../../../entities/animals/fox/index.ts'
+import { CaveSlimeEntity } from '../../../entities/animals/cave_slime/index.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../../interfaces/IChunk.ts'
@@ -102,6 +104,14 @@ export class JungleGenerator extends BiomeGenerator {
         minPatchSize: 3,
         maxPatchSize: 6,
         gridSize: 12,
+      }),
+      // Hemp patches - similar to wheat
+      new HempFeature({
+        density: 3.0,
+        minPatchSize: 3,
+        maxPatchSize: 5,
+        gridSize: 16,
+        soilBlock: BlockIds.DIRT,
       }),
       // Mud patches along river banks
       new RiverbankMudFeature({
@@ -218,6 +228,13 @@ export class JungleGenerator extends BiomeGenerator {
         spawnRate: 0.03, // Rare in jungle (~1 fox per 33 chunks)
         maxNearby: 4,
         createEntity: (pos: THREE.Vector3) => new FoxEntity({ position: pos }),
+      },
+      {
+        entityType: 'cave_slime',
+        spawnRate: 0.15, // Common in dark caves
+        maxNearby: 8,
+        maxLightLevel: 7, // Only spawn in dark areas
+        createEntity: (pos: THREE.Vector3) => new CaveSlimeEntity({ position: pos }),
       },
     ],
   }

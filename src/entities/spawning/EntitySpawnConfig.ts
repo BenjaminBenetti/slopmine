@@ -29,6 +29,13 @@ export interface EntitySpawnConfig {
   maxNearby?: number
 
   /**
+   * Maximum light level for spawning (0-15).
+   * Entity will only spawn if light level at position is <= this value.
+   * Useful for cave-dwelling creatures that avoid light.
+   */
+  maxLightLevel?: number
+
+  /**
    * Factory function to create the entity at the given position.
    */
   createEntity: (position: THREE.Vector3) => IEntity

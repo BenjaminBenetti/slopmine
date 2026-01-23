@@ -1090,6 +1090,13 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Alias for getBlockMetadata (for IWorld interface compatibility).
+   */
+  getMetadata(x: bigint, y: bigint, z: bigint): number {
+    return this.getBlockMetadata(x, y, z)
+  }
+
+  /**
    * Set block metadata at world coordinates.
    * Returns true if the metadata was set.
    */

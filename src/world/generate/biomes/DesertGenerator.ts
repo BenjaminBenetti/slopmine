@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { SnakeEntity } from '../../../entities/animals/snake/index.ts'
+import { CaveSlimeEntity } from '../../../entities/animals/cave_slime/index.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { OasisFeature, type OasisLocation } from '../features/OasisFeature.ts'
@@ -151,6 +152,13 @@ export class DesertGenerator extends BiomeGenerator {
         spawnRate: 0.02, // ~1 per 50 chunks (pretty rare)
         maxNearby: 4,
         createEntity: (pos: THREE.Vector3) => new SnakeEntity({ position: pos }),
+      },
+      {
+        entityType: 'cave_slime',
+        spawnRate: 0.15, // Common in dark caves
+        maxNearby: 8,
+        maxLightLevel: 7, // Only spawn in dark areas
+        createEntity: (pos: THREE.Vector3) => new CaveSlimeEntity({ position: pos }),
       },
     ],
   }

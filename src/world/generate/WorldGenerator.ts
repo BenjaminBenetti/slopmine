@@ -14,6 +14,7 @@ import { OasisFeature } from './features/OasisFeature.ts'
 import { LavaFeature } from './features/LavaFeature.ts'
 import { WheatFeature } from './features/WheatFeature.ts'
 import { HerbFeature } from './features/HerbFeature.ts'
+import { HempFeature } from './features/HempFeature.ts'
 import { HellPillarFeature } from './features/HellPillarFeature.ts'
 import { JungleTreeFeature } from './features/JungleTreeFeature.ts'
 import { MegaTreeFeature } from './features/MegaTreeFeature.ts'
@@ -190,6 +191,9 @@ export class WorldGenerator {
       }
       if (feature instanceof HerbFeature) {
         return { type: 'herb', settings: feature.settings }
+      }
+      if (feature instanceof HempFeature) {
+        return { type: 'hemp', settings: feature.settings }
       }
       if (feature instanceof HellPillarFeature) {
         return { type: 'hellPillar', settings: (feature as any).config }

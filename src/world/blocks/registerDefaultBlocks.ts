@@ -61,11 +61,18 @@ import { HellMagmaBlock } from './types/hell_magma/HellMagmaBlock.ts'
 import { CorruptedHellRockBlock } from './types/corrupted_hell_rock/CorruptedHellRockBlock.ts'
 import { GlassBlock } from './types/glass/GlassBlock.ts'
 import { ApothecaryWorkbenchBlock } from './types/apothecary_workbench/ApothecaryWorkbenchBlock.ts'
+import { WoodworkingBenchBlock } from './types/woodworking_bench/WoodworkingBenchBlock.ts'
 import { YellowFlowerBlock } from './types/yellow_flower/YellowFlowerBlock.ts'
 import { BlueFlowerBlock } from './types/blue_flower/BlueFlowerBlock.ts'
 import { RedFlowerBlock } from './types/red_flower/RedFlowerBlock.ts'
 import { JungleFernBlock } from './types/jungle_fern/JungleFernBlock.ts'
 import { LadderBlock } from './types/ladder/LadderBlock.ts'
+import { Hemp1Block } from './types/hemp/Hemp1Block.ts'
+import { Hemp2Block } from './types/hemp/Hemp2Block.ts'
+import { Hemp3Block } from './types/hemp/Hemp3Block.ts'
+import { BedHeadBlock } from './types/bed_head/BedHeadBlock.ts'
+import { BedFootBlock } from './types/bed_foot/BedFootBlock.ts'
+import { RopeLadderBlock } from './types/rope_ladder/RopeLadderBlock.ts'
 
 /**
  * Register all default block types.
@@ -90,6 +97,7 @@ export function registerDefaultBlocks(): void {
   registerBlock(new TorchBlock())
   registerBlock(new ForgeBlock())
   registerBlock(new ApothecaryWorkbenchBlock())
+  registerBlock(new WoodworkingBenchBlock())
 
   // Water blocks
   registerBlock(new WaterBlock())
@@ -170,4 +178,14 @@ export function registerDefaultBlocks(): void {
 
   // Climbable blocks
   registerBlock(new LadderBlock())
+  registerBlock(new RopeLadderBlock())
+
+  // Hemp blocks
+  registerBlock(new Hemp1Block())
+  registerBlock(new Hemp2Block())
+  registerBlock(new Hemp3Block())
+
+  // Furniture blocks
+  registerBlock(new BedHeadBlock())
+  registerBlock(new BedFootBlock())
 }

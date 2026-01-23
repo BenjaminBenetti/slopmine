@@ -8,6 +8,7 @@ import type { CameraControls } from './FirstPersonCameraControls.ts'
 import type { IPlayerState, IInventoryGridState, IToolbarState, IItemStack } from './PlayerState.ts'
 import type { ToolbarUI } from '../ui/Toolbar.ts'
 import { blockUIRegistry } from '../ui/blockui/BlockUIRegistry.ts'
+import { blockActionRegistry } from '../ui/blockui/BlockActionRegistry.ts'
 import { BlockStateManager } from '../world/blockstate/BlockStateManager.ts'
 import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandler.ts'
 
@@ -105,6 +106,20 @@ export class BlockInteractionHandler {
     // Raycast to find targeted block
     const hit = this.raycaster.castFromCamera(this.camera, MAX_INTERACTION_DISTANCE)
     if (!hit) return
+
+    // First check if block has a simple action (no UI needed)
+    if (blockActionRegistry.hasAction(hit.blockId)) {
+      // Get metadata from world manager
+      const metadata = this.worldManager.getBlockMetadata(hit.worldX, hit.worldY, hit.worldZ)
+      blockActionRegistry.executeAction(
+        hit.blockId,
+        hit.worldX,
+        hit.worldY,
+        hit.worldZ,
+        metadata
+      )
+      return
+    }
 
     // Check if block has a registered UI
     if (!blockUIRegistry.hasUI(hit.blockId)) return

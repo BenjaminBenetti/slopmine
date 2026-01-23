@@ -83,6 +83,19 @@ export enum TextureId {
   RED_FLOWER = 72,           // red-flower.webp
   JUNGLE_FERN = 73,          // jungle-fern.webp
   LADDER = 74,               // ladder.webp
+  HEMP_1 = 75,               // hemp-1.webp (seedling)
+  HEMP_2 = 76,               // hemp-2.webp (growing)
+  HEMP_3 = 77,               // hemp-3.webp (mature)
+  BED_HEAD_TOP = 78,         // bed-head-top.webp (pillow/blanket from above)
+  BED_HEAD_FRONT = 79,       // bed-head-front.webp (headboard with pillow)
+  BED_SIDE = 80,             // bed-side.webp (wood frame with blue blanket)
+  BED_FOOT_TOP = 81,         // bed-foot-top.webp (blanket from above)
+  BED_FOOT_END = 82,         // bed-foot-end.webp (foot of bed)
+  BED_BOTTOM = 83,           // bed-bottom.webp (wood underside)
+  ROPE_LADDER = 84,          // rope_ladder.webp
+  WOODWORKING_BENCH_FRONT = 85,  // woodworking-bench-front.webp
+  WOODWORKING_BENCH_SIDE = 86,   // woodworking-bench-side.webp
+  WOODWORKING_BENCH_TOP = 87,    // woodworking-bench-top.webp
 }
 
 // Cache for the face texture map
@@ -163,6 +176,10 @@ export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   58, // Glass - needs blended transparency (not alphaTest)
   62, // Apothecary Workbench - directional block with rotation
   67, // Ladder - directional flat plane with rotation
+  71, // Bed Head - half-height directional block
+  72, // Bed Foot - half-height directional block
+  73, // Woodworking Bench - directional block with rotation
+  74, // Rope Ladder - directional flat plane with rotation
   // Water (13-16) is now greedy-meshed to eliminate internal face z-fighting
 ])
 

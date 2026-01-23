@@ -27,6 +27,7 @@ export { EntitySpawner } from './spawning/EntitySpawner.ts'
 export { PigEntity } from './animals/pig/index.ts'
 export { CowEntity } from './animals/cow/index.ts'
 export { RabbitEntity } from './animals/rabbit/index.ts'
+export { CaveSlimeEntity } from './animals/cave_slime/index.ts'
 
 // Enemies
 export { SkeletonEntity } from './enemies/skeleton/index.ts'

@@ -214,6 +214,12 @@ export class EntitySpawner implements ITask {
       const maxY = config.maxY ?? 1024
       if (spawnY < minY || spawnY > maxY) continue
 
+      // Check light level constraint if specified
+      if (config.maxLightLevel !== undefined) {
+        const lightLevel = this.worldManager.getLightLevelAtWorld(worldX, spawnY, worldZ)
+        if (lightLevel > config.maxLightLevel) continue
+      }
+
       // Valid position found
       this.tempPosition.set(worldX, spawnY, worldZ)
       return this.tempPosition.clone()

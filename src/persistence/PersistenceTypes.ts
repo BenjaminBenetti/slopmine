@@ -46,6 +46,10 @@ export interface WorldMetadata {
   lastSavedAt: string
   playerPosition?: { x: number; y: number; z: number }
   playerHealth?: number
+  /** The original spawn point when the world was created (never changes) */
+  originalSpawnPoint?: { x: number; y: number; z: number }
+  /** The player's bed spawn point (set when sleeping in a bed) */
+  bedSpawnPoint?: { x: number; y: number; z: number }
 }
 
 /**

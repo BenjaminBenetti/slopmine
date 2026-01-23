@@ -8,6 +8,9 @@ import { torchRecipes } from './TorchRecipe.ts'
 import { ladderRecipes } from './LadderRecipe.ts'
 import { groundWheatRecipe } from './WheatRecipe.ts'
 import { corruptedEssenceRecipe } from './CorruptedEssenceRecipe.ts'
+import { ropeRecipes } from './RopeRecipe.ts'
+import { bedRecipes } from './BedRecipe.ts'
+import { ropeLadderRecipes } from './RopeLadderRecipe.ts'
 
 /**
  * Register all default recipes.
@@ -37,6 +40,15 @@ export function registerDefaultRecipes(): void {
   }
   recipeRegistry.register(groundWheatRecipe)
   recipeRegistry.register(corruptedEssenceRecipe)
+  for (const recipe of ropeRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of bedRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of ropeLadderRecipes) {
+    recipeRegistry.register(recipe)
+  }
 }
 
 export { woodToolRecipes } from './WoodToolRecipes.ts'

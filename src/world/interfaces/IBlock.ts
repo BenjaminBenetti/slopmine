@@ -143,5 +143,9 @@ export interface IBlock {
  */
 export interface IWorld {
   getBlock(x: bigint, y: bigint, z: bigint): IBlock
-  setBlock(x: bigint, y: bigint, z: bigint, blockId: BlockId): boolean
+  setBlock(x: bigint, y: bigint, z: bigint, blockId: BlockId, metadata?: number): boolean
+  /** Get block ID directly without block instance lookup */
+  getBlockId?(x: bigint, y: bigint, z: bigint): BlockId
+  /** Get block metadata at position */
+  getMetadata?(x: bigint, y: bigint, z: bigint): number
 }

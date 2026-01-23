@@ -54,11 +54,13 @@ import {
 import { BlockTickManager } from './world/blockstate/BlockTickManager.ts'
 import { setForgeBlockTickManager } from './world/blocks/types/forge/ForgeBlock.ts'
 import { setApothecaryWorkbenchBlockTickManager } from './world/blocks/types/apothecary_workbench/ApothecaryWorkbenchBlock.ts'
+import { setWoodworkingBenchBlockTickManager } from './world/blocks/types/woodworking_bench/WoodworkingBenchBlock.ts'
 import { smeltingRegistry } from './smelting/index.ts'
 import { brewingRegistry } from './brewing/index.ts'
 import { IronBarItem, GoldBarItem, CopperBarItem, SteelBarItem } from './items/bars/index.ts'
 import { GlassBlockItem } from './items/blocks/glass/GlassBlockItem.ts'
 import { ApothecaryWorkbenchBlockItem } from './items/blocks/apothecary_workbench/ApothecaryWorkbenchBlockItem.ts'
+import { WoodworkingBenchBlockItem } from './items/blocks/woodworking_bench/WoodworkingBenchBlockItem.ts'
 import { HealthPotion1Item } from './items/potions/health_potion_1/HealthPotion1Item.ts'
 import { HealthPotion2Item } from './items/potions/health_potion_2/HealthPotion2Item.ts'
 import { HealthPotion3Item } from './items/potions/health_potion_3/HealthPotion3Item.ts'
@@ -70,12 +72,13 @@ import { CookedAlligatorMeatItem } from './items/food/cooked_alligator_meat/Cook
 import { CookedSnakeItem } from './items/food/cooked_snake/CookedSnakeItem.ts'
 import { CookedKomodoMeatItem } from './items/food/cooked_komodo_meat/CookedKomodoMeatItem.ts'
 import { BreadItem } from './items/food/bread/BreadItem.ts'
-import { blockUIRegistry, createForgeUI, createApothecaryWorkbenchUI } from './ui/blockui/index.ts'
+import { blockUIRegistry, blockActionRegistry, createForgeUI, createApothecaryWorkbenchUI, createWoodworkingBenchUI } from './ui/blockui/index.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
 import { BlockInteractionHandler } from './player/BlockInteractionHandler.ts'
 import { BlockRaycaster } from './player/BlockRaycaster.ts'
 import type { ForgeBlockState } from './world/blocks/types/forge/ForgeBlockState.ts'
 import type { ApothecaryWorkbenchState } from './world/blocks/types/apothecary_workbench/ApothecaryWorkbenchState.ts'
+import type { WoodworkingBenchState } from './world/blocks/types/woodworking_bench/WoodworkingBenchState.ts'
 import { ForgeBlockItem } from './items/blocks/forge/ForgeBlockItem.ts'
 import { recipeRegistry } from './crafting/RecipeRegistry.ts'
 import {
@@ -103,6 +106,7 @@ initializeItemRegistry()
 const blockTickManager = new BlockTickManager()
 setForgeBlockTickManager(blockTickManager)
 setApothecaryWorkbenchBlockTickManager(blockTickManager)
+setWoodworkingBenchBlockTickManager(blockTickManager)
 
 // Register smelting recipes
 smeltingRegistry.register({
@@ -264,11 +268,41 @@ recipeRegistry.register({
   resultCount: 1,
 })
 
+// Register woodworking bench crafting recipe (4 stone + 2 oak log -> 1 woodworking bench)
+recipeRegistry.register({
+  id: 'craft_woodworking_bench',
+  name: 'Woodworking Bench',
+  ingredients: [
+    { itemId: 'stone_block', count: 4 },
+    { itemId: 'oak_log_block', count: 2 },
+  ],
+  createResult: () => new WoodworkingBenchBlockItem(),
+  resultCount: 1,
+})
+
 // Register block UI for forge
 blockUIRegistry.register(BlockIds.FORGE, (state) => createForgeUI(state as ForgeBlockState))
 
 // Register block UI for apothecary workbench
 blockUIRegistry.register(BlockIds.APOTHECARY_WORKBENCH, (state) => createApothecaryWorkbenchUI(state as ApothecaryWorkbenchState))
+
+// Register block UI for woodworking bench
+blockUIRegistry.register(BlockIds.WOODWORKING_BENCH, (state) => createWoodworkingBenchUI(state as WoodworkingBenchState))
+
+// Register bed sleep action (sets spawn point, no UI needed)
+blockActionRegistry.register(BlockIds.BED_HEAD, (worldX, worldY, worldZ) => {
+  // Calculate spawn position next to the bed (offset by 1 block in X)
+  const spawnX = Number(worldX) + 1
+  const spawnY = Number(worldY)
+  const spawnZ = Number(worldZ)
+  
+  setBedSpawnPoint(spawnX, spawnY, spawnZ)
+  
+  // Show message to player (TODO: Add proper UI notification)
+  console.log('Respawn point set!')
+  
+  return true
+})
 
 // Biome mini-map helpers
 function getBiomeAbbreviation(biomeType: string): string {
@@ -414,14 +448,20 @@ persistenceManager.initialize().then(async () => {
     console.log('Loaded saved inventory')
   }
 
-  // Load saved player position if exists
+  // Load saved player position and spawn points
   const savedMetadata = await persistenceManager.loadMetadata()
   if (savedMetadata?.playerPosition) {
     const pos = savedMetadata.playerPosition
     playerBody.position.set(pos.x, pos.y, pos.z)
     renderer.camera.position.set(pos.x, pos.y + EYE_HEIGHT, pos.z)
-    spawnPosition.set(pos.x, pos.y, pos.z)
     console.log(`Loaded saved position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`)
+  }
+
+  // Load saved bed spawn point if exists
+  if (savedMetadata?.bedSpawnPoint) {
+    const sp = savedMetadata.bedSpawnPoint
+    setBedSpawnPoint(sp.x, sp.y, sp.z)
+    console.log(`Loaded bed spawn point: ${sp.x.toFixed(1)}, ${sp.y.toFixed(1)}, ${sp.z.toFixed(1)}`)
   }
 
   // Load saved player health if exists
@@ -440,6 +480,8 @@ persistenceManager.initialize().then(async () => {
       z: playerBody.position.z,
     },
     playerHealth: playerHealth.currentHealth,
+    originalSpawnPoint: { x: originalSpawnPoint.x, y: originalSpawnPoint.y, z: originalSpawnPoint.z },
+    bedSpawnPoint: bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined,
   }))
 }).catch((error) => {
   console.error('Failed to initialize persistence:', error)
@@ -459,7 +501,9 @@ window.addEventListener('beforeunload', () => {
       y: playerBody.position.y,
       z: playerBody.position.z,
     },
-    playerHealth.currentHealth
+    playerHealth.currentHealth,
+    { x: originalSpawnPoint.x, y: originalSpawnPoint.y, z: originalSpawnPoint.z },
+    bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined
   )
 })
 
@@ -506,7 +550,9 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
         y: playerBody.position.y,
         z: playerBody.position.z,
       },
-      playerHealth.currentHealth
+      playerHealth.currentHealth,
+      { x: originalSpawnPoint.x, y: originalSpawnPoint.y, z: originalSpawnPoint.z },
+      bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined
     )
   },
   onNewGame: async () => {
@@ -527,9 +573,32 @@ const physicsEngine = new PhysicsEngine(physicsWorld)
 
 // Create player physics body at spawn position (above generated terrain)
 // Spawn at center of biome region (256, 256) to avoid biome boundary at origin
-const spawnPosition = new THREE.Vector3(256, seaLevel + 20, 256)
+// originalSpawnPoint: The world's default spawn (never changes after world creation)
+// bedSpawnPoint: Set when player sleeps in a bed (used for respawn if set)
+const originalSpawnPoint = new THREE.Vector3(256, seaLevel + 20, 256)
+let bedSpawnPoint: THREE.Vector3 | null = null
+
+/**
+ * Set the player's bed spawn point.
+ * Called when player sleeps in a bed.
+ */
+export function setBedSpawnPoint(x: number, y: number, z: number): void {
+  if (!bedSpawnPoint) {
+    bedSpawnPoint = new THREE.Vector3(x, y, z)
+  } else {
+    bedSpawnPoint.set(x, y, z)
+  }
+  console.log(`Bed spawn point set: ${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`)
+}
+
+/**
+ * Get the respawn position (bed spawn if set, otherwise original spawn).
+ */
+function getRespawnPosition(): THREE.Vector3 {
+  return bedSpawnPoint ?? originalSpawnPoint
+}
 const playerBody = new PhysicsBody(
-  spawnPosition,
+  originalSpawnPoint,
   new THREE.Vector3(PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_DEPTH)
 )
 physicsEngine.addBody(playerBody)
@@ -583,13 +652,16 @@ playerHealth.setOnDeath(() => {
 
   // Short delay before respawn
   setTimeout(() => {
+    // Get the correct respawn position (bed if set, otherwise world spawn)
+    const respawnPos = getRespawnPosition()
+
     // Reset position to spawn point
-    playerBody.position.copy(spawnPosition)
+    playerBody.position.copy(respawnPos)
     playerBody.velocity.set(0, 0, 0)
     renderer.camera.position.set(
-      spawnPosition.x,
-      spawnPosition.y + EYE_HEIGHT,
-      spawnPosition.z
+      respawnPos.x,
+      respawnPos.y + EYE_HEIGHT,
+      respawnPos.z
     )
 
     // Reset fall damage tracker to prevent false damage after teleport
@@ -605,9 +677,9 @@ playerHealth.setOnDeath(() => {
 
 // Position camera at player spawn with eye height offset
 renderer.camera.position.set(
-  spawnPosition.x,
-  spawnPosition.y + EYE_HEIGHT,
-  spawnPosition.z
+  originalSpawnPoint.x,
+  originalSpawnPoint.y + EYE_HEIGHT,
+  originalSpawnPoint.z
 )
 
 // Set the scene and renderer for rendering and proper GPU cleanup
@@ -995,8 +1067,8 @@ const gameLoop = new GameLoop({
     // During loading, only update world generation (bypass scheduler)
     if (isLoading) {
       // Update world generation from spawn position
-      worldGenerator.update(spawnPosition.x, spawnPosition.z, spawnPosition.y)
-      world.update(spawnPosition.x, spawnPosition.z)
+      worldGenerator.update(originalSpawnPoint.x, originalSpawnPoint.z, originalSpawnPoint.y)
+      world.update(originalSpawnPoint.x, originalSpawnPoint.z)
 
       // Process mesh results (throttled to prevent GPU flooding)
       world.processPendingMeshResults()

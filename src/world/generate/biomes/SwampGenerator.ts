@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { SlugEntity } from '../../../entities/animals/slug/index.ts'
 import { AlligatorEntity } from '../../../entities/animals/alligator/index.ts'
+import { CaveSlimeEntity } from '../../../entities/animals/cave_slime/index.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { HerbFeature } from '../features/HerbFeature.ts'
@@ -165,6 +166,13 @@ export class SwampGenerator extends BiomeGenerator {
         maxY: 250,
         maxNearby: 6, // Fewer alligators - they're dangerous
         createEntity: (pos: THREE.Vector3) => new AlligatorEntity({ position: pos }),
+      },
+      {
+        entityType: 'cave_slime',
+        spawnRate: 0.15, // Common in dark caves
+        maxNearby: 8,
+        maxLightLevel: 7, // Only spawn in dark areas
+        createEntity: (pos: THREE.Vector3) => new CaveSlimeEntity({ position: pos }),
       },
     ],
   }
