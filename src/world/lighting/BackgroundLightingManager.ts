@@ -48,6 +48,7 @@ export class BackgroundLightingManager {
   private readonly workers: Worker[] = []
   private readonly workerBusy: boolean[] = []
   private readonly WORKER_COUNT = 4
+  private workersReady = 0
   private readonly pendingColumns: Map<ChunkKey, ChunkColumn> = new Map()
   private readonly processedColumns: Map<ChunkKey, number> = new Map() // chunkKey -> timestamp
   private readonly columnQueue: ChunkKey[] = []
@@ -116,7 +117,12 @@ export class BackgroundLightingManager {
       { type: 'module' }
     )
 
-    worker.onmessage = (event: MessageEvent<LightingResponse | LightingError>) => {
+    worker.onmessage = (event: MessageEvent<LightingResponse | LightingError | { type: 'worker-ready' }>) => {
+      if (event.data.type === 'worker-ready') {
+        this.workersReady++
+        console.log(`[WorldManager] Lighting worker ${index} ready (${this.workersReady}/${this.WORKER_COUNT})`)
+        return
+      }
       this.workerBusy[index] = false
       this.handleWorkerResult(event.data)
       // Process any queued block changes immediately (high priority)

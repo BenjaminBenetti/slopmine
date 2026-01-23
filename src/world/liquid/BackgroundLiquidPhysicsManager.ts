@@ -43,6 +43,7 @@ export class BackgroundLiquidPhysicsManager {
   private readonly workers: Worker[] = []
   private readonly workerBusy: boolean[] = []
   private readonly WORKER_COUNT = 4
+  private workersReady = 0
 
   // Column tracking
   private readonly pendingColumns: Map<ChunkKey, ChunkColumn> = new Map()
@@ -90,7 +91,12 @@ export class BackgroundLiquidPhysicsManager {
       { type: 'module' }
     )
 
-    worker.onmessage = (event: MessageEvent<LiquidPhysicsResponse | LiquidPhysicsError>) => {
+    worker.onmessage = (event: MessageEvent<LiquidPhysicsResponse | LiquidPhysicsError | { type: 'worker-ready' }>) => {
+      if (event.data.type === 'worker-ready') {
+        this.workersReady++
+        console.log(`[WorldManager] Liquid physics worker ${index} ready (${this.workersReady}/${this.WORKER_COUNT})`)
+        return
+      }
       this.workerBusy[index] = false
       this.handleWorkerResult(event.data)
     }
