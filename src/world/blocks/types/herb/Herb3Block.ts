@@ -95,6 +95,17 @@ export class Herb3Block extends TransparentBlock {
     return false
   }
 
+  /**
+   * Get the interaction box for raycasting.
+   * Returns a centered box matching the mature herb's cross geometry (height=1.0, width=0.85).
+   */
+  getInteractionBox(_metadata: number): THREE.Box3 {
+    return new THREE.Box3(
+      new THREE.Vector3(0.075, 0, 0.075),
+      new THREE.Vector3(0.925, 1.0, 0.925)
+    )
+  }
+
   // Mature herb - no entity needed (static block)
 
   /**

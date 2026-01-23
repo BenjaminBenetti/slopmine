@@ -74,6 +74,15 @@ export interface IBlock {
   getCollisionBox(): THREE.Box3 | null
 
   /**
+   * Get the interaction/selection bounding box for raycasting.
+   * Returns the box in block-local space where (0,0,0) to (1,1,1) is the full cube.
+   * Used by BlockRaycaster to determine if a ray hits the block's selectable area.
+   * @param metadata Block metadata for directional blocks (e.g., facing direction)
+   * @returns Box3 for selectable blocks, null for non-targetable blocks (air, liquids)
+   */
+  getInteractionBox?(metadata: number): THREE.Box3 | null
+
+  /**
    * Called when this block is placed.
    * @param facing The direction the block should face (for directional blocks)
    */

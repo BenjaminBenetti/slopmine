@@ -96,6 +96,17 @@ export class Wheat2Block extends TransparentBlock {
     return false
   }
 
+  /**
+   * Get the interaction box for raycasting.
+   * Returns a centered box matching the growing wheat's cross geometry (height=0.7, width=0.8).
+   */
+  getInteractionBox(_metadata: number): THREE.Box3 {
+    return new THREE.Box3(
+      new THREE.Vector3(0.1, 0, 0.1),
+      new THREE.Vector3(0.9, 0.7, 0.9)
+    )
+  }
+
   createBlockEntity(position: IWorldCoordinate, world: IWorld): IBlockEntity {
     return new WheatBlockEntity(position, world, BlockIds.WHEAT_3)
   }

@@ -99,6 +99,18 @@ export class RedFlowerBlock extends TransparentBlock {
     return false
   }
 
+  /**
+   * Get the interaction box for raycasting.
+   * Returns a small centered box matching the flower's cross geometry.
+   * Uses height=0.45, width=0.5
+   */
+  getInteractionBox(_metadata: number): THREE.Box3 {
+    return new THREE.Box3(
+      new THREE.Vector3(0.25, 0, 0.25),
+      new THREE.Vector3(0.75, 0.45, 0.75)
+    )
+  }
+
   getDrops(): IItem[] {
     return [new RedFlowerBlockItem()]
   }

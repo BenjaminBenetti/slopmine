@@ -116,6 +116,22 @@ export abstract class Block implements IBlock {
   }
 
   /**
+   * Get the interaction/selection bounding box for raycasting.
+   * Default implementation returns full 1x1x1 cube for targetable blocks,
+   * null for air and liquids.
+   * Override in subclasses for custom hitbox shapes (ladders, torches, flowers, etc.)
+   */
+  getInteractionBox(_metadata: number): THREE.Box3 | null {
+    if (this.properties.id === BlockIds.AIR || this.properties.isLiquid) {
+      return null
+    }
+    return new THREE.Box3(
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(1, 1, 1)
+    )
+  }
+
+  /**
    * Get material(s) for instanced rendering.
    * By default, returns the same as getMaterials().
    */

@@ -74,6 +74,20 @@ export class TorchBlock extends TransparentBlock {
     return false
   }
 
+  /**
+   * Get the interaction box for raycasting.
+   * Returns a small centered box matching the torch's visual geometry.
+   */
+  getInteractionBox(_metadata: number): THREE.Box3 {
+    // Torch is a small centered post with ember on top
+    // Post: 0.125 wide, ember: 0.1875 wide
+    // Combined height approximately 0-0.8125
+    return new THREE.Box3(
+      new THREE.Vector3(0.35, 0, 0.35),
+      new THREE.Vector3(0.65, 0.85, 0.65)
+    )
+  }
+
   getDrops(): IItem[] {
     return [new TorchBlockItem()]
   }

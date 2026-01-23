@@ -96,6 +96,17 @@ export class Herb1Block extends TransparentBlock {
     return false
   }
 
+  /**
+   * Get the interaction box for raycasting.
+   * Returns a centered box matching the seedling's cross geometry (height=0.4, width=0.7).
+   */
+  getInteractionBox(_metadata: number): THREE.Box3 {
+    return new THREE.Box3(
+      new THREE.Vector3(0.15, 0, 0.15),
+      new THREE.Vector3(0.85, 0.4, 0.85)
+    )
+  }
+
   createBlockEntity(position: IWorldCoordinate, world: IWorld): IBlockEntity {
     return new HerbBlockEntity(position, world, BlockIds.HERB_2)
   }

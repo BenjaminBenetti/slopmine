@@ -99,6 +99,17 @@ export class JungleFernBlock extends TransparentBlock {
     return false
   }
 
+  /**
+   * Get the interaction box for raycasting.
+   * Returns a centered box matching the fern's cross geometry (height=0.4, width=0.9).
+   */
+  getInteractionBox(_metadata: number): THREE.Box3 {
+    return new THREE.Box3(
+      new THREE.Vector3(0.05, 0, 0.05),
+      new THREE.Vector3(0.95, 0.4, 0.95)
+    )
+  }
+
   getDrops(): IItem[] {
     return [new JungleFernBlockItem()]
   }

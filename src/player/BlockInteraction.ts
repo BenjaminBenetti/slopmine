@@ -23,6 +23,8 @@ interface IMiningProgress {
   blockId: BlockId
   progress: number
   requiredTime: number
+  /** Interaction box in world space (for overlay sizing) */
+  interactionBox: THREE.Box3
 }
 
 /**
@@ -232,15 +234,11 @@ export class BlockInteraction {
       blockId: hit.blockId,
       progress: 0,
       requiredTime: miningResult.miningTime,
+      interactionBox: hit.interactionBox.clone(),
     }
 
-    // Show overlay at block position
-    this.miningOverlay.show(
-      Number(hit.worldX),
-      Number(hit.worldY),
-      Number(hit.worldZ),
-      0
-    )
+    // Show overlay matching the block's interaction box
+    this.miningOverlay.showBox(this.currentMining.interactionBox, 0)
   }
 
   private updateMining(deltaTime: number): void {
@@ -249,11 +247,9 @@ export class BlockInteraction {
     // Increase progress based on time
     this.currentMining.progress += deltaTime / this.currentMining.requiredTime
 
-    // Update visual overlay
-    this.miningOverlay.show(
-      Number(this.currentMining.worldX),
-      Number(this.currentMining.worldY),
-      Number(this.currentMining.worldZ),
+    // Update visual overlay matching the block's interaction box
+    this.miningOverlay.showBox(
+      this.currentMining.interactionBox,
       this.currentMining.progress
     )
 
