@@ -40,7 +40,13 @@ import { biomeRegistry } from '../world/generate/biomes/BiomeRegistry.ts'
 import type { BiomeType } from '../world/generate/GenerationConfig.ts'
 
 // Initialize block registry in worker context
-registerDefaultBlocks()
+try {
+  registerDefaultBlocks()
+  console.log('[ChunkGenerationWorker] Block registry initialized successfully')
+} catch (error) {
+  console.error('[ChunkGenerationWorker] Failed to initialize block registry:', error)
+  throw error
+}
 
 /**
  * Cache of biome generator instances by seed+name key.
@@ -1086,6 +1092,9 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     waterEdgeEffects,
   }
 }
+
+// Signal that worker is ready after initialization
+self.postMessage({ type: 'worker-ready' })
 
 // Worker message handler
 type WorkerRequest = ChunkGenerationRequest | SubChunkGenerationRequest

@@ -99,31 +99,45 @@ export class BackgroundLightingManager {
   constructor(config: Partial<BackgroundLightingConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
 
-    // Create pool of lighting workers
+    // Stagger worker creation to avoid browser limits
     for (let i = 0; i < this.WORKER_COUNT; i++) {
-      const worker = new Worker(
-        new URL('../../workers/LightingWorker.ts', import.meta.url),
-        { type: 'module' }
-      )
-
-      worker.onmessage = (event: MessageEvent<LightingResponse | LightingError>) => {
-        this.workerBusy[i] = false
-        this.handleWorkerResult(event.data)
-        // Process any queued block changes immediately (high priority)
-        this.processBlockChangeQueue()
-      }
-
-      worker.onerror = (error) => {
-        console.error('Lighting worker error:', error)
-        this.workerBusy[i] = false
-        // Clear pending columns to prevent permanent stuck state
-        // The columns will be re-queued for background lighting eventually
-        this.pendingColumns.clear()
-      }
-
-      this.workers.push(worker)
+      this.workers.push(null as unknown as Worker) // Placeholder
       this.workerBusy.push(false)
+      setTimeout(() => this.createLightingWorker(i), i * 100 + 400) // Start after generation workers
     }
+  }
+
+  /**
+   * Create a single lighting worker with retry logic.
+   */
+  private createLightingWorker(index: number, retryCount = 0): void {
+    const worker = new Worker(
+      new URL('../../workers/LightingWorker.ts', import.meta.url),
+      { type: 'module' }
+    )
+
+    worker.onmessage = (event: MessageEvent<LightingResponse | LightingError>) => {
+      this.workerBusy[index] = false
+      this.handleWorkerResult(event.data)
+      // Process any queued block changes immediately (high priority)
+      this.processBlockChangeQueue()
+    }
+
+    worker.onerror = (event) => {
+      const errorEvent = event as ErrorEvent
+      console.error(`[LightingWorker ${index}] error (attempt ${retryCount + 1}):`, {
+        message: errorEvent.message,
+        filename: errorEvent.filename,
+        lineno: errorEvent.lineno,
+      })
+      this.workerBusy[index] = false
+      // Retry after delay
+      if (retryCount < 2) {
+        setTimeout(() => this.createLightingWorker(index, retryCount + 1), 500)
+      }
+    }
+
+    this.workers[index] = worker
   }
 
   /**

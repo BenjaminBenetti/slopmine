@@ -101,11 +101,13 @@ export class WorldManager implements IModifiedChunkProvider {
 
   // Web Worker pool for chunk generation (terrain, caves, lighting)
   private readonly generationWorkers: Worker[] = []
+  private readonly readyGenerationWorkers: Worker[] = [] // Only workers that have initialized
   private readonly subChunkCallbackMap: Map<
     string,
     {
       resolve: (data: SubChunkGenerationResponse) => void
       reject: (error: Error) => void
+      timestamp: number
     }
   > = new Map()
   private generationWorkerIndex = 0
@@ -281,6 +283,34 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Check for stuck generation requests and log diagnostics.
+   * Call this periodically (e.g., every few seconds) to detect issues.
+   */
+  checkGenerationHealth(): void {
+    const now = Date.now()
+    const stuckThreshold = 10000 // 10 seconds
+    let stuckCount = 0
+
+    for (const [key, callback] of this.subChunkCallbackMap.entries()) {
+      const age = now - callback.timestamp
+      if (age > stuckThreshold) {
+        stuckCount++
+        if (stuckCount <= 5) {
+          console.warn(`[WorldManager] Stuck generation request: ${key} (${(age / 1000).toFixed(1)}s)`)
+        }
+      }
+    }
+
+    if (stuckCount > 5) {
+      console.warn(`[WorldManager] ...and ${stuckCount - 5} more stuck requests`)
+    }
+
+    if (stuckCount > 0) {
+      console.warn(`[WorldManager] Total stuck: ${stuckCount}, Workers ready: ${this.readyGenerationWorkers.length}/${this.WORKER_COUNT}`)
+    }
+  }
+
+  /**
    * Initialize the Web Worker pools for mesh building and chunk generation.
    */
   private initWorkers(): void {
@@ -314,18 +344,51 @@ export class WorldManager implements IModifiedChunkProvider {
     }
 
     // Generation workers (module workers for sub-chunk generation)
+    // Stagger creation to avoid browser worker limits
     for (let i = 0; i < this.WORKER_COUNT; i++) {
-      const worker = new Worker(
-        new URL('../workers/ChunkGenerationWorker.ts', import.meta.url),
-        { type: 'module' }
-      )
-      worker.onmessage = (
-        event: MessageEvent<SubChunkGenerationResponse | SubChunkGenerationError>
-      ) => {
-        this.handleSubChunkGenerationResult(event.data)
-      }
-      this.generationWorkers.push(worker)
+      setTimeout(() => this.createGenerationWorker(i), i * 100)
     }
+  }
+
+  /**
+   * Create a single generation worker with retry logic.
+   */
+  private createGenerationWorker(index: number, retryCount = 0): void {
+    const worker = new Worker(
+      new URL('../workers/ChunkGenerationWorker.ts', import.meta.url),
+      { type: 'module' }
+    )
+    worker.onmessage = (
+      event: MessageEvent<SubChunkGenerationResponse | SubChunkGenerationError | { type: 'worker-ready' }>
+    ) => {
+      if (event.data.type === 'worker-ready') {
+        this.readyGenerationWorkers.push(worker)
+        console.log(`[WorldManager] Generation worker ${index} ready (${this.readyGenerationWorkers.length}/${this.WORKER_COUNT})`)
+        return
+      }
+      this.handleSubChunkGenerationResult(event.data)
+    }
+    worker.onerror = (event) => {
+      const errorEvent = event as ErrorEvent
+      console.error(`[WorldManager] Generation worker ${index} error (attempt ${retryCount + 1}):`, {
+        message: errorEvent.message,
+        filename: errorEvent.filename,
+        lineno: errorEvent.lineno,
+      })
+      // Remove this worker from the ready pool if it was there
+      const idx = this.readyGenerationWorkers.indexOf(worker)
+      if (idx !== -1) {
+        this.readyGenerationWorkers.splice(idx, 1)
+      }
+      // Retry creating the worker after a delay (up to 3 attempts)
+      if (retryCount < 2) {
+        console.log(`[WorldManager] Retrying generation worker ${index} in 500ms...`)
+        setTimeout(() => this.createGenerationWorker(index, retryCount + 1), 500)
+      } else {
+        console.warn(`[WorldManager] Generation worker ${index} failed after ${retryCount + 1} attempts`)
+      }
+    }
+    this.generationWorkers.push(worker)
   }
 
   /**
@@ -337,7 +400,10 @@ export class WorldManager implements IModifiedChunkProvider {
     const subChunkKey = createSubChunkKey(BigInt(result.chunkX), BigInt(result.chunkZ), result.subY)
     const callbacks = this.subChunkCallbackMap.get(subChunkKey)
 
-    if (!callbacks) return
+    if (!callbacks) {
+      console.warn(`[WorldManager] Received generation result for unknown sub-chunk: ${subChunkKey}`)
+      return
+    }
     this.subChunkCallbackMap.delete(subChunkKey)
 
     if (result.type === 'subchunk-error') {
@@ -400,11 +466,17 @@ export class WorldManager implements IModifiedChunkProvider {
           })
         },
         reject,
+        timestamp: Date.now(),
       })
 
-      // Round-robin worker selection
-      const worker = this.generationWorkers[
-        this.generationWorkerIndex++ % this.generationWorkers.length
+      // Round-robin worker selection - only use ready workers
+      if (this.readyGenerationWorkers.length === 0) {
+        reject(new Error('No generation workers ready'))
+        this.subChunkCallbackMap.delete(subChunkKey)
+        return
+      }
+      const worker = this.readyGenerationWorkers[
+        this.generationWorkerIndex++ % this.readyGenerationWorkers.length
       ]
 
       // Transfer buffers to worker

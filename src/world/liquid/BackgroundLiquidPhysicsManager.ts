@@ -71,30 +71,45 @@ export class BackgroundLiquidPhysicsManager {
   }
 
   /**
-   * Initialize worker pool.
+   * Initialize worker pool with staggered creation.
    */
   private initWorkers(): void {
     for (let i = 0; i < this.WORKER_COUNT; i++) {
-      const worker = new Worker(
-        new URL('../../workers/LiquidPhysicsWorker.ts', import.meta.url),
-        { type: 'module' }
-      )
-
-      worker.onmessage = (event: MessageEvent<LiquidPhysicsResponse | LiquidPhysicsError>) => {
-        this.workerBusy[i] = false
-        this.handleWorkerResult(event.data)
-      }
-
-      worker.onerror = (error) => {
-        console.error('Liquid physics worker error:', error)
-        this.workerBusy[i] = false
-        // Clear pending columns to prevent stuck state
-        this.pendingColumns.clear()
-      }
-
-      this.workers.push(worker)
+      this.workers.push(null as unknown as Worker) // Placeholder
       this.workerBusy.push(false)
+      setTimeout(() => this.createLiquidWorker(i), i * 100 + 800) // Start after lighting workers
     }
+  }
+
+  /**
+   * Create a single liquid physics worker with retry logic.
+   */
+  private createLiquidWorker(index: number, retryCount = 0): void {
+    const worker = new Worker(
+      new URL('../../workers/LiquidPhysicsWorker.ts', import.meta.url),
+      { type: 'module' }
+    )
+
+    worker.onmessage = (event: MessageEvent<LiquidPhysicsResponse | LiquidPhysicsError>) => {
+      this.workerBusy[index] = false
+      this.handleWorkerResult(event.data)
+    }
+
+    worker.onerror = (event) => {
+      const errorEvent = event as ErrorEvent
+      console.error(`[LiquidPhysicsWorker ${index}] error (attempt ${retryCount + 1}):`, {
+        message: errorEvent.message,
+        filename: errorEvent.filename,
+        lineno: errorEvent.lineno,
+      })
+      this.workerBusy[index] = false
+      // Retry after delay
+      if (retryCount < 2) {
+        setTimeout(() => this.createLiquidWorker(index, retryCount + 1), 500)
+      }
+    }
+
+    this.workers[index] = worker
   }
 
   /**

@@ -1085,3 +1085,8 @@ const settingsInput = new SettingsInputHandler({
 })
 
 gameLoop.start()
+
+// Periodic health check for stuck chunk generation (for debugging)
+setInterval(() => {
+  world.checkGenerationHealth()
+}, 5000)
