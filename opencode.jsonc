@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "art-gen": {
+      "type": "local",
+      "command": [
+        "npx",
+        "tsx",
+        "/workspaces/slopmine/script/art-gen/server.ts"
+      ],
+      "environment": {
+        "GEMINI_API_KEY": "{env:GEMINI_API_KEY}"
+      },
+      "enabled": true
+    }
+  }
+}

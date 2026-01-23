@@ -7,6 +7,9 @@ export const TERMINAL_VELOCITY = -78.4
 /** Jump velocity in blocks per second (~1.25 block jump height) */
 export const JUMP_VELOCITY = 9.0
 
+/** Climbing velocity in blocks per second */
+export const CLIMB_VELOCITY = 4.0
+
 /** Player hitbox dimensions (Minecraft standard) */
 export const PLAYER_WIDTH = 0.6
 export const PLAYER_HEIGHT = 1.8

@@ -46,6 +46,7 @@ import { BlueFlowerBlockItem } from '../items/blocks/blue_flower/BlueFlowerBlock
 import { RedFlowerBlockItem } from '../items/blocks/red_flower/RedFlowerBlockItem.ts'
 import { JungleFernBlockItem } from '../items/blocks/jungle_fern/JungleFernBlockItem.ts'
 import { Herb1BlockItem } from '../items/blocks/herb/Herb1BlockItem.ts'
+import { LadderBlockItem } from '../items/blocks/ladder/LadderBlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -199,6 +200,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('red_flower_block', () => new RedFlowerBlockItem())
   registerItemFactory('jungle_fern_block', () => new JungleFernBlockItem())
   registerItemFactory('herb_1_block', () => new Herb1BlockItem())
+  registerItemFactory('ladder_block', () => new LadderBlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())

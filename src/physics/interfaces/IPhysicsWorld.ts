@@ -16,4 +16,10 @@ export interface IPhysicsWorld {
    * Check if a block at the given world coordinates is solid.
    */
   isSolidBlock(x: number, y: number, z: number): boolean
+
+  /**
+   * Check if a block at the given world coordinates is climbable.
+   * Climbable blocks have the CLIMBABLE tag (ladders, vines, etc).
+   */
+  isClimbableBlock(x: number, y: number, z: number): boolean
 }

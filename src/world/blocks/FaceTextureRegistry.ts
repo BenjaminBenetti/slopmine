@@ -82,6 +82,7 @@ export enum TextureId {
   BLUE_FLOWER = 71,          // blue-flower.webp
   RED_FLOWER = 72,           // red-flower.webp
   JUNGLE_FERN = 73,          // jungle-fern.webp
+  LADDER = 74,               // ladder.webp
 }
 
 // Cache for the face texture map
@@ -161,6 +162,7 @@ export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   32, // Vine - directional flat plane with rotation
   58, // Glass - needs blended transparency (not alphaTest)
   62, // Apothecary Workbench - directional block with rotation
+  67, // Ladder - directional flat plane with rotation
   // Water (13-16) is now greedy-meshed to eliminate internal face z-fighting
 ])
 

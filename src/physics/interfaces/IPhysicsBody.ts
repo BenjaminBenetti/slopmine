@@ -21,6 +21,9 @@ export interface IPhysicsBody {
   /** When true, physics engine will skip this body (for flying/noclip modes) */
   skipPhysics: boolean
 
+  /** When true, physics engine will skip gravity (for climbing ladders/vines) */
+  isClimbing: boolean
+
   /** Set the grounded state */
   setOnGround(grounded: boolean): void
 

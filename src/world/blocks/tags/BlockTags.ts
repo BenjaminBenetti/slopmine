@@ -13,6 +13,8 @@ export const BlockTags = {
   LEAVES: 'leaves',
   /** Liquid blocks that can sustain smaller liquid blocks (half or greater) */
   LIQUID_SOURCE: 'liquid_source',
+  /** Climbable blocks - player can climb by holding jump while inside */
+  CLIMBABLE: 'climbable',
 } as const
 
 export type BlockTag = (typeof BlockTags)[keyof typeof BlockTags]

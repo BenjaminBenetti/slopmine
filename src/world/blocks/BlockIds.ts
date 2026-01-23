@@ -70,4 +70,5 @@ export enum BlockIds {
   BLUE_FLOWER = 64,
   RED_FLOWER = 65,
   JUNGLE_FERN = 66,
+  LADDER = 67,
 }

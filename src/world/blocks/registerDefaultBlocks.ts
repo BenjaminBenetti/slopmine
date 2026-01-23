@@ -65,6 +65,7 @@ import { YellowFlowerBlock } from './types/yellow_flower/YellowFlowerBlock.ts'
 import { BlueFlowerBlock } from './types/blue_flower/BlueFlowerBlock.ts'
 import { RedFlowerBlock } from './types/red_flower/RedFlowerBlock.ts'
 import { JungleFernBlock } from './types/jungle_fern/JungleFernBlock.ts'
+import { LadderBlock } from './types/ladder/LadderBlock.ts'
 
 /**
  * Register all default block types.
@@ -166,4 +167,7 @@ export function registerDefaultBlocks(): void {
 
   // Jungle vegetation
   registerBlock(new JungleFernBlock())
+
+  // Climbable blocks
+  registerBlock(new LadderBlock())
 }

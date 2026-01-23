@@ -574,6 +574,7 @@ entityManager.setSolidQuery((x, y, z) => physicsWorld.isSolidBlock(x, y, z))
 
 // Connect camera controls to physics
 cameraControls.setPhysics(playerBody, physicsEngine)
+cameraControls.setWorld(physicsWorld)
 
 // Wire death callback for respawn
 playerHealth.setOnDeath(() => {

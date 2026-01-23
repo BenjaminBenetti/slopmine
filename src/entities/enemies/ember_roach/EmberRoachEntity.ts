@@ -205,6 +205,7 @@ export class EmberRoachEntity extends Entity {
     const physicsWorldAdapter = {
       getBlockCollisions: () => [], // Not needed for pillar detection
       isSolidBlock: solidQuery,
+      isClimbableBlock: () => false, // Not needed for pillar detection
     }
     this.pillarDetector = new PillarDetector(physicsWorldAdapter, blockQuery)
   }

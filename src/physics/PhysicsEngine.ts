@@ -57,12 +57,14 @@ export class PhysicsEngine {
    * Update a single physics body.
    */
   private updateBody(body: IPhysicsBody, deltaTime: number): void {
-    // Apply gravity
-    body.velocity.y += this.gravity * deltaTime
+    // Apply gravity (skip when climbing to allow staying in place)
+    if (!body.isClimbing) {
+      body.velocity.y += this.gravity * deltaTime
 
-    // Clamp to terminal velocity
-    if (body.velocity.y < this.terminalVelocity) {
-      body.velocity.y = this.terminalVelocity
+      // Clamp to terminal velocity
+      if (body.velocity.y < this.terminalVelocity) {
+        body.velocity.y = this.terminalVelocity
+      }
     }
 
     // Resolve collisions and get new position (using compound hitbox)

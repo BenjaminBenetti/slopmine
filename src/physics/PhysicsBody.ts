@@ -12,6 +12,7 @@ export class PhysicsBody implements IPhysicsBody {
 
   private grounded = false
   skipPhysics = false
+  isClimbing = false
 
   // Pre-allocated AABBs for getAABBs() to avoid per-frame GC pressure
   private readonly aabbsCache: AABB[] = []

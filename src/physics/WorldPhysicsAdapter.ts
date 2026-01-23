@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { IPhysicsWorld } from './interfaces/IPhysicsWorld.ts'
 import type { WorldManager } from '../world/WorldManager.ts'
 import { AABB } from './collision/AABB.ts'
+import { BlockTags } from '../world/blocks/tags/BlockTags.ts'
 
 /**
  * Adapts WorldManager to IPhysicsWorld interface.
@@ -45,6 +46,15 @@ export class WorldPhysicsAdapter implements IPhysicsWorld {
       WorldPhysicsAdapter.getBigInt(Math.floor(z))
     )
     return block.properties.isSolid
+  }
+
+  isClimbableBlock(x: number, y: number, z: number): boolean {
+    const block = this.world.getBlock(
+      WorldPhysicsAdapter.getBigInt(Math.floor(x)),
+      WorldPhysicsAdapter.getBigInt(Math.floor(y)),
+      WorldPhysicsAdapter.getBigInt(Math.floor(z))
+    )
+    return block.properties.tags.includes(BlockTags.CLIMBABLE)
   }
 
   getBlockCollisions(region: AABB): AABB[] {

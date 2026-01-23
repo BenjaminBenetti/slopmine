@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
+import type { IPhysicsWorld } from '../physics/interfaces/IPhysicsWorld.ts'
 import type { PhysicsEngine } from '../physics/PhysicsEngine.ts'
-import { EYE_HEIGHT, JUMP_VELOCITY } from '../physics/constants.ts'
+import { EYE_HEIGHT, JUMP_VELOCITY, CLIMB_VELOCITY } from '../physics/constants.ts'
 
 export interface FirstPersonCameraControlOptions {
   movementSpeed?: number
@@ -50,6 +51,7 @@ export class FirstPersonCameraControls implements CameraControls {
   // Physics references
   private physicsBody: IPhysicsBody | null = null
   private physicsEngine: PhysicsEngine | null = null
+  private physicsWorld: IPhysicsWorld | null = null
 
   // Pre-allocated vectors to avoid per-frame GC pressure
   private readonly tempDirection = new THREE.Vector3()
@@ -88,6 +90,29 @@ export class FirstPersonCameraControls implements CameraControls {
   setPhysics(body: IPhysicsBody, engine: PhysicsEngine): void {
     this.physicsBody = body
     this.physicsEngine = engine
+  }
+
+  /**
+   * Set the physics world for climbable block checks.
+   */
+  setWorld(world: IPhysicsWorld): void {
+    this.physicsWorld = world
+  }
+
+  /**
+   * Check if the player is currently inside a climbable block.
+   * Checks both feet level and mid-body level for better detection.
+   */
+  private isInClimbableBlock(): boolean {
+    if (!this.physicsBody || !this.physicsWorld) return false
+
+    const x = Math.floor(this.physicsBody.position.x)
+    const yFeet = Math.floor(this.physicsBody.position.y)
+    const yMid = Math.floor(this.physicsBody.position.y + 1)
+    const z = Math.floor(this.physicsBody.position.z)
+
+    return this.physicsWorld.isClimbableBlock(x, yFeet, z) ||
+           this.physicsWorld.isClimbableBlock(x, yMid, z)
   }
 
   private onClick = (): void => {
@@ -274,8 +299,26 @@ export class FirstPersonCameraControls implements CameraControls {
       this.knockbackVelocity.z = 0
     }
 
-    // Handle jump
-    if (this.jumpPressed) {
+    // Handle climbing and jumping
+    const isClimbing = this.isInClimbableBlock()
+
+    // Set climbing flag so physics engine skips gravity
+    this.physicsBody.isClimbing = isClimbing
+
+    if (isClimbing) {
+      // Player is on a climbable block (ladder, vine, etc.)
+      if (this.jumpPressed) {
+        // Climbing up: set upward velocity
+        this.physicsBody.velocity.y = CLIMB_VELOCITY
+      } else if (this.shiftPressed) {
+        // Climbing down: set downward velocity
+        this.physicsBody.velocity.y = -CLIMB_VELOCITY
+      } else {
+        // Not pressing jump or shift: stop in place
+        this.physicsBody.velocity.y = 0
+      }
+    } else if (this.jumpPressed) {
+      // Normal jump when on ground
       this.physicsEngine.applyJump(this.physicsBody, JUMP_VELOCITY)
     }
 
