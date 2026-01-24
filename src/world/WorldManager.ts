@@ -182,6 +182,25 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Wait until at least one generation worker is ready.
+   * Call this before starting chunk generation to avoid race conditions.
+   */
+  waitForGenerationWorkerReady(): Promise<void> {
+    if (this.readyGenerationWorkers.length > 0) {
+      return Promise.resolve()
+    }
+
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        if (this.readyGenerationWorkers.length > 0) {
+          clearInterval(checkInterval)
+          resolve()
+        }
+      }, 50) // Poll every 50ms
+    })
+  }
+
+  /**
    * Set the opacity cache for software occlusion culling.
    */
   setOpacityCache(cache: SubChunkOpacityCache): void {
