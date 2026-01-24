@@ -1,4 +1,6 @@
 import { recipeRegistry } from '../RecipeRegistry.ts'
+import { smeltingRegistry } from '../../smelting/index.ts'
+import { brewingRegistry } from '../../brewing/index.ts'
 import { woodToolRecipes } from './WoodToolRecipes.ts'
 import { stoneToolRecipes } from './StoneToolRecipes.ts'
 import { ironToolRecipes } from './IronToolRecipes.ts'
@@ -11,12 +13,16 @@ import { corruptedEssenceRecipe } from './CorruptedEssenceRecipe.ts'
 import { ropeRecipes } from './RopeRecipe.ts'
 import { bedRecipes } from './BedRecipe.ts'
 import { ropeLadderRecipes } from './RopeLadderRecipe.ts'
+import { workstationRecipes } from './WorkstationRecipes.ts'
+import { smeltingRecipes } from './SmeltingRecipes.ts'
+import { brewingRecipes } from './BrewingRecipes.ts'
 
 /**
  * Register all default recipes.
  * Call this at startup.
  */
 export function registerDefaultRecipes(): void {
+  // Hand crafting recipes
   for (const recipe of woodToolRecipes) {
     recipeRegistry.register(recipe)
   }
@@ -48,6 +54,19 @@ export function registerDefaultRecipes(): void {
   }
   for (const recipe of ropeLadderRecipes) {
     recipeRegistry.register(recipe)
+  }
+  for (const recipe of workstationRecipes) {
+    recipeRegistry.register(recipe)
+  }
+
+  // Smelting recipes
+  for (const recipe of smeltingRecipes) {
+    smeltingRegistry.register(recipe)
+  }
+
+  // Brewing recipes
+  for (const recipe of brewingRecipes) {
+    brewingRegistry.register(recipe)
   }
 }
 
