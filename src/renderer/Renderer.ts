@@ -28,10 +28,7 @@ export class Renderer {
   private readonly renderResolution = { width: 0, height: 0 }
 
   constructor() {
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      logarithmicDepthBuffer: true,
-    })
+    this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.renderer.setPixelRatio(window.devicePixelRatio)
 
@@ -50,7 +47,7 @@ export class Renderer {
     this.camera = new THREE.PerspectiveCamera(
       100,
       window.innerWidth / window.innerHeight,
-      0.15,  // Increased from 0.1 for better z-buffer precision
+      0.1,
       1000
     )
     this.camera.position.z = 5

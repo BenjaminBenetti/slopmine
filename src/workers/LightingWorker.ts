@@ -15,6 +15,9 @@ import { getBlock } from '../world/blocks/BlockRegistry.ts'
 // Initialize block registry in worker context
 registerDefaultBlocks()
 
+// Signal that worker is ready
+self.postMessage({ type: 'worker-ready' })
+
 /**
  * Sub-chunk data for lighting requests.
  */

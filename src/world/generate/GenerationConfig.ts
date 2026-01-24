@@ -50,6 +50,10 @@ export class GenerationConfig {
   }
 
   private load(overrides?: Partial<IGenerationConfig>): { config: IGenerationConfig; wasStored: boolean } {
+    // Workers don't have localStorage - skip storage in worker context
+    if (typeof localStorage === 'undefined') {
+      return { config: { ...DEFAULT_CONFIG, ...overrides }, wasStored: false }
+    }
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
@@ -66,6 +70,10 @@ export class GenerationConfig {
   }
 
   save(): void {
+    // Workers don't have localStorage - skip storage in worker context
+    if (typeof localStorage === 'undefined') {
+      return
+    }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.config))
     } catch (e) {

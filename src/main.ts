@@ -417,6 +417,10 @@ const worldGenerator = new WorldGenerator(world)
 // Initialize texture atlas for reduced draw calls (must complete before mesh rendering)
 await world.initializeAtlas()
 
+// Wait for at least one generation worker to be ready before starting chunk generation
+await world.waitForGenerationWorkerReady()
+console.log('[main] Generation worker ready, starting chunk loading')
+
 // Generate block icons for UI after textures are loaded
 BlockIconGenerator.getInstance().generateAllIcons(renderer.renderer)
 
@@ -1157,3 +1161,8 @@ const settingsInput = new SettingsInputHandler({
 })
 
 gameLoop.start()
+
+// Periodic health check for stuck chunk generation (for debugging)
+setInterval(() => {
+  world.checkGenerationHealth()
+}, 5000)
