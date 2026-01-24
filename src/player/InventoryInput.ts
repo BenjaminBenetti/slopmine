@@ -6,6 +6,7 @@ import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandl
 import { CraftingState } from '../crafting/CraftingState.ts'
 import { createCraftingPanelUI, type CraftingPanelUI } from '../ui/CraftingPanel.ts'
 import { createRecipeBookUI, type RecipeBookUI } from '../ui/RecipeBookUI.ts'
+import { createItemFromId } from '../persistence/ItemRegistry.ts'
 import type { IRecipe } from '../crafting/RecipeRegistry.ts'
 
 export interface InventoryInput {
@@ -95,8 +96,16 @@ export class InventoryInputHandler implements InventoryInput {
     this.craftingState = new CraftingState()
     this.craftingPanel = createCraftingPanelUI()
 
-    // Initialize recipe book
-    this.recipeBook = createRecipeBookUI()
+    // Initialize recipe book with dev mode item adding
+    this.recipeBook = createRecipeBookUI({
+      onAddItem: (itemId) => {
+        const item = createItemFromId(itemId)
+        if (item) {
+          this.playerState.addItem(item, 1)
+          this.syncUI()
+        }
+      },
+    })
 
     // Append crafting panel to the end of the content wrapper (right side)
     inventoryUI.contentWrapper.appendChild(this.craftingPanel.root)

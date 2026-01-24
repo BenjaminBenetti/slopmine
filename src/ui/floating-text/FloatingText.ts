@@ -1,4 +1,4 @@
-import { CanvasTexture, Sprite, SpriteMaterial, Vector3 } from 'three'
+import { CanvasTexture, NearestFilter, Sprite, SpriteMaterial, Vector3 } from 'three'
 
 import type { FloatingTextOptions } from './interfaces/IFloatingText.ts'
 
@@ -8,12 +8,13 @@ const DEFAULT_FADE_TIME = 0.5
 const DEFAULT_SCALE = 1
 
 /** Canvas rendering constants */
-const FONT_SIZE = 24
-const FONT_FAMILY = 'sans-serif'
+const FONT_SIZE = 12
+const FONT_FAMILY = 'monospace'
 const PADDING = 8
 const BORDER_RADIUS = 6
 const BACKGROUND_OPACITY = 0.6
 const WORLD_SCALE_FACTOR = 0.01 // Convert canvas pixels to world units
+const RESOLUTION_SCALE = 4 // Render at higher res for crisp text
 
 /**
  * A floating text label that displays in 3D world space.
@@ -43,8 +44,11 @@ export class FloatingText {
     // Create canvas and render text
     const { canvas, width, height } = this.createTextCanvas(options.text)
 
-    // Create texture from canvas
+    // Create texture from canvas with crisp pixel filtering
     this.texture = new CanvasTexture(canvas)
+    this.texture.minFilter = NearestFilter
+    this.texture.magFilter = NearestFilter
+    this.texture.generateMipmaps = false
     this.texture.needsUpdate = true
 
     // Create sprite material
@@ -58,6 +62,9 @@ export class FloatingText {
     // Create sprite
     this.sprite = new Sprite(this.material)
     this.sprite.position.copy(options.position)
+
+    // Render after other transparent objects (trees, water, etc.)
+    this.sprite.renderOrder = 1000
 
     // Scale sprite to world units
     const worldWidth = width * WORLD_SCALE_FACTOR * scale
@@ -78,8 +85,13 @@ export class FloatingText {
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')!
 
+    // Scale up for crisp rendering
+    const scaledFontSize = FONT_SIZE * RESOLUTION_SCALE
+    const scaledPadding = PADDING * RESOLUTION_SCALE
+    const scaledBorderRadius = BORDER_RADIUS * RESOLUTION_SCALE
+
     // Set font for measurement
-    ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`
+    ctx.font = `${scaledFontSize}px ${FONT_FAMILY}`
 
     // Split text into lines
     const lines = text.split('\n')
@@ -91,34 +103,38 @@ export class FloatingText {
       maxWidth = Math.max(maxWidth, metrics.width)
     }
 
-    const lineHeight = FONT_SIZE * 1.2
+    const lineHeight = scaledFontSize * 1.2
     const textHeight = lines.length * lineHeight
 
-    // Calculate canvas size with padding
-    const width = Math.ceil(maxWidth + PADDING * 2)
-    const height = Math.ceil(textHeight + PADDING * 2)
+    // Calculate canvas size with padding (at scaled resolution)
+    const canvasWidth = Math.ceil(maxWidth + scaledPadding * 2)
+    const canvasHeight = Math.ceil(textHeight + scaledPadding * 2)
 
     // Resize canvas (resets context state)
-    canvas.width = width
-    canvas.height = height
+    canvas.width = canvasWidth
+    canvas.height = canvasHeight
 
     // Restore font after resize
-    ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`
+    ctx.font = `${scaledFontSize}px ${FONT_FAMILY}`
     ctx.textBaseline = 'top'
     ctx.textAlign = 'left'
 
     // Draw rounded rectangle background
-    this.drawRoundedRect(ctx, 0, 0, width, height, BORDER_RADIUS)
+    this.drawRoundedRect(ctx, 0, 0, canvasWidth, canvasHeight, scaledBorderRadius)
     ctx.fillStyle = `rgba(0, 0, 0, ${BACKGROUND_OPACITY})`
     ctx.fill()
 
     // Draw text
     ctx.fillStyle = 'white'
     for (let i = 0; i < lines.length; i++) {
-      const x = PADDING
-      const y = PADDING + i * lineHeight
+      const x = scaledPadding
+      const y = scaledPadding + i * lineHeight
       ctx.fillText(lines[i], x, y)
     }
+
+    // Return logical dimensions (for world scale calculation)
+    const width = canvasWidth / RESOLUTION_SCALE
+    const height = canvasHeight / RESOLUTION_SCALE
 
     return { canvas, width, height }
   }

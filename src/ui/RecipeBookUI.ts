@@ -11,6 +11,14 @@ import {
   type CraftingStation,
 } from '../crafting/RecipeBook.ts'
 
+/** Callback for adding an item to player inventory (dev mode) */
+export type AddItemCallback = (itemId: string) => void
+
+export interface RecipeBookUIOptions {
+  /** Callback to add item to inventory (only used in dev mode) */
+  onAddItem?: AddItemCallback
+}
+
 export interface RecipeBookUI {
   readonly root: HTMLDivElement
   
@@ -36,7 +44,9 @@ export interface RecipeBookUI {
 /**
  * Create the Recipe Book UI component
  */
-export function createRecipeBookUI(): RecipeBookUI {
+export function createRecipeBookUI(options: RecipeBookUIOptions = {}): RecipeBookUI {
+  const { onAddItem } = options
+  const isDevMode = import.meta.env.DEV
   // Main container - sized to replace the full inventory view
   const root = document.createElement('div')
   root.style.display = 'none'
@@ -416,7 +426,39 @@ export function createRecipeBookUI(): RecipeBookUI {
     itemName.style.color = 'rgba(255, 255, 255, 0.95)'
     itemName.style.fontSize = '1rem'
     itemName.style.fontWeight = 'bold'
+    itemName.style.flex = '1'
     itemHeader.appendChild(itemName)
+
+    // Dev mode: Add item button
+    if (isDevMode && onAddItem) {
+      const addBtn = document.createElement('button')
+      addBtn.textContent = '+'
+      addBtn.title = 'Add to inventory (Dev)'
+      addBtn.style.width = '28px'
+      addBtn.style.height = '28px'
+      addBtn.style.padding = '0'
+      addBtn.style.background = 'rgba(50, 120, 50, 0.9)'
+      addBtn.style.border = '2px solid rgba(100, 200, 100, 0.5)'
+      addBtn.style.borderRadius = '4px'
+      addBtn.style.color = 'white'
+      addBtn.style.fontSize = '1.1rem'
+      addBtn.style.fontWeight = 'bold'
+      addBtn.style.cursor = 'pointer'
+      addBtn.style.transition = 'background 0.15s'
+      addBtn.style.lineHeight = '1'
+
+      addBtn.addEventListener('mouseenter', () => {
+        addBtn.style.background = 'rgba(70, 150, 70, 0.95)'
+      })
+      addBtn.addEventListener('mouseleave', () => {
+        addBtn.style.background = 'rgba(50, 120, 50, 0.9)'
+      })
+      addBtn.addEventListener('click', () => {
+        onAddItem(itemId)
+      })
+
+      itemHeader.appendChild(addBtn)
+    }
 
     detailPanel.appendChild(itemHeader)
 
