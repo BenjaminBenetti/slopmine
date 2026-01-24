@@ -41,9 +41,6 @@ export class ToolbarInputHandler implements ToolbarInput {
     // Ignore if no meaningful vertical scroll (use threshold for floating-point safety)
     if (Math.abs(event.deltaY) < 0.01) return
 
-    // Prevent page scrolling while controlling the hotbar
-    event.preventDefault()
-
     const size = this.toolbar.size
     if (size <= 0) return
 
