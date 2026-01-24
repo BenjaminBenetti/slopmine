@@ -5,11 +5,14 @@ import type { CameraControls } from './FirstPersonCameraControls.ts'
 import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandler.ts'
 import { CraftingState } from '../crafting/CraftingState.ts'
 import { createCraftingPanelUI, type CraftingPanelUI } from '../ui/CraftingPanel.ts'
+import { createRecipeBookUI, type RecipeBookUI } from '../ui/RecipeBookUI.ts'
 import type { IRecipe } from '../crafting/RecipeRegistry.ts'
 
 export interface InventoryInput {
   /** The crafting panel root element, for hiding when block UIs are open */
   readonly craftingPanelRoot: HTMLElement
+  /** The recipe book UI instance */
+  readonly recipeBookUI: RecipeBookUI
   /** Check if a block UI handler has control */
   readonly isBlockUIActive: boolean
   /** Set block UI active state (called by BlockInteractionHandler) */
@@ -37,6 +40,7 @@ export class InventoryInputHandler implements InventoryInput {
   private readonly dragDrop: DragDropHandler
   private readonly craftingState: CraftingState
   private readonly craftingPanel: CraftingPanelUI
+  private readonly recipeBook: RecipeBookUI
 
   private pointerLocked = false
   private blockUIActive = false
@@ -44,6 +48,11 @@ export class InventoryInputHandler implements InventoryInput {
   /** Expose crafting panel root for BlockInteractionHandler */
   get craftingPanelRoot(): HTMLElement {
     return this.craftingPanel.root
+  }
+
+  /** Expose recipe book UI for external access */
+  get recipeBookUI(): RecipeBookUI {
+    return this.recipeBook
   }
 
   /** Check if block UI has control of the inventory overlay */
@@ -57,6 +66,11 @@ export class InventoryInputHandler implements InventoryInput {
     if (active) {
       // Disable our drag-drop when block UI takes over
       this.dragDrop.disable()
+      // Hide recipe book and restore inventory view when block UI is active
+      this.recipeBook.hide()
+      this.inventoryUI.gridContainer.style.display = ''
+      this.craftingPanel.root.style.display = 'none' // Block UI replaces crafting panel
+      this.inventoryUI.setRecipeBookOpen(false)
     }
   }
 
@@ -81,11 +95,32 @@ export class InventoryInputHandler implements InventoryInput {
     this.craftingState = new CraftingState()
     this.craftingPanel = createCraftingPanelUI()
 
+    // Initialize recipe book
+    this.recipeBook = createRecipeBookUI()
+
     // Append crafting panel to the end of the content wrapper (right side)
     inventoryUI.contentWrapper.appendChild(this.craftingPanel.root)
 
+    // Append recipe book (hidden by default) to the content wrapper
+    inventoryUI.contentWrapper.appendChild(this.recipeBook.root)
+
     // Set up crafting callback
     this.craftingPanel.onCraft((recipe) => this.handleCraft(recipe))
+
+    // Wire up recipe book toggle - completely replace inventory view
+    inventoryUI.onRecipeBookToggle((showRecipeBook) => {
+      if (showRecipeBook) {
+        // Hide inventory grid and crafting panel
+        inventoryUI.gridContainer.style.display = 'none'
+        this.craftingPanel.root.style.display = 'none'
+        this.recipeBook.show()
+      } else {
+        // Show inventory grid and crafting panel
+        this.recipeBook.hide()
+        inventoryUI.gridContainer.style.display = ''
+        this.craftingPanel.root.style.display = 'flex'
+      }
+    })
 
     this.dragDrop = createDragDropHandler({
       toolbarState,
@@ -202,6 +237,7 @@ export class InventoryInputHandler implements InventoryInput {
   dispose(): void {
     this.returnCraftingItems()
     this.craftingPanel.destroy()
+    this.recipeBook.destroy()
     this.dragDrop.dispose()
     document.removeEventListener('pointerlockchange', this.onPointerLockChange)
     window.removeEventListener('keydown', this.onKeyDown)

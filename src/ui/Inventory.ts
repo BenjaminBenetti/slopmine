@@ -7,17 +7,27 @@ export interface InventoryUIOptions {
   slotSizePx?: number
 }
 
+/** Callback for when recipe book toggle is clicked */
+export type RecipeBookToggleCallback = (showRecipeBook: boolean) => void
+
 export interface InventoryUI {
   readonly root: HTMLDivElement
   readonly panel: HTMLDivElement
   readonly contentWrapper: HTMLDivElement
+  readonly gridContainer: HTMLDivElement
   readonly slots: HTMLDivElement[]
   readonly isOpen: boolean
+  /** Whether recipe book is currently shown instead of crafting panel */
+  readonly isRecipeBookOpen: boolean
   open(): void
   close(): void
   toggle(): void
   destroy(): void
   syncFromState(stateSlots: ReadonlyArray<IItemStack | null>): void
+  /** Set callback for recipe book toggle button clicks */
+  onRecipeBookToggle(callback: RecipeBookToggleCallback): void
+  /** Programmatically toggle recipe book view */
+  setRecipeBookOpen(open: boolean): void
 }
 
 /**
@@ -44,11 +54,48 @@ export function createInventoryUI(
 
   const panel = document.createElement('div')
 
-  // Content wrapper for horizontal layout (crafting panel + inventory grid)
+  // Content wrapper for horizontal layout (sidebar + inventory grid + crafting panel)
   const contentWrapper = document.createElement('div')
   contentWrapper.style.display = 'flex'
-  contentWrapper.style.gap = '1rem'
+  contentWrapper.style.gap = '0.5rem'
   contentWrapper.style.alignItems = 'flex-start'
+
+  // Sidebar for toggle buttons (left of inventory grid)
+  const sidebar = document.createElement('div')
+  sidebar.style.display = 'flex'
+  sidebar.style.flexDirection = 'column'
+  sidebar.style.gap = '0.5rem'
+  sidebar.style.alignSelf = 'stretch'
+
+  // Recipe book toggle button
+  const recipeBookBtn = document.createElement('button')
+  recipeBookBtn.title = 'Recipe Book'
+  recipeBookBtn.style.width = '36px'
+  recipeBookBtn.style.height = '36px'
+  recipeBookBtn.style.padding = '0'
+  recipeBookBtn.style.background = 'rgba(12, 12, 12, 0.96)'
+  recipeBookBtn.style.border = '2px solid rgba(255, 255, 255, 0.25)'
+  recipeBookBtn.style.borderRadius = '6px'
+  recipeBookBtn.style.cursor = 'pointer'
+  recipeBookBtn.style.display = 'flex'
+  recipeBookBtn.style.alignItems = 'center'
+  recipeBookBtn.style.justifyContent = 'center'
+  recipeBookBtn.style.transition = 'background 0.15s, border-color 0.15s'
+  recipeBookBtn.style.fontSize = '18px'
+  recipeBookBtn.textContent = '\u{1F4D6}' // Book emoji
+
+  recipeBookBtn.addEventListener('mouseenter', () => {
+    recipeBookBtn.style.background = 'rgba(40, 40, 40, 0.96)'
+  })
+  recipeBookBtn.addEventListener('mouseleave', () => {
+    if (!recipeBookOpen) {
+      recipeBookBtn.style.background = 'rgba(12, 12, 12, 0.96)'
+      recipeBookBtn.style.borderColor = 'rgba(255, 255, 255, 0.25)'
+    }
+  })
+
+  sidebar.appendChild(recipeBookBtn)
+  contentWrapper.appendChild(sidebar)
 
   // Grid container with its own styling
   const gridContainer = document.createElement('div')
@@ -88,18 +135,40 @@ export function createInventoryUI(
   parent.appendChild(overlay)
 
   let open = false
+  let recipeBookOpen = false
+  let recipeBookToggleCallback: RecipeBookToggleCallback | null = null
 
   const applyVisibility = (): void => {
     overlay.style.display = open ? 'flex' : 'none'
   }
 
+  const updateRecipeBookButtonStyle = (): void => {
+    if (recipeBookOpen) {
+      recipeBookBtn.style.background = 'rgba(60, 80, 120, 0.96)'
+      recipeBookBtn.style.borderColor = 'rgba(100, 150, 255, 0.6)'
+    } else {
+      recipeBookBtn.style.background = 'rgba(12, 12, 12, 0.96)'
+      recipeBookBtn.style.borderColor = 'rgba(255, 255, 255, 0.25)'
+    }
+  }
+
+  recipeBookBtn.addEventListener('click', () => {
+    recipeBookOpen = !recipeBookOpen
+    updateRecipeBookButtonStyle()
+    recipeBookToggleCallback?.(recipeBookOpen)
+  })
+
   const api: InventoryUI = {
     root: overlay,
     panel,
     contentWrapper,
+    gridContainer,
     slots,
     get isOpen() {
       return open
+    },
+    get isRecipeBookOpen() {
+      return recipeBookOpen
     },
     open(): void {
       open = true
@@ -120,6 +189,14 @@ export function createInventoryUI(
     },
     syncFromState(stateSlots: ReadonlyArray<IItemStack | null>): void {
       syncSlotsFromState(slots, stateSlots)
+    },
+    onRecipeBookToggle(callback: RecipeBookToggleCallback): void {
+      recipeBookToggleCallback = callback
+    },
+    setRecipeBookOpen(openBook: boolean): void {
+      recipeBookOpen = openBook
+      updateRecipeBookButtonStyle()
+      recipeBookToggleCallback?.(recipeBookOpen)
     },
   }
 

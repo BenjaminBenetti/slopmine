@@ -82,6 +82,7 @@ import type { ApothecaryWorkbenchState } from './world/blocks/types/apothecary_w
 import type { WoodworkingBenchState } from './world/blocks/types/woodworking_bench/WoodworkingBenchState.ts'
 import { ForgeBlockItem } from './items/blocks/forge/ForgeBlockItem.ts'
 import { recipeRegistry } from './crafting/RecipeRegistry.ts'
+import { recipeBook } from './crafting/RecipeBook.ts'
 import {
   PersistenceManager,
   initializeItemRegistry,
@@ -93,6 +94,7 @@ import { FallDamageTracker } from './player/FallDamageTracker.ts'
 import { createHealthDisplayUI } from './ui/HealthDisplay.ts'
 import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
 import { EntityManager, EntitySpawner } from './entities/index.ts'
+import { FloatingTextManager } from './ui/floating-text/index.ts'
 import { MagmaSlimeEntity } from './entities/animals/magma_slime/index.ts'
 import { PlayerDamageHandler } from './entities/PlayerDamageHandler.ts'
 
@@ -415,6 +417,12 @@ console.log('[main] Generation worker ready, starting chunk loading')
 // Generate block icons for UI after textures are loaded
 BlockIconGenerator.getInstance().generateAllIcons(renderer.renderer)
 
+// Build recipe book index after all recipes are registered and icons are generated
+recipeBook.buildIndex()
+
+// Refresh recipe book UI now that the index is built
+inventoryInput.recipeBookUI.refresh()
+
 // Create persistence manager and initialize asynchronously
 const persistenceManager = new PersistenceManager()
 
@@ -700,13 +708,18 @@ playerHealth.setOnDeath(() => {
 })
 
 // Register bed sleep action (sets spawn point to player's current position)
-blockActionRegistry.register(BlockIds.BED_HEAD, () => {
+blockActionRegistry.register(BlockIds.BED_HEAD, (worldX, worldY, worldZ) => {
   // Save player's current position as spawn point (they're standing next to the bed)
   // Respawn logic adds 0.5 to Y, so player spawns slightly above and falls down safely
   setBedSpawnPoint(playerBody.position.x, playerBody.position.y, playerBody.position.z)
   
-  // Show message to player (TODO: Add proper UI notification)
-  console.log('Respawn point set!')
+  // Show floating text above the bed
+  FloatingTextManager.instance.spawn({
+    text: 'Spawn Point Set',
+    position: new THREE.Vector3(Number(worldX) + 0.5, Number(worldY) + 1.5, Number(worldZ) + 0.5),
+    mode: 'floating',
+    duration: 2,
+  })
   
   return true
 })
@@ -721,6 +734,9 @@ renderer.camera.position.set(
 // Set the scene and renderer for rendering and proper GPU cleanup
 world.setScene(renderer.scene)
 world.setRenderer(renderer.renderer)
+
+// Initialize floating text system
+FloatingTextManager.instance.initialize(renderer.scene)
 
 // Debug visualization system (FPS counter + chunk wireframes)
 const wireframeManager = new ChunkWireframeManager(renderer.scene)
@@ -976,6 +992,13 @@ scheduler.createTask({
   id: 'block-ui-update',
   priority: TaskPriority.NORMAL,
   update: () => blockInteractionHandler.update(),
+})
+
+// Update floating text (fade, movement, cleanup)
+scheduler.createTask({
+  id: 'floating-text',
+  priority: TaskPriority.NORMAL,
+  update: (dt) => FloatingTextManager.instance.update(dt),
 })
 
 // Register HIGH priority tasks (can be skipped briefly without visual issues)
