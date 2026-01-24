@@ -83,6 +83,13 @@ export interface IBlock {
   getInteractionBox?(metadata: number): THREE.Box3 | null
 
   /**
+   * Check if this block can be placed at the given position.
+   * Called BEFORE placement to validate multi-block structures (e.g., beds).
+   * @returns true if placement is allowed, false to cancel placement
+   */
+  canPlace?(world: IWorld, x: bigint, y: bigint, z: bigint, facing?: BlockFacing): boolean
+
+  /**
    * Called when this block is placed.
    * @param facing The direction the block should face (for directional blocks)
    */
@@ -136,6 +143,33 @@ export interface IBlock {
    * Returns shared geometry that can be reused across all instances.
    */
   getInstanceGeometry(): THREE.BufferGeometry
+}
+
+/**
+ * A geometry/material pair for multi-mesh block rendering.
+ */
+export interface IBlockMeshPart {
+  geometry: THREE.BufferGeometry
+  material: THREE.Material
+}
+
+/**
+ * Interface for blocks that require multiple meshes with different materials.
+ * Blocks implementing this will have each part rendered as a separate InstancedMesh.
+ */
+export interface IMultiMeshBlock extends IBlock {
+  /**
+   * Returns separate geometry/material pairs for multi-mesh rendering.
+   * Each part will be rendered as its own InstancedMesh.
+   */
+  getMultiMeshParts(): IBlockMeshPart[]
+}
+
+/**
+ * Type guard to check if a block supports multi-mesh rendering.
+ */
+export function isMultiMeshBlock(block: IBlock): block is IMultiMeshBlock {
+  return 'getMultiMeshParts' in block && typeof (block as IMultiMeshBlock).getMultiMeshParts === 'function'
 }
 
 /**

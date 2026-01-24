@@ -460,8 +460,10 @@ persistenceManager.initialize().then(async () => {
   const savedMetadata = await persistenceManager.loadMetadata()
   if (savedMetadata?.playerPosition) {
     const pos = savedMetadata.playerPosition
-    playerBody.position.set(pos.x, pos.y, pos.z)
-    renderer.camera.position.set(pos.x, pos.y + EYE_HEIGHT, pos.z)
+    // Add Y offset to prevent player spawning stuck in ground
+    const spawnY = pos.y + 0.5
+    playerBody.position.set(pos.x, spawnY, pos.z)
+    renderer.camera.position.set(pos.x, spawnY + EYE_HEIGHT, pos.z)
     console.log(`Loaded saved position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`)
   }
 
@@ -667,12 +669,13 @@ playerHealth.setOnDeath(() => {
     const respawnPos = getRespawnPosition()
     const isWorldSpawn = bedSpawnPoint === null
 
-    // Reset position to spawn point
-    playerBody.position.copy(respawnPos)
+    // Reset position to spawn point (with Y offset to prevent spawning in ground)
+    const spawnY = respawnPos.y + 0.5
+    playerBody.position.set(respawnPos.x, spawnY, respawnPos.z)
     playerBody.velocity.set(0, 0, 0)
     renderer.camera.position.set(
       respawnPos.x,
-      respawnPos.y + EYE_HEIGHT,
+      spawnY + EYE_HEIGHT,
       respawnPos.z
     )
 
@@ -691,12 +694,12 @@ playerHealth.setOnDeath(() => {
       const holdPlayer = () => {
         const elapsed = performance.now() - holdStartTime
         if (elapsed < holdDuration) {
-          // Keep player frozen at spawn position
-          playerBody.position.copy(respawnPos)
+          // Keep player frozen at spawn position (with Y offset)
+          playerBody.position.set(respawnPos.x, spawnY, respawnPos.z)
           playerBody.velocity.set(0, 0, 0)
           renderer.camera.position.set(
             respawnPos.x,
-            respawnPos.y + EYE_HEIGHT,
+            spawnY + EYE_HEIGHT,
             respawnPos.z
           )
           requestAnimationFrame(holdPlayer)

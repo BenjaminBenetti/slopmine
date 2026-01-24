@@ -48,6 +48,16 @@ export class PersistenceManager {
     }
   > = new Map()
 
+  // Separate tracking for sub-chunk requests by coordinate key
+  // This ensures responses are matched to the correct request even when out-of-order
+  private readonly pendingSubChunkRequests: Map<
+    SubChunkKey,
+    {
+      resolve: (response: PersistenceWorkerResponse) => void
+      reject: (error: Error) => void
+    }
+  > = new Map()
+
   // Cache for existence checks (avoid repeated worker calls)
   private readonly existenceCache: Map<SubChunkKey, boolean> = new Map()
 
@@ -128,15 +138,23 @@ export class PersistenceManager {
         return
       }
 
-      const id = this.requestId++
-      this.pendingRequests.set(id, { resolve, reject })
-
-      // Attach request ID for tracking (worker ignores this but we use it locally)
-      const requestWithId = { ...request, _requestId: id }
+      // For sub-chunk operations, track by coordinate key to ensure correct response matching
+      // This fixes a critical bug where concurrent requests could get mismatched responses
+      if (
+        request.type === 'load-subchunk' ||
+        request.type === 'save-subchunk' ||
+        request.type === 'check-subchunk-exists'
+      ) {
+        const key = createSubChunkKey(BigInt(request.chunkX), BigInt(request.chunkZ), request.subY)
+        this.pendingSubChunkRequests.set(key, { resolve, reject })
+      } else {
+        const id = this.requestId++
+        this.pendingRequests.set(id, { resolve, reject })
+      }
 
       // Handle transferable buffers for sub-chunk saves
       if (request.type === 'save-subchunk') {
-        this.worker.postMessage(requestWithId, {
+        this.worker.postMessage(request, {
           transfer: [request.blocks.buffer as ArrayBuffer, request.lightData.buffer as ArrayBuffer],
         })
       } else if (request.type === 'batch-save-subchunks') {
@@ -144,23 +162,47 @@ export class PersistenceManager {
         for (const sc of request.subchunks) {
           transfers.push(sc.blocks.buffer as ArrayBuffer, sc.lightData.buffer as ArrayBuffer)
         }
-        this.worker.postMessage(requestWithId, { transfer: transfers })
+        this.worker.postMessage(request, { transfer: transfers })
       } else {
-        this.worker.postMessage(requestWithId)
+        this.worker.postMessage(request)
       }
     })
   }
 
   /**
    * Handle messages from the worker.
+   * Sub-chunk responses are matched by coordinate to ensure correct request/response pairing.
    */
   private handleWorkerMessage(response: PersistenceWorkerResponse): void {
-    // For now, resolve all pending requests with the same response type
-    // In a more complex system, we'd use request IDs
+    // Handle sub-chunk responses by matching on coordinates
+    // This ensures responses go to the correct request even when multiple requests are in flight
+    if (
+      response.type === 'subchunk-loaded' ||
+      response.type === 'subchunk-not-found' ||
+      response.type === 'subchunk-saved' ||
+      response.type === 'subchunk-exists'
+    ) {
+      const key = createSubChunkKey(
+        BigInt(response.chunkX),
+        BigInt(response.chunkZ),
+        response.subY
+      )
+      const handlers = this.pendingSubChunkRequests.get(key)
+      if (handlers) {
+        this.pendingSubChunkRequests.delete(key)
+        handlers.resolve(response)
+        return
+      }
+      // No pending request found for this coordinate - could be stale or duplicate
+      console.warn(`No pending request for sub-chunk response: ${key}`)
+      return
+    }
+
+    // Handle non-sub-chunk responses (init, inventory, metadata, batch-save, clear-all)
+    // These don't have coordinate keys, so use simple FIFO matching
     const entries = Array.from(this.pendingRequests.entries())
 
     for (const [id, handlers] of entries) {
-      // Match response to pending request by type
       const shouldResolve = this.matchesRequest(response)
       if (shouldResolve) {
         this.pendingRequests.delete(id)
@@ -176,16 +218,12 @@ export class PersistenceManager {
   }
 
   /**
-   * Check if a response matches a pending request type.
+   * Check if a response matches a pending non-sub-chunk request type.
    */
   private matchesRequest(response: PersistenceWorkerResponse): boolean {
-    // This is a simplified matching - in production you'd use request IDs
-    const pendingTypes = new Set([
+    // Only match non-sub-chunk response types (sub-chunks are handled separately by coordinate)
+    const nonSubChunkTypes = new Set([
       'init-complete',
-      'subchunk-saved',
-      'subchunk-loaded',
-      'subchunk-not-found',
-      'subchunk-exists',
       'inventory-saved',
       'inventory-loaded',
       'metadata-saved',
@@ -194,7 +232,7 @@ export class PersistenceManager {
       'clear-all-complete',
       'error',
     ])
-    return pendingTypes.has(response.type)
+    return nonSubChunkTypes.has(response.type)
   }
 
   /**
@@ -535,6 +573,7 @@ export class PersistenceManager {
     }
 
     this.pendingRequests.clear()
+    this.pendingSubChunkRequests.clear()
     this.existenceCache.clear()
     this.modifiedSubChunks.clear()
     this.initialized = false

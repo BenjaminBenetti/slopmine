@@ -135,6 +135,11 @@ export class BlockPlacement {
     const facing = yawToFacing(yaw)
     const metadata = setMetadataFacing(0, facing)
 
+    // Check if the block allows placement (for multi-block structures like beds)
+    if (block.canPlace && !block.canPlace(this.worldManager, placePos.x, placePos.y, placePos.z, facing)) {
+      return
+    }
+
     // Place the block with facing metadata
     this.worldManager.setBlock(placePos.x, placePos.y, placePos.z, blockId, metadata)
 

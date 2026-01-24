@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { BlockId } from '../world/interfaces/IBlock.ts'
+import { type BlockId, isMultiMeshBlock } from '../world/interfaces/IBlock.ts'
 import type { IChunkCoordinate, SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { createSubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
@@ -196,13 +196,27 @@ export class GreedyChunkMesh implements IChunkMesh {
       if (count === 0) continue
 
       const block = getBlock(blockId)
-      const material = block.getInstanceMaterial()
-      const mat = Array.isArray(material) ? material[0] : material
 
       // Check if this is a liquid block with face visibility data
       if (LIQUID_BLOCK_IDS.has(blockId) && faceVis) {
+        const material = block.getInstanceMaterial()
+        const mat = Array.isArray(material) ? material[0] : material
         this.buildLiquidMesh(blockId, positions, lights, faceVis, material, mat)
-      } else {
+      }
+      // Check if block supports multi-mesh rendering (multiple geometry/material pairs)
+      else if (isMultiMeshBlock(block)) {
+        const parts = block.getMultiMeshParts()
+        for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+          const { geometry, material } = parts[partIndex]
+          // Use a unique key for each part: blockId * 100 + partIndex
+          const partKey = blockId * 100 + partIndex
+          this.buildInstancedMesh(partKey, geometry, material, positions, lights, metadata, count, matrix, material)
+        }
+      }
+      // Standard single-mesh rendering
+      else {
+        const material = block.getInstanceMaterial()
+        const mat = Array.isArray(material) ? material[0] : material
         const geometry = block.getInstanceGeometry()
         this.buildInstancedMesh(blockId, geometry, material, positions, lights, metadata, count, matrix, mat)
       }

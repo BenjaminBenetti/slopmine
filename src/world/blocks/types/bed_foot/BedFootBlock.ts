@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import type { IBlockProperties, IWorld, BlockFace } from '../../../interfaces/IBlock.ts'
+import type { IBlockProperties, IWorld, BlockFace, IBlockMeshPart } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
@@ -28,57 +28,52 @@ const bedTopMaterial = new THREE.MeshLambertMaterial({ map: bedFootTopTexture })
 const bedWoodMaterial = new THREE.MeshLambertMaterial({ map: bedWoodTexture })
 
 // Bed dimensions - must match BedHeadBlock
-const LEG_SIZE = 2/16             // Thin leg posts
-const LEG_HEIGHT = 6/16           // Visible space under bed
-const MATTRESS_HEIGHT = 5/16      // Mattress thickness
-const MATTRESS_Y = 6/16           // Mattress sits on top of legs
-const FOOTBOARD_HEIGHT = 4/16     // Footboard is shorter than headboard
-const BOARD_THICKNESS = 2/16      // Thickness of footboard panel
+const LEG_SIZE = 3/16             // Leg post thickness
+const LEG_HEIGHT = 5/16           // Space under bed
+const MATTRESS_HEIGHT = 6/16      // Mattress thickness
+const FOOTBOARD_HEIGHT = 5/16     // Footboard (shorter than headboard)
+const BOARD_THICKNESS = 2/16
 
-const BED_TOP = MATTRESS_Y + MATTRESS_HEIGHT  // Total collision height (11/16)
+const MATTRESS_Y = LEG_HEIGHT
+const BED_TOP = MATTRESS_Y + MATTRESS_HEIGHT
 
-// Create bed foot geometry: 2 front legs + mattress + footboard
-function createBedFootGeometry(): THREE.BufferGeometry {
+// Vertical offset - geometry needs to be centered around Y=0 since renderer adds +0.5
+const Y_OFFSET = -0.5
+
+// Create TWO separate geometries for proper multi-material rendering
+// Wood geometry: legs + footboard
+const bedFootWoodGeometry = (() => {
   const geometries: THREE.BufferGeometry[] = []
 
-  // Material indices: 0 = wood (legs, sides, bottom, footboard), 1 = blanket top
-
-  // === FRONT-LEFT LEG ===
+  // Front-left leg (at -Z side)
   const frontLeftLeg = new THREE.BoxGeometry(LEG_SIZE, LEG_HEIGHT, LEG_SIZE)
-  frontLeftLeg.translate(-0.5 + LEG_SIZE/2, LEG_HEIGHT/2, 0.5 - LEG_SIZE/2)
-  frontLeftLeg.groups.forEach(g => { g.materialIndex = 0 })
+  frontLeftLeg.translate(-0.5 + LEG_SIZE/2, LEG_HEIGHT/2 + Y_OFFSET, -0.5 + LEG_SIZE/2)
   geometries.push(frontLeftLeg)
 
-  // === FRONT-RIGHT LEG ===
+  // Front-right leg (at -Z side)
   const frontRightLeg = new THREE.BoxGeometry(LEG_SIZE, LEG_HEIGHT, LEG_SIZE)
-  frontRightLeg.translate(0.5 - LEG_SIZE/2, LEG_HEIGHT/2, 0.5 - LEG_SIZE/2)
-  frontRightLeg.groups.forEach(g => { g.materialIndex = 0 })
+  frontRightLeg.translate(0.5 - LEG_SIZE/2, LEG_HEIGHT/2 + Y_OFFSET, -0.5 + LEG_SIZE/2)
   geometries.push(frontRightLeg)
 
-  // === MATTRESS ===
-  // BoxGeometry groups order: +X, -X, +Y, -Y, +Z, -Z (indices 0-5)
-  const mattress = new THREE.BoxGeometry(1, MATTRESS_HEIGHT, 1)
-  mattress.translate(0, MATTRESS_Y + MATTRESS_HEIGHT/2, 0)
-  // Set all faces to wood first
-  mattress.groups.forEach(g => { g.materialIndex = 0 })
-  // Then set top face (+Y, group index 2) to blanket texture
-  if (mattress.groups[2]) {
-    mattress.groups[2].materialIndex = 1
-  }
-  geometries.push(mattress)
-
-  // === FOOTBOARD (thin panel at the front, rising above the mattress) ===
+  // Footboard (shorter panel at -Z side)
   const footboard = new THREE.BoxGeometry(1, FOOTBOARD_HEIGHT, BOARD_THICKNESS)
-  // Position: centered X, above mattress surface, at front edge
-  footboard.translate(0, BED_TOP + FOOTBOARD_HEIGHT/2, 0.5 - BOARD_THICKNESS/2)
-  footboard.groups.forEach(g => { g.materialIndex = 0 })
+  footboard.translate(0, BED_TOP + FOOTBOARD_HEIGHT/2 + Y_OFFSET, -0.5 + BOARD_THICKNESS/2)
   geometries.push(footboard)
 
-  return mergeGeometries(geometries, true)
-}
+  return mergeGeometries(geometries, false)
+})()
 
-const bedFootGeometry = createBedFootGeometry()
-const bedFootMaterials = [bedWoodMaterial, bedTopMaterial]
+// Mattress geometry: just the mattress
+const bedFootMattressGeometry = (() => {
+  const mattress = new THREE.BoxGeometry(1, MATTRESS_HEIGHT, 1)
+  mattress.translate(0, MATTRESS_Y + MATTRESS_HEIGHT/2 + Y_OFFSET, 0)
+  return mattress
+})()
+
+// Combined geometry for collision/interaction (not used for rendering)
+const bedFootGeometry = (() => {
+  return mergeGeometries([bedFootWoodGeometry.clone(), bedFootMattressGeometry.clone()], false)
+})()
 
 /**
  * Get the offset to the head block based on facing direction.
@@ -117,12 +112,23 @@ export class BedFootBlock extends SolidBlock {
     return TextureId.BED_FOOT_TOP
   }
 
-  getGeometry(): THREE.BufferGeometry {
+  protected getGeometry(): THREE.BufferGeometry {
     return bedFootGeometry
   }
 
-  protected getMaterials(): THREE.Material[] {
-    return bedFootMaterials
+  protected getMaterials(): THREE.Material {
+    return bedTopMaterial
+  }
+
+  /**
+   * Returns separate geometry/material pairs for multi-mesh rendering.
+   * Used by the renderer to create proper multi-material beds.
+   */
+  getMultiMeshParts(): IBlockMeshPart[] {
+    return [
+      { geometry: bedFootWoodGeometry, material: bedWoodMaterial },
+      { geometry: bedFootMattressGeometry, material: bedTopMaterial },
+    ]
   }
 
   getTextureForFace(face: BlockFace): number {
