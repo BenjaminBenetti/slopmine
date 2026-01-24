@@ -25,6 +25,7 @@ import { createInventoryUI } from './ui/Inventory.ts'
 import { createSettingsMenuUI } from './ui/SettingsMenu.ts'
 import { createFpsCounterUI } from './ui/FpsCounter.ts'
 import { createLoadingScreenUI } from './ui/LoadingScreen.ts'
+import { createDeathScreenUI } from './ui/DeathScreen.ts'
 import { ChunkWireframeManager } from './renderer/ChunkWireframeManager.ts'
 import { DebugManager } from './ui/DebugManager.ts'
 import {
@@ -375,6 +376,9 @@ const inventoryUI = createInventoryUI(undefined, {
 const healthDisplay = createHealthDisplayUI()
 healthDisplay.root.style.display = 'none' // Hidden during loading
 
+// Death screen UI (Dark Souls style "YOU DIED")
+const deathScreen = createDeathScreenUI()
+
 // Wire health system callbacks
 playerHealth.setOnHealthChanged((current, max) => {
   healthDisplay.updateHealth(current, max)
@@ -654,10 +658,14 @@ playerHealth.setOnDeath(() => {
   // Disable player input during respawn
   cameraControls.setInputEnabled(false)
 
+  // Show death screen
+  deathScreen.show()
+
   // Short delay before respawn
   setTimeout(() => {
     // Get the correct respawn position (bed if set, otherwise world spawn)
     const respawnPos = getRespawnPosition()
+    const isWorldSpawn = bedSpawnPoint === null
 
     // Reset position to spawn point
     playerBody.position.copy(respawnPos)
@@ -674,8 +682,37 @@ playerHealth.setOnDeath(() => {
     // Reset health to full
     playerHealth.reset()
 
-    // Re-enable player input
-    cameraControls.setInputEnabled(true)
+    if (isWorldSpawn) {
+      // Hold player in place to allow chunks to generate
+      // This prevents falling through unloaded terrain at world spawn
+      const holdDuration = 2500
+      const holdStartTime = performance.now()
+
+      const holdPlayer = () => {
+        const elapsed = performance.now() - holdStartTime
+        if (elapsed < holdDuration) {
+          // Keep player frozen at spawn position
+          playerBody.position.copy(respawnPos)
+          playerBody.velocity.set(0, 0, 0)
+          renderer.camera.position.set(
+            respawnPos.x,
+            respawnPos.y + EYE_HEIGHT,
+            respawnPos.z
+          )
+          requestAnimationFrame(holdPlayer)
+        } else {
+          // Release player after hold period
+          fallDamageTracker.reset()
+          deathScreen.hide()
+          cameraControls.setInputEnabled(true)
+        }
+      }
+      requestAnimationFrame(holdPlayer)
+    } else {
+      // Bed spawn - chunks should already be loaded nearby
+      deathScreen.hide()
+      cameraControls.setInputEnabled(true)
+    }
   }, 1500)
 })
 
