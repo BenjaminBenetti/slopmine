@@ -290,20 +290,7 @@ blockUIRegistry.register(BlockIds.APOTHECARY_WORKBENCH, (state) => createApothec
 // Register block UI for woodworking bench
 blockUIRegistry.register(BlockIds.WOODWORKING_BENCH, (state) => createWoodworkingBenchUI(state as WoodworkingBenchState))
 
-// Register bed sleep action (sets spawn point, no UI needed)
-blockActionRegistry.register(BlockIds.BED_HEAD, (worldX, worldY, worldZ) => {
-  // Calculate spawn position next to the bed (offset by 1 block in X)
-  const spawnX = Number(worldX) + 1
-  const spawnY = Number(worldY)
-  const spawnZ = Number(worldZ)
-  
-  setBedSpawnPoint(spawnX, spawnY, spawnZ)
-  
-  // Show message to player (TODO: Add proper UI notification)
-  console.log('Respawn point set!')
-  
-  return true
-})
+
 
 // Biome mini-map helpers
 function getBiomeAbbreviation(biomeType: string): string {
@@ -667,7 +654,6 @@ playerHealth.setOnDeath(() => {
   setTimeout(() => {
     // Get the correct respawn position (bed if set, otherwise world spawn)
     const respawnPos = getRespawnPosition()
-    const isWorldSpawn = bedSpawnPoint === null
 
     // Reset position to spawn point (with Y offset to prevent spawning in ground)
     const spawnY = respawnPos.y + 0.5
@@ -685,38 +671,44 @@ playerHealth.setOnDeath(() => {
     // Reset health to full
     playerHealth.reset()
 
-    if (isWorldSpawn) {
-      // Hold player in place to allow chunks to generate
-      // This prevents falling through unloaded terrain at world spawn
-      const holdDuration = 2500
-      const holdStartTime = performance.now()
+    // Hold player in place to allow chunks to generate
+    // This prevents falling through unloaded terrain
+    const holdDuration = 2500
+    const holdStartTime = performance.now()
 
-      const holdPlayer = () => {
-        const elapsed = performance.now() - holdStartTime
-        if (elapsed < holdDuration) {
-          // Keep player frozen at spawn position (with Y offset)
-          playerBody.position.set(respawnPos.x, spawnY, respawnPos.z)
-          playerBody.velocity.set(0, 0, 0)
-          renderer.camera.position.set(
-            respawnPos.x,
-            spawnY + EYE_HEIGHT,
-            respawnPos.z
-          )
-          requestAnimationFrame(holdPlayer)
-        } else {
-          // Release player after hold period
-          fallDamageTracker.reset()
-          deathScreen.hide()
-          cameraControls.setInputEnabled(true)
-        }
+    const holdPlayer = () => {
+      const elapsed = performance.now() - holdStartTime
+      if (elapsed < holdDuration) {
+        // Keep player frozen at spawn position (with Y offset)
+        playerBody.position.set(respawnPos.x, spawnY, respawnPos.z)
+        playerBody.velocity.set(0, 0, 0)
+        renderer.camera.position.set(
+          respawnPos.x,
+          spawnY + EYE_HEIGHT,
+          respawnPos.z
+        )
+        requestAnimationFrame(holdPlayer)
+      } else {
+        // Release player after hold period
+        fallDamageTracker.reset()
+        deathScreen.hide()
+        cameraControls.setInputEnabled(true)
       }
-      requestAnimationFrame(holdPlayer)
-    } else {
-      // Bed spawn - chunks should already be loaded nearby
-      deathScreen.hide()
-      cameraControls.setInputEnabled(true)
     }
+    requestAnimationFrame(holdPlayer)
   }, 1500)
+})
+
+// Register bed sleep action (sets spawn point to player's current position)
+blockActionRegistry.register(BlockIds.BED_HEAD, () => {
+  // Save player's current position as spawn point (they're standing next to the bed)
+  // Respawn logic adds 0.5 to Y, so player spawns slightly above and falls down safely
+  setBedSpawnPoint(playerBody.position.x, playerBody.position.y, playerBody.position.z)
+  
+  // Show message to player (TODO: Add proper UI notification)
+  console.log('Respawn point set!')
+  
+  return true
 })
 
 // Position camera at player spawn with eye height offset

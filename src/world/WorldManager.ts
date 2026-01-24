@@ -1583,7 +1583,8 @@ export class WorldManager implements IModifiedChunkProvider {
           this.persistenceManager.saveSubChunk(
             subChunk.coordinate,
             subChunk.getBlockData(),
-            subChunk.getLightData()
+            subChunk.getLightData(),
+            subChunk.getMetadataData()
           ).catch(err => console.error('Failed to save sub-chunk on unload:', err))
         }
       }
