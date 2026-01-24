@@ -306,11 +306,12 @@ export class BackgroundLiquidPhysicsManager {
   }
 
   /**
-   * Find an available worker.
+   * Find an available worker, or -1 if all busy or not yet created.
    */
   private getAvailableWorker(): number {
     for (let i = 0; i < this.WORKER_COUNT; i++) {
-      if (!this.workerBusy[i]) {
+      // Check worker exists (not null placeholder) and is not busy
+      if (this.workers[i] && !this.workerBusy[i]) {
         return i
       }
     }
