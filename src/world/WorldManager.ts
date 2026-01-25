@@ -239,6 +239,8 @@ export class WorldManager implements IModifiedChunkProvider {
     const worldAdapter = {
       getBlock: (wx: bigint, wy: bigint, wz: bigint) => this.getBlock(wx, wy, wz),
       setBlock: (wx: bigint, wy: bigint, wz: bigint, blockId: BlockId) => this.setBlock(wx, wy, wz, blockId),
+      getBlockId: (wx: bigint, wy: bigint, wz: bigint) => this.getBlockId(wx, wy, wz),
+      getMetadata: (wx: bigint, wy: bigint, wz: bigint) => this.getMetadata(wx, wy, wz),
     }
 
     const blockEntity = block.createBlockEntity({ x, y, z }, worldAdapter)
@@ -585,6 +587,8 @@ export class WorldManager implements IModifiedChunkProvider {
     const worldAdapter = {
       getBlock: (x: bigint, y: bigint, z: bigint) => this.getBlock(x, y, z),
       setBlock: (x: bigint, y: bigint, z: bigint, blockId: BlockId) => this.setBlock(x, y, z, blockId),
+      getBlockId: (x: bigint, y: bigint, z: bigint) => this.getBlockId(x, y, z),
+      getMetadata: (x: bigint, y: bigint, z: bigint) => this.getMetadata(x, y, z),
     }
 
     // Iterate through all blocks in the sub-chunk
@@ -637,6 +641,8 @@ export class WorldManager implements IModifiedChunkProvider {
     const worldAdapter = {
       getBlock: (x: bigint, y: bigint, z: bigint) => this.getBlock(x, y, z),
       setBlock: (x: bigint, y: bigint, z: bigint, blockId: BlockId) => this.setBlock(x, y, z, blockId),
+      getBlockId: (x: bigint, y: bigint, z: bigint) => this.getBlockId(x, y, z),
+      getMetadata: (x: bigint, y: bigint, z: bigint) => this.getMetadata(x, y, z),
     }
 
     // Iterate through all blocks in the sub-chunk

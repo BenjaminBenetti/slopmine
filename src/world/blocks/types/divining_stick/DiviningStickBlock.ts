@@ -1,7 +1,9 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
+import type { IBlockProperties, BlockFace, IWorld } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
+import type { IBlockEntity } from '../../../../entities/interfaces/IBlockEntity.ts'
+import type { IWorldCoordinate } from '../../../interfaces/ICoordinates.ts'
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
@@ -9,6 +11,7 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { DiviningStickBlockItem } from '../../../../items/blocks/divining_stick/DiviningStickBlockItem.ts'
 import { BlockFacing, getMetadataFacing } from '../../BlockFacing.ts'
+import { DiviningStickBlockEntity } from './DiviningStickBlockEntity.ts'
 import diviningStickTexUrl from './assets/divining-stick.webp'
 
 // Register texture for atlas
@@ -143,5 +146,12 @@ export class DiviningStickBlock extends TransparentBlock {
 
   getDrops(): IItem[] {
     return [new DiviningStickBlockItem()]
+  }
+
+  /**
+   * Create a block entity for cave detection.
+   */
+  createBlockEntity(position: IWorldCoordinate, world: IWorld): IBlockEntity {
+    return new DiviningStickBlockEntity(position, world)
   }
 }

@@ -5,12 +5,12 @@ import { BlockFace } from '../interfaces/IBlock.ts'
  * Values match the 3 low bits of block metadata (bits 0-2).
  */
 export enum BlockFacing {
-  DOWN = 0,   // -Y direction (pointing into floor)
-  UP = 1,     // +Y direction (pointing up, default)
-  NORTH = 2,  // -Z direction (pointing into -Z wall)
-  SOUTH = 3,  // +Z direction (pointing into +Z wall)
-  EAST = 4,   // +X direction (pointing into +X wall)
-  WEST = 5,   // -X direction (pointing into -X wall)
+  UP = 0,     // +Y direction (default, no rotation)
+  DOWN = 1,   // -Y direction
+  NORTH = 2,  // -Z direction
+  SOUTH = 3,  // +Z direction
+  EAST = 4,   // +X direction
+  WEST = 5,   // -X direction
 }
 
 /**
@@ -118,10 +118,11 @@ export function setMetadataUses3DRotation(metadata: number, uses3D: boolean): nu
  * @returns Euler angles {x, y, z} in radians
  */
 export function facingToEuler(facing: BlockFacing, uses3D: boolean = false): { x: number; y: number; z: number } {
-  // UP/DOWN always use 3D rotation
+  // UP (0) is default - no rotation needed for any block type
   if (facing === BlockFacing.UP) {
     return { x: 0, y: 0, z: 0 }
   }
+  // DOWN flips 180° around X
   if (facing === BlockFacing.DOWN) {
     return { x: Math.PI, y: 0, z: 0 }
   }
@@ -182,5 +183,29 @@ export function facingToRotationY(facing: BlockFacing): number {
     case BlockFacing.UP:
     case BlockFacing.DOWN:
       return 0
+  }
+}
+
+/**
+ * Convert a facing direction to a unit direction vector.
+ * Used for raycasting in the direction a block is facing.
+ *
+ * @param facing The facing direction
+ * @returns Direction vector components {dx, dy, dz}
+ */
+export function facingToDirection(facing: BlockFacing): { dx: number; dy: number; dz: number } {
+  switch (facing) {
+    case BlockFacing.UP:
+      return { dx: 0, dy: 1, dz: 0 }
+    case BlockFacing.DOWN:
+      return { dx: 0, dy: -1, dz: 0 }
+    case BlockFacing.NORTH:
+      return { dx: 0, dy: 0, dz: -1 }
+    case BlockFacing.SOUTH:
+      return { dx: 0, dy: 0, dz: 1 }
+    case BlockFacing.EAST:
+      return { dx: 1, dy: 0, dz: 0 }
+    case BlockFacing.WEST:
+      return { dx: -1, dy: 0, dz: 0 }
   }
 }

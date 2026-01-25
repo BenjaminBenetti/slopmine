@@ -76,6 +76,7 @@ import { createHealthDisplayUI } from './ui/HealthDisplay.ts'
 import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
 import { EntityManager, EntitySpawner } from './entities/index.ts'
 import { FloatingTextManager } from './ui/floating-text/index.ts'
+import { DiviningParticleManager } from './renderer/particles/DiviningParticleManager.ts'
 import { MagmaSlimeEntity } from './entities/animals/magma_slime/index.ts'
 import { PlayerDamageHandler } from './entities/PlayerDamageHandler.ts'
 
@@ -547,6 +548,9 @@ world.setRenderer(renderer.renderer)
 // Initialize floating text system
 FloatingTextManager.instance.initialize(renderer.scene)
 
+// Initialize divining particle system
+DiviningParticleManager.instance.initialize(renderer.scene)
+
 // Debug visualization system (FPS counter + chunk wireframes)
 const wireframeManager = new ChunkWireframeManager(renderer.scene)
 const debugManager = new DebugManager({
@@ -808,6 +812,13 @@ scheduler.createTask({
   id: 'floating-text',
   priority: TaskPriority.NORMAL,
   update: (dt) => FloatingTextManager.instance.update(dt),
+})
+
+// Update divining particles (cave detection visual feedback)
+scheduler.createTask({
+  id: 'divining-particles',
+  priority: TaskPriority.NORMAL,
+  update: (dt) => DiviningParticleManager.instance.update(dt),
 })
 
 // Register HIGH priority tasks (can be skipped briefly without visual issues)
