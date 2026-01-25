@@ -3,7 +3,7 @@ import type { BlockId } from '../world/interfaces/IBlock.ts'
 import type { IChunkCoordinate, SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { createSubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
-import { getMetadataFacing, facingToRotationY } from '../world/blocks/BlockFacing.ts'
+import { getMetadataFacing, getMetadataUses3DRotation, facingToEuler } from '../world/blocks/BlockFacing.ts'
 
 /**
  * Common interface for chunk mesh types (ChunkMesh, GreedyChunkMesh).
@@ -110,14 +110,15 @@ export class ChunkMesh implements IChunkMesh {
         const y = positions[posIdx + 1] + 0.5
         const z = positions[posIdx + 2] + 0.5
 
-        // Get rotation from metadata (bits 0-1 = facing direction)
+        // Get rotation from metadata (bits 0-2 = facing, bit 3 = uses 3D rotation)
         const blockMeta = metadata[i] ?? 0
         const facing = getMetadataFacing(blockMeta)
-        const rotationY = facingToRotationY(facing)
+        const uses3D = getMetadataUses3DRotation(blockMeta)
+        const euler = facingToEuler(facing, uses3D)
 
         // Build transformation matrix: rotation then translation
-        if (rotationY !== 0) {
-          rotationMatrix.makeRotationY(rotationY)
+        if (euler.x !== 0 || euler.y !== 0 || euler.z !== 0) {
+          rotationMatrix.makeRotationFromEuler(new THREE.Euler(euler.x, euler.y, euler.z, 'XYZ'))
           positionVector.set(x, y, z)
           matrix.copy(rotationMatrix)
           matrix.setPosition(positionVector)

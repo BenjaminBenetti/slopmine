@@ -88,6 +88,9 @@ function getHeadOffset(facing: BlockFacing): { dx: bigint; dz: bigint } {
       return { dx: 1n, dz: 0n }
     case BlockFacing.WEST:
       return { dx: -1n, dz: 0n }
+    // UP/DOWN should never occur for beds - default to SOUTH behavior
+    default:
+      return { dx: 0n, dz: 1n }
   }
 }
 

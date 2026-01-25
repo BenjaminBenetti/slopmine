@@ -16,6 +16,7 @@ import { ropeLadderRecipes } from './RopeLadderRecipe.ts'
 import { workstationRecipes } from './WorkstationRecipes.ts'
 import { smeltingRecipes } from './SmeltingRecipes.ts'
 import { brewingRecipes } from './BrewingRecipes.ts'
+import { diviningStickRecipes } from './DiviningStickRecipe.ts'
 
 /**
  * Register all default recipes.
@@ -56,6 +57,9 @@ export function registerDefaultRecipes(): void {
     recipeRegistry.register(recipe)
   }
   for (const recipe of workstationRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of diviningStickRecipes) {
     recipeRegistry.register(recipe)
   }
 

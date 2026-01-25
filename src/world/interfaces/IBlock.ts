@@ -83,6 +83,13 @@ export interface IBlock {
   getInteractionBox?(metadata: number): THREE.Box3 | null
 
   /**
+   * Whether this block attaches to surfaces (uses clicked face for orientation).
+   * When true, placement uses the hit face to determine facing direction (6-way).
+   * When false/undefined, placement uses player yaw for horizontal facing (4-way).
+   */
+  usesSurfaceFacing?(): boolean
+
+  /**
    * Check if this block can be placed at the given position.
    * Called BEFORE placement to validate multi-block structures (e.g., beds).
    * @returns true if placement is allowed, false to cancel placement

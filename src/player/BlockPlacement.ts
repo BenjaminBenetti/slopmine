@@ -7,7 +7,7 @@ import { BlockRaycaster } from './BlockRaycaster.ts'
 import { BlockRegistry } from '../world/blocks/BlockRegistry.ts'
 import { BlockFace } from '../world/interfaces/IBlock.ts'
 import { AABB } from '../physics/collision/AABB.ts'
-import { yawToFacing, setMetadataFacing, BlockFacing } from '../world/blocks/BlockFacing.ts'
+import { yawToFacing, hitFaceToFacing, setMetadataFacing, setMetadataUses3DRotation, BlockFacing } from '../world/blocks/BlockFacing.ts'
 
 /** Maximum reach distance for block placement */
 const MAX_REACH_DISTANCE = 5
@@ -129,11 +129,23 @@ export class BlockPlacement {
     const existingBlock = this.worldManager.getBlock(placePos.x, placePos.y, placePos.z)
     if (existingBlock.properties.isSolid) return
 
-    // Calculate facing direction from player's camera yaw
-    // Camera rotation.y is the yaw angle
-    const yaw = this.camera.rotation.y
-    const facing = yawToFacing(yaw)
-    const metadata = setMetadataFacing(0, facing)
+    // Calculate facing direction
+    // Surface-attached blocks use the hit face; others use player yaw
+    let facing: BlockFacing
+    let metadata = 0
+    const usesSurfaceFacing = block.usesSurfaceFacing?.() ?? false
+
+    if (usesSurfaceFacing) {
+      // Use the face that was clicked - block points away from that surface
+      facing = hitFaceToFacing(hit.face)
+      // Set the 3D rotation flag so mesh builders know to use full 3D rotation
+      metadata = setMetadataUses3DRotation(metadata, true)
+    } else {
+      // Use player's camera yaw for horizontal facing
+      const yaw = this.camera.rotation.y
+      facing = yawToFacing(yaw)
+    }
+    metadata = setMetadataFacing(metadata, facing)
 
     // Check if the block allows placement (for multi-block structures like beds)
     if (block.canPlace && !block.canPlace(this.worldManager, placePos.x, placePos.y, placePos.z, facing)) {

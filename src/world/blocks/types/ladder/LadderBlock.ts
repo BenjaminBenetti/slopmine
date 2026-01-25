@@ -112,6 +112,12 @@ export class LadderBlock extends TransparentBlock {
           new THREE.Vector3(1 - depth, 0, margin),
           new THREE.Vector3(1, 1, 1 - margin)
         )
+      // UP/DOWN should never occur for ladders - default to SOUTH behavior
+      default:
+        return new THREE.Box3(
+          new THREE.Vector3(margin, 0, 0),
+          new THREE.Vector3(1 - margin, 1, depth)
+        )
     }
   }
 

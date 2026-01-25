@@ -78,4 +78,5 @@ export enum BlockIds {
   BED_FOOT = 72,
   WOODWORKING_BENCH = 73,
   ROPE_LADDER = 74,
+  DIVINING_STICK = 75,
 }
