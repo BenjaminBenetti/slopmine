@@ -8,6 +8,7 @@ import { ForgeBlockItem } from '../../../../items/blocks/forge/ForgeBlockItem.ts
 import { ForgeBlockState } from './ForgeBlockState.ts'
 import { BlockStateManager } from '../../../blockstate/BlockStateManager.ts'
 import { BlockTickManager } from '../../../blockstate/BlockTickManager.ts'
+import { deleteBlockStateFromPersistence } from '../../../../persistence/index.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
@@ -162,5 +163,8 @@ export class ForgeBlock extends SolidBlock {
 
       BlockStateManager.getInstance().removeState(position)
     }
+
+    // Delete persisted block state (fire and forget)
+    deleteBlockStateFromPersistence(x, y, z)
   }
 }

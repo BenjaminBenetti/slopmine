@@ -10,6 +10,7 @@ import type {
   PersistenceWorkerResponse,
   SerializedInventory,
   WorldMetadata,
+  SerializedBlockState,
 } from '../persistence/PersistenceTypes.ts'
 import {
   MAGIC_NUMBER,
@@ -20,10 +21,11 @@ import {
 } from '../persistence/PersistenceTypes.ts'
 
 const DB_NAME = 'slopmine'
-const DB_VERSION = 1
+const DB_VERSION = 2 // Incremented for block states store
 const CHUNKS_STORE = 'chunks'
 const PLAYER_STORE = 'player'
 const META_STORE = 'metadata'
+const BLOCK_STATES_STORE = 'blockStates'
 
 let db: IDBDatabase | null = null
 
@@ -64,6 +66,16 @@ function openDatabase(): Promise<IDBDatabase> {
       // Create metadata store
       if (!database.objectStoreNames.contains(META_STORE)) {
         database.createObjectStore(META_STORE)
+      }
+
+      // Create block states store with chunk coordinate index
+      // Key: "x,y,z" coordinate string
+      // Value: SerializedBlockState JSON
+      if (!database.objectStoreNames.contains(BLOCK_STATES_STORE)) {
+        const store = database.createObjectStore(BLOCK_STATES_STORE)
+        // Create index for efficient chunk-based lookups
+        // The index key is "chunkX:chunkZ" computed from world coordinates
+        store.createIndex('chunkIndex', 'chunkKey')
       }
     }
   })
@@ -348,11 +360,15 @@ async function clearAllData(): Promise<void> {
   const database = await openDatabase()
 
   return new Promise((resolve, reject) => {
-    const tx = database.transaction([CHUNKS_STORE, PLAYER_STORE, META_STORE], 'readwrite')
+    const tx = database.transaction(
+      [CHUNKS_STORE, PLAYER_STORE, META_STORE, BLOCK_STATES_STORE],
+      'readwrite'
+    )
 
     tx.objectStore(CHUNKS_STORE).clear()
     tx.objectStore(PLAYER_STORE).clear()
     tx.objectStore(META_STORE).clear()
+    tx.objectStore(BLOCK_STATES_STORE).clear()
 
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(new Error(`Failed to clear data: ${tx.error?.message}`))
@@ -387,6 +403,121 @@ async function batchSaveSubChunks(
   }
 
   return savedCount
+}
+
+// ============================================================================
+// Block State Persistence
+// ============================================================================
+
+/**
+ * Compute chunk key from world coordinates.
+ * Block states are indexed by the chunk they belong to for efficient loading.
+ */
+function computeChunkKey(x: string, z: string): string {
+  // World coordinates to chunk coordinates (floor division by 32)
+  const chunkX = Math.floor(parseInt(x) / 32)
+  const chunkZ = Math.floor(parseInt(z) / 32)
+  return `${chunkX}:${chunkZ}`
+}
+
+/**
+ * Create a position key from coordinates.
+ */
+function makePositionKey(x: string, y: string, z: string): string {
+  return `${x},${y},${z}`
+}
+
+/**
+ * Save block states to IndexedDB.
+ * Each state is stored with its coordinate key and chunk index.
+ */
+async function saveBlockStates(states: SerializedBlockState[]): Promise<number> {
+  if (states.length === 0) {
+    return 0
+  }
+
+  const database = await openDatabase()
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(BLOCK_STATES_STORE, 'readwrite')
+    const store = tx.objectStore(BLOCK_STATES_STORE)
+    let savedCount = 0
+
+    for (const state of states) {
+      const posKey = makePositionKey(
+        state.position.x,
+        state.position.y,
+        state.position.z
+      )
+      // Add chunk key for indexing
+      const stateWithChunk = {
+        ...state,
+        chunkKey: computeChunkKey(state.position.x, state.position.z),
+      }
+
+      const request = store.put(stateWithChunk, posKey)
+      request.onsuccess = () => {
+        savedCount++
+      }
+      request.onerror = () => {
+        console.error(`Failed to save block state at ${posKey}:`, request.error)
+      }
+    }
+
+    tx.oncomplete = () => resolve(savedCount)
+    tx.onerror = () => reject(new Error(`Failed to save block states: ${tx.error?.message}`))
+  })
+}
+
+/**
+ * Load block states for a specific chunk.
+ */
+async function loadBlockStatesForChunk(
+  chunkX: string,
+  chunkZ: string
+): Promise<SerializedBlockState[]> {
+  const database = await openDatabase()
+  const chunkKey = `${chunkX}:${chunkZ}`
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(BLOCK_STATES_STORE, 'readonly')
+    const store = tx.objectStore(BLOCK_STATES_STORE)
+    const index = store.index('chunkIndex')
+
+    const request = index.getAll(chunkKey)
+
+    request.onsuccess = () => {
+      const results = request.result || []
+      // Remove the chunkKey property from results before returning
+      const states = results.map((state: SerializedBlockState & { chunkKey?: string }) => {
+        const { chunkKey: _, ...rest } = state
+        return rest as SerializedBlockState
+      })
+      resolve(states)
+    }
+
+    request.onerror = () => {
+      reject(new Error(`Failed to load block states for chunk ${chunkKey}: ${request.error?.message}`))
+    }
+  })
+}
+
+/**
+ * Delete a block state at a specific position.
+ */
+async function deleteBlockState(position: { x: string; y: string; z: string }): Promise<void> {
+  const database = await openDatabase()
+  const posKey = makePositionKey(position.x, position.y, position.z)
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(BLOCK_STATES_STORE, 'readwrite')
+    const store = tx.objectStore(BLOCK_STATES_STORE)
+
+    const request = store.delete(posKey)
+
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(new Error(`Failed to delete block state: ${request.error?.message}`))
+  })
 }
 
 // Message handler
@@ -503,6 +634,29 @@ self.onmessage = async (event: MessageEvent<PersistenceWorkerRequest>) => {
       case 'clear-all': {
         await clearAllData()
         response = { type: 'clear-all-complete' }
+        break
+      }
+
+      case 'save-block-states': {
+        const count = await saveBlockStates(request.states)
+        response = { type: 'block-states-saved', count }
+        break
+      }
+
+      case 'load-block-states': {
+        const states = await loadBlockStatesForChunk(request.chunkX, request.chunkZ)
+        response = {
+          type: 'block-states-loaded',
+          chunkX: request.chunkX,
+          chunkZ: request.chunkZ,
+          states,
+        }
+        break
+      }
+
+      case 'delete-block-state': {
+        await deleteBlockState(request.position)
+        response = { type: 'block-state-deleted' }
         break
       }
 

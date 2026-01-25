@@ -3,8 +3,23 @@ import type { IItemStack } from '../../../../player/PlayerState.ts'
 import type { IWorldCoordinate } from '../../../interfaces/ICoordinates.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import type { IBrewingRecipe } from '../../../../brewing/interfaces/IBrewingRecipe.ts'
+import type { SerializedApothecaryState, SerializedSlot } from '../../../../persistence/PersistenceTypes.ts'
 import { brewingRegistry } from '../../../../brewing/index.ts'
 import { getFuelValue, isFuel } from '../../../../brewing/BrewingConfig.ts'
+import { createItemFromId } from '../../../../persistence/ItemRegistry.ts'
+
+// Local serialization helpers to avoid circular dependency with BlockStateSerializer
+function serializeSlotLocal(stack: IItemStack | null): SerializedSlot | null {
+  if (!stack) return null
+  return { itemId: stack.item.id, count: stack.count }
+}
+
+function deserializeSlotLocal(slot: SerializedSlot | null): IItemStack | null {
+  if (!slot) return null
+  const item = createItemFromId(slot.itemId)
+  if (!item) return null
+  return { item, count: slot.count }
+}
 
 /**
  * Runtime state for a placed apothecary workbench block.
@@ -13,6 +28,7 @@ import { getFuelValue, isFuel } from '../../../../brewing/BrewingConfig.ts'
  */
 export class ApothecaryWorkbenchState implements ITickableBlockState {
   readonly position: IWorldCoordinate
+  readonly stateType = 'apothecary_workbench'
 
   // Inventory: 4 ingredient slots (2x2) + 1 fuel slot + 1 output slot
   private readonly ingredientSlots: (IItemStack | null)[] = [null, null, null, null]
@@ -361,6 +377,81 @@ export class ApothecaryWorkbenchState implements ITickableBlockState {
     if (this.fuelSlot) items.push(this.fuelSlot)
     if (this.outputSlot) items.push(this.outputSlot)
     return items
+  }
+
+  // ============================================================================
+  // Persistence Methods
+  // ============================================================================
+
+  /**
+   * Check if this state has meaningful data to persist.
+   * Returns true if any slots have items or brewing is in progress.
+   */
+  hasData(): boolean {
+    // Check if any slots have items
+    for (const slot of this.ingredientSlots) {
+      if (slot) return true
+    }
+    if (this.fuelSlot) return true
+    if (this.outputSlot) return true
+    // Check if brewing is in progress
+    if (this.currentFuelRemaining > 0) return true
+    if (this.currentBrewProgress > 0) return true
+    return false
+  }
+
+  /**
+   * Serialize state to a plain object for persistence.
+   */
+  serialize(): SerializedApothecaryState | undefined {
+    if (!this.hasData()) {
+      return undefined
+    }
+
+    return {
+      ingredientSlots: this.ingredientSlots.map(serializeSlotLocal),
+      fuelSlot: serializeSlotLocal(this.fuelSlot),
+      outputSlot: serializeSlotLocal(this.outputSlot),
+      brewProgress: this.currentBrewProgress,
+      brewTime: this.currentBrewTime,
+      fuelRemaining: this.currentFuelRemaining,
+      fuelTotal: this.currentFuelTotal,
+    }
+  }
+
+  /**
+   * Restore state from saved data.
+   */
+  deserialize(data: unknown): void {
+    const saved = data as SerializedApothecaryState
+    if (!saved) return
+
+    // Restore slots
+    if (saved.ingredientSlots) {
+      for (let i = 0; i < this.ingredientSlots.length && i < saved.ingredientSlots.length; i++) {
+        this.ingredientSlots[i] = deserializeSlotLocal(saved.ingredientSlots[i])
+      }
+    }
+    if (saved.fuelSlot !== undefined) {
+      this.fuelSlot = deserializeSlotLocal(saved.fuelSlot)
+    }
+    if (saved.outputSlot !== undefined) {
+      this.outputSlot = deserializeSlotLocal(saved.outputSlot)
+    }
+
+    // Restore brewing progress
+    if (typeof saved.brewProgress === 'number') {
+      this.currentBrewProgress = saved.brewProgress
+    }
+    if (typeof saved.brewTime === 'number') {
+      this.currentBrewTime = saved.brewTime
+    }
+    if (typeof saved.fuelRemaining === 'number') {
+      this.currentFuelRemaining = saved.fuelRemaining
+    }
+    if (typeof saved.fuelTotal === 'number') {
+      this.currentFuelTotal = saved.fuelTotal
+    }
   }
 
   onDestroy(): void {

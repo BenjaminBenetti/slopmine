@@ -11,6 +11,7 @@ import type {
   SerializedInventory,
   WorldMetadata,
   PersistedSubChunkData,
+  SerializedBlockState,
 } from './PersistenceTypes.ts'
 
 // Auto-save interval: 5 minutes
@@ -231,6 +232,10 @@ export class PersistenceManager {
       'batch-save-complete',
       'clear-all-complete',
       'error',
+      // Block state response types
+      'block-states-saved',
+      'block-states-loaded',
+      'block-state-deleted',
     ])
     return nonSubChunkTypes.has(response.type)
   }
@@ -361,7 +366,8 @@ export class PersistenceManager {
     playerPosition?: { x: number; y: number; z: number },
     playerHealth?: number,
     originalSpawnPoint?: { x: number; y: number; z: number },
-    bedSpawnPoint?: { x: number; y: number; z: number }
+    bedSpawnPoint?: { x: number; y: number; z: number },
+    blockStates?: SerializedBlockState[]
   ): Promise<void> {
     if (!this.initialized || !this.worker) {
       return
@@ -415,6 +421,12 @@ export class PersistenceManager {
         bedSpawnPoint,
       },
     })
+
+    // Save block states (forges, workbenches, etc.)
+    if (blockStates && blockStates.length > 0) {
+      const savedCount = await this.saveBlockStates(blockStates)
+      console.log(`[PersistenceManager] Saved ${savedCount} block states`)
+    }
   }
 
   /**
@@ -451,6 +463,88 @@ export class PersistenceManager {
     return null
   }
 
+  // ============================================================================
+  // Block State Persistence
+  // ============================================================================
+
+  /**
+   * Save block states to storage.
+   * Typically called during auto-save or manual save.
+   * @param states Array of serialized block states to save
+   * @returns Number of states saved
+   */
+  async saveBlockStates(states: SerializedBlockState[]): Promise<number> {
+    if (!this.initialized || !this.worker) {
+      return 0
+    }
+
+    if (states.length === 0) {
+      return 0
+    }
+
+    const response = await this.sendRequest({
+      type: 'save-block-states',
+      states,
+    })
+
+    if (response.type === 'block-states-saved') {
+      return response.count
+    }
+
+    return 0
+  }
+
+  /**
+   * Load block states for a specific chunk.
+   * Called when loading a chunk from persistence.
+   * @param chunkX Chunk X coordinate
+   * @param chunkZ Chunk Z coordinate
+   * @returns Array of serialized block states for this chunk
+   */
+  async loadBlockStatesForChunk(
+    chunkX: bigint,
+    chunkZ: bigint
+  ): Promise<SerializedBlockState[]> {
+    if (!this.initialized || !this.worker) {
+      return []
+    }
+
+    const response = await this.sendRequest({
+      type: 'load-block-states',
+      chunkX: chunkX.toString(),
+      chunkZ: chunkZ.toString(),
+    })
+
+    if (response.type === 'block-states-loaded') {
+      return response.states
+    }
+
+    return []
+  }
+
+  /**
+   * Delete a block state at a specific position.
+   * Called when a block with state is broken.
+   * Fire-and-forget - doesn't wait for completion.
+   */
+  deleteBlockState(x: bigint, y: bigint, z: bigint): void {
+    if (!this.initialized || !this.worker) {
+      return
+    }
+
+    // Fire and forget - no need to await
+    this.sendRequest({
+      type: 'delete-block-state',
+      position: {
+        x: x.toString(),
+        y: y.toString(),
+        z: z.toString(),
+      },
+    }).catch((error) => {
+      console.error(`Failed to delete block state at ${x},${y},${z}:`, error)
+    })
+  }
+
   /**
    * Start the auto-save timer (every 5 minutes).
    */
@@ -462,6 +556,7 @@ export class PersistenceManager {
       playerHealth?: number
       originalSpawnPoint?: { x: number; y: number; z: number }
       bedSpawnPoint?: { x: number; y: number; z: number }
+      blockStates?: SerializedBlockState[]
     }
   ): void {
     if (this.autoSaveInterval) {
@@ -484,7 +579,8 @@ export class PersistenceManager {
           result.playerPosition,
           result.playerHealth,
           result.originalSpawnPoint,
-          result.bedSpawnPoint
+          result.bedSpawnPoint,
+          result.blockStates
         )
         console.log('Auto-save complete')
       } catch (error) {
@@ -517,7 +613,8 @@ export class PersistenceManager {
     playerPosition?: { x: number; y: number; z: number },
     playerHealth?: number,
     originalSpawnPoint?: { x: number; y: number; z: number },
-    bedSpawnPoint?: { x: number; y: number; z: number }
+    bedSpawnPoint?: { x: number; y: number; z: number },
+    blockStates?: SerializedBlockState[]
   ): Promise<void> {
     try {
       await this.saveAll(
@@ -526,7 +623,8 @@ export class PersistenceManager {
         playerPosition,
         playerHealth,
         originalSpawnPoint,
-        bedSpawnPoint
+        bedSpawnPoint,
+        blockStates
       )
     } catch (error) {
       console.error('Save before unload failed:', error)

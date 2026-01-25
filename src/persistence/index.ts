@@ -30,3 +30,9 @@ export {
   MAGIC_NUMBER,
   PERSISTENCE_VERSION,
 } from './PersistenceTypes.ts'
+
+export {
+  setGlobalPersistenceManager,
+  getPersistenceManager,
+  deleteBlockStateFromPersistence,
+} from './PersistenceAccess.ts'

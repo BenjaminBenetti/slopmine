@@ -13,14 +13,34 @@ export interface IBlockState {
   /** World position of this block state */
   readonly position: IWorldCoordinate
 
+  /**
+   * Unique type identifier for deserializer dispatch.
+   * Each block state class must have a unique stateType string.
+   * Example: 'forge', 'apothecary_workbench', 'chest'
+   */
+  readonly stateType: string
+
   /** Called when the block is broken - cleanup resources, drop items */
   onDestroy?(): void
 
-  /** Serialize state for persistence (future feature) */
-  serialize?(): unknown
+  /**
+   * Check if this state has meaningful data to persist.
+   * Returns true if any inventory slots have items or processing is in progress.
+   * Used to skip saving empty block states.
+   */
+  hasData(): boolean
 
-  /** Deserialize state from saved data (future feature) */
-  deserialize?(data: unknown): void
+  /**
+   * Serialize state to a plain object for persistence.
+   * Returns undefined if there's nothing to serialize.
+   */
+  serialize(): unknown | undefined
+
+  /**
+   * Restore state from saved data.
+   * Called after the block state is created to populate it with saved data.
+   */
+  deserialize(data: unknown): void
 }
 
 /**

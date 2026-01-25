@@ -30,6 +30,10 @@ import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.
 import { BackgroundLiquidPhysicsManager } from './liquid/BackgroundLiquidPhysicsManager.ts'
 import type { PersistenceManager, IModifiedChunkProvider } from '../persistence/PersistenceManager.ts'
 import type { EntityManager } from '../entities/EntityManager.ts'
+import { BlockStateManager } from './blockstate/BlockStateManager.ts'
+import type { IBlockState } from './blockstate/interfaces/IBlockState.ts'
+import type { ITickableBlockState } from './blockstate/interfaces/ITickableBlockState.ts'
+import { deserializeBlockState } from '../persistence/BlockStateSerializer.ts'
 
 /**
  * Main world coordinator.
@@ -98,6 +102,10 @@ export class WorldManager implements IModifiedChunkProvider {
 
   // Entity manager for block entities
   private entityManager: EntityManager | null = null
+
+  // Track chunks that have had their block states restored from persistence
+  // Prevents duplicate restoration when loading multiple sub-chunks from same chunk
+  private readonly restoredBlockStateChunks: Set<ChunkKey> = new Set()
 
   // Web Worker pool for chunk generation (terrain, caves, lighting)
   private readonly generationWorkers: Worker[] = []
@@ -546,6 +554,9 @@ export class WorldManager implements IModifiedChunkProvider {
     // by calling onLoad() for any blocks that need runtime state restoration
     if (metadata !== undefined) {
       this.restoreBlockStates(coordinate, blocks)
+      // Also restore persisted block state data (inventory contents, etc.)
+      // This is done once per chunk column, not per sub-chunk
+      this.restorePersistedBlockStates(chunkCoord)
     } else {
       // For freshly generated chunks, still create block entities
       this.createBlockEntitiesForChunk(coordinate, blocks)
@@ -623,6 +634,87 @@ export class WorldManager implements IModifiedChunkProvider {
           }
         }
       }
+    }
+  }
+
+  /**
+   * Restore persisted block state data (inventory contents, smelting progress, etc.)
+   * from IndexedDB. Called once per chunk column when loading from persistence.
+   *
+   * This populates the empty states created by onLoad() with saved inventory data
+   * by calling deserialize() on each existing state.
+   */
+  private async restorePersistedBlockStates(chunkCoord: IChunkCoordinate): Promise<void> {
+    const chunkKey = createChunkKey(chunkCoord.x, chunkCoord.z)
+
+    // Only restore once per chunk
+    if (this.restoredBlockStateChunks.has(chunkKey)) {
+      return
+    }
+    this.restoredBlockStateChunks.add(chunkKey)
+
+    // Skip if no persistence manager
+    if (!this.persistenceManager) {
+      return
+    }
+
+    try {
+      // Load block states for this chunk from persistence
+      const serializedStates = await this.persistenceManager.loadBlockStatesForChunk(
+        chunkCoord.x,
+        chunkCoord.z
+      )
+
+      if (serializedStates.length === 0) {
+        return
+      }
+
+      console.log(
+        `[WorldManager] Restoring ${serializedStates.length} block states for chunk ${chunkCoord.x},${chunkCoord.z}`
+      )
+
+      const blockStateManager = BlockStateManager.getInstance()
+
+      for (const serialized of serializedStates) {
+        const position = {
+          x: BigInt(serialized.position.x),
+          y: BigInt(serialized.position.y),
+          z: BigInt(serialized.position.z),
+        }
+
+        // Get the existing empty state that was created by onLoad()
+        // It should already be registered with BlockTickManager
+        const existingState = blockStateManager.getState<IBlockState>(position)
+
+        if (existingState) {
+          // Verify the state type matches
+          if (existingState.stateType !== serialized.stateType) {
+            console.warn(
+              `[WorldManager] State type mismatch at ${serialized.position.x},${serialized.position.y},${serialized.position.z}: ` +
+              `expected ${serialized.stateType}, got ${existingState.stateType}`
+            )
+            continue
+          }
+
+          // Populate the existing state with saved data
+          // This preserves the BlockTickManager registration
+          existingState.deserialize(serialized.data)
+        } else {
+          // State doesn't exist (block wasn't loaded yet, or was broken)
+          // Create a new state with the saved data
+          const newState = deserializeBlockState(serialized)
+          if (newState) {
+            blockStateManager.setState(position, newState)
+            // Note: This state won't be registered with BlockTickManager
+            // It will be registered when the block's sub-chunk is loaded
+            console.log(
+              `[WorldManager] Created new block state at ${serialized.position.x},${serialized.position.y},${serialized.position.z}`
+            )
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`[WorldManager] Failed to restore block states for chunk ${chunkCoord.x},${chunkCoord.z}:`, error)
     }
   }
 

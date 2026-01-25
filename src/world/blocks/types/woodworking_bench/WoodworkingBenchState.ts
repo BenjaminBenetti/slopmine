@@ -2,7 +2,22 @@ import type { ITickableBlockState } from '../../../blockstate/interfaces/ITickab
 import type { IItemStack } from '../../../../player/PlayerState.ts'
 import type { IWorldCoordinate } from '../../../interfaces/ICoordinates.ts'
 import type { IWoodworkingRecipe } from '../../../../woodworking/interfaces/IWoodworkingRecipe.ts'
+import type { SerializedSlot } from '../../../../persistence/PersistenceTypes.ts'
 import { woodworkingRegistry } from '../../../../woodworking/index.ts'
+import { createItemFromId } from '../../../../persistence/ItemRegistry.ts'
+
+// Local serialization helpers to avoid circular dependency with BlockStateSerializer
+function serializeSlotLocal(stack: IItemStack | null): SerializedSlot | null {
+  if (!stack) return null
+  return { itemId: stack.item.id, count: stack.count }
+}
+
+function deserializeSlotLocal(slot: SerializedSlot | null): IItemStack | null {
+  if (!slot) return null
+  const item = createItemFromId(slot.itemId)
+  if (!item) return null
+  return { item, count: slot.count }
+}
 
 /**
  * Runtime state for a placed woodworking bench block.
@@ -11,6 +26,7 @@ import { woodworkingRegistry } from '../../../../woodworking/index.ts'
  */
 export class WoodworkingBenchState implements ITickableBlockState {
   readonly position: IWorldCoordinate
+  readonly stateType = 'woodworking_bench'
 
   // Inventory: 1 input slot + 3 output slots
   private inputSlot: IItemStack | null = null
@@ -170,7 +186,61 @@ export class WoodworkingBenchState implements ITickableBlockState {
     return items
   }
 
+  // ============================================================================
+  // Persistence Methods
+  // ============================================================================
+
+  /**
+   * Check if this state has meaningful data to persist.
+   */
+  hasData(): boolean {
+    if (this.inputSlot) return true
+    for (const slot of this.outputSlots) {
+      if (slot) return true
+    }
+    return false
+  }
+
+  /**
+   * Serialize state to a plain object for persistence.
+   */
+  serialize(): SerializedWoodworkingBenchState | undefined {
+    if (!this.hasData()) {
+      return undefined
+    }
+
+    return {
+      inputSlot: serializeSlotLocal(this.inputSlot),
+      outputSlots: this.outputSlots.map(serializeSlotLocal),
+    }
+  }
+
+  /**
+   * Restore state from saved data.
+   */
+  deserialize(data: unknown): void {
+    const saved = data as SerializedWoodworkingBenchState
+    if (!saved) return
+
+    if (saved.inputSlot !== undefined) {
+      this.inputSlot = deserializeSlotLocal(saved.inputSlot)
+    }
+    if (saved.outputSlots) {
+      for (let i = 0; i < this.outputSlots.length && i < saved.outputSlots.length; i++) {
+        this.outputSlots[i] = deserializeSlotLocal(saved.outputSlots[i])
+      }
+    }
+  }
+
   onDestroy(): void {
     // Items would be dropped here - handled by caller
   }
+}
+
+/**
+ * Serialized woodworking bench state.
+ */
+interface SerializedWoodworkingBenchState {
+  inputSlot: SerializedSlot | null
+  outputSlots: (SerializedSlot | null)[]
 }

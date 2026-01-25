@@ -69,7 +69,10 @@ import {
   initializeItemRegistry,
   serializeInventory,
   deserializeInventory,
+  setGlobalPersistenceManager,
 } from './persistence/index.ts'
+import { BlockStateManager } from './world/blockstate/BlockStateManager.ts'
+import { getBlockStatesToPersist } from './persistence/BlockStateSerializer.ts'
 import { PlayerHealth } from './player/PlayerHealth.ts'
 import { FallDamageTracker } from './player/FallDamageTracker.ts'
 import { createHealthDisplayUI } from './ui/HealthDisplay.ts'
@@ -236,6 +239,9 @@ inventoryInput.recipeBookUI.refresh()
 // Create persistence manager and initialize asynchronously
 const persistenceManager = new PersistenceManager()
 
+// Set global persistence manager for block state deletion
+setGlobalPersistenceManager(persistenceManager)
+
 // Connect persistence to world systems
 world.setPersistenceManager(persistenceManager)
 worldGenerator.setPersistenceManager(persistenceManager)
@@ -297,6 +303,7 @@ persistenceManager.initialize().then(async () => {
     playerHealth: playerHealth.currentHealth,
     originalSpawnPoint: { x: originalSpawnPoint.x, y: originalSpawnPoint.y, z: originalSpawnPoint.z },
     bedSpawnPoint: bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined,
+    blockStates: getBlockStatesToPersist(BlockStateManager.getInstance().getAllStates()),
   }))
 }).catch((error) => {
   console.error('Failed to initialize persistence:', error)
@@ -318,7 +325,8 @@ window.addEventListener('beforeunload', () => {
     },
     playerHealth.currentHealth,
     { x: originalSpawnPoint.x, y: originalSpawnPoint.y, z: originalSpawnPoint.z },
-    bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined
+    bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined,
+    getBlockStatesToPersist(BlockStateManager.getInstance().getAllStates())
   )
 })
 
@@ -367,7 +375,8 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
       },
       playerHealth.currentHealth,
       { x: originalSpawnPoint.x, y: originalSpawnPoint.y, z: originalSpawnPoint.z },
-      bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined
+      bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined,
+      getBlockStatesToPersist(BlockStateManager.getInstance().getAllStates())
     )
   },
   onNewGame: async () => {

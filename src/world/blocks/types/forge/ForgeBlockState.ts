@@ -2,8 +2,23 @@ import type { ITickableBlockState } from '../../../blockstate/interfaces/ITickab
 import type { IItemStack } from '../../../../player/PlayerState.ts'
 import type { IWorldCoordinate } from '../../../interfaces/ICoordinates.ts'
 import type { IItem } from '../../../../items/Item.ts'
+import type { SerializedForgeState, SerializedSlot } from '../../../../persistence/PersistenceTypes.ts'
 import { smeltingRegistry } from '../../../../smelting/index.ts'
 import { getFuelValue, isFuel } from '../../../../smelting/SmeltingConfig.ts'
+import { createItemFromId } from '../../../../persistence/ItemRegistry.ts'
+
+// Local serialization helpers to avoid circular dependency with BlockStateSerializer
+function serializeSlotLocal(stack: IItemStack | null): SerializedSlot | null {
+  if (!stack) return null
+  return { itemId: stack.item.id, count: stack.count }
+}
+
+function deserializeSlotLocal(slot: SerializedSlot | null): IItemStack | null {
+  if (!slot) return null
+  const item = createItemFromId(slot.itemId)
+  if (!item) return null
+  return { item, count: slot.count }
+}
 
 /**
  * Runtime state for a placed forge block.
@@ -12,6 +27,7 @@ import { getFuelValue, isFuel } from '../../../../smelting/SmeltingConfig.ts'
  */
 export class ForgeBlockState implements ITickableBlockState {
   readonly position: IWorldCoordinate
+  readonly stateType = 'forge'
 
   // Inventory: 3 ore input slots + 1 fuel slot + 3 output slots
   private readonly oreSlots: (IItemStack | null)[] = [null, null, null]
@@ -299,6 +315,89 @@ export class ForgeBlockState implements ITickableBlockState {
       if (stack) items.push(stack)
     }
     return items
+  }
+
+  // ============================================================================
+  // Persistence Methods
+  // ============================================================================
+
+  /**
+   * Check if this state has meaningful data to persist.
+   * Returns true if any slots have items or smelting is in progress.
+   */
+  hasData(): boolean {
+    // Check if any slots have items
+    for (const slot of this.oreSlots) {
+      if (slot) return true
+    }
+    if (this.fuelSlot) return true
+    for (const slot of this.outputSlots) {
+      if (slot) return true
+    }
+    // Check if smelting is in progress
+    if (this.currentFuelRemaining > 0) return true
+    if (this.currentSmeltProgress > 0) return true
+    return false
+  }
+
+  /**
+   * Serialize state to a plain object for persistence.
+   */
+  serialize(): SerializedForgeState | undefined {
+    if (!this.hasData()) {
+      return undefined
+    }
+
+    return {
+      oreSlots: this.oreSlots.map(serializeSlotLocal),
+      fuelSlot: serializeSlotLocal(this.fuelSlot),
+      outputSlots: this.outputSlots.map(serializeSlotLocal),
+      smeltProgress: this.currentSmeltProgress,
+      smeltTime: this.currentSmeltTime,
+      fuelRemaining: this.currentFuelRemaining,
+      fuelTotal: this.currentFuelTotal,
+      activeOreSlot: this.activeOreSlot,
+    }
+  }
+
+  /**
+   * Restore state from saved data.
+   */
+  deserialize(data: unknown): void {
+    const saved = data as SerializedForgeState
+    if (!saved) return
+
+    // Restore slots
+    if (saved.oreSlots) {
+      for (let i = 0; i < this.oreSlots.length && i < saved.oreSlots.length; i++) {
+        this.oreSlots[i] = deserializeSlotLocal(saved.oreSlots[i])
+      }
+    }
+    if (saved.fuelSlot !== undefined) {
+      this.fuelSlot = deserializeSlotLocal(saved.fuelSlot)
+    }
+    if (saved.outputSlots) {
+      for (let i = 0; i < this.outputSlots.length && i < saved.outputSlots.length; i++) {
+        this.outputSlots[i] = deserializeSlotLocal(saved.outputSlots[i])
+      }
+    }
+
+    // Restore smelting progress
+    if (typeof saved.smeltProgress === 'number') {
+      this.currentSmeltProgress = saved.smeltProgress
+    }
+    if (typeof saved.smeltTime === 'number') {
+      this.currentSmeltTime = saved.smeltTime
+    }
+    if (typeof saved.fuelRemaining === 'number') {
+      this.currentFuelRemaining = saved.fuelRemaining
+    }
+    if (typeof saved.fuelTotal === 'number') {
+      this.currentFuelTotal = saved.fuelTotal
+    }
+    if (typeof saved.activeOreSlot === 'number') {
+      this.activeOreSlot = saved.activeOreSlot
+    }
   }
 
   onDestroy(): void {

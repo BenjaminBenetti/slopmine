@@ -61,6 +61,49 @@ export interface PersistedSubChunkData {
   metadata?: Uint8Array
 }
 
+/**
+ * Serialized block state for persistence.
+ * Block states are stored separately from chunk data because:
+ * - They have complex nested data (inventory slots)
+ * - They need to be loaded/saved independently for efficiency
+ * - They may need to be deleted when blocks are broken
+ */
+export interface SerializedBlockState {
+  /** Type identifier for deserializer dispatch (e.g., 'forge', 'apothecary_workbench') */
+  stateType: string
+  /** World coordinates as strings (bigint serialization) */
+  position: { x: string; y: string; z: string }
+  /** State-specific data (defined by each block state class) */
+  data: unknown
+}
+
+/**
+ * Serialized forge block state.
+ */
+export interface SerializedForgeState {
+  oreSlots: (SerializedSlot | null)[]
+  fuelSlot: SerializedSlot | null
+  outputSlots: (SerializedSlot | null)[]
+  smeltProgress: number
+  smeltTime: number
+  fuelRemaining: number
+  fuelTotal: number
+  activeOreSlot: number
+}
+
+/**
+ * Serialized apothecary workbench state.
+ */
+export interface SerializedApothecaryState {
+  ingredientSlots: (SerializedSlot | null)[]
+  fuelSlot: SerializedSlot | null
+  outputSlot: SerializedSlot | null
+  brewProgress: number
+  brewTime: number
+  fuelRemaining: number
+  fuelTotal: number
+}
+
 // Worker request message types
 export type PersistenceWorkerRequest =
   | { type: 'init' }
@@ -107,6 +150,20 @@ export type PersistenceWorkerRequest =
       }>
     }
   | { type: 'clear-all' }
+  // Block state persistence messages
+  | {
+      type: 'save-block-states'
+      states: SerializedBlockState[]
+    }
+  | {
+      type: 'load-block-states'
+      chunkX: string
+      chunkZ: string
+    }
+  | {
+      type: 'delete-block-state'
+      position: { x: string; y: string; z: string }
+    }
 
 // Worker response message types
 export type PersistenceWorkerResponse =
@@ -136,3 +193,12 @@ export type PersistenceWorkerResponse =
   | { type: 'batch-save-complete'; count: number }
   | { type: 'clear-all-complete' }
   | { type: 'error'; message: string; operation: string }
+  // Block state persistence responses
+  | { type: 'block-states-saved'; count: number }
+  | {
+      type: 'block-states-loaded'
+      chunkX: string
+      chunkZ: string
+      states: SerializedBlockState[]
+    }
+  | { type: 'block-state-deleted' }

@@ -8,6 +8,7 @@ import { WoodworkingBenchBlockItem } from '../../../../items/blocks/woodworking_
 import { WoodworkingBenchState } from './WoodworkingBenchState.ts'
 import { BlockStateManager } from '../../../blockstate/BlockStateManager.ts'
 import { BlockTickManager } from '../../../blockstate/BlockTickManager.ts'
+import { deleteBlockStateFromPersistence } from '../../../../persistence/index.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
@@ -163,5 +164,8 @@ export class WoodworkingBenchBlock extends SolidBlock {
 
       BlockStateManager.getInstance().removeState(position)
     }
+
+    // Delete persisted block state (fire and forget)
+    deleteBlockStateFromPersistence(x, y, z)
   }
 }
