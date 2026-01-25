@@ -173,19 +173,31 @@ export class JungleGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      frequency: 0.004,
-      threshold: 0.007,
       minY: 164,
       maxY: 224,
-      layerCount: 1,
-      layerSpacing: 16,
-      layerPeakY: 188,
-      cheeseEnabled: true,
-      cheeseFrequency: 0.003,
-      cheeseThreshold: 0.84,
-      entrancesEnabled: true,
-      entranceMinWidth: 8,
-      entranceThreshold: 0.45,
+      // Tunnel network settings - moderate jungle caves
+      tunnelDensity: 3,         // reduced from 5
+      tunnelMinRadius: 2,
+      tunnelMaxRadius: 3,       // narrower tunnels
+      tunnelMaxLength: 180,     // shorter systems
+      tunnelBranchChance: 0.12, // less branching
+      tunnelTurnRate: 0.35,
+      tunnelVerticalBias: 0,
+      // Noise-based surface entrance settings - moderate (hidden by canopy)
+      noiseEntranceEnabled: true,
+      noiseEntranceDensity: 0.30,     // reduced from 0.45
+      noiseEntranceMinRadius: 2,
+      noiseEntranceMaxRadius: 4,
+      noiseEntranceMinDepth: 25,
+      noiseEntranceMaxDepth: 50,
+      noiseEntranceStyle: 'mixed',
+      // Chamber settings - occasional jungle chambers
+      chamberEnabled: true,
+      chamberDensity: 0.20,           // reduced from 0.40
+      chamberMinRadius: 10,
+      chamberMaxRadius: 20,
+      chamberMinY: 168,
+      chamberMaxY: 200,
     },
     water: {
       enabled: true,
@@ -221,12 +233,14 @@ export class JungleGenerator extends BiomeGenerator {
         entityType: 'pig',
         spawnRate: 0.2, // Less common in jungle
         maxNearby: 3,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new PigEntity({ position: pos }),
       },
       {
         entityType: 'fox',
         spawnRate: 0.03, // Rare in jungle (~1 fox per 33 chunks)
         maxNearby: 4,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new FoxEntity({ position: pos }),
       },
       {

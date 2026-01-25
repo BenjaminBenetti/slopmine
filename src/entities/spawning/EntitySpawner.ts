@@ -214,10 +214,16 @@ export class EntitySpawner implements ITask {
       const maxY = config.maxY ?? 1024
       if (spawnY < minY || spawnY > maxY) continue
 
-      // Check light level constraint if specified
+      // Check maximum light level constraint if specified (for cave creatures)
       if (config.maxLightLevel !== undefined) {
         const lightLevel = this.worldManager.getLightLevelAtWorld(worldX, spawnY, worldZ)
         if (lightLevel > config.maxLightLevel) continue
+      }
+
+      // Check minimum light level constraint if specified (for surface creatures)
+      if (config.minLightLevel !== undefined) {
+        const lightLevel = this.worldManager.getLightLevelAtWorld(worldX, spawnY, worldZ)
+        if (lightLevel < config.minLightLevel) continue
       }
 
       // Valid position found

@@ -80,7 +80,7 @@ export class DesertGenerator extends BiomeGenerator {
       // Gold spawns deep and rarely
       new OreFeature({
         blockId: BlockIds.GOLD_BLOCK,
-        frequency: 4,
+        frequency: 16,
         veinSize: 6,
         minY: 156,
         maxY: 188,
@@ -102,19 +102,31 @@ export class DesertGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      frequency: 0.004,
-      threshold: 0.008,
       minY: 164,
       maxY: 224,
-      layerCount: 1,
-      layerSpacing: 16,
-      layerPeakY: 188,
-      cheeseEnabled: true,
-      cheeseFrequency: 0.003,
-      cheeseThreshold: 0.85,
-      entrancesEnabled: true,
-      entranceMinWidth: 8,
-      entranceThreshold: 0.5,
+      // Tunnel network settings - slightly sparser in desert
+      tunnelDensity: 3,
+      tunnelMinRadius: 2,
+      tunnelMaxRadius: 3,       // narrower tunnels
+      tunnelMaxLength: 200,
+      tunnelBranchChance: 0.12,
+      tunnelTurnRate: 0.25,     // straighter tunnels
+      tunnelVerticalBias: 0,
+      // Noise-based surface entrance settings - sinkholes in sandy terrain
+      noiseEntranceEnabled: true,
+      noiseEntranceDensity: 0.35,     // common sinkholes
+      noiseEntranceMinRadius: 3,
+      noiseEntranceMaxRadius: 6,
+      noiseEntranceMinDepth: 25,
+      noiseEntranceMaxDepth: 55,
+      noiseEntranceStyle: 'sinkhole', // sandy sinkholes
+      // Chamber settings - massive desert caverns
+      chamberEnabled: true,
+      chamberDensity: 0.35,
+      chamberMinRadius: 16,
+      chamberMaxRadius: 32,
+      chamberMinY: 165,
+      chamberMaxY: 195,
     },
     // No water in desert
     water: {
@@ -151,6 +163,7 @@ export class DesertGenerator extends BiomeGenerator {
         entityType: 'snake',
         spawnRate: 0.02, // ~1 per 50 chunks (pretty rare)
         maxNearby: 4,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new SnakeEntity({ position: pos }),
       },
       {

@@ -58,7 +58,7 @@ export class WorldManager implements IModifiedChunkProvider {
   // Track sub-chunks that need re-meshing after their current worker job finishes
   // (handles race condition where lighting update arrives while mesh is being built)
   private readonly pendingRemeshSet: Set<SubChunkKey> = new Set()
-  private readonly WORKER_COUNT = Math.min(navigator.hardwareConcurrency || 4, 4)
+  private readonly WORKER_COUNT = Math.min(navigator.hardwareConcurrency || 4, 8)
   private readonly MAX_BACKGROUND_MESH_JOBS_PER_FRAME = 2
 
   // Mesh result throttling to prevent GPU command buffer flooding

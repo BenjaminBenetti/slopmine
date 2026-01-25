@@ -99,19 +99,31 @@ export class SwampGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      frequency: 0.003,
-      threshold: 0.006,
       minY: 164,
       maxY: 220,
-      layerCount: 1,
-      layerSpacing: 16,
-      layerPeakY: 188,
-      cheeseEnabled: true,
-      cheeseFrequency: 0.002,
-      cheeseThreshold: 0.82,
-      entrancesEnabled: true,
-      entranceMinWidth: 6,
-      entranceThreshold: 0.45,
+      // Tunnel network settings - winding tunnels in swamp
+      tunnelDensity: 4,
+      tunnelMinRadius: 2,
+      tunnelMaxRadius: 4,
+      tunnelMaxLength: 280,     // longer winding tunnels
+      tunnelBranchChance: 0.18, // more branching
+      tunnelTurnRate: 0.4,      // more winding
+      tunnelVerticalBias: -0.1, // slight downward tendency
+      // Noise-based surface entrance settings - muddy sinkholes
+      noiseEntranceEnabled: true,
+      noiseEntranceDensity: 0.4,
+      noiseEntranceMinRadius: 2,
+      noiseEntranceMaxRadius: 5,
+      noiseEntranceMinDepth: 25,
+      noiseEntranceMaxDepth: 50,
+      noiseEntranceStyle: 'sinkhole', // muddy sinkholes
+      // Chamber settings - varied swamp caverns
+      chamberEnabled: true,
+      chamberDensity: 0.35,
+      chamberMinRadius: 10,
+      chamberMaxRadius: 20,
+      chamberMinY: 170,
+      chamberMaxY: 200,
     },
     // Swamp water - murky water pools throughout
     water: {
@@ -157,6 +169,7 @@ export class SwampGenerator extends BiomeGenerator {
         entityType: 'slug',
         spawnRate: 0.12, // Moderate spawn rate
         maxNearby: 8, // Don't overcrowd
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new SlugEntity({ position: pos }),
       },
       {
@@ -165,6 +178,7 @@ export class SwampGenerator extends BiomeGenerator {
         minY: 230, // Near/below swamp water level (234)
         maxY: 250,
         maxNearby: 6, // Fewer alligators - they're dangerous
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new AlligatorEntity({ position: pos }),
       },
       {

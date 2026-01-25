@@ -2,23 +2,27 @@ import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { CaveSettings } from '../BiomeGenerator.ts'
 import type { FrameBudget } from '../../../core/FrameBudget.ts'
-import { SpaghettiCarver } from './SpaghettiCarver.ts'
-import { CheeseCarver } from './CheeseCarver.ts'
+import { TunnelNetworkCarver } from './TunnelNetworkCarver.ts'
+import { ChamberCarver } from './ChamberCarver.ts'
+import { NoiseEntranceCarver } from './NoiseEntranceCarver.ts'
 
 export type HeightGetter = (worldX: number, worldZ: number) => number
 
 /**
  * Main orchestrator for cave generation.
- * Coordinates spaghetti tunnels and cheese chambers.
- * Note: Entrance generation is handled separately by EntranceGenerator in WorldGenerator.
+ * Uses Perlin worm algorithm to create interconnected tunnel networks.
+ * Uses chamber carving to create large underground caverns.
+ * Uses noise-based carving for visible surface entrances.
  */
 export class CaveCarver {
-  private readonly spaghettiCarver: SpaghettiCarver
-  private readonly cheeseCarver: CheeseCarver
+  private readonly tunnelCarver: TunnelNetworkCarver
+  private readonly chamberCarver: ChamberCarver
+  private readonly entranceCarver: NoiseEntranceCarver
 
   constructor(seed: number) {
-    this.spaghettiCarver = new SpaghettiCarver(seed)
-    this.cheeseCarver = new CheeseCarver(seed + 1000)
+    this.tunnelCarver = new TunnelNetworkCarver(seed)
+    this.chamberCarver = new ChamberCarver(seed)
+    this.entranceCarver = new NoiseEntranceCarver(seed)
   }
 
   /**
@@ -30,16 +34,14 @@ export class CaveCarver {
     getHeightAt: HeightGetter,
     frameBudget?: FrameBudget
   ): Promise<void> {
-    // First pass: carve spaghetti tunnels
-    await this.spaghettiCarver.carve(chunk, settings, getHeightAt, frameBudget)
+    // Carve underground tunnels first
+    await this.tunnelCarver.carve(chunk, settings, getHeightAt, frameBudget)
 
-    // Second pass: carve cheese chambers
-    if (settings.cheeseEnabled) {
-      await this.cheeseCarver.carve(chunk, settings, getHeightAt, frameBudget)
-    }
+    // Carve large chambers
+    await this.chamberCarver.carve(chunk, settings, getHeightAt)
 
-    // Note: Entrance generation is handled separately by WorldGenerator
-    // using noise-based prediction (EntranceGenerator)
+    // Then carve surface entrances (these carve from surface down)
+    await this.entranceCarver.carve(chunk, settings, getHeightAt)
   }
 
   /**
@@ -58,20 +60,17 @@ export class CaveCarver {
     const effectiveMaxY = Math.min(maxWorldY, settings.maxY)
 
     if (effectiveMinY > effectiveMaxY) {
-      // Sub-chunk is outside cave Y range
-      return
+      // Sub-chunk is outside cave Y range for tunnels
+      // But entrances and chambers may still extend into this range
+    } else {
+      // Carve tunnels
+      await this.tunnelCarver.carveSubChunk(subChunk, settings, getHeightAt, minWorldY, maxWorldY)
     }
 
-    // First pass: carve spaghetti tunnels
-    await this.spaghettiCarver.carveSubChunk(subChunk, settings, getHeightAt, minWorldY, maxWorldY)
+    // Carve large chambers (these have their own Y range settings)
+    await this.chamberCarver.carveSubChunk(subChunk, settings, getHeightAt, minWorldY, maxWorldY)
 
-    // Second pass: carve cheese chambers
-    if (settings.cheeseEnabled) {
-      await this.cheeseCarver.carveSubChunk(subChunk, settings, getHeightAt, minWorldY, maxWorldY)
-    }
-
-    // Note: Entrance generation is skipped for sub-chunks as it requires
-    // knowledge of the full column. Entrances will be handled separately
-    // when all sub-chunks in a column are ready.
+    // Carve surface entrances (these operate based on surface Y, not cave Y range)
+    await this.entranceCarver.carveSubChunk(subChunk, settings, getHeightAt, minWorldY, maxWorldY)
   }
 }

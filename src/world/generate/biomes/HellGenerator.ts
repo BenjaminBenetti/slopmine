@@ -43,18 +43,15 @@ export class HellGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: false, // No caves in Hell
-      frequency: 0,
-      threshold: 0,
       minY: 0,
       maxY: 0,
-      layerCount: 0,
-      layerSpacing: 0,
-      layerPeakY: 0,
-      cheeseEnabled: false,
-      cheeseFrequency: 0,
-      cheeseThreshold: 0,
-      entrancesEnabled: false,
-      entranceMinWidth: 0,
+      tunnelDensity: 0,
+      tunnelMinRadius: 0,
+      tunnelMaxRadius: 0,
+      tunnelMaxLength: 0,
+      tunnelBranchChance: 0,
+      tunnelTurnRate: 0,
+      tunnelVerticalBias: 0,
     },
     // Lava fills all terrain depressions below waterLevel
     water: {

@@ -126,19 +126,31 @@ export class PlainsGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      frequency: 0.005,
-      threshold: 0.006,       // very low - only carve the center of noise tubes for thin tunnels
       minY: 164,
-      maxY: 224,              // high enough for entrances to find caves
-      layerCount: 1,
-      layerSpacing: 16,
-      layerPeakY: 188,
-      cheeseEnabled: true,
-      cheeseFrequency: 0.003, // lower frequency for larger scattered chambers
-      cheeseThreshold: 0.82,  // higher threshold for smaller, rarer chambers
-      entrancesEnabled: true,
-      entranceMinWidth: 10,
-      entranceThreshold: 0.4,  // lower = more common entrances
+      maxY: 224,
+      // Tunnel network settings
+      tunnelDensity: 4,         // worms per 64x64 region
+      tunnelMinRadius: 2,       // min tunnel width
+      tunnelMaxRadius: 4,       // max tunnel width
+      tunnelMaxLength: 250,     // how far worms travel
+      tunnelBranchChance: 0.15, // moderate branching
+      tunnelTurnRate: 0.3,      // moderate winding
+      tunnelVerticalBias: 0,    // neutral vertical movement
+      // Noise-based surface entrance settings
+      noiseEntranceEnabled: true,
+      noiseEntranceDensity: 0.4,      // ~40% of grid cells have entrances
+      noiseEntranceMinRadius: 2,
+      noiseEntranceMaxRadius: 5,
+      noiseEntranceMinDepth: 30,
+      noiseEntranceMaxDepth: 60,
+      noiseEntranceStyle: 'mixed',
+      // Chamber settings - medium to large chambers
+      chamberEnabled: true,
+      chamberDensity: 0.30,
+      chamberMinRadius: 12,
+      chamberMaxRadius: 24,
+      chamberMinY: 168,
+      chamberMaxY: 200,
     },
     water: {
       enabled: true,
@@ -166,24 +178,28 @@ export class PlainsGenerator extends BiomeGenerator {
         entityType: 'pig',
         spawnRate: 0.1,
         maxNearby: 16,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new PigEntity({ position: pos }),
       },
       {
         entityType: 'cow',
         spawnRate: 0.08,
         maxNearby: 12,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new CowEntity({ position: pos }),
       },
       {
         entityType: 'rabbit',
         spawnRate: 0.15,
         maxNearby: 12,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new RabbitEntity({ position: pos }),
       },
       {
         entityType: 'fox',
         spawnRate: 0.03, // Rarer than pigs (~1 fox per 33 chunks)
         maxNearby: 8,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new FoxEntity({ position: pos }),
       },
       {

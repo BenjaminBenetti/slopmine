@@ -96,19 +96,31 @@ export class VolcanicGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      frequency: 0.005, // Slightly more frequent caves
-      threshold: 0.007,
       minY: 164,
       maxY: 230,
-      layerCount: 2,
-      layerSpacing: 20,
-      layerPeakY: 192,
-      cheeseEnabled: true,
-      cheeseFrequency: 0.004,
-      cheeseThreshold: 0.82,
-      entrancesEnabled: true,
-      entranceMinWidth: 6,
-      entranceThreshold: 0.55,
+      // Tunnel network settings - volcanic lava tubes
+      tunnelDensity: 4,
+      tunnelMinRadius: 2,
+      tunnelMaxRadius: 5,       // can be wider (lava tubes)
+      tunnelMaxLength: 220,
+      tunnelBranchChance: 0.1,  // less branching
+      tunnelTurnRate: 0.2,      // straighter tunnels (lava flow)
+      tunnelVerticalBias: -0.15, // tend downward
+      // Noise-based surface entrance settings - volcanic pits
+      noiseEntranceEnabled: true,
+      noiseEntranceDensity: 0.35,     // volcanic vents
+      noiseEntranceMinRadius: 2,
+      noiseEntranceMaxRadius: 4,
+      noiseEntranceMinDepth: 30,
+      noiseEntranceMaxDepth: 55,
+      noiseEntranceStyle: 'pit',      // volcanic vents/pits
+      // Chamber settings - large volcanic magma chambers
+      chamberEnabled: true,
+      chamberDensity: 0.25,
+      chamberMinRadius: 14,
+      chamberMaxRadius: 28,
+      chamberMinY: 165,
+      chamberMaxY: 195,
     },
     // No water in volcanic biomes - too hot!
     water: {

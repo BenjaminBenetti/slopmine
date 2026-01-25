@@ -36,6 +36,13 @@ export interface EntitySpawnConfig {
   maxLightLevel?: number
 
   /**
+   * Minimum light level for spawning (0-15).
+   * Entity will only spawn if light level at position is >= this value.
+   * Useful for surface creatures that require daylight.
+   */
+  minLightLevel?: number
+
+  /**
    * Factory function to create the entity at the given position.
    */
   createEntity: (position: THREE.Vector3) => IEntity

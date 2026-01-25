@@ -56,6 +56,7 @@ export interface WaterSettings {
 
 /**
  * Configuration for cave generation within a biome.
+ * Uses Perlin worm algorithm to create interconnected tunnel networks.
  */
 export interface CaveSettings {
   /**
@@ -64,17 +65,6 @@ export interface CaveSettings {
    */
   readonly enabled: boolean
 
-  /**
-   * Controls how often and long the 'spaghetti-like' cave tunnels appear.
-   * A lower value (e.g., 0.01) creates longer, more winding tunnels, while a higher value creates shorter, more frequent ones.
-   */
-  readonly frequency: number
-  /**
-   * Determines how much of the rock is carved away to form caves.
-   * A lower value (e.g., 0.01) results in larger and more numerous caves, making the underground feel more open.
-   * A higher value makes caves smaller and less frequent, leading to a more solid underground.
-   */
-  readonly threshold: number
   /**
    * The lowest point in the world where these caves can begin to form.
    * Caves will not generate below this Y-level, leaving the deep underground mostly solid.
@@ -86,54 +76,166 @@ export interface CaveSettings {
    */
   readonly maxY: number
 
-  /**
-   * The number of distinct horizontal layers of caves that will generate.
-   * For example, a value of `1` creates a single main cave system, while `3` creates multiple distinct levels of caves stacked vertically.
-   */
-  readonly layerCount: number
-  /**
-   * The vertical distance between the centers of each cave layer.
-   * A larger value will create more space between cave layers, making them feel more distinct.
-   * A smaller value will make layers closer, potentially merging them into larger, more complex systems.
-   */
-  readonly layerSpacing: number
-  /**
-   * The central Y-level around which the cave layers are distributed.
-   * This acts as the anchor point for all cave layers, influencing their overall vertical position in the world.
-   */
-  readonly layerPeakY: number
+  // ==================== Tunnel Network Settings ====================
 
   /**
-   * Toggles the generation of large, open cavern-like areas, often referred to as 'cheese caves'.
-   * If `true`, these expansive chambers will appear alongside the regular tunnels.
+   * Number of tunnel worms to spawn per 64x64 block region.
+   * Higher values create denser tunnel networks.
+   * Typical range: 2-6
    */
-  readonly cheeseEnabled: boolean
-  /**
-   * Controls the size and frequency of the large 'cheese caves'.
-   * A lower value (e.g., 0.005) will create massive, sprawling chambers, while a higher value will result in smaller, more numerous ones.
-   */
-  readonly cheeseFrequency: number
-  /**
-   * Adjusts how much rock is removed to create the large 'cheese caves'.
-   * A higher value (e.g., 0.7) will make these chambers less common and more confined, while a lower value will make them more prevalent and vast.
-   */
-  readonly cheeseThreshold: number
+  readonly tunnelDensity: number
 
   /**
-   * Determines if caves can have openings that reach the surface of the world.
-   * If `true`, you might find natural entrances to cave systems on the landscape.
+   * Minimum radius of carved tunnels in blocks.
+   * Typical range: 2-3
    */
-  readonly entrancesEnabled: boolean
+  readonly tunnelMinRadius: number
+
   /**
-   * Sets the minimum size for a cave entrance that reaches the surface.
-   * A larger value ensures that surface entrances are always wide and easily noticeable.
+   * Maximum radius of carved tunnels in blocks.
+   * Typical range: 3-5
    */
-  readonly entranceMinWidth: number
+  readonly tunnelMaxRadius: number
+
   /**
-   * Controls how rare cave entrances are.
-   * A lower value (e.g., 0.3) makes entrances more common, while a higher value (e.g., 0.8) makes them rare.
+   * Maximum number of steps a tunnel worm can take before stopping.
+   * Longer values create more extensive tunnel systems.
+   * Typical range: 150-400
    */
-  readonly entranceThreshold?: number
+  readonly tunnelMaxLength: number
+
+  /**
+   * Probability (0-1) that a tunnel will branch at each step.
+   * Higher values create more interconnected networks.
+   * Typical range: 0.1-0.2
+   */
+  readonly tunnelBranchChance: number
+
+  /**
+   * How quickly the tunnel changes direction (0-1).
+   * Lower values create straighter tunnels, higher values create more winding paths.
+   * Typical range: 0.2-0.4
+   */
+  readonly tunnelTurnRate: number
+
+  /**
+   * Vertical bias for tunnel direction (-1 to 1).
+   * Negative values make tunnels tend downward, positive upward, 0 is neutral.
+   * Typical range: -0.3 to 0.3
+   */
+  readonly tunnelVerticalBias: number
+
+  // ==================== Noise-Based Surface Entrance Settings ====================
+
+  /**
+   * Enable noise-based surface entrances.
+   * These create visible depressions/holes at the surface that lead underground.
+   * Uses grid-based placement with noise filtering for natural distribution.
+   */
+  readonly noiseEntranceEnabled?: boolean
+
+  /**
+   * Probability (0.0-1.0) of an entrance spawning in each 128-block grid cell.
+   * Lower values = rarer entrances.
+   * ~0.15 recommended for moderate density (roughly one per 4-5 grid cells).
+   * Default: 0.15
+   */
+  readonly noiseEntranceDensity?: number
+
+  /**
+   * Minimum radius of entrance openings in blocks.
+   * Default: 4
+   */
+  readonly noiseEntranceMinRadius?: number
+
+  /**
+   * Maximum radius of entrance openings in blocks.
+   * Default: 10
+   */
+  readonly noiseEntranceMaxRadius?: number
+
+  /**
+   * Minimum depth of entrance carving in blocks.
+   * Shallow entrances may not connect to cave networks.
+   * Default: 20
+   */
+  readonly noiseEntranceMinDepth?: number
+
+  /**
+   * Maximum depth of entrance carving in blocks.
+   * Deeper entrances are more likely to connect to cave tunnels.
+   * Default: 50
+   */
+  readonly noiseEntranceMaxDepth?: number
+
+  /**
+   * Style of entrance shapes to generate.
+   * - 'sinkhole': Bowl-shaped depression, wide at top, narrows with depth
+   * - 'pit': Vertical shaft, small constant radius
+   * - 'slope': Asymmetric, one side has a gradual descent
+   * - 'mixed': Per-entrance style selected via noise (default)
+   */
+  readonly noiseEntranceStyle?: 'sinkhole' | 'pit' | 'slope' | 'mixed'
+
+  // ==================== Chamber Settings ====================
+
+  /**
+   * Enable large underground chamber generation.
+   * Chambers are elongated ellipsoid-shaped caverns with organic, blob-like shapes.
+   * They are rotated randomly and have multi-octave noise perturbation for variety.
+   * Default: false
+   */
+  readonly chamberEnabled?: boolean
+
+  /**
+   * Probability (0.0-1.0) of a chamber spawning in each 128-block grid cell.
+   * Lower values = rarer chambers.
+   * ~0.30 recommended for moderate density.
+   * Default: 0.25
+   */
+  readonly chamberDensity?: number
+
+  /**
+   * Minimum horizontal radius of chambers in blocks.
+   * Note: chambers can be elongated up to 2.5x in one direction.
+   * Default: 12
+   */
+  readonly chamberMinRadius?: number
+
+  /**
+   * Maximum horizontal radius of chambers in blocks.
+   * Note: chambers can be elongated up to 2.5x in one direction.
+   * Default: 28
+   */
+  readonly chamberMaxRadius?: number
+
+  /**
+   * Minimum Y level where chambers can generate.
+   * Default: 170
+   */
+  readonly chamberMinY?: number
+
+  /**
+   * Maximum Y level where chambers can generate.
+   * Default: 200
+   */
+  readonly chamberMaxY?: number
+
+  // ==================== Legacy Entrance Settings (deprecated) ====================
+  // Kept for backwards compatibility but no longer used
+
+  /** @deprecated Use noiseEntranceEnabled instead */
+  readonly entranceEnabled?: boolean
+  /** @deprecated Use noiseEntranceDensity instead */
+  readonly entranceDensity?: number
+  /** @deprecated Use noiseEntranceMinRadius instead */
+  readonly entranceMinRadius?: number
+  /** @deprecated Use noiseEntranceMaxRadius instead */
+  readonly entranceMaxRadius?: number
+  /** @deprecated No longer used - entrances use depth instead of length */
+  readonly entranceMaxLength?: number
+  /** @deprecated No longer used - noise-based entrances don't use turn rate */
+  readonly entranceTurnRate?: number
 }
 
 /**

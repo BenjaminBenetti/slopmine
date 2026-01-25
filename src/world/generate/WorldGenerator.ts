@@ -23,7 +23,6 @@ import { RiverbankMudFeature } from './features/RiverbankMudFeature.ts'
 import { JungleFernFeature } from './features/JungleFernFeature.ts'
 import { RiverbankClayFeature } from './features/RiverbankClayFeature.ts'
 import type { WaterEdgeEffects } from './features/WaterFeature.ts'
-import { EntranceGenerator } from './caves/EntranceGenerator.ts'
 import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../workers/ChunkGenerationWorker.ts'
 import type { PersistenceManager } from '../../persistence/PersistenceManager.ts'
 
@@ -80,10 +79,6 @@ export class WorldGenerator {
   private playerWorldY: number = 0 // Player's world Y position
   private initialized: boolean = false
 
-  // Entrance generation (runs on main thread after sub-chunks are ready)
-  private readonly entranceGenerator: EntranceGenerator
-  private readonly entrancesGenerated: Set<string> = new Set() // "x,z" keys
-
   // Persistence manager for loading saved chunks
   private persistenceManager: PersistenceManager | null = null
 
@@ -99,7 +94,6 @@ export class WorldGenerator {
   constructor(world: WorldManager, config?: Partial<IGenerationConfig>) {
     this.world = world
     this.config = new GenerationConfig(config)
-    this.entranceGenerator = new EntranceGenerator(this.config.seed)
   }
 
   /**
@@ -630,11 +624,6 @@ export class WorldGenerator {
           )
           this.generatedSubChunks.add(key)
 
-          // Mark entrances as generated for this column.
-          // If any sub-chunk was saved, the column was fully generated with entrances already carved.
-          const columnKey = `${coordinate.x},${coordinate.z}`
-          this.entrancesGenerated.add(columnKey)
-
           // NOTE: We intentionally do NOT propagate water for loaded chunks.
           // The saved state is authoritative - if water didn't fill an area before saving,
           // we shouldn't flood it on load. The player may have modified terrain.
@@ -677,9 +666,6 @@ export class WorldGenerator {
         await generator.generateSubChunkDecorations(subChunk, this.world)
       }
 
-      // Generate cave entrances (once per chunk column)
-      await this.tryGenerateEntrances(coordinate)
-
       // Mark as generated BEFORE water propagation checks
       // (the chunk data is applied, so it's safe to consider it generated)
       this.generatedSubChunks.add(key)
@@ -695,85 +681,6 @@ export class WorldGenerator {
       console.error(`Failed to generate sub-chunk ${key}:`, error)
     } finally {
       this.generatingSubChunks.delete(key)
-    }
-  }
-
-  /**
-   * Try to generate cave entrances for the chunk column containing this sub-chunk.
-   * Uses noise-based prediction to find guaranteed cave locations.
-   * Only runs once per chunk column, and only if caves are enabled.
-   */
-  private async tryGenerateEntrances(coordinate: ISubChunkCoordinate): Promise<void> {
-    const chunkX = Number(coordinate.x)
-    const chunkZ = Number(coordinate.z)
-
-    // Get the biome for this chunk to check cave settings
-    const biomeType = this.getBiomeForChunk(chunkX, chunkZ)
-    const biomeConfig = this.getWorkerBiomeConfig(biomeType)
-    const caves = biomeConfig.caves
-    if (!caves?.enabled || !caves.entrancesEnabled) {
-      return
-    }
-
-    // Create a key for this chunk column
-    const columnKey = `${coordinate.x},${coordinate.z}`
-
-    // Only generate entrances once per column
-    if (this.entrancesGenerated.has(columnKey)) {
-      return
-    }
-
-    // Mark as generated (do this before generating to prevent duplicates)
-    this.entrancesGenerated.add(columnKey)
-
-    // Get the generator for height calculations
-    const generator = this.getGeneratorForBiome(biomeType)
-
-    // Track affected sub-chunks for batched remeshing
-    const affectedSubChunks = new Set<string>()
-
-    // World block setter that directly modifies chunk columns (no mesh/lighting triggers)
-    const worldBlockSetter = (worldX: number, worldY: number, worldZ: number, blockId: number) => {
-      // Calculate chunk coordinates
-      const targetChunkX = BigInt(Math.floor(worldX / 32))
-      const targetChunkZ = BigInt(Math.floor(worldZ / 32))
-      const localX = ((worldX % 32) + 32) % 32
-      const localZ = ((worldZ % 32) + 32) % 32
-
-      // Get or skip if chunk column doesn't exist (don't create new chunks)
-      const targetColumn = this.world.getChunkColumn({ x: targetChunkX, z: targetChunkZ })
-      if (!targetColumn) {
-        return
-      }
-
-      // Set block directly on chunk column (no mesh/lighting cascade)
-      targetColumn.setBlockId(localX, worldY, localZ, blockId)
-
-      // Track affected sub-chunk for later remeshing
-      const subY = Math.floor(worldY / SUB_CHUNK_HEIGHT)
-      affectedSubChunks.add(`${targetChunkX},${targetChunkZ},${subY}`)
-    }
-
-    // Find entrance locations using noise prediction (guaranteed to find caves)
-    const entrances = this.entranceGenerator.findEntranceLocations(
-      coordinate.x,
-      coordinate.z,
-      caves,
-      (worldX, worldZ) => generator.getHeightAt(worldX, worldZ)
-    )
-
-    // Carve all entrances
-    for (const entrance of entrances) {
-      this.entranceGenerator.carveEntrance(entrance, worldBlockSetter)
-    }
-
-    // Batch remesh all affected sub-chunks once
-    for (const key of affectedSubChunks) {
-      const [x, z, subY] = key.split(',').map(Number)
-      const subChunk = this.world.getSubChunk({ x: BigInt(x), z: BigInt(z), subY })
-      if (subChunk) {
-        this.world.queueSubChunkForMeshing(subChunk)
-      }
     }
   }
 

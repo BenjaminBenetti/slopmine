@@ -108,19 +108,31 @@ export class GrassyHillsGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      frequency: 0.005,
-      threshold: 0.006,       // very low - only carve the center of noise tubes for thin tunnels
       minY: 164,
-      maxY: 224,              // high enough for entrances to find caves
-      layerCount: 1,
-      layerSpacing: 16,
-      layerPeakY: 188,
-      cheeseEnabled: true,
-      cheeseFrequency: 0.003, // lower frequency for larger scattered chambers
-      cheeseThreshold: 0.82,  // higher threshold for smaller, rarer chambers
-      entrancesEnabled: true,
-      entranceMinWidth: 10,
-      entranceThreshold: 0.4,  // lower = more common entrances
+      maxY: 224,
+      // Tunnel network settings - same as plains
+      tunnelDensity: 4,
+      tunnelMinRadius: 2,
+      tunnelMaxRadius: 4,
+      tunnelMaxLength: 250,
+      tunnelBranchChance: 0.15,
+      tunnelTurnRate: 0.3,
+      tunnelVerticalBias: 0,
+      // Noise-based surface entrance settings - more common in hilly terrain
+      noiseEntranceEnabled: true,
+      noiseEntranceDensity: 0.45,     // very frequent in hilly terrain
+      noiseEntranceMinRadius: 2,
+      noiseEntranceMaxRadius: 5,
+      noiseEntranceMinDepth: 30,
+      noiseEntranceMaxDepth: 60,
+      noiseEntranceStyle: 'mixed',
+      // Chamber settings - medium to large hill chambers
+      chamberEnabled: true,
+      chamberDensity: 0.30,
+      chamberMinRadius: 12,
+      chamberMaxRadius: 26,
+      chamberMinY: 165,
+      chamberMaxY: 200,
     },
     water: {
       enabled: true,
@@ -148,24 +160,28 @@ export class GrassyHillsGenerator extends BiomeGenerator {
         entityType: 'pig',
         spawnRate: 0.3, // ~1 pig per 3 chunks
         maxNearby: 4,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new PigEntity({ position: pos }),
       },
       {
         entityType: 'cow',
         spawnRate: 0.2, // ~1 cow per 5 chunks
         maxNearby: 6,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new CowEntity({ position: pos }),
       },
       {
         entityType: 'fox',
         spawnRate: 0.05, // Rarer than pigs (~1 fox per 20 chunks)
         maxNearby: 4,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new FoxEntity({ position: pos }),
       },
       {
         entityType: 'rabbit',
         spawnRate: 0.2, // Common in grassy hills
         maxNearby: 10,
+        minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new RabbitEntity({ position: pos }),
       },
       {
