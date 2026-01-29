@@ -69,7 +69,9 @@ export interface PersistedSubChunkData {
  * - They may need to be deleted when blocks are broken
  */
 export interface SerializedBlockState {
-  /** Type identifier for deserializer dispatch (e.g., 'forge', 'apothecary_workbench') */
+  /** Block name that owns this state (e.g., 'chest', 'forge') - used for deserialization */
+  blockName: string
+  /** Type identifier for validation/debugging (e.g., 'forge', 'apothecary_workbench') */
   stateType: string
   /** World coordinates as strings (bigint serialization) */
   position: { x: string; y: string; z: string }

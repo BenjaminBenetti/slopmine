@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import type { IBlockProperties, IWorld, BlockFace } from '../../../interfaces/IBlock.ts'
+import type { IBlockState } from '../../../blockstate/interfaces/IBlockState.ts'
+import type { IWorldCoordinate } from '../../../interfaces/ICoordinates.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
@@ -108,12 +110,20 @@ export class ApothecaryWorkbenchBlock extends SolidBlock {
   }
 
   /**
+   * Create a block state instance for this apothecary workbench.
+   * Used by the persistence system for deserialization.
+   */
+  createState(position: IWorldCoordinate): IBlockState {
+    return new ApothecaryWorkbenchState(position)
+  }
+
+  /**
    * Called when this block is placed.
    * Creates an ApothecaryWorkbenchState for this position.
    */
   onPlace(_world: IWorld, x: bigint, y: bigint, z: bigint): void {
     const position = { x, y, z }
-    const state = new ApothecaryWorkbenchState(position)
+    const state = this.createState(position) as ApothecaryWorkbenchState
     BlockStateManager.getInstance().setState(position, state)
 
     // Register with tick manager if available
@@ -134,7 +144,7 @@ export class ApothecaryWorkbenchBlock extends SolidBlock {
       return
     }
 
-    const state = new ApothecaryWorkbenchState(position)
+    const state = this.createState(position) as ApothecaryWorkbenchState
     BlockStateManager.getInstance().setState(position, state)
 
     // Register with tick manager if available

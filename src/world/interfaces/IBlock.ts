@@ -3,6 +3,7 @@ import type { IItem } from '../../items/Item.ts'
 import type { BlockFacing } from '../blocks/BlockFacing.ts'
 import type { IBlockEntity } from '../../entities/interfaces/IBlockEntity.ts'
 import type { IWorldCoordinate } from './ICoordinates.ts'
+import type { IBlockState } from '../blockstate/interfaces/IBlockState.ts'
 
 /**
  * Block ID type - uint16 supports 0-65535 block types.
@@ -132,6 +133,14 @@ export interface IBlock {
    * @param world The world interface for block operations (e.g., replacing self with another block)
    */
   createBlockEntity?(position: IWorldCoordinate, world: IWorld): IBlockEntity | null
+
+  /**
+   * Create a block state instance for this block type.
+   * Blocks with persistent state (inventories, processing progress, etc.) must implement this.
+   * Called during deserialization to restore state from saved data.
+   * @param position The world position of the block
+   */
+  createState?(position: IWorldCoordinate): IBlockState
 
   /**
    * Create a Three.js mesh for this block.

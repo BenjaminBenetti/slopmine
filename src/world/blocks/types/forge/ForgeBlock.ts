@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import type { IBlockProperties, IWorld, BlockFace } from '../../../interfaces/IBlock.ts'
+import type { IBlockState } from '../../../blockstate/interfaces/IBlockState.ts'
+import type { IWorldCoordinate } from '../../../interfaces/ICoordinates.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
@@ -108,12 +110,20 @@ export class ForgeBlock extends SolidBlock {
   }
 
   /**
+   * Create a block state instance for this forge.
+   * Used by the persistence system for deserialization.
+   */
+  createState(position: IWorldCoordinate): IBlockState {
+    return new ForgeBlockState(position)
+  }
+
+  /**
    * Called when this block is placed.
    * Creates a ForgeBlockState for this position.
    */
   onPlace(_world: IWorld, x: bigint, y: bigint, z: bigint): void {
     const position = { x, y, z }
-    const state = new ForgeBlockState(position)
+    const state = this.createState(position) as ForgeBlockState
     BlockStateManager.getInstance().setState(position, state)
 
     // Register with tick manager if available
@@ -134,7 +144,7 @@ export class ForgeBlock extends SolidBlock {
       return
     }
 
-    const state = new ForgeBlockState(position)
+    const state = this.createState(position) as ForgeBlockState
     BlockStateManager.getInstance().setState(position, state)
 
     // Register with tick manager if available

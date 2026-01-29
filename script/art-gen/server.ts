@@ -10,7 +10,7 @@ import * as path from "path";
 
 const OUTPUT_DIR = path.join(import.meta.dirname, "output");
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MODEL_ID = "gemini-2.0-flash-exp";
+const MODEL_ID = "gemini-2.0-flash-exp-image-generation";
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent`;
 
 // Ensure output directory exists

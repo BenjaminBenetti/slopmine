@@ -54,6 +54,7 @@ import { Hemp2BlockItem } from '../items/blocks/hemp/Hemp2BlockItem.ts'
 import { Hemp3BlockItem } from '../items/blocks/hemp/Hemp3BlockItem.ts'
 import { BedBlockItem } from '../items/blocks/bed/BedBlockItem.ts'
 import { DiviningStickBlockItem } from '../items/blocks/divining_stick/DiviningStickBlockItem.ts'
+import { ChestBlockItem } from '../items/blocks/chest/ChestBlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -217,6 +218,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('hemp_3_block', () => new Hemp3BlockItem())
   registerItemFactory('bed_head_block', () => new BedBlockItem())
   registerItemFactory('divining_stick_block', () => new DiviningStickBlockItem())
+  registerItemFactory('chest_block', () => new ChestBlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())

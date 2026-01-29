@@ -1,39 +1,17 @@
 /**
  * Block state serialization/deserialization utilities.
  * Converts between runtime block state and serialized format for persistence.
+ *
+ * Uses the block's createState() method for deserialization, eliminating
+ * the need for manual deserializer registration.
  */
 
 import type { SerializedSlot, SerializedBlockState } from './PersistenceTypes.ts'
 import type { IBlockState } from '../world/blockstate/interfaces/IBlockState.ts'
 import type { IItemStack } from '../player/PlayerState.ts'
+import type { IBlock } from '../world/interfaces/IBlock.ts'
 import { createItemFromId } from './ItemRegistry.ts'
-import { ForgeBlockState } from '../world/blocks/types/forge/ForgeBlockState.ts'
-import { ApothecaryWorkbenchState } from '../world/blocks/types/apothecary_workbench/ApothecaryWorkbenchState.ts'
-import { WoodworkingBenchState } from '../world/blocks/types/woodworking_bench/WoodworkingBenchState.ts'
-
-/**
- * Type for block state deserializer factory functions.
- */
-type BlockStateDeserializer = (
-  position: { x: bigint; y: bigint; z: bigint },
-  data: unknown
-) => IBlockState
-
-/**
- * Registry of block state deserializers by state type.
- */
-const blockStateDeserializers: Map<string, BlockStateDeserializer> = new Map()
-
-/**
- * Register a deserializer for a block state type.
- * Call this at module load time for each block state class.
- */
-export function registerBlockStateDeserializer(
-  stateType: string,
-  deserializer: BlockStateDeserializer
-): void {
-  blockStateDeserializers.set(stateType, deserializer)
-}
+import { BlockRegistry } from '../world/blocks/BlockRegistry.ts'
 
 /**
  * Serialize a single item stack to a slot format.
@@ -69,8 +47,10 @@ export function deserializeSlot(slot: SerializedSlot | null): IItemStack | null 
 /**
  * Serialize a block state to a persistable format.
  * Returns null if the state has no data to persist.
+ * @param state The block state to serialize
+ * @param block The block that owns this state (used to get block name)
  */
-export function serializeBlockState(state: IBlockState): SerializedBlockState | null {
+export function serializeBlockState(state: IBlockState, block: IBlock): SerializedBlockState | null {
   // Skip if no data to persist
   if (!state.hasData()) {
     return null
@@ -82,6 +62,7 @@ export function serializeBlockState(state: IBlockState): SerializedBlockState | 
   }
 
   return {
+    blockName: block.properties.name,
     stateType: state.stateType,
     position: {
       x: state.position.x.toString(),
@@ -94,15 +75,20 @@ export function serializeBlockState(state: IBlockState): SerializedBlockState | 
 
 /**
  * Deserialize a block state from saved data.
- * Creates a new block state instance and populates it with saved data.
- * Returns null if the state type is unknown.
+ * Uses the block's createState() method to create the state instance.
+ * Returns null if the block is unknown or doesn't support state.
  */
 export function deserializeBlockState(
   serialized: SerializedBlockState
 ): IBlockState | null {
-  const deserializer = blockStateDeserializers.get(serialized.stateType)
-  if (!deserializer) {
-    console.warn(`[BlockStateSerializer] Unknown block state type: ${serialized.stateType}`)
+  const block = BlockRegistry.getInstance().getBlockByName(serialized.blockName)
+  if (!block) {
+    console.warn(`[BlockStateSerializer] Unknown block: ${serialized.blockName}`)
+    return null
+  }
+
+  if (!block.createState) {
+    console.warn(`[BlockStateSerializer] Block '${serialized.blockName}' has no createState method`)
     return null
   }
 
@@ -112,21 +98,32 @@ export function deserializeBlockState(
     z: BigInt(serialized.position.z),
   }
 
-  const state = deserializer(position, serialized.data)
+  const state = block.createState(position)
+  state.deserialize(serialized.data)
   return state
 }
 
 /**
+ * Interface for providing block lookup during serialization.
+ */
+export interface IBlockProvider {
+  getBlock(x: bigint, y: bigint, z: bigint): IBlock
+}
+
+/**
  * Get all block states from the BlockStateManager that have data to persist.
- * Groups states by chunk coordinate for efficient storage.
+ * @param states Iterator of all block states
+ * @param blockProvider World or other provider that can look up blocks by position
  */
 export function getBlockStatesToPersist(
-  states: IterableIterator<IBlockState>
+  states: IterableIterator<IBlockState>,
+  blockProvider: IBlockProvider
 ): SerializedBlockState[] {
   const result: SerializedBlockState[] = []
 
   for (const state of states) {
-    const serialized = serializeBlockState(state)
+    const block = blockProvider.getBlock(state.position.x, state.position.y, state.position.z)
+    const serialized = serializeBlockState(state, block)
     if (serialized) {
       result.push(serialized)
     }
@@ -134,28 +131,3 @@ export function getBlockStatesToPersist(
 
   return result
 }
-
-// ============================================================================
-// Register deserializers for known block state types
-// ============================================================================
-
-// Register Forge deserializer
-registerBlockStateDeserializer('forge', (position, data) => {
-  const state = new ForgeBlockState(position)
-  state.deserialize(data)
-  return state
-})
-
-// Register Apothecary Workbench deserializer
-registerBlockStateDeserializer('apothecary_workbench', (position, data) => {
-  const state = new ApothecaryWorkbenchState(position)
-  state.deserialize(data)
-  return state
-})
-
-// Register Woodworking Bench deserializer
-registerBlockStateDeserializer('woodworking_bench', (position, data) => {
-  const state = new WoodworkingBenchState(position)
-  state.deserialize(data)
-  return state
-})

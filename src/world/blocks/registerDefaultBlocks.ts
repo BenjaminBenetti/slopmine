@@ -74,6 +74,7 @@ import { BedHeadBlock } from './types/bed_head/BedHeadBlock.ts'
 import { BedFootBlock } from './types/bed_foot/BedFootBlock.ts'
 import { RopeLadderBlock } from './types/rope_ladder/RopeLadderBlock.ts'
 import { DiviningStickBlock } from './types/divining_stick/DiviningStickBlock.ts'
+import { ChestBlock } from './types/chest/ChestBlock.ts'
 
 /**
  * Register all default block types.
@@ -100,6 +101,7 @@ export function registerDefaultBlocks(): void {
   registerBlock(new ApothecaryWorkbenchBlock())
   registerBlock(new WoodworkingBenchBlock())
   registerBlock(new DiviningStickBlock())
+  registerBlock(new ChestBlock())
 
   // Water blocks
   registerBlock(new WaterBlock())

@@ -56,13 +56,14 @@ import { BlockTickManager } from './world/blockstate/BlockTickManager.ts'
 import { setForgeBlockTickManager } from './world/blocks/types/forge/ForgeBlock.ts'
 import { setApothecaryWorkbenchBlockTickManager } from './world/blocks/types/apothecary_workbench/ApothecaryWorkbenchBlock.ts'
 import { setWoodworkingBenchBlockTickManager } from './world/blocks/types/woodworking_bench/WoodworkingBenchBlock.ts'
-import { blockUIRegistry, blockActionRegistry, createForgeUI, createApothecaryWorkbenchUI, createWoodworkingBenchUI } from './ui/blockui/index.ts'
+import { blockUIRegistry, blockActionRegistry, createForgeUI, createApothecaryWorkbenchUI, createWoodworkingBenchUI, createChestUI } from './ui/blockui/index.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
 import { BlockInteractionHandler } from './player/BlockInteractionHandler.ts'
 import { BlockRaycaster } from './player/BlockRaycaster.ts'
 import type { ForgeBlockState } from './world/blocks/types/forge/ForgeBlockState.ts'
 import type { ApothecaryWorkbenchState } from './world/blocks/types/apothecary_workbench/ApothecaryWorkbenchState.ts'
 import type { WoodworkingBenchState } from './world/blocks/types/woodworking_bench/WoodworkingBenchState.ts'
+import type { ChestBlockState } from './world/blocks/types/chest/ChestBlockState.ts'
 import { recipeBook } from './crafting/RecipeBook.ts'
 import {
   PersistenceManager,
@@ -104,6 +105,9 @@ blockUIRegistry.register(BlockIds.APOTHECARY_WORKBENCH, (state) => createApothec
 
 // Register block UI for woodworking bench
 blockUIRegistry.register(BlockIds.WOODWORKING_BENCH, (state) => createWoodworkingBenchUI(state as WoodworkingBenchState))
+
+// Register block UI for chest
+blockUIRegistry.register(BlockIds.CHEST, (state) => createChestUI(state as ChestBlockState))
 
 
 
@@ -303,7 +307,7 @@ persistenceManager.initialize().then(async () => {
     playerHealth: playerHealth.currentHealth,
     originalSpawnPoint: { x: originalSpawnPoint.x, y: originalSpawnPoint.y, z: originalSpawnPoint.z },
     bedSpawnPoint: bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined,
-    blockStates: getBlockStatesToPersist(BlockStateManager.getInstance().getAllStates()),
+    blockStates: getBlockStatesToPersist(BlockStateManager.getInstance().getAllStates(), world),
   }))
 }).catch((error) => {
   console.error('Failed to initialize persistence:', error)
@@ -326,7 +330,7 @@ window.addEventListener('beforeunload', () => {
     playerHealth.currentHealth,
     { x: originalSpawnPoint.x, y: originalSpawnPoint.y, z: originalSpawnPoint.z },
     bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined,
-    getBlockStatesToPersist(BlockStateManager.getInstance().getAllStates())
+    getBlockStatesToPersist(BlockStateManager.getInstance().getAllStates(), world)
   )
 })
 
@@ -376,7 +380,7 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
       playerHealth.currentHealth,
       { x: originalSpawnPoint.x, y: originalSpawnPoint.y, z: originalSpawnPoint.z },
       bedSpawnPoint ? { x: bedSpawnPoint.x, y: bedSpawnPoint.y, z: bedSpawnPoint.z } : undefined,
-      getBlockStatesToPersist(BlockStateManager.getInstance().getAllStates())
+      getBlockStatesToPersist(BlockStateManager.getInstance().getAllStates(), world)
     )
   },
   onNewGame: async () => {

@@ -97,6 +97,9 @@ export enum TextureId {
   WOODWORKING_BENCH_SIDE = 86,   // woodworking-bench-side.webp
   WOODWORKING_BENCH_TOP = 87,    // woodworking-bench-top.webp
   DIVINING_STICK = 88,           // divining-stick.webp
+  CHEST_FRONT = 89,              // chest-front.webp
+  CHEST_SIDE = 90,               // chest-side.webp
+  CHEST_TOP = 91,                // chest-top.webp
 }
 
 // Cache for the face texture map
@@ -182,6 +185,7 @@ export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   73, // Woodworking Bench - directional block with rotation
   74, // Rope Ladder - directional flat plane with rotation
   75, // Divining Stick - custom Y-shaped geometry
+  76, // Chest - directional block with rotation
   // Water (13-16) is now greedy-meshed to eliminate internal face z-fighting
 ])
 
