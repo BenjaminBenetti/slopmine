@@ -116,7 +116,7 @@ export class ForgeBlockState implements ITickableBlockState {
       const oreStack = this.oreSlots[i]
       if (!oreStack) continue
 
-      const recipe = smeltingRegistry.getRecipeForInput(oreStack.item.id)
+      const recipe = smeltingRegistry.getRecipeForItem(oreStack.item)
       if (!recipe) continue
 
       // Check if output has space
@@ -181,7 +181,7 @@ export class ForgeBlockState implements ITickableBlockState {
       const oreStack = this.oreSlots[i]
       if (!oreStack) continue
 
-      const recipe = smeltingRegistry.getRecipeForInput(oreStack.item.id)
+      const recipe = smeltingRegistry.getRecipeForItem(oreStack.item)
       if (!recipe) continue
 
       // Check if output has space
@@ -204,7 +204,7 @@ export class ForgeBlockState implements ITickableBlockState {
     const oreStack = this.oreSlots[this.activeOreSlot]
     if (!oreStack) return
 
-    const recipe = smeltingRegistry.getRecipeForInput(oreStack.item.id)
+    const recipe = smeltingRegistry.getRecipeForItem(oreStack.item)
     if (!recipe) return
 
     // Remove one ore

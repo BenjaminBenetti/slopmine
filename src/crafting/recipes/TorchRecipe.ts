@@ -7,7 +7,7 @@ export const torchRecipe: IRecipe = {
   name: 'Torch',
   ingredients: [
     { tag: ItemTags.WOOD, count: 1 },
-    { itemId: 'coal', count: 1 },
+    { tag: ItemTags.COAL, count: 1 },
   ],
   createResult: () => new TorchBlockItem(),
   resultCount: 8,

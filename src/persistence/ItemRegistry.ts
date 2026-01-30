@@ -95,6 +95,7 @@ import { EmberRoachWingItem } from '../items/materials/ember_roach_wing/EmberRoa
 import { HerbItem } from '../items/materials/herb/HerbItem.ts'
 import { HempFiberItem } from '../items/materials/hemp_fiber/HempFiberItem.ts'
 import { RopeItem } from '../items/materials/rope/RopeItem.ts'
+import { CharcoalItem } from '../items/materials/charcoal/CharcoalItem.ts'
 import { GoldBarItem } from '../items/bars/gold/GoldBarItem.ts'
 import { CopperBarItem } from '../items/bars/copper/CopperBarItem.ts'
 import { SteelBarItem } from '../items/bars/steel/SteelBarItem.ts'
@@ -262,6 +263,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('herb', () => new HerbItem())
   registerItemFactory('hemp_fiber', () => new HempFiberItem())
   registerItemFactory('rope', () => new RopeItem())
+  registerItemFactory('charcoal', () => new CharcoalItem())
 
   // Pickaxes
   registerItemFactory('wood_pickaxe', () => new WoodPickaxeItem())

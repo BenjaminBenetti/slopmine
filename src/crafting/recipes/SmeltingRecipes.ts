@@ -1,6 +1,8 @@
 import type { ISmeltingRecipe } from '../../smelting/interfaces/ISmeltingRecipe.ts'
 import { IronBarItem, GoldBarItem, CopperBarItem, SteelBarItem } from '../../items/bars/index.ts'
 import { GlassBlockItem } from '../../items/blocks/glass/GlassBlockItem.ts'
+import { CharcoalItem } from '../../items/materials/charcoal/CharcoalItem.ts'
+import { ItemTags } from '../../items/tags/index.ts'
 import { CookedPorkItem } from '../../items/food/cooked_pork/CookedPorkItem.ts'
 import { CookedFoxMeatItem } from '../../items/food/cooked_fox_meat/CookedFoxMeatItem.ts'
 import { CookedBeefItem } from '../../items/food/cooked_beef/CookedBeefItem.ts'
@@ -130,6 +132,15 @@ export const smeltSandRecipe: ISmeltingRecipe = {
   smeltTime: 10, // 10 seconds - melting sand into glass
 }
 
+export const smeltLogToCharcoalRecipe: ISmeltingRecipe = {
+  id: 'smelt_log_to_charcoal',
+  name: 'Charcoal',
+  inputTag: ItemTags.LOG, // Any log item can be smelted to charcoal
+  createResult: () => new CharcoalItem(),
+  resultCount: 1,
+  smeltTime: 10, // 10 seconds - charring wood into charcoal
+}
+
 /** All smelting recipes */
 export const smeltingRecipes: ISmeltingRecipe[] = [
   // Ores
@@ -148,4 +159,5 @@ export const smeltingRecipes: ISmeltingRecipe[] = [
   cookRawKomodoMeatRecipe,
   // Materials
   smeltSandRecipe,
+  smeltLogToCharcoalRecipe,
 ]

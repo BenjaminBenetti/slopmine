@@ -14,6 +14,6 @@ export class OakLogBlockItem extends BlockItem {
   }
 
   override get tags(): ReadonlyArray<string> {
-    return [ItemTags.WOOD]
+    return [ItemTags.WOOD, ItemTags.LOG]
   }
 }

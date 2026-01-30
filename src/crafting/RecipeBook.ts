@@ -161,12 +161,17 @@ export class RecipeBook {
       recipeId: recipe.id,
       name: recipe.name,
       station: 'forge',
-      ingredients: [{ itemId: recipe.inputId, tag: null, count: 1 }],
+      ingredients: [{ itemId: recipe.inputId ?? null, tag: recipe.inputTag ?? null, count: 1 }],
       resultItemId: resultItem.id,
       resultCount: recipe.resultCount,
     }
 
-    this.addRecipeToIndex(info, [{ itemId: recipe.inputId, count: 1 }])
+    // Index by itemId if specified, or by tag if specified
+    if (recipe.inputId) {
+      this.addRecipeToIndex(info, [{ itemId: recipe.inputId, count: 1 }])
+    } else if (recipe.inputTag) {
+      this.addRecipeToIndex(info, [{ tag: recipe.inputTag, count: 1 }])
+    }
   }
 
   /**

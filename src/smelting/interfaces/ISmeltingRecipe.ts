@@ -11,8 +11,11 @@ export interface ISmeltingRecipe {
   /** Human-readable name */
   readonly name: string
 
-  /** Input item ID that can be smelted */
-  readonly inputId: string
+  /** Input item ID that can be smelted (exact match) */
+  readonly inputId?: string
+
+  /** Input item tag that can be smelted (any item with this tag) */
+  readonly inputTag?: string
 
   /** Factory to create result item */
   readonly createResult: () => IItem
