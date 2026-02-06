@@ -158,6 +158,9 @@ export class PlainsGenerator extends BiomeGenerator {
       waterLevel: 238,        // 2 blocks below seaLevel (240) for natural shores
       frequency: 0.2,         // Moderate water pools (0=none, 1=everywhere)
       minDepth: 2,            // Only fill depressions at least 2 blocks deep
+      sandBlock: BlockIds.SAND,  // Sandy bottoms and shores around water
+      sandDepth: 3,
+      shoreRadius: 1,
     },
     terrainConfig: {
       layers: [

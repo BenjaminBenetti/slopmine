@@ -6,9 +6,9 @@ import { PickaxeItem } from './PickaxeItem.ts'
 export class DiamondPickaxeItem extends PickaxeItem {
   readonly id = 'diamond_pickaxe'
   readonly name = 'diamond_pickaxe'
-  protected readonly baseDamage = 2.8
+  protected readonly baseDamage = 6.5
   protected readonly tier = 5
-  protected readonly rockMultiplier = 10.7
+  protected readonly rockMultiplier = 12.0
 
   override get displayName(): string {
     return 'Diamond Pickaxe'

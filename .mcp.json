@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "playwright": {
+      "type": "sse",
+      "url": "http://172.17.0.1:3100/sse"
+    },
     "art-gen": {
       "type": "stdio",
       "command": "npx",

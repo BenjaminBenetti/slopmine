@@ -52,6 +52,28 @@ export interface WaterSettings {
    * Example: minDepth=2 means terrain must be at least 2 blocks below waterLevel.
    */
   readonly minDepth: number
+
+  /**
+   * Optional block ID to place as a sandy bottom beneath water and along the shore.
+   * When set, the top few terrain blocks under water are replaced with this block,
+   * and shore blocks within shoreRadius are also replaced.
+   * Typical value: BlockIds.SAND
+   */
+  readonly sandBlock?: number
+
+  /**
+   * Number of blocks of sand depth placed under water and on the shore.
+   * Default: 3
+   */
+  readonly sandDepth?: number
+
+  /**
+   * How far above the water level shore sand extends (in Y levels).
+   * Columns with terrain height between waterLevel and waterLevel + shoreRadius
+   * will have their surface replaced with sand.
+   * Default: 1
+   */
+  readonly shoreRadius?: number
 }
 
 /**

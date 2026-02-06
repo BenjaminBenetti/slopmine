@@ -61,15 +61,19 @@ export class WaterFeature extends Feature {
 
     const { chunk, getBaseHeightAt, frameBudget } = context
     const { liquidBlock, waterLevel } = this.settings
+    const sandBlock = this.settings.sandBlock
+    const sandDepth = this.settings.sandDepth ?? 3
+    const shoreRadius = this.settings.shoreRadius ?? 1
     const coord = chunk.coordinate
 
     // Determine the sub-chunk's world Y range
     const subChunkCoord = coord as ISubChunkCoordinate
     const subY = typeof subChunkCoord.subY === 'number' ? subChunkCoord.subY : 0
     const subChunkMinY = subY * SUB_CHUNK_HEIGHT
+    const subChunkMaxY = subChunkMinY + SUB_CHUNK_HEIGHT - 1
 
-    // Skip if water level is entirely outside this sub-chunk's range
-    if (waterLevel < subChunkMinY) return edgeEffects
+    // Skip if water level (and shore sand range) is entirely outside this sub-chunk's range
+    if (waterLevel < subChunkMinY && (!sandBlock || waterLevel + shoreRadius < subChunkMinY)) return edgeEffects
 
     frameBudget?.startFrame()
 
@@ -85,40 +89,62 @@ export class WaterFeature extends Feature {
         // Get the BASE terrain height (before caves)
         const terrainHeight = getBaseHeightAt(worldX, worldZ)
 
-        // Skip if terrain is at or above water level
-        if (terrainHeight >= waterLevel) continue
+        if (terrainHeight < waterLevel) {
+          // --- Underwater column: fill water and place sand on the bottom ---
+          const fillStartWorldY = terrainHeight + 1
+          const fillEndWorldY = waterLevel
 
-        // Fill from terrain+1 up to waterLevel
-        const fillStartWorldY = terrainHeight + 1
-        const fillEndWorldY = waterLevel
+          const clampedStartY = Math.max(fillStartWorldY, subChunkMinY)
+          const clampedEndY = Math.min(fillEndWorldY, subChunkMaxY)
 
-        // Clamp to sub-chunk range
-        const subChunkMaxY = subChunkMinY + SUB_CHUNK_HEIGHT - 1
-        const clampedStartY = Math.max(fillStartWorldY, subChunkMinY)
-        const clampedEndY = Math.min(fillEndWorldY, subChunkMaxY)
+          // Fill water blocks
+          if (clampedStartY <= clampedEndY) {
+            let placedWaterInColumn = false
+            for (let worldY = clampedStartY; worldY <= clampedEndY; worldY++) {
+              const localY = worldY - subChunkMinY
+              const currentBlock = chunk.getBlockId(localX, localY, localZ)
+              if (currentBlock === BlockIds.AIR) {
+                chunk.setBlockId(localX, localY, localZ, liquidBlock)
+                placedWaterInColumn = true
+              }
+            }
 
-        // Skip if no valid Y range in this sub-chunk
-        if (clampedStartY > clampedEndY) continue
-
-        // Fill water blocks in this column
-        let placedWaterInColumn = false
-        for (let worldY = clampedStartY; worldY <= clampedEndY; worldY++) {
-          const localY = worldY - subChunkMinY
-
-          // Only replace AIR blocks
-          const currentBlock = chunk.getBlockId(localX, localY, localZ)
-          if (currentBlock === BlockIds.AIR) {
-            chunk.setBlockId(localX, localY, localZ, liquidBlock)
-            placedWaterInColumn = true
+            if (placedWaterInColumn) {
+              if (localX === 0) edgeEffects.hasWaterOnNegX = true
+              if (localX === CHUNK_SIZE_X - 1) edgeEffects.hasWaterOnPosX = true
+              if (localZ === 0) edgeEffects.hasWaterOnNegZ = true
+              if (localZ === CHUNK_SIZE_Z - 1) edgeEffects.hasWaterOnPosZ = true
+            }
           }
-        }
 
-        // Track edge effects for neighbor propagation
-        if (placedWaterInColumn) {
-          if (localX === 0) edgeEffects.hasWaterOnNegX = true
-          if (localX === CHUNK_SIZE_X - 1) edgeEffects.hasWaterOnPosX = true
-          if (localZ === 0) edgeEffects.hasWaterOnNegZ = true
-          if (localZ === CHUNK_SIZE_Z - 1) edgeEffects.hasWaterOnPosZ = true
+          // Place sand beneath water (replace top terrain blocks)
+          if (sandBlock != null) {
+            const sandStartY = terrainHeight
+            const sandEndY = terrainHeight - sandDepth + 1
+            const clampedSandStart = Math.min(sandStartY, subChunkMaxY)
+            const clampedSandEnd = Math.max(sandEndY, subChunkMinY)
+            for (let worldY = clampedSandStart; worldY >= clampedSandEnd; worldY--) {
+              const localY = worldY - subChunkMinY
+              const currentBlock = chunk.getBlockId(localX, localY, localZ)
+              // Replace solid terrain blocks (dirt, grass, stone) but not air or caves
+              if (currentBlock !== BlockIds.AIR && currentBlock !== liquidBlock) {
+                chunk.setBlockId(localX, localY, localZ, sandBlock)
+              }
+            }
+          }
+        } else if (sandBlock != null && terrainHeight >= waterLevel && terrainHeight <= waterLevel + shoreRadius) {
+          // --- Shore column: place sand on the surface ---
+          const surfaceY = terrainHeight
+          const sandEndY = terrainHeight - sandDepth + 1
+          const clampedSandStart = Math.min(surfaceY, subChunkMaxY)
+          const clampedSandEnd = Math.max(sandEndY, subChunkMinY)
+          for (let worldY = clampedSandStart; worldY >= clampedSandEnd; worldY--) {
+            const localY = worldY - subChunkMinY
+            const currentBlock = chunk.getBlockId(localX, localY, localZ)
+            if (currentBlock !== BlockIds.AIR && currentBlock !== liquidBlock) {
+              chunk.setBlockId(localX, localY, localZ, sandBlock)
+            }
+          }
         }
       }
     }

@@ -34,7 +34,7 @@ import {
 } from './world/index.ts'
 import { registerDefaultRecipes } from './crafting/index.ts'
 import { WorldGenerator } from './world/generate/index.ts'
-import { biomeRegistry } from './world/generate/biomes/BiomeRegistry.ts'
+import { biomeRegistry, BIOME_REGION_SIZE } from './world/generate/biomes/BiomeRegistry.ts'
 import { LAYER_BOUNDARY_Y } from './world/generate/GenerationConfig.ts'
 import { GraphicsSettings } from './settings/index.ts'
 import * as THREE from 'three'
@@ -399,11 +399,54 @@ const seaLevel = worldGenerator.getConfig().seaLevel
 const physicsWorld = new WorldPhysicsAdapter(world)
 const physicsEngine = new PhysicsEngine(physicsWorld)
 
+/**
+ * Find a spawn position in a biome that has wood (not desert or volcanic).
+ * Searches in a spiral pattern from the default region (0,0) outward.
+ * Returns world coordinates at the center of the suitable biome region.
+ */
+function findSuitableSpawnPosition(seed: number, seaLevelY: number): THREE.Vector3 {
+  // Biomes without wood - players should not spawn in these
+  const hostileBiomes: Set<string> = new Set(['desert', 'volcanic'])
+
+  // Check the default region (0, 0) first
+  const defaultBiome = biomeRegistry.selectBiomeForLayer(0, 0, seed, 1)
+  if (!hostileBiomes.has(defaultBiome)) {
+    // Default spawn is fine - center of region (0,0)
+    return new THREE.Vector3(256, seaLevelY + 20, 256)
+  }
+
+  // Search outward in a spiral for a suitable biome region
+  const maxSearchRadius = 8
+  for (let r = 1; r <= maxSearchRadius; r++) {
+    // Check all region coords at distance r (square spiral)
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        // Only check the perimeter of the square at this radius
+        if (Math.abs(dx) !== r && Math.abs(dz) !== r) continue
+
+        const biome = biomeRegistry.selectBiomeForLayer(dx, dz, seed, 1)
+        if (!hostileBiomes.has(biome)) {
+          // Found a suitable biome - spawn at the center of this region
+          // Region center in world coords: regionCoord * BIOME_REGION_SIZE * chunkSize + halfRegionSize
+          const worldX = dx * BIOME_REGION_SIZE * 32 + (BIOME_REGION_SIZE * 32) / 2
+          const worldZ = dz * BIOME_REGION_SIZE * 32 + (BIOME_REGION_SIZE * 32) / 2
+          console.log(`[spawn] Avoided ${defaultBiome} at origin, spawning in ${biome} at region (${dx}, ${dz})`)
+          return new THREE.Vector3(worldX, seaLevelY + 20, worldZ)
+        }
+      }
+    }
+  }
+
+  // Fallback: no suitable biome found within search radius (very unlikely)
+  console.warn('[spawn] Could not find non-hostile biome within search radius, using default')
+  return new THREE.Vector3(256, seaLevelY + 20, 256)
+}
+
 // Create player physics body at spawn position (above generated terrain)
-// Spawn at center of biome region (256, 256) to avoid biome boundary at origin
+// Spawn at center of a biome region that has wood access (not desert/volcanic)
 // originalSpawnPoint: The world's default spawn (never changes after world creation)
 // bedSpawnPoint: Set when player sleeps in a bed (used for respawn if set)
-const originalSpawnPoint = new THREE.Vector3(256, seaLevel + 20, 256)
+const originalSpawnPoint = findSuitableSpawnPosition(worldGenerator.getConfig().seed, seaLevel)
 let bedSpawnPoint: THREE.Vector3 | null = null
 
 /**
@@ -867,6 +910,9 @@ scheduler.createTask({
     const camPos = renderer.camera.position
     const lightLevel = world.getLightLevelAtWorld(camPos.x, camPos.y, camPos.z)
     heldItemRenderer.setLightLevel(lightLevel)
+
+    // Update divining stick cave detection glow
+    heldItemRenderer.updateCaveDetection(world, camPos.x, camPos.y, camPos.z)
 
     heldItemRenderer.update(dt)
   },

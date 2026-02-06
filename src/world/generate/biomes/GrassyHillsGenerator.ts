@@ -140,6 +140,9 @@ export class GrassyHillsGenerator extends BiomeGenerator {
       waterLevel: 238,        // Same water level as plains for consistency
       frequency: 0.3,         // Fewer water pools in hills
       minDepth: 3,            // Need deeper depressions in hilly terrain
+      sandBlock: BlockIds.SAND,  // Sandy bottoms and shores around water
+      sandDepth: 3,
+      shoreRadius: 1,
     },
     terrainConfig: {
       layers: [

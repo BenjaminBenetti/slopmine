@@ -3,6 +3,14 @@ import type { IItem } from '../../items/Item.ts'
 import { createHandMesh } from './meshes/HandMesh.ts'
 import { createToolMesh } from './meshes/ToolMesh.ts'
 import { createBlockMesh } from './meshes/BlockMesh.ts'
+import { BlockIds } from '../../world/blocks/BlockIds.ts'
+
+/**
+ * Interface for querying block data for cave detection.
+ */
+export interface ICaveDetectionWorld {
+  getBlockId(x: bigint, y: bigint, z: bigint): number
+}
 
 /**
  * Configuration for the held item renderer
@@ -88,8 +96,11 @@ const EATING_CONFIG: EatingAnimationConfig = {
 /**
  * Determines the type of item for rendering purposes.
  */
+/** Item IDs that end with '_block' but should render as a tool (flat plane), not a cube. */
+const BLOCK_ID_TOOL_OVERRIDES = new Set(['divining_stick_block'])
+
 function isBlockItem(item: IItem): boolean {
-  return item.id.endsWith('_block')
+  return item.id.endsWith('_block') && !BLOCK_ID_TOOL_OVERRIDES.has(item.id)
 }
 
 function isToolItem(item: IItem): boolean {
@@ -142,6 +153,15 @@ export class HeldItemRenderer {
   private readonly eatingRotation = new THREE.Euler()
   /** Bite oscillation offset (computed fresh each frame, not accumulated) */
   private currentBiteOffset = 0
+
+  // Divining stick cave detection glow state
+  private glowIntensity = 0
+  private targetGlowIntensity = 0
+  private glowPhase = 0
+  private frameCounter = 0
+  private static readonly CAVE_CHECK_INTERVAL = 15 // Check every 15 frames
+  private static readonly CAVE_SCAN_RADIUS = 24 // Blocks to scan
+  private static readonly GLOW_COLOR = new THREE.Color(0x00ff88) // Green glow
 
   private readonly config: HeldItemRendererConfig
   private readonly basePosition: THREE.Vector3
@@ -289,6 +309,10 @@ export class HeldItemRenderer {
     this.eatingOffset.set(0, 0, 0)
     this.eatingRotation.set(0, 0, 0)
     this.currentBiteOffset = 0
+    this.glowIntensity = 0
+    this.targetGlowIntensity = 0
+    this.glowPhase = 0
+    this.frameCounter = 0
   }
 
   /**
@@ -490,6 +514,142 @@ export class HeldItemRenderer {
         this.eatingPhase = 0
       }
     }
+  }
+
+  /**
+   * Check for nearby caves and update the divining stick glow effect.
+   * Should be called each frame from the game loop when the held item is a divining stick.
+   * @param world World to query block data from
+   * @param playerX Player world X position
+   * @param playerY Player world Y position
+   * @param playerZ Player world Z position
+   */
+  updateCaveDetection(world: ICaveDetectionWorld, playerX: number, playerY: number, playerZ: number): void {
+    if (!this.currentItem || this.currentItem.id !== 'divining_stick_block') {
+      // Not holding divining stick - fade out glow
+      this.targetGlowIntensity = 0
+      this.updateGlow(0)
+      return
+    }
+
+    this.frameCounter++
+    if (this.frameCounter >= HeldItemRenderer.CAVE_CHECK_INTERVAL) {
+      this.frameCounter = 0
+      this.targetGlowIntensity = this.detectCaveProximity(world, playerX, playerY, playerZ)
+    }
+
+    this.updateGlow(this.targetGlowIntensity)
+  }
+
+  /**
+   * Sample blocks around the player to detect underground air pockets (caves).
+   * Uses sparse directional raycasts for efficiency.
+   * Returns a glow intensity from 0 (no cave) to 1 (cave very close).
+   */
+  private detectCaveProximity(world: ICaveDetectionWorld, px: number, py: number, pz: number): number {
+    const radius = HeldItemRenderer.CAVE_SCAN_RADIUS
+    let closestCaveDist = Infinity
+
+    // Cast rays in 26 directions (6 cardinal + 12 edges + 8 corners)
+    // to find air blocks that are surrounded by solid blocks (caves)
+    const directions = [
+      // Cardinal
+      [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
+      // Diagonals in XZ plane
+      [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],
+      // Diagonals with Y
+      [1, -1, 0], [-1, -1, 0], [0, -1, 1], [0, -1, -1],
+      [1, -1, 1], [-1, -1, -1],
+    ]
+
+    const basePx = Math.floor(px)
+    const basePy = Math.floor(py)
+    const basePz = Math.floor(pz)
+
+    for (const [dx, dy, dz] of directions) {
+      // Step along each direction
+      for (let dist = 2; dist <= radius; dist += 2) {
+        const checkX = basePx + dx * dist
+        const checkY = basePy + dy * dist
+        const checkZ = basePz + dz * dist
+
+        // Skip positions above ground (Y > 200 is likely surface/sky)
+        if (checkY < 0) continue
+
+        const blockId = world.getBlockId(BigInt(checkX), BigInt(checkY), BigInt(checkZ))
+
+        if (blockId === BlockIds.AIR) {
+          // Verify this is a cave (air surrounded by solid above) not open sky
+          const aboveId = world.getBlockId(BigInt(checkX), BigInt(checkY + 1), BigInt(checkZ))
+          if (aboveId !== BlockIds.AIR) {
+            // Found a cave air pocket with a solid block above it
+            const actualDist = Math.sqrt(
+              (checkX - px) ** 2 + (checkY - py) ** 2 + (checkZ - pz) ** 2
+            )
+            if (actualDist < closestCaveDist) {
+              closestCaveDist = actualDist
+            }
+            break // Found cave in this direction, move to next
+          }
+        }
+      }
+    }
+
+    if (closestCaveDist === Infinity) {
+      return 0
+    }
+
+    // Map distance to intensity: closer = stronger glow
+    // Full glow at distance 4 or less, fading to 0 at CAVE_SCAN_RADIUS
+    const minDist = 4
+    if (closestCaveDist <= minDist) return 1.0
+    return Math.max(0, 1.0 - (closestCaveDist - minDist) / (radius - minDist))
+  }
+
+  /**
+   * Smoothly interpolate glow intensity and apply emissive color to held mesh materials.
+   */
+  private updateGlow(target: number): void {
+    // Smooth interpolation
+    const speed = target > this.glowIntensity ? 3.0 : 5.0 // Faster fade out
+    const dt = 1 / 60 // Approximate frame dt
+    this.glowIntensity += (target - this.glowIntensity) * Math.min(1, speed * dt)
+
+    // Clamp very small values to zero
+    if (this.glowIntensity < 0.005) {
+      this.glowIntensity = 0
+    }
+
+    // Pulsing effect when glowing
+    if (this.glowIntensity > 0) {
+      this.glowPhase += dt * 2.5 // Pulse frequency
+      if (this.glowPhase > Math.PI * 2) {
+        this.glowPhase -= Math.PI * 2
+      }
+    } else {
+      this.glowPhase = 0
+    }
+
+    if (!this.currentMesh) return
+
+    // Calculate pulsing intensity
+    const pulse = this.glowIntensity > 0
+      ? 0.7 + 0.3 * Math.sin(this.glowPhase) // Pulse between 70% and 100% of intensity
+      : 0
+    const emissiveStrength = this.glowIntensity * pulse
+
+    // Apply emissive color to all mesh materials
+    this.currentMesh.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material]
+        for (const mat of materials) {
+          if (mat instanceof THREE.MeshLambertMaterial || mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhongMaterial) {
+            mat.emissive = HeldItemRenderer.GLOW_COLOR
+            mat.emissiveIntensity = emissiveStrength
+          }
+        }
+      }
+    })
   }
 
   /**
