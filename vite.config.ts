@@ -12,5 +12,6 @@ export default defineConfig({
 	server: {
 		sourcemapIgnoreList: false,
 		hmr: false,
-	}
+		allowedHosts: ['localhost', '.cluster.bbenetti.ca'], 
+	},
 })
