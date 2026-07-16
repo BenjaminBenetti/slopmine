@@ -43,6 +43,13 @@ export class ChunkMesh implements IChunkMesh {
     this.subChunkKey = subY !== null
       ? createSubChunkKey(chunkCoordinate.x, chunkCoordinate.z, subY)
       : null
+
+    // Chunk meshes are fully static once built (instance transforms baked in
+    // world coordinates). Opt out of the per-frame matrix recompose/multiply
+    // and the scene.updateMatrixWorld subtree walk; the one required world
+    // matrix is forced once in addToScene().
+    this.group.matrixAutoUpdate = false
+    this.group.matrixWorldAutoUpdate = false
   }
 
   /**
@@ -93,6 +100,7 @@ export class ChunkMesh implements IChunkMesh {
       instancedMesh.frustumCulled = true
       instancedMesh.castShadow = true
       instancedMesh.receiveShadow = true
+      instancedMesh.matrixAutoUpdate = false  // Static: per-instance transforms are baked
 
       // Get light levels and metadata for this block type
       const lights = this.blockLights.get(blockId) ?? []
@@ -163,6 +171,9 @@ export class ChunkMesh implements IChunkMesh {
    */
   addToScene(scene: THREE.Scene): void {
     scene.add(this.group)
+    // The group opts out of the scene's per-frame updateMatrixWorld walk, so
+    // force the one-time world-matrix computation now that it has a parent.
+    this.group.updateMatrixWorld(true)
   }
 
   /**

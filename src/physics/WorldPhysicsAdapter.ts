@@ -9,57 +9,27 @@ import { BlockTags } from '../world/blocks/tags/BlockTags.ts'
  * Decouples physics from world implementation details.
  */
 export class WorldPhysicsAdapter implements IPhysicsWorld {
-  // Pre-allocated AABB pool to avoid per-frame allocations
+  // Pre-allocated AABB object pool. Grows on demand and is NEVER shrunk, so
+  // the AABB (+ its two Vector3) objects are reused across every query. Each
+  // query fills `results` (references only) up to its hit count and returns it.
   private readonly aabbPool: AABB[] = []
-  private aabbPoolSize = 0
-
-  // BigInt cache to avoid per-block allocations in collision loop
-  // Cache size covers typical collision check range (-5 to +5 on each axis = 11 values)
-  private static readonly BIGINT_CACHE_MIN = -32
-  private static readonly BIGINT_CACHE_MAX = 320  // Covers typical world Y range
-  private static readonly BIGINT_CACHE_OFFSET = -WorldPhysicsAdapter.BIGINT_CACHE_MIN
-  private static readonly bigIntCache: bigint[] = (() => {
-    const cache: bigint[] = []
-    for (let i = WorldPhysicsAdapter.BIGINT_CACHE_MIN; i <= WorldPhysicsAdapter.BIGINT_CACHE_MAX; i++) {
-      cache[i + WorldPhysicsAdapter.BIGINT_CACHE_OFFSET] = BigInt(i)
-    }
-    return cache
-  })()
+  private readonly results: AABB[] = []
 
   constructor(private readonly world: WorldManager) {}
 
-  /**
-   * Get a cached BigInt for a number, or create one if out of cache range.
-   */
-  private static getBigInt(n: number): bigint {
-    const idx = n + WorldPhysicsAdapter.BIGINT_CACHE_OFFSET
-    if (idx >= 0 && idx < WorldPhysicsAdapter.bigIntCache.length) {
-      return WorldPhysicsAdapter.bigIntCache[idx]
-    }
-    return BigInt(n)
-  }
-
   isSolidBlock(x: number, y: number, z: number): boolean {
-    const block = this.world.getBlock(
-      WorldPhysicsAdapter.getBigInt(Math.floor(x)),
-      WorldPhysicsAdapter.getBigInt(Math.floor(y)),
-      WorldPhysicsAdapter.getBigInt(Math.floor(z))
-    )
-    return block.properties.isSolid
+    // Numeric fast path: no BigInt / string-key allocation. getBlockFast floors
+    // internally, so passing the (already integer) block coords is fine.
+    return this.world.getBlockFast(x, y, z).properties.isSolid
   }
 
   isClimbableBlock(x: number, y: number, z: number): boolean {
-    const block = this.world.getBlock(
-      WorldPhysicsAdapter.getBigInt(Math.floor(x)),
-      WorldPhysicsAdapter.getBigInt(Math.floor(y)),
-      WorldPhysicsAdapter.getBigInt(Math.floor(z))
-    )
-    return block.properties.tags.includes(BlockTags.CLIMBABLE)
+    return this.world.getBlockFast(x, y, z).properties.tags.includes(BlockTags.CLIMBABLE)
   }
 
   getBlockCollisions(region: AABB): AABB[] {
-    // Reset pool usage counter (reuse existing AABBs)
-    this.aabbPoolSize = 0
+    // Reset the results list (drops references only; pooled AABBs are retained).
+    this.results.length = 0
 
     // Iterate over all block positions that might intersect
     const minX = Math.floor(region.min.x)
@@ -69,26 +39,26 @@ export class WorldPhysicsAdapter implements IPhysicsWorld {
     const minZ = Math.floor(region.min.z)
     const maxZ = Math.floor(region.max.z)
 
+    let poolIndex = 0
+
     for (let y = minY; y <= maxY; y++) {
       for (let z = minZ; z <= maxZ; z++) {
         for (let x = minX; x <= maxX; x++) {
           if (this.isSolidBlock(x, y, z)) {
-            // Get or create AABB from pool
-            if (this.aabbPoolSize >= this.aabbPool.length) {
+            // Get or create AABB from pool (pool never shrinks)
+            if (poolIndex >= this.aabbPool.length) {
               this.aabbPool.push(new AABB(new THREE.Vector3(), new THREE.Vector3()))
             }
-            const aabb = this.aabbPool[this.aabbPoolSize]
+            const aabb = this.aabbPool[poolIndex++]
             // Set block bounds directly (avoids AABB.forBlock allocation)
             aabb.min.set(x, y, z)
             aabb.max.set(x + 1, y + 1, z + 1)
-            this.aabbPoolSize++
+            this.results.push(aabb)
           }
         }
       }
     }
 
-    // Return slice of pool with actual blocks (set length to avoid slice allocation)
-    this.aabbPool.length = this.aabbPoolSize
-    return this.aabbPool
+    return this.results
   }
 }

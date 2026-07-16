@@ -19,6 +19,30 @@ export class ChunkManager {
   private readonly columns: Map<ChunkKey, ChunkColumn> = new Map()
   private readonly subChunks: Map<SubChunkKey, SubChunk> = new Map()
 
+  // Numeric-keyed column index maintained alongside `columns` for the
+  // allocation-free fast path (getColumnFast). Chunk coords fit in doubles for
+  // any reachable world, so a single packed Number key avoids BigInt->string
+  // key building on the hot physics/raycast path.
+  private readonly columnsByNumKey: Map<number, ChunkColumn> = new Map()
+
+  // Last-hit column cache. Collision sweeps and raycasts hammer the same 1-4
+  // columns, so a single-entry cache serves the overwhelming majority of
+  // fast-path queries without touching the map at all. NaN never matches a
+  // real packed key, so the first query always misses.
+  private lastColumnKey = NaN
+  private lastColumn: ChunkColumn | undefined = undefined
+
+  // Packed-key bias: shifts chunk coords into a non-negative range before
+  // packing two axes into one Number. BIAS=2^25 supports +-33M chunks
+  // (~1 billion blocks) per axis; the product stays under 2^52 (safe integer).
+  private static readonly NUM_KEY_BIAS = 0x2000000
+  private static readonly NUM_KEY_STRIDE = 0x4000000 // 2^26
+
+  private static numKey(cx: number, cz: number): number {
+    return (cx + ChunkManager.NUM_KEY_BIAS) * ChunkManager.NUM_KEY_STRIDE +
+           (cz + ChunkManager.NUM_KEY_BIAS)
+  }
+
   // ==================== Legacy Chunk API (for migration) ====================
 
   /**
@@ -120,6 +144,23 @@ export class ChunkManager {
   }
 
   /**
+   * Get a chunk column by numeric chunk coordinates (allocation-free fast path).
+   * Uses a single-entry last-hit cache backed by a numeric-keyed map, so hot
+   * callers (physics, raycast, entity light) never build BigInt/string keys.
+   * Returns undefined if the column is not loaded (result is also cached).
+   */
+  getColumnFast(cx: number, cz: number): ChunkColumn | undefined {
+    const key = ChunkManager.numKey(cx, cz)
+    if (key === this.lastColumnKey) {
+      return this.lastColumn
+    }
+    const column = this.columnsByNumKey.get(key)
+    this.lastColumnKey = key
+    this.lastColumn = column
+    return column
+  }
+
+  /**
    * Check if a column exists.
    */
   hasColumn(coordinate: IChunkCoordinate): boolean {
@@ -137,6 +178,14 @@ export class ChunkManager {
     if (!column) {
       column = new ChunkColumn(coordinate)
       this.columns.set(key, column)
+      this.columnsByNumKey.set(
+        ChunkManager.numKey(Number(coordinate.x), Number(coordinate.z)),
+        column
+      )
+      // A new column appeared; invalidate the last-hit cache in case it had
+      // cached a miss for this coordinate.
+      this.lastColumnKey = NaN
+      this.lastColumn = undefined
     }
 
     return column
@@ -158,6 +207,12 @@ export class ChunkManager {
 
       column.dispose()
       this.columns.delete(key)
+      this.columnsByNumKey.delete(
+        ChunkManager.numKey(Number(coordinate.x), Number(coordinate.z))
+      )
+      // Drop the last-hit cache so a stale unloaded column is never returned.
+      this.lastColumnKey = NaN
+      this.lastColumn = undefined
     }
   }
 
@@ -324,6 +379,9 @@ export class ChunkManager {
       column.dispose()
     }
     this.columns.clear()
+    this.columnsByNumKey.clear()
+    this.lastColumnKey = NaN
+    this.lastColumn = undefined
     this.subChunks.clear()
   }
 }

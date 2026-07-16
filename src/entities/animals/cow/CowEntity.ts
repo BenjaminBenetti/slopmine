@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
 import { RawBeefItem } from '../../../items/food/raw_beef/RawBeefItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Import cow texture
 import cowTextureUrl from './assets/cow-texture.webp'
@@ -222,6 +223,13 @@ export class CowEntity extends PeacefulEntity {
     if (CowEntity.texture) {
       this.textureApplied = true
     }
+
+    // Freeze static nodes (body, udder, head decorations). Not merged: the
+    // texture is applied at runtime by matching `color === 0xffffff`, which a
+    // white vertex-color material would spuriously satisfy. Legs and head animate.
+    optimizeEntityMesh(group, {
+      dynamic: [...this.legs, this.head],
+    })
 
     return group
   }

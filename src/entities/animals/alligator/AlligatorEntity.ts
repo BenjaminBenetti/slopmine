@@ -4,6 +4,7 @@ import { AggressionMode } from '../../interfaces/IAggressiveEntityConfig.ts'
 import type { IAggressiveEntityConfig } from '../../interfaces/IAggressiveEntityConfig.ts'
 import { RawAlligatorMeatItem } from '../../../items/food/raw_alligator_meat/RawAlligatorMeatItem.ts'
 import { AlligatorLeatherItem } from '../../../items/materials/alligator_leather/AlligatorLeatherItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Import alligator texture
 import alligatorTextureUrl from './assets/alligator-texture.webp'
@@ -292,6 +293,13 @@ export class AlligatorEntity extends AggressiveEntity {
     if (AlligatorEntity.texture) {
       this.textureApplied = true
     }
+
+    // Freeze static nodes (head decorations, teeth, tail boxes). Not merged: the
+    // texture is applied at runtime by color match. Jaw, legs and tail animate;
+    // the head carries the animated jaw so it stays auto-updating.
+    optimizeEntityMesh(group, {
+      dynamic: [this.jaw, ...this.legs, this.tail, this.head],
+    })
 
     return group
   }

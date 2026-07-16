@@ -4,6 +4,7 @@ import { AggressionMode } from '../../interfaces/IAggressiveEntityConfig.ts'
 import type { IAggressiveEntityConfig } from '../../interfaces/IAggressiveEntityConfig.ts'
 import { BoneItem } from '../../../items/materials/bone/BoneItem.ts'
 import { CorruptedEssenceItem } from '../../../items/materials/corrupted_essence/CorruptedEssenceItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Skeleton colors - dim, spooky appearance
 const BONE_LIGHT = 0x8a7a64  // Dimmer bone color
@@ -354,6 +355,21 @@ export class SkeletonEntity extends AggressiveEntity {
     this.rightUpperLeg.add(rightFoot)
 
     group.add(this.rightUpperLeg)
+
+    // Merge the rigid bone boxes (skull, ribcage, spine) into a couple of meshes
+    // and each limb's segments into one; freeze the rest. Arms, legs and jaw
+    // animate; the eyes are emissive so they are left as separate glowing meshes.
+    optimizeEntityMesh(group, {
+      merge: true,
+      dynamic: [
+        this.leftUpperArm,
+        this.rightUpperArm,
+        this.leftUpperLeg,
+        this.rightUpperLeg,
+        this.jaw,
+      ],
+      registerForLighting: (m) => this.registerMaterialForLighting(m),
+    })
 
     return group
   }

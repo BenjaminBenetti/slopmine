@@ -3,6 +3,7 @@ import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
 import { RawKomodoMeatItem } from '../../../items/food/raw_komodo_meat/RawKomodoMeatItem.ts'
 import { KomodoScalesItem } from '../../../items/materials/komodo_scales/KomodoScalesItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Import komodo dragon texture
 import komodoTextureUrl from './assets/komodo-dragon-texture.webp'
@@ -269,6 +270,12 @@ export class KomodoDragonEntity extends PeacefulEntity {
     if (KomodoDragonEntity.texture) {
       this.textureApplied = true
     }
+
+    // Freeze static nodes. Not merged: the texture is applied at runtime by
+    // color match. Legs, head, tail and tongue animate.
+    optimizeEntityMesh(group, {
+      dynamic: [...this.legs, this.head, this.tail, this.tongue],
+    })
 
     return group
   }

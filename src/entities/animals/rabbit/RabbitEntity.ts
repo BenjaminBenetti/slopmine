@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
 import { RawRabbitItem } from '../../../items/food/raw_rabbit/RawRabbitItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Import rabbit texture
 import rabbitTextureUrl from './assets/rabbit-texture.webp'
@@ -254,6 +255,13 @@ export class RabbitEntity extends PeacefulEntity {
     if (RabbitEntity.texture) {
       this.textureApplied = true
     }
+
+    // Freeze static nodes (tail, head decorations). Not merged: the texture is
+    // applied at runtime by color match. Body (stretch), legs, ears and head
+    // animate.
+    optimizeEntityMesh(group, {
+      dynamic: [this.body, ...this.backLegs, ...this.frontLegs, ...this.ears, this.head],
+    })
 
     return group
   }

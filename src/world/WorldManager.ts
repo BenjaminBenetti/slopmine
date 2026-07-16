@@ -74,19 +74,26 @@ export class WorldManager implements IModifiedChunkProvider {
   private opaqueBlockIds: number[] = []
   private opaqueBlockIdSet: Set<number> = new Set()
 
+  // Numeric sets of block IDs that need per-block handling when a sub-chunk is
+  // applied. Typically <5 ids, so scanning the raw block array against these
+  // avoids a registry lookup (and BigInt coordinate allocation) per non-air block.
+  private blockEntityIdSet: Set<number> = new Set() // ids defining createBlockEntity
+  private onLoadOrEntityIdSet: Set<number> = new Set() // ids defining onLoad or createBlockEntity
+
+  // Decoration batching. While a batch is active, setBlock takes a lightweight
+  // path (raw array write only) and defers lighting/meshing until the batch ends,
+  // so structure placement (trees, etc.) pays one lighting + mesh enqueue per
+  // touched sub-chunk instead of the full per-block side-effect cascade.
+  private decorationBatchDepth = 0
+  private readonly decorationTouchedSubChunks: Set<SubChunk> = new Set()
+  private readonly decorationNeighborSubChunks: Set<SubChunk> = new Set()
+
   // Face texture map for greedy meshing (built once, sent to workers)
   private faceTextureMapEntries: Array<[number, number]> = []
   private atlasRegionEntries: Array<[number, AtlasRegion]> = []
   private nonGreedyBlockIds: number[] = []
   // Track which workers have received the initialization data
   private readonly workersInitialized: Set<number> = new Set()
-
-  // Pre-allocated boundary layer buffers to avoid per-mesh allocation
-  // 2 for blocks (posY, negY), 2 for lights (posY, negY)
-  private readonly boundaryBlockPosY = new Uint16Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
-  private readonly boundaryBlockNegY = new Uint16Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
-  private readonly boundaryLightPosY = new Uint8Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
-  private readonly boundaryLightNegY = new Uint8Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
 
   // Opacity cache for software occlusion culling
   private opacityCache: SubChunkOpacityCache | null = null
@@ -155,10 +162,25 @@ export class WorldManager implements IModifiedChunkProvider {
    * Call this after registering new blocks.
    */
   updateOpaqueBlockIds(): void {
-    this.opaqueBlockIds = this.blockRegistry
-      .getAllBlockIds()
-      .filter((id) => getBlock(id).properties.isOpaque)
+    const allBlockIds = this.blockRegistry.getAllBlockIds()
+    this.opaqueBlockIds = allBlockIds.filter((id) => getBlock(id).properties.isOpaque)
     this.opaqueBlockIdSet = new Set(this.opaqueBlockIds)
+
+    // Recompute the block-entity / onLoad id sets (kept in sync with registration).
+    const entityIds = new Set<number>()
+    const loadIds = new Set<number>()
+    for (const id of allBlockIds) {
+      const block = getBlock(id)
+      if (block.createBlockEntity) {
+        entityIds.add(id)
+        loadIds.add(id)
+      }
+      if (block.onLoad) {
+        loadIds.add(id)
+      }
+    }
+    this.blockEntityIdSet = entityIds
+    this.onLoadOrEntityIdSet = loadIds
   }
 
   /**
@@ -590,6 +612,9 @@ export class WorldManager implements IModifiedChunkProvider {
    * Iterates through all blocks and calls onLoad() for blocks that need state restoration.
    */
   private restoreBlockStates(coordinate: ISubChunkCoordinate, blocks: Uint16Array): void {
+    // Nothing in this sub-chunk can define onLoad/createBlockEntity - skip the scan entirely.
+    if (this.onLoadOrEntityIdSet.size === 0) return
+
     const worldYOffset = coordinate.subY * SUB_CHUNK_HEIGHT
     const chunkWorldX = coordinate.x * BigInt(CHUNK_SIZE_X)
     const chunkWorldZ = coordinate.z * BigInt(CHUNK_SIZE_Z)
@@ -602,36 +627,35 @@ export class WorldManager implements IModifiedChunkProvider {
       getMetadata: (x: bigint, y: bigint, z: bigint) => this.getMetadata(x, y, z),
     }
 
-    // Iterate through all blocks in the sub-chunk
-    for (let localY = 0; localY < SUB_CHUNK_HEIGHT; localY++) {
-      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-        for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
-          const index = localY * CHUNK_SIZE_X * CHUNK_SIZE_Z + localZ * CHUNK_SIZE_X + localX
-          const blockId = blocks[index]
+    // Scan the raw block array; only blocks needing runtime state pay for coordinate
+    // math (BigInt allocation) and a registry lookup.
+    for (let index = 0; index < blocks.length; index++) {
+      const blockId = blocks[index]
+      if (blockId === BlockIds.AIR) continue
+      if (!this.onLoadOrEntityIdSet.has(blockId)) continue
 
-          // Skip air blocks
-          if (blockId === BlockIds.AIR) continue
+      // Decode local coordinates from the y-major flat index
+      const localY = (index / (CHUNK_SIZE_X * CHUNK_SIZE_Z)) | 0
+      const rem = index - localY * CHUNK_SIZE_X * CHUNK_SIZE_Z
+      const localZ = (rem / CHUNK_SIZE_X) | 0
+      const localX = rem - localZ * CHUNK_SIZE_X
 
-          // Calculate world coordinates
-          const worldX = chunkWorldX + BigInt(localX)
-          const worldY = BigInt(worldYOffset + localY)
-          const worldZ = chunkWorldZ + BigInt(localZ)
+      const worldX = chunkWorldX + BigInt(localX)
+      const worldY = BigInt(worldYOffset + localY)
+      const worldZ = chunkWorldZ + BigInt(localZ)
 
-          // Get the block instance
-          const block = getBlock(blockId)
+      const block = getBlock(blockId)
 
-          // Call onLoad to restore runtime state
-          if (block.onLoad) {
-            block.onLoad(worldAdapter, worldX, worldY, worldZ)
-          }
+      // Call onLoad to restore runtime state
+      if (block.onLoad) {
+        block.onLoad(worldAdapter, worldX, worldY, worldZ)
+      }
 
-          // Create block entity if the block type supports it
-          if (this.entityManager && block.createBlockEntity) {
-            const blockEntity = block.createBlockEntity({ x: worldX, y: worldY, z: worldZ }, worldAdapter)
-            if (blockEntity) {
-              this.entityManager.addEntity(blockEntity)
-            }
-          }
+      // Create block entity if the block type supports it
+      if (this.entityManager && block.createBlockEntity) {
+        const blockEntity = block.createBlockEntity({ x: worldX, y: worldY, z: worldZ }, worldAdapter)
+        if (blockEntity) {
+          this.entityManager.addEntity(blockEntity)
         }
       }
     }
@@ -724,6 +748,8 @@ export class WorldManager implements IModifiedChunkProvider {
    */
   private createBlockEntitiesForChunk(coordinate: ISubChunkCoordinate, blocks: Uint16Array): void {
     if (!this.entityManager) return
+    // No block type in this world defines createBlockEntity - skip the scan entirely.
+    if (this.blockEntityIdSet.size === 0) return
 
     const worldYOffset = coordinate.subY * SUB_CHUNK_HEIGHT
     const chunkWorldX = coordinate.x * BigInt(CHUNK_SIZE_X)
@@ -737,31 +763,26 @@ export class WorldManager implements IModifiedChunkProvider {
       getMetadata: (x: bigint, y: bigint, z: bigint) => this.getMetadata(x, y, z),
     }
 
-    // Iterate through all blocks in the sub-chunk
-    for (let localY = 0; localY < SUB_CHUNK_HEIGHT; localY++) {
-      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-        for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
-          const index = localY * CHUNK_SIZE_X * CHUNK_SIZE_Z + localZ * CHUNK_SIZE_X + localX
-          const blockId = blocks[index]
+    // Scan the raw block array; only entity-defining blocks pay for coordinate math.
+    for (let index = 0; index < blocks.length; index++) {
+      const blockId = blocks[index]
+      if (blockId === BlockIds.AIR) continue
+      if (!this.blockEntityIdSet.has(blockId)) continue
 
-          // Skip air blocks
-          if (blockId === BlockIds.AIR) continue
+      // Decode local coordinates from the y-major flat index
+      const localY = (index / (CHUNK_SIZE_X * CHUNK_SIZE_Z)) | 0
+      const rem = index - localY * CHUNK_SIZE_X * CHUNK_SIZE_Z
+      const localZ = (rem / CHUNK_SIZE_X) | 0
+      const localX = rem - localZ * CHUNK_SIZE_X
 
-          // Get the block instance
-          const block = getBlock(blockId)
+      const block = getBlock(blockId)
+      const worldX = chunkWorldX + BigInt(localX)
+      const worldY = BigInt(worldYOffset + localY)
+      const worldZ = chunkWorldZ + BigInt(localZ)
 
-          // Create block entity if the block type supports it
-          if (block.createBlockEntity) {
-            const worldX = chunkWorldX + BigInt(localX)
-            const worldY = BigInt(worldYOffset + localY)
-            const worldZ = chunkWorldZ + BigInt(localZ)
-
-            const blockEntity = block.createBlockEntity({ x: worldX, y: worldY, z: worldZ }, worldAdapter)
-            if (blockEntity) {
-              this.entityManager.addEntity(blockEntity)
-            }
-          }
-        }
+      const blockEntity = block.createBlockEntity!({ x: worldX, y: worldY, z: worldZ }, worldAdapter)
+      if (blockEntity) {
+        this.entityManager.addEntity(blockEntity)
       }
     }
   }
@@ -924,8 +945,17 @@ export class WorldManager implements IModifiedChunkProvider {
 
     this.pendingSubChunks.set(subChunkKey, subChunk)
 
-    // Transfer the copied data to worker
-    worker.postMessage(request, [blocksCopy.buffer, lightCopy.buffer, metadataCopy.buffer])
+    // Transfer the copied data plus the freshly extracted neighbor boundary slabs.
+    // The slabs are private copies owned by this call, so transferring (zero-copy)
+    // is safe and avoids structured-cloning them on the main thread.
+    const transfer: Transferable[] = [blocksCopy.buffer, lightCopy.buffer, metadataCopy.buffer]
+    for (const slab of [neighbors.posX, neighbors.negX, neighbors.posZ, neighbors.negZ, neighbors.posY, neighbors.negY]) {
+      if (slab) transfer.push(slab.buffer)
+    }
+    for (const slab of [neighborLights.posX, neighborLights.negX, neighborLights.posZ, neighborLights.negZ, neighborLights.posY, neighborLights.negY]) {
+      if (slab) transfer.push(slab.buffer)
+    }
+    worker.postMessage(request, transfer)
   }
 
   /**
@@ -940,12 +970,6 @@ export class WorldManager implements IModifiedChunkProvider {
     negY: Uint16Array | null
   } {
     const { x, z, subY } = coord
-
-    // Horizontal neighbors (full sub-chunks)
-    const posXCoord = createSubChunkKey(x + 1n, z, subY)
-    const negXCoord = createSubChunkKey(x - 1n, z, subY)
-    const posZCoord = createSubChunkKey(x, z + 1n, subY)
-    const negZCoord = createSubChunkKey(x, z - 1n, subY)
 
     const posXSub = this.chunkManager.getSubChunk({ x: x + 1n, z, subY })
     const negXSub = this.chunkManager.getSubChunk({ x: x - 1n, z, subY })
@@ -966,15 +990,19 @@ export class WorldManager implements IModifiedChunkProvider {
     if (subY > 0) {
       const belowSub = this.chunkManager.getSubChunk({ x, z, subY: subY - 1 })
       if (belowSub) {
-        negY = this.extractBoundaryLayer(belowSub, SUB_CHUNK_HEIGHT - 1) // y=63 layer of sub-chunk below
+        negY = this.extractBoundaryLayer(belowSub, SUB_CHUNK_HEIGHT - 1) // y=31 layer of sub-chunk below
       }
     }
 
+    // Horizontal neighbors: only the single boundary face is read by the worker,
+    // so extract 32x32 slabs (~2KB) instead of cloning the full 64KB arrays.
+    // negX face is the neighbor's x=31 plane; posX its x=0 plane;
+    // negZ its z=31 plane; posZ its z=0 plane.
     return {
-      posX: posXSub?.getBlockData() ?? null,
-      negX: negXSub?.getBlockData() ?? null,
-      posZ: posZSub?.getBlockData() ?? null,
-      negZ: negZSub?.getBlockData() ?? null,
+      posX: posXSub ? this.extractBoundaryLayerX(posXSub, 0) : null,
+      negX: negXSub ? this.extractBoundaryLayerX(negXSub, CHUNK_SIZE_X - 1) : null,
+      posZ: posZSub ? this.extractBoundaryLayerZ(posZSub, 0) : null,
+      negZ: negZSub ? this.extractBoundaryLayerZ(negZSub, CHUNK_SIZE_Z - 1) : null,
       posY,
       negY,
     }
@@ -1016,11 +1044,13 @@ export class WorldManager implements IModifiedChunkProvider {
       }
     }
 
+    // Horizontal neighbors: extract the single boundary face read by the worker
+    // (mirrors getSubChunkNeighborData) instead of cloning the full light arrays.
     return {
-      posX: posXSub?.getLightData() ?? null,
-      negX: negXSub?.getLightData() ?? null,
-      posZ: posZSub?.getLightData() ?? null,
-      negZ: negZSub?.getLightData() ?? null,
+      posX: posXSub ? this.extractLightBoundaryLayerX(posXSub, 0) : null,
+      negX: negXSub ? this.extractLightBoundaryLayerX(negXSub, CHUNK_SIZE_X - 1) : null,
+      posZ: posZSub ? this.extractLightBoundaryLayerZ(posZSub, 0) : null,
+      negZ: negZSub ? this.extractLightBoundaryLayerZ(negZSub, CHUNK_SIZE_Z - 1) : null,
       posY,
       negY,
     }
@@ -1060,6 +1090,76 @@ export class WorldManager implements IModifiedChunkProvider {
     }
 
     return layer
+  }
+
+  /**
+   * Extract an X-face boundary slab of blocks (fixed x, all y/z) from a sub-chunk.
+   * Layout: index = y * CHUNK_SIZE_Z + z. Worker reads posX/negX with this layout.
+   */
+  private extractBoundaryLayerX(subChunk: SubChunk, x: number): Uint16Array {
+    const slab = new Uint16Array(SUB_CHUNK_HEIGHT * CHUNK_SIZE_Z)
+    const blocks = subChunk.getBlockData()
+
+    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
+      for (let z = 0; z < CHUNK_SIZE_Z; z++) {
+        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
+        slab[y * CHUNK_SIZE_Z + z] = blocks[srcIdx]
+      }
+    }
+
+    return slab
+  }
+
+  /**
+   * Extract a Z-face boundary slab of blocks (fixed z, all y/x) from a sub-chunk.
+   * Layout: index = y * CHUNK_SIZE_X + x. Worker reads posZ/negZ with this layout.
+   */
+  private extractBoundaryLayerZ(subChunk: SubChunk, z: number): Uint16Array {
+    const slab = new Uint16Array(SUB_CHUNK_HEIGHT * CHUNK_SIZE_X)
+    const blocks = subChunk.getBlockData()
+
+    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
+      for (let x = 0; x < CHUNK_SIZE_X; x++) {
+        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
+        slab[y * CHUNK_SIZE_X + x] = blocks[srcIdx]
+      }
+    }
+
+    return slab
+  }
+
+  /**
+   * Extract an X-face boundary slab of light data (fixed x, all y/z) from a sub-chunk.
+   */
+  private extractLightBoundaryLayerX(subChunk: SubChunk, x: number): Uint8Array {
+    const slab = new Uint8Array(SUB_CHUNK_HEIGHT * CHUNK_SIZE_Z)
+    const lightData = subChunk.getLightData()
+
+    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
+      for (let z = 0; z < CHUNK_SIZE_Z; z++) {
+        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
+        slab[y * CHUNK_SIZE_Z + z] = lightData[srcIdx]
+      }
+    }
+
+    return slab
+  }
+
+  /**
+   * Extract a Z-face boundary slab of light data (fixed z, all y/x) from a sub-chunk.
+   */
+  private extractLightBoundaryLayerZ(subChunk: SubChunk, z: number): Uint8Array {
+    const slab = new Uint8Array(SUB_CHUNK_HEIGHT * CHUNK_SIZE_X)
+    const lightData = subChunk.getLightData()
+
+    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
+      for (let x = 0; x < CHUNK_SIZE_X; x++) {
+        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
+        slab[y * CHUNK_SIZE_X + x] = lightData[srcIdx]
+      }
+    }
+
+    return slab
   }
 
   /**
@@ -1286,6 +1386,67 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Numeric fast-path block queries.
+   *
+   * These bypass the BigInt/string-key funnel used by getBlockId/getBlock for
+   * hot, spatially-coherent callers (physics collision, DDA raycast, entity
+   * light). Chunk coords are derived with bitwise ops (chunk columns are 32
+   * blocks wide -- a power of two -- so `>> 5`/`& 31` floor correctly even for
+   * negative coordinates), and the column is resolved through ChunkManager's
+   * last-hit numeric cache. Zero allocations per call on the hot path.
+   *
+   * Inputs are floored to block positions. Valid for |x|,|z| < 2^31 blocks,
+   * which comfortably covers all reachable gameplay positions; far cold
+   * callers should keep using the BigInt API.
+   */
+  getBlockIdFast(x: number, y: number, z: number): BlockId {
+    const bx = Math.floor(x)
+    const by = Math.floor(y)
+    const bz = Math.floor(z)
+    const column = this.chunkManager.getColumnFast(bx >> 5, bz >> 5)
+    if (!column) {
+      return BlockIds.AIR
+    }
+    return column.getBlockId(bx & 31, by, bz & 31)
+  }
+
+  /**
+   * Numeric fast-path variant of getBlock. See getBlockIdFast for constraints.
+   */
+  getBlockFast(x: number, y: number, z: number): IBlock {
+    return getBlock(this.getBlockIdFast(x, y, z))
+  }
+
+  /**
+   * Numeric fast-path variant of getBlockMetadata. See getBlockIdFast.
+   */
+  getBlockMetadataFast(x: number, y: number, z: number): number {
+    const bx = Math.floor(x)
+    const by = Math.floor(y)
+    const bz = Math.floor(z)
+    const column = this.chunkManager.getColumnFast(bx >> 5, bz >> 5)
+    if (!column) {
+      return 0
+    }
+    return column.getMetadata(bx & 31, by, bz & 31)
+  }
+
+  /**
+   * Numeric fast-path variant of getLightLevelAtWorld. See getBlockIdFast.
+   * Returns 15 (full light) when the column is not loaded.
+   */
+  getLightLevelFast(x: number, y: number, z: number): number {
+    const bx = Math.floor(x)
+    const by = Math.floor(y)
+    const bz = Math.floor(z)
+    const column = this.chunkManager.getColumnFast(bx >> 5, bz >> 5)
+    if (!column) {
+      return 15
+    }
+    return column.getLightLevel(bx & 31, by, bz & 31)
+  }
+
+  /**
    * Set block metadata at world coordinates.
    * Returns true if the metadata was set.
    */
@@ -1381,6 +1542,11 @@ export class WorldManager implements IModifiedChunkProvider {
    * Returns true if the block was changed.
    */
   setBlock(x: bigint, y: bigint, z: bigint, blockId: BlockId, metadata?: number): boolean {
+    // Decoration batch fast path: write raw, defer side effects to endDecorationBatch.
+    if (this.decorationBatchDepth > 0) {
+      return this.setBlockDecoration(x, y, z, blockId, metadata)
+    }
+
     const world: IWorldCoordinate = { x, y, z }
     const chunkCoord = worldToChunk(world)
     const local = worldToLocal(world)
@@ -1453,6 +1619,113 @@ export class WorldManager implements IModifiedChunkProvider {
     }
 
     return changed
+  }
+
+  /**
+   * Begin a decoration batch. While active, setBlock writes blocks directly into
+   * sub-chunk arrays without per-block lighting/meshing/persistence side effects.
+   * Nestable / safe under concurrent (interleaved async) decoration passes.
+   * Must be paired with endDecorationBatch().
+   */
+  beginDecorationBatch(): void {
+    this.decorationBatchDepth++
+  }
+
+  /**
+   * End a decoration batch and flush deferred work: one meshing + lighting enqueue
+   * per touched sub-chunk (plus a mesh-only refresh of edge-adjacent neighbors so
+   * cross-chunk face culling stays correct). Flushing on every end (rather than only
+   * at depth 0) keeps writes from being stranded when async batches interleave.
+   */
+  endDecorationBatch(): void {
+    if (this.decorationBatchDepth > 0) {
+      this.decorationBatchDepth--
+    }
+    this.flushDecorationBatch()
+  }
+
+  /**
+   * Lightweight raw block write used during decoration batches.
+   * Records touched sub-chunks (and edge neighbors) for a single deferred flush.
+   * Does NOT mark chunks player-modified (decorations regenerate deterministically).
+   */
+  private setBlockDecoration(x: bigint, y: bigint, z: bigint, blockId: BlockId, metadata?: number): boolean {
+    const world: IWorldCoordinate = { x, y, z }
+    const chunkCoord = worldToChunk(world)
+    const local = worldToLocal(world)
+
+    let column = this.chunkManager.getColumn(chunkCoord)
+    if (!column) {
+      column = this.chunkManager.loadColumn(chunkCoord)
+    }
+
+    const changed = column.setBlockId(local.x, local.y, local.z, blockId)
+    if (metadata !== undefined) {
+      column.setMetadata(local.x, local.y, local.z, metadata)
+    }
+
+    if (changed) {
+      const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
+      const subChunk = column.getSubChunk(subY)
+      if (subChunk) {
+        this.decorationTouchedSubChunks.add(subChunk)
+      }
+      // Edge writes need the horizontal neighbor's boundary mesh refreshed (face culling).
+      if (local.x === 0) this.recordDecorationNeighbor(chunkCoord.x - 1n, chunkCoord.z, subY)
+      else if (local.x === CHUNK_SIZE_X - 1) this.recordDecorationNeighbor(chunkCoord.x + 1n, chunkCoord.z, subY)
+      if (local.z === 0) this.recordDecorationNeighbor(chunkCoord.x, chunkCoord.z - 1n, subY)
+      else if (local.z === CHUNK_SIZE_Z - 1) this.recordDecorationNeighbor(chunkCoord.x, chunkCoord.z + 1n, subY)
+    }
+
+    return changed
+  }
+
+  /**
+   * Record a horizontal neighbor sub-chunk for a mesh-only refresh at batch end.
+   */
+  private recordDecorationNeighbor(chunkX: bigint, chunkZ: bigint, subY: number): void {
+    const column = this.chunkManager.getColumn({ x: chunkX, z: chunkZ })
+    if (!column) return
+    const subChunk = column.getSubChunk(subY)
+    if (subChunk) {
+      this.decorationNeighborSubChunks.add(subChunk)
+    }
+  }
+
+  /**
+   * Flush deferred decoration work: mesh + light each touched sub-chunk once,
+   * and mesh-only each edge neighbor that wasn't itself written to.
+   */
+  private flushDecorationBatch(): void {
+    if (this.decorationTouchedSubChunks.size === 0 && this.decorationNeighborSubChunks.size === 0) {
+      return
+    }
+
+    for (const subChunk of this.decorationTouchedSubChunks) {
+      // forceRequeue so the tree data meshes even if a pre-decoration mesh job is
+      // still in flight for this sub-chunk (applySubChunkData queued one earlier).
+      this.queueSubChunkForMeshing(subChunk, 'normal', true)
+      // Full-column relight rather than a single fixed-position queueBlockChange:
+      // the worker's 'update-block-lighting' path propagates only from the one
+      // supplied (x,z) column, so a representative coordinate never blocks skylight
+      // under the tree's actual trunk/leaf blocks. This matters most for canopy that
+      // overhangs into an already-generated neighbor column (that column gets no
+      // applySubChunkData relight of its own). queueColumn recomputes skylight
+      // top-down and dedupes per column, so repeat calls here collapse to one.
+      this.backgroundLightingManager.queueColumn({
+        x: subChunk.coordinate.x,
+        z: subChunk.coordinate.z,
+      })
+    }
+
+    for (const subChunk of this.decorationNeighborSubChunks) {
+      if (!this.decorationTouchedSubChunks.has(subChunk)) {
+        this.queueSubChunkForMeshing(subChunk)
+      }
+    }
+
+    this.decorationTouchedSubChunks.clear()
+    this.decorationNeighborSubChunks.clear()
   }
 
   /**

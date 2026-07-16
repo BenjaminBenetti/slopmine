@@ -94,6 +94,16 @@ export class EntityManager implements ITask {
 
   private readonly tempVector = new THREE.Vector3()
 
+  /**
+   * Per-entity light-query throttle. The world light query is only re-run when
+   * an entity crosses into a new block, or after LIGHT_REFRESH_MS to catch
+   * lighting changes around a stationary entity. Brightness output is already
+   * threshold-gated in Entity.updateLightLevel, so this is visually lossless
+   * and avoids a per-entity, per-tick block lookup.
+   */
+  private readonly lightCache: Map<EntityId, { bx: number; by: number; bz: number; time: number }> = new Map()
+  private static readonly LIGHT_REFRESH_MS = 500
+
   constructor(
     scene: THREE.Scene,
     physicsEngine: PhysicsEngine | null = null,
@@ -110,6 +120,8 @@ export class EntityManager implements ITask {
    */
   setPlayerBody(playerBody: IPhysicsBody): void {
     this.playerBody = playerBody
+    // Ensure the player body is always full-simulated and never slept.
+    this.physicsEngine?.setPlayerBody(playerBody)
   }
 
   /**
@@ -354,20 +366,49 @@ export class EntityManager implements ITask {
         }
       }
 
+      // Feed the same distance tier to the physics engine so a distant body is
+      // stepped at the matching rate (no recompute in physics). Done before the
+      // tier-gate skip below so the tier stays fresh every frame for every body.
+      if (this.physicsEngine) {
+        const physicsBody = entity.getPhysicsBody()
+        if (physicsBody) {
+          this.physicsEngine.setBodyTier(physicsBody, tier)
+        }
+      }
+
       // Skip if this tier isn't updating this frame
       if (!shouldUpdateTier[tier]) continue
 
       entity.update(tierDeltaTimes[tier])
       updatedCount++
 
-      // Update entity lighting based on world light level
+      // Update entity lighting based on world light level. Throttled per entity
+      // by block position + time to avoid a world lookup every tick.
       if (this.lightQueryFn && entity instanceof Entity) {
-        const lightLevel = this.lightQueryFn(
-          entity.position.x,
-          entity.position.y,
-          entity.position.z
-        )
-        entity.updateLightLevel(lightLevel)
+        const bx = Math.floor(entity.position.x)
+        const by = Math.floor(entity.position.y)
+        const bz = Math.floor(entity.position.z)
+        let cache = this.lightCache.get(entity.id)
+        if (
+          cache === undefined ||
+          bx !== cache.bx || by !== cache.by || bz !== cache.bz ||
+          startTime - cache.time >= EntityManager.LIGHT_REFRESH_MS
+        ) {
+          const lightLevel = this.lightQueryFn(
+            entity.position.x,
+            entity.position.y,
+            entity.position.z
+          )
+          entity.updateLightLevel(lightLevel)
+          if (cache === undefined) {
+            this.lightCache.set(entity.id, { bx, by, bz, time: startTime })
+          } else {
+            cache.bx = bx
+            cache.by = by
+            cache.bz = bz
+            cache.time = startTime
+          }
+        }
       }
 
       // Check if entity died
@@ -484,6 +525,7 @@ export class EntityManager implements ITask {
     }
 
     this.entities.delete(entityId)
+    this.lightCache.delete(entityId)
 
     // Remove from block entity index if applicable
     if (isBlockEntity(entity)) {

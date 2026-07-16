@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
 import { RawPorkItem } from '../../../items/food/raw_pork/RawPorkItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Import pig texture
 import pigTextureUrl from './assets/pig-texture.webp'
@@ -184,6 +185,13 @@ export class PigEntity extends PeacefulEntity {
     if (PigEntity.texture) {
       this.textureApplied = true
     }
+
+    // Freeze static nodes. Not merged: the texture is applied at runtime by
+    // color match, which a white vertex-color material would break. Legs and
+    // head animate.
+    optimizeEntityMesh(group, {
+      dynamic: [...this.legs, this.head],
+    })
 
     return group
   }

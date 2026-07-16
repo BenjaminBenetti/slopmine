@@ -236,20 +236,17 @@ export class BlockRaycaster {
 
     // DDA loop
     while (distance < maxDistance) {
-      // Check if current voxel contains a solid block
-      // Use cached BigInt to avoid allocations in hot loop
-      const bx = BlockRaycaster.getBigInt(x)
-      const by = BlockRaycaster.getBigInt(y)
-      const bz = BlockRaycaster.getBigInt(z)
-      const blockId = this.worldManager.getBlockId(bx, by, bz)
+      // Check if current voxel contains a solid block via the numeric fast path
+      // (no per-step BigInt/string-key allocation).
+      const blockId = this.worldManager.getBlockIdFast(x, y, z)
 
       if (blockId !== BlockIds.AIR) {
-        const block = this.worldManager.getBlock(bx, by, bz)
+        const block = this.worldManager.getBlockFast(x, y, z)
 
         // Target any non-air, non-liquid block (solids + torches, flowers, etc.)
         if (!block.properties.isLiquid) {
           // Get the block's interaction box (for custom hitbox shapes)
-          const metadata = this.worldManager.getBlockMetadata(bx, by, bz)
+          const metadata = this.worldManager.getBlockMetadataFast(x, y, z)
           const interactionBox = block.getInteractionBox?.(metadata) ?? null
 
           // Only process if block has an interaction box
@@ -271,10 +268,12 @@ export class BlockRaycaster {
 
             // If ray hits the interaction box and within range, return hit
             if (boxHit && boxHit.tEntry <= maxDistance) {
-              // Update pre-allocated hit result to avoid allocation
-              this.hitResult.worldX = bx
-              this.hitResult.worldY = by
-              this.hitResult.worldZ = bz
+              // Update pre-allocated hit result to avoid allocation. BigInt is
+              // only built here, on an actual hit (once per successful cast),
+              // not on every DDA step.
+              this.hitResult.worldX = BlockRaycaster.getBigInt(x)
+              this.hitResult.worldY = BlockRaycaster.getBigInt(y)
+              this.hitResult.worldZ = BlockRaycaster.getBigInt(z)
               this.hitResult.blockId = blockId
               this.hitResult.block = block
               this.hitResult.face = boxHit.face

@@ -503,13 +503,11 @@ const playerDamageHandler = new PlayerDamageHandler(
 // Set player damage callback on entity manager so aggressive entities can deal damage
 entityManager.setPlayerDamageCallback(playerDamageHandler.createCallback())
 
-// Set light query for entity dimming based on world light levels
-entityManager.setLightQuery((x, y, z) => world.getLightLevelAtWorld(x, y, z))
+// Set light query for entity dimming based on world light levels (numeric fast path)
+entityManager.setLightQuery((x, y, z) => world.getLightLevelFast(x, y, z))
 
 // Set block query functions for entities that need world access (e.g., EmberRoach for pillar detection)
-entityManager.setBlockQuery((x, y, z) =>
-  world.getBlockId(BigInt(Math.floor(x)), BigInt(Math.floor(y)), BigInt(Math.floor(z)))
-)
+entityManager.setBlockQuery((x, y, z) => world.getBlockIdFast(x, y, z))
 entityManager.setSolidQuery((x, y, z) => physicsWorld.isSolidBlock(x, y, z))
 
 // Connect camera controls to physics
@@ -779,6 +777,13 @@ const fpsUpdateParam = {
   tickCount: 0,
 }
 
+// Biome mini-map cache: the grid is a pure function of region + layer, so it is
+// only recomputed when the player crosses a region/layer boundary (not per frame).
+let miniMapGrid: string[][] = []
+let miniMapRegionX = Number.NaN
+let miniMapRegionZ = Number.NaN
+let miniMapLayer = -1
+
 // Create task scheduler with adaptive budgeting
 const scheduler = new TaskScheduler({
   budgetRatio: 0.25,        // Use 25% of frame time for updates
@@ -842,16 +847,26 @@ scheduler.registerTask(entityManager)
 // Register entity spawner
 scheduler.registerTask(entitySpawner)
 
-// Update magma slime player tracking (they have special contact damage)
+// Update magma slime player tracking (they have special contact damage).
+// The damage callback is stable for the session, so allocate it once instead of
+// per slime per tick. Both the player position and the callback are stored as
+// stable references on each slime, so this only needs to run occasionally to pick
+// up newly spawned slimes rather than every 60 UPS tick.
+const magmaSlimeDamageCallback = playerDamageHandler.createCallback()
+const MAGMA_SLIME_TRACK_INTERVAL = 0.25 // seconds (~4Hz)
+let magmaSlimeTrackTimer = MAGMA_SLIME_TRACK_INTERVAL
 scheduler.createTask({
   id: 'magma-slime-tracking',
   priority: TaskPriority.NORMAL,
-  update: () => {
+  update: (dt) => {
+    magmaSlimeTrackTimer += dt
+    if (magmaSlimeTrackTimer < MAGMA_SLIME_TRACK_INTERVAL) return
+    magmaSlimeTrackTimer = 0
     const magmaSlimes = entityManager.getEntitiesByType('magma_slime')
     for (const entity of magmaSlimes) {
       const slime = entity as MagmaSlimeEntity
       slime.updatePlayerPosition(playerBody.position)
-      slime.setPlayerDamageCallback(playerDamageHandler.createCallback())
+      slime.setPlayerDamageCallback(magmaSlimeDamageCallback)
     }
   },
 })
@@ -908,7 +923,7 @@ scheduler.createTask({
 
     // Update held item lighting based on surrounding block light level
     const camPos = renderer.camera.position
-    const lightLevel = world.getLightLevelAtWorld(camPos.x, camPos.y, camPos.z)
+    const lightLevel = world.getLightLevelFast(camPos.x, camPos.y, camPos.z)
     heldItemRenderer.setLightLevel(lightLevel)
 
     // Update divining stick cave detection glow
@@ -1030,8 +1045,10 @@ const gameLoop = new GameLoop({
   },
   render() {
     renderer.render()
-    // Capture renderer stats after main render but before held item (autoReset clears on next render call)
-    const rendererStats = renderer.getRendererStats()
+    const statsVisible = fpsCounter.visible
+    // Capture renderer stats after main render but before held item (autoReset clears on next render call).
+    // Only gather them when the overlay is visible — the computation is otherwise pure waste.
+    const rendererStats = statsVisible ? renderer.getRendererStats() : null
     // Render held item on top of world
     heldItemRenderer.render()
     // Render liquid overlay (underwater tint)
@@ -1047,32 +1064,48 @@ const gameLoop = new GameLoop({
     )
     // Measure total CPU time for update + render
     const cpuTime = performance.now() - frameCpuStart
-    const renderRes = renderer.getRenderResolution()
-    fpsCounter.setRenderResolution(renderRes.width, renderRes.height)
-    fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
-    fpsCounter.setBiomeMiniMap({
-      grid: calculateBiomeMiniMap(playerBody.position.x, playerBody.position.y, playerBody.position.z, worldGenerator.getConfig().seed),
-      yaw: cameraControls.getYaw(),
-    })
-    fpsCounter.setLightingStats(world.getBackgroundLightingStats())
-    fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
-    fpsCounter.setRendererStats(rendererStats)
-    fpsCounter.setLiquidPhysicsStats(world.getLiquidPhysicsStats())
-    fpsCounter.setEntityStats({
-      activeCount: entityManager.entityCount,
-      pendingRemovalCount: entityManager.pendingRemovalCount,
-    })
-    // Add scheduler stats for debug display (reuse pre-allocated object)
-    const schedulerMetrics = scheduler.getMetrics()
-    if (schedulerMetrics) {
-      schedulerStatsParam.tasksExecuted = schedulerMetrics.tasksExecuted
-      schedulerStatsParam.tasksSkipped = schedulerMetrics.tasksSkipped
-      schedulerStatsParam.budgetUsedMs = schedulerMetrics.frameTimeMs
-      schedulerStatsParam.currentBudgetMs = scheduler.getCurrentBudget()
-      schedulerStatsParam.avgFrameTimeMs = scheduler.getAverageFrameTime()
-      fpsCounter.setSchedulerStats(schedulerStatsParam)
+    // All the debug HUD stats gathering below is pure waste while the overlay is
+    // hidden (the default) — only feed the counter when it is actually visible.
+    if (statsVisible) {
+      const renderRes = renderer.getRenderResolution()
+      fpsCounter.setRenderResolution(renderRes.width, renderRes.height)
+      fpsCounter.setPlayerPosition(playerBody.position.x, playerBody.position.y, playerBody.position.z)
+      // Recompute the biome grid only when the player crosses a region/layer boundary;
+      // it is a pure function of (regionX, regionZ, layer). Yaw rotation is applied downstream.
+      const chunkX = Math.floor(playerBody.position.x / 32)
+      const chunkZ = Math.floor(playerBody.position.z / 32)
+      const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
+      const layer = playerBody.position.y < LAYER_BOUNDARY_Y ? 0 : 1
+      if (regionX !== miniMapRegionX || regionZ !== miniMapRegionZ || layer !== miniMapLayer) {
+        miniMapRegionX = regionX
+        miniMapRegionZ = regionZ
+        miniMapLayer = layer
+        miniMapGrid = calculateBiomeMiniMap(playerBody.position.x, playerBody.position.y, playerBody.position.z, worldGenerator.getConfig().seed)
+      }
+      fpsCounter.setBiomeMiniMap({ grid: miniMapGrid, yaw: cameraControls.getYaw() })
+      fpsCounter.setLightingStats(world.getBackgroundLightingStats())
+      fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
+      if (rendererStats) {
+        fpsCounter.setRendererStats(rendererStats)
+      }
+      fpsCounter.setLiquidPhysicsStats(world.getLiquidPhysicsStats())
+      fpsCounter.setEntityStats({
+        activeCount: entityManager.entityCount,
+        pendingRemovalCount: entityManager.pendingRemovalCount,
+      })
+      // Add scheduler stats for debug display (reuse pre-allocated object)
+      const schedulerMetrics = scheduler.getMetrics()
+      if (schedulerMetrics) {
+        schedulerStatsParam.tasksExecuted = schedulerMetrics.tasksExecuted
+        schedulerStatsParam.tasksSkipped = schedulerMetrics.tasksSkipped
+        schedulerStatsParam.budgetUsedMs = schedulerMetrics.frameTimeMs
+        schedulerStatsParam.currentBudgetMs = scheduler.getCurrentBudget()
+        schedulerStatsParam.avgFrameTimeMs = scheduler.getAverageFrameTime()
+        fpsCounter.setSchedulerStats(schedulerStatsParam)
+      }
     }
-    // Update FPS counter (reuse pre-allocated object)
+    // Update FPS counter (reuse pre-allocated object). update() self-throttles and
+    // skips all DOM work while hidden, but still needs frame timing fed each frame.
     fpsUpdateParam.deltaTime = lastFrameTime / 1000
     fpsUpdateParam.cpuTime = cpuTime
     fpsUpdateParam.tickCount = lastTickCount

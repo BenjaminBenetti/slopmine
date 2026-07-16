@@ -86,13 +86,17 @@ function localToIndex(x: number, y: number, z: number): number {
   return y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
 }
 
-// Neighbor data interfaces (same as ChunkMeshWorker)
+// Neighbor data interfaces (same as ChunkMeshWorker).
+// All neighbors are 32x32 boundary slabs (only the shared face is needed):
+//   posX/negX: fixed-x face, index = y * CHUNK_SIZE_Z + z
+//   posZ/negZ: fixed-z face, index = y * CHUNK_SIZE_X + x
+//   posY/negY: fixed-y face, index = z * CHUNK_SIZE_X + x
 interface SubChunkNeighborData {
   posX: Uint16Array | null
   negX: Uint16Array | null
   posZ: Uint16Array | null
   negZ: Uint16Array | null
-  posY: Uint16Array | null  // 32x32 boundary layer
+  posY: Uint16Array | null
   negY: Uint16Array | null
 }
 
@@ -191,22 +195,22 @@ function getBlockAt(
     return neighbors.posY[z * CHUNK_SIZE_X + x]
   }
 
-  // Horizontal neighbors
+  // Horizontal neighbors (boundary slabs; only one axis is out of range here)
   if (x < 0) {
     if (!neighbors.negX) return AIR
-    return neighbors.negX[localToIndex(CHUNK_SIZE_X - 1, y, z)]
+    return neighbors.negX[y * CHUNK_SIZE_Z + z]
   }
   if (x >= CHUNK_SIZE_X) {
     if (!neighbors.posX) return AIR
-    return neighbors.posX[localToIndex(0, y, z)]
+    return neighbors.posX[y * CHUNK_SIZE_Z + z]
   }
   if (z < 0) {
     if (!neighbors.negZ) return AIR
-    return neighbors.negZ[localToIndex(x, y, CHUNK_SIZE_Z - 1)]
+    return neighbors.negZ[y * CHUNK_SIZE_X + x]
   }
   if (z >= CHUNK_SIZE_Z) {
     if (!neighbors.posZ) return AIR
-    return neighbors.posZ[localToIndex(x, y, 0)]
+    return neighbors.posZ[y * CHUNK_SIZE_X + x]
   }
 
   return AIR
@@ -248,19 +252,19 @@ function getLightAt(
     return Math.max(sky, block)
   }
 
-  // Horizontal neighbors
+  // Horizontal neighbors (boundary slabs; only one axis is out of range here)
   if (x < 0) {
     if (!neighborLights.negX) return 15
-    data = neighborLights.negX[localToIndex(CHUNK_SIZE_X - 1, y, z)]
+    data = neighborLights.negX[y * CHUNK_SIZE_Z + z]
   } else if (x >= CHUNK_SIZE_X) {
     if (!neighborLights.posX) return 15
-    data = neighborLights.posX[localToIndex(0, y, z)]
+    data = neighborLights.posX[y * CHUNK_SIZE_Z + z]
   } else if (z < 0) {
     if (!neighborLights.negZ) return 15
-    data = neighborLights.negZ[localToIndex(x, y, CHUNK_SIZE_Z - 1)]
+    data = neighborLights.negZ[y * CHUNK_SIZE_X + x]
   } else if (z >= CHUNK_SIZE_Z) {
     if (!neighborLights.posZ) return 15
-    data = neighborLights.posZ[localToIndex(x, y, 0)]
+    data = neighborLights.posZ[y * CHUNK_SIZE_X + x]
   } else {
     return 15
   }

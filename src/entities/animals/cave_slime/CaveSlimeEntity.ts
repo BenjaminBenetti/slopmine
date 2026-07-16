@@ -3,6 +3,7 @@ import { AggressiveEntity } from '../../AggressiveEntity.ts'
 import type { IAggressiveEntityConfig } from '../../interfaces/IAggressiveEntityConfig.ts'
 import { AggressionMode } from '../../interfaces/IAggressiveEntityConfig.ts'
 import { SlimeBallItem } from '../../../items/materials/slime_ball/SlimeBallItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Cave slime colors - slimy green appearance
 const SLIME_GREEN = 0x4caf50
@@ -164,6 +165,12 @@ export class CaveSlimeEntity extends AggressiveEntity {
 
     // Render order for proper transparency
     group.renderOrder = 1
+
+    // Freeze static nodes (spots, eyes). The outer body and inner core animate
+    // via scale; all materials are translucent so nothing is merged.
+    optimizeEntityMesh(group, {
+      dynamic: [this.outerBody, this.innerCore],
+    })
 
     return group
   }

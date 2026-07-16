@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
 import { SlimeBallItem } from '../../../items/materials/slime_ball/SlimeBallItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Slug colors - green, slimy appearance
 const SLUG_GREEN = 0x4a7c4e // Dark mossy green body
@@ -193,6 +194,14 @@ export class SlugEntity extends PeacefulEntity {
 
     // Set render order for proper transparency
     group.renderOrder = 1
+
+    // Freeze static nodes. The body group (squish) and eye stalks (wobble)
+    // animate; the translucent body boxes are left unmerged.
+    optimizeEntityMesh(group, {
+      merge: true,
+      dynamic: [this.body, ...this.eyeStalks],
+      registerForLighting: (m) => this.registerMaterialForLighting(m),
+    })
 
     return group
   }

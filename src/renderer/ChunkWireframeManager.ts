@@ -17,6 +17,15 @@ export class ChunkWireframeManager {
   private readonly wireframes: Map<ChunkKey, THREE.LineSegments> = new Map()
   private readonly subChunkWireframes: Map<SubChunkKey, THREE.LineSegments> = new Map()
   private readonly biomeBoundaryWireframes: Map<ChunkKey, THREE.LineSegments[]> = new Map()
+
+  // Logical set of loaded sub-chunks, tracked independently of the THREE
+  // objects. Wireframe objects only exist while `visible` is true (built lazily
+  // on toggle-on, torn down on toggle-off), so mesh add/remove events do no
+  // scene work at all while debug wireframes are off (the default).
+  private readonly subChunkCoords: Map<SubChunkKey, ISubChunkCoordinate> = new Map()
+  // Per-column sub-chunk refcount, so biome-boundary lifecycle is a keyed O(1)
+  // lookup instead of an O(N) startsWith scan over every sub-chunk key.
+  private readonly columnSubChunkCounts: Map<ChunkKey, number> = new Map()
   private readonly visibleMaterial: THREE.LineBasicMaterial
   private readonly culledMaterial: THREE.LineBasicMaterial
   private readonly lightingMaterial: THREE.LineBasicMaterial
@@ -171,16 +180,43 @@ export class ChunkWireframeManager {
 
     wireframe.visible = this.visible
     wireframe.renderOrder = 999
+    // Static once positioned - skip the per-frame matrix recompose.
+    wireframe.matrixAutoUpdate = false
 
     this.scene.add(wireframe)
+    // matrixAutoUpdate is off, so updateMatrixWorld won't recompose the local
+    // matrix from position - do it explicitly once, or it stays at the origin.
+    wireframe.updateMatrix()
+    wireframe.updateMatrixWorld(true)
     this.wireframes.set(key, wireframe)
   }
 
   /**
-   * Add wireframe for a sub-chunk at the given coordinate.
+   * Record a sub-chunk in the logical set. The actual THREE.LineSegments is
+   * only created while debug wireframes are visible - when off (the default)
+   * this is just two Map writes and does no scene work.
    */
   addSubChunk(coordinate: ISubChunkCoordinate): void {
     const key = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
+    if (this.subChunkCoords.has(key)) return
+
+    this.subChunkCoords.set(key, { x: coordinate.x, z: coordinate.z, subY: coordinate.subY })
+
+    const columnKey = createChunkKey(coordinate.x, coordinate.z)
+    const prevCount = this.columnSubChunkCounts.get(columnKey) ?? 0
+    this.columnSubChunkCounts.set(columnKey, prevCount + 1)
+
+    if (this.visible) {
+      this.buildSubChunkWireframe(key, coordinate)
+      // First sub-chunk in the column brings up the biome boundary.
+      if (prevCount === 0) this.addBiomeBoundary(coordinate)
+    }
+  }
+
+  /**
+   * Create the THREE.LineSegments for a sub-chunk and add it to the scene.
+   */
+  private buildSubChunkWireframe(key: SubChunkKey, coordinate: ISubChunkCoordinate): void {
     if (this.subChunkWireframes.has(key)) return
 
     const wireframe = new THREE.LineSegments(this.subChunkGeometry, this.visibleMaterial)
@@ -191,15 +227,17 @@ export class ChunkWireframeManager {
     const worldY = coordinate.subY * SUB_CHUNK_HEIGHT + SUB_CHUNK_HEIGHT / 2
     wireframe.position.set(worldX, worldY, worldZ)
 
-    wireframe.visible = this.visible
+    wireframe.visible = true
     wireframe.renderOrder = 999
+    // Static once positioned - skip the per-frame matrix recompose.
+    wireframe.matrixAutoUpdate = false
 
     this.scene.add(wireframe)
+    // matrixAutoUpdate is off, so updateMatrixWorld won't recompose the local
+    // matrix from position - do it explicitly once, or it stays at the origin.
+    wireframe.updateMatrix()
+    wireframe.updateMatrixWorld(true)
     this.subChunkWireframes.set(key, wireframe)
-
-    // Add biome boundary wireframes if this chunk is on a boundary
-    // (addBiomeBoundary is idempotent - it checks if boundaries already exist)
-    this.addBiomeBoundary(coordinate)
   }
 
   /**
@@ -228,7 +266,12 @@ export class ChunkWireframeManager {
       wall.position.set(worldX, CHUNK_HEIGHT / 2, worldZ + CHUNK_SIZE_Z / 2)
       wall.visible = this.visible
       wall.renderOrder = 999
+      wall.matrixAutoUpdate = false
       this.scene.add(wall)
+      // matrixAutoUpdate is off, so compose the local matrix (position + rotation)
+      // explicitly before building the world matrix, or the wall stays at the origin.
+      wall.updateMatrix()
+      wall.updateMatrixWorld(true)
       boundaries.push(wall)
     }
 
@@ -239,7 +282,12 @@ export class ChunkWireframeManager {
       wall.position.set(worldX + CHUNK_SIZE_X / 2, CHUNK_HEIGHT / 2, worldZ)
       wall.visible = this.visible
       wall.renderOrder = 999
+      wall.matrixAutoUpdate = false
       this.scene.add(wall)
+      // matrixAutoUpdate is off, so compose the local matrix (position + rotation)
+      // explicitly before building the world matrix, or the wall stays at the origin.
+      wall.updateMatrix()
+      wall.updateMatrixWorld(true)
       boundaries.push(wall)
     }
 
@@ -261,10 +309,22 @@ export class ChunkWireframeManager {
   }
 
   /**
-   * Remove wireframe for a sub-chunk.
+   * Remove a sub-chunk from the logical set (and its THREE object if one exists).
    */
   removeSubChunk(coordinate: ISubChunkCoordinate): void {
     const key = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
+    if (!this.subChunkCoords.has(key)) return
+
+    this.subChunkCoords.delete(key)
+
+    const columnKey = createChunkKey(coordinate.x, coordinate.z)
+    const remaining = (this.columnSubChunkCounts.get(columnKey) ?? 1) - 1
+    if (remaining <= 0) {
+      this.columnSubChunkCounts.delete(columnKey)
+    } else {
+      this.columnSubChunkCounts.set(columnKey, remaining)
+    }
+
     const wireframe = this.subChunkWireframes.get(key)
     if (wireframe) {
       this.scene.remove(wireframe)
@@ -272,22 +332,9 @@ export class ChunkWireframeManager {
     }
 
     // Remove biome boundary wireframes only when no sub-chunks remain in this column
-    if (!this.hasAnySubChunkInColumn(coordinate.x, coordinate.z)) {
+    if (remaining <= 0) {
       this.removeBiomeBoundary(coordinate)
     }
-  }
-
-  /**
-   * Check if any sub-chunks exist for a given column.
-   */
-  private hasAnySubChunkInColumn(chunkX: bigint, chunkZ: bigint): boolean {
-    const prefix = `${chunkX},${chunkZ},`
-    for (const key of this.subChunkWireframes.keys()) {
-      if (key.startsWith(prefix)) {
-        return true
-      }
-    }
-    return false
   }
 
   /**
@@ -306,19 +353,45 @@ export class ChunkWireframeManager {
 
   /**
    * Set visibility of all wireframes.
+   *
+   * Sub-chunk and biome-boundary wireframe objects are created lazily here on
+   * toggle-on (from the tracked logical set) and torn down on toggle-off, so
+   * they impose zero scene-graph overhead while debug wireframes are off.
    */
   setVisible(visible: boolean): void {
+    if (visible === this.visible) return
     this.visible = visible
+
+    // Legacy full-chunk wireframes are created eagerly - just toggle them.
     for (const wireframe of this.wireframes.values()) {
       wireframe.visible = visible
     }
-    for (const wireframe of this.subChunkWireframes.values()) {
-      wireframe.visible = visible
-    }
-    for (const boundaries of this.biomeBoundaryWireframes.values()) {
-      for (const wall of boundaries) {
-        wall.visible = visible
+
+    if (visible) {
+      // Build sub-chunk wireframes from the current logical set.
+      for (const [key, coord] of this.subChunkCoords) {
+        this.buildSubChunkWireframe(key, coord)
       }
+      // Build one biome boundary per populated column.
+      for (const columnKey of this.columnSubChunkCounts.keys()) {
+        const commaIdx = columnKey.indexOf(',')
+        const chunkX = BigInt(columnKey.substring(0, commaIdx))
+        const chunkZ = BigInt(columnKey.substring(commaIdx + 1))
+        this.addBiomeBoundary({ x: chunkX, z: chunkZ })
+      }
+    } else {
+      // Tear down all sub-chunk and biome-boundary objects, keeping the
+      // logical set intact so they can be rebuilt on the next toggle-on.
+      for (const wireframe of this.subChunkWireframes.values()) {
+        this.scene.remove(wireframe)
+      }
+      this.subChunkWireframes.clear()
+      for (const boundaries of this.biomeBoundaryWireframes.values()) {
+        for (const wall of boundaries) {
+          this.scene.remove(wall)
+        }
+      }
+      this.biomeBoundaryWireframes.clear()
     }
   }
 
@@ -535,6 +608,8 @@ export class ChunkWireframeManager {
     this.wireframes.clear()
     this.subChunkWireframes.clear()
     this.biomeBoundaryWireframes.clear()
+    this.subChunkCoords.clear()
+    this.columnSubChunkCounts.clear()
     this.geometry.dispose()
     this.subChunkGeometry.dispose()
     this.biomeBoundaryXGeometry.dispose()

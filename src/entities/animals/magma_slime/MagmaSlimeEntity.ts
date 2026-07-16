@@ -3,6 +3,7 @@ import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
 import { MagmaBlockItem } from '../../../items/blocks/magma/MagmaBlockItem.ts'
 import { CoalItem } from '../../../items/ores/coal/CoalItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Magma slime colors - fiery, glowing appearance
 const MAGMA_ORANGE = 0xff6600
@@ -187,6 +188,12 @@ export class MagmaSlimeEntity extends PeacefulEntity {
 
     // Render order for proper transparency
     group.renderOrder = 1
+
+    // Freeze static nodes (crust spots, eyes). The outer body and inner core
+    // animate via scale; all materials are translucent/emissive so none merge.
+    optimizeEntityMesh(group, {
+      dynamic: [this.outerBody, this.innerCore],
+    })
 
     return group
   }

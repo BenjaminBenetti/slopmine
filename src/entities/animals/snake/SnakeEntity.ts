@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
 import { RawSnakeItem } from '../../../items/food/raw_snake/RawSnakeItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Snake colors (desert rattlesnake inspired)
 const SNAKE_BASE = 0xc4a35a // Sandy tan
@@ -159,6 +160,14 @@ export class SnakeEntity extends PeacefulEntity {
     tail.castShadow = true
     group.add(tail)
     this.segments.push(tail)
+
+    // Freeze static nodes and merge the head's rigid boxes. Every body segment,
+    // the head and the tongue animate.
+    optimizeEntityMesh(group, {
+      merge: true,
+      dynamic: [...this.segments, this.head, this.tongue],
+      registerForLighting: (m) => this.registerMaterialForLighting(m),
+    })
 
     return group
   }

@@ -36,6 +36,13 @@ export class BiomeRegistry {
     [0, 0],
     [1, 0],
   ])
+  // Cached per-layer biome arrays, rebuilt on register(). Avoids allocating two
+  // arrays + a closure on every getBiomesForLayer() call, which sits on hot
+  // main-thread paths (skybox blend, biome minimap).
+  private readonly layerBiomes: Map<0 | 1, BiomeRegistration[]> = new Map([
+    [0, []],
+    [1, []],
+  ])
 
   constructor() {
     this.registerDefaultBiomes()
@@ -126,10 +133,17 @@ export class BiomeRegistry {
     this.layerFrequencies.set(0, 0)
     this.layerFrequencies.set(1, 0)
 
+    // Rebuild the cached per-layer arrays in place.
+    const layer0 = this.layerBiomes.get(0)!
+    const layer1 = this.layerBiomes.get(1)!
+    layer0.length = 0
+    layer1.length = 0
+
     for (const biome of this.biomes.values()) {
       this.totalFrequency += biome.frequency
       const currentLayerFreq = this.layerFrequencies.get(biome.layer) ?? 0
       this.layerFrequencies.set(biome.layer, currentLayerFreq + biome.frequency)
+      ;(biome.layer === 0 ? layer0 : layer1).push(biome)
     }
   }
 
@@ -142,10 +156,11 @@ export class BiomeRegistry {
 
   /**
    * Get all biomes for a specific layer.
+   * Returns a cached array (rebuilt on register()); callers must not mutate it.
    * @param layer - 0 for underground, 1 for surface
    */
   getBiomesForLayer(layer: 0 | 1): BiomeRegistration[] {
-    return Array.from(this.biomes.values()).filter((b) => b.layer === layer)
+    return this.layerBiomes.get(layer) ?? []
   }
 
   /**

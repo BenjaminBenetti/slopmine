@@ -39,6 +39,18 @@ export class PillarDetector {
   private cachedPoints: PillarClingPoint[] = []
   private cacheCenter = new THREE.Vector3()
   private cacheValidDistance = 10 // Rescan if entity moves >10 blocks from cache center
+  // Whether any scan has populated the cache. Tracked separately from
+  // cachedPoints.length so that an *empty* scan result still validates the
+  // cache (a roach over open terrain must not rescan the ~9.5k-position volume
+  // every tick).
+  private cacheInitialized = false
+  private lastScanEmpty = false
+  private lastScanTimeMs = 0
+  // Even once the move radius is exceeded, repeated empty scans (open terrain)
+  // are throttled by this cooldown so a searching roach cannot peg the main
+  // thread. A fresh positive discovery is delayed by at most this long after a
+  // pillar enters range.
+  private emptyRescanCooldownMs = 1500
 
   constructor(
     physicsWorld: IPhysicsWorld,
@@ -75,16 +87,30 @@ export class PillarDetector {
     entityPos: THREE.Vector3,
     maxDistance: number = 30
   ): PillarClingPoint[] {
-    // Check if cache is still valid
+    // Check if cache is still valid. Both positive and empty results honor the
+    // move radius, so a stationary or slowly-drifting roach reuses the last scan
+    // instead of rescanning every tick.
     const distFromCache = entityPos.distanceTo(this.cacheCenter)
-    if (distFromCache < this.cacheValidDistance && this.cachedPoints.length > 0) {
-      // Filter and sort cached points by distance
-      return this.filterAndSortPoints(entityPos, this.cachedPoints, maxDistance)
+    if (this.cacheInitialized) {
+      if (distFromCache < this.cacheValidDistance) {
+        return this.filterAndSortPoints(entityPos, this.cachedPoints, maxDistance)
+      }
+      // Past the radius but the last scan found nothing: throttle the rescan so
+      // open-terrain searching is bounded regardless of how far the roach moved.
+      if (
+        this.lastScanEmpty &&
+        performance.now() - this.lastScanTimeMs < this.emptyRescanCooldownMs
+      ) {
+        return this.filterAndSortPoints(entityPos, this.cachedPoints, maxDistance)
+      }
     }
 
     // Rescan for cling points
     this.cachedPoints = this.scanForClingPoints(entityPos, maxDistance)
     this.cacheCenter.copy(entityPos)
+    this.cacheInitialized = true
+    this.lastScanEmpty = this.cachedPoints.length === 0
+    this.lastScanTimeMs = performance.now()
 
     return this.filterAndSortPoints(entityPos, this.cachedPoints, maxDistance)
   }
@@ -245,5 +271,7 @@ export class PillarDetector {
    */
   invalidateCache(): void {
     this.cachedPoints = []
+    this.cacheInitialized = false
+    this.lastScanEmpty = false
   }
 }

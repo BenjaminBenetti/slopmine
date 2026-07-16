@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { type BlockId, isMultiMeshBlock } from '../world/interfaces/IBlock.ts'
 import type { IChunkCoordinate, SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { createSubChunkKey } from '../world/interfaces/ICoordinates.ts'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
 import type { MeshGroup, GreedyMeshResponse } from '../workers/GreedyMeshWorker.ts'
 import type { IChunkMesh } from './ChunkMesh.ts'
@@ -88,6 +89,40 @@ export class GreedyChunkMesh implements IChunkMesh {
     this.subY = subY
     this.subChunkKey = createSubChunkKey(chunkCoordinate.x, chunkCoordinate.z, subY)
 
+    // Chunk meshes are fully static once built (geometry is baked in world
+    // coordinates, transforms stay identity forever). Opt out of the per-frame
+    // matrix recompose/multiply that three.js runs for every scene object, and
+    // skip the subtree during scene.updateMatrixWorld entirely. The one required
+    // world-matrix computation is forced once in addToScene().
+    this.group.matrixAutoUpdate = false
+    this.group.matrixWorldAutoUpdate = false
+  }
+
+  /**
+   * Set an explicit bounding box/sphere from the known 32-cube sub-chunk bounds
+   * (vertices are baked in world coordinates), so three.js never lazily scans
+   * every vertex via computeBoundingSphere on first render.
+   */
+  private setStaticChunkBounds(geometry: THREE.BufferGeometry): void {
+    const minX = Number(this.chunkCoordinate.x) * CHUNK_SIZE_X
+    const minY = this.subY * SUB_CHUNK_HEIGHT
+    const minZ = Number(this.chunkCoordinate.z) * CHUNK_SIZE_Z
+    const maxX = minX + CHUNK_SIZE_X
+    const maxY = minY + SUB_CHUNK_HEIGHT
+    const maxZ = minZ + CHUNK_SIZE_Z
+
+    geometry.boundingBox = new THREE.Box3(
+      new THREE.Vector3(minX, minY, minZ),
+      new THREE.Vector3(maxX, maxY, maxZ)
+    )
+    // Sphere enclosing the sub-chunk cube: center at midpoint, radius = half diagonal.
+    const cx = minX + CHUNK_SIZE_X / 2
+    const cy = minY + SUB_CHUNK_HEIGHT / 2
+    const cz = minZ + CHUNK_SIZE_Z / 2
+    const radius = Math.sqrt(
+      (CHUNK_SIZE_X / 2) ** 2 + (SUB_CHUNK_HEIGHT / 2) ** 2 + (CHUNK_SIZE_Z / 2) ** 2
+    )
+    geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, cy, cz), radius)
   }
 
   /**
@@ -121,40 +156,18 @@ export class GreedyChunkMesh implements IChunkMesh {
 
     const geometry = new THREE.BufferGeometry()
 
-    // Vertex data layout: x,y,z,u,v,nx,ny,nz,r,g,b (11 floats per vertex)
-    const vertexCount = meshGroup.vertices.length / 11
-    const positions = new Float32Array(vertexCount * 3)
-    const uvs = new Float32Array(vertexCount * 2)
-    const normals = new Float32Array(vertexCount * 3)
-    const colors = new Float32Array(vertexCount * 3)
-
-    // Unpack interleaved vertex data
-    for (let i = 0; i < vertexCount; i++) {
-      const srcIdx = i * 11
-      const posIdx = i * 3
-      const uvIdx = i * 2
-
-      positions[posIdx] = meshGroup.vertices[srcIdx]
-      positions[posIdx + 1] = meshGroup.vertices[srcIdx + 1]
-      positions[posIdx + 2] = meshGroup.vertices[srcIdx + 2]
-
-      uvs[uvIdx] = meshGroup.vertices[srcIdx + 3]
-      uvs[uvIdx + 1] = meshGroup.vertices[srcIdx + 4]
-
-      normals[posIdx] = meshGroup.vertices[srcIdx + 5]
-      normals[posIdx + 1] = meshGroup.vertices[srcIdx + 6]
-      normals[posIdx + 2] = meshGroup.vertices[srcIdx + 7]
-
-      colors[posIdx] = meshGroup.vertices[srcIdx + 8]
-      colors[posIdx + 1] = meshGroup.vertices[srcIdx + 9]
-      colors[posIdx + 2] = meshGroup.vertices[srcIdx + 10]
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
-    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    // Vertex data layout: x,y,z,u,v,nx,ny,nz,r,g,b (11 floats per vertex).
+    // Wrap the transferred buffer directly as an interleaved buffer instead of
+    // de-interleaving into 4 fresh Float32Arrays (zero copy, zero loop).
+    const interleaved = new THREE.InterleavedBuffer(meshGroup.vertices, 11)
+    geometry.setAttribute('position', new THREE.InterleavedBufferAttribute(interleaved, 3, 0))
+    geometry.setAttribute('uv', new THREE.InterleavedBufferAttribute(interleaved, 2, 3))
+    geometry.setAttribute('normal', new THREE.InterleavedBufferAttribute(interleaved, 3, 5))
+    geometry.setAttribute('color', new THREE.InterleavedBufferAttribute(interleaved, 3, 8))
     geometry.setIndex(new THREE.BufferAttribute(meshGroup.indices, 1))
+
+    // Set bounds from the known sub-chunk cube instead of a lazy per-vertex scan.
+    this.setStaticChunkBounds(geometry)
 
     // Get atlas material based on transparency (normals are per-vertex)
     const meshMaterial = getAtlasMaterial(isTransparent)
@@ -163,6 +176,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     mesh.frustumCulled = true
     mesh.castShadow = true
     mesh.receiveShadow = true
+    mesh.matrixAutoUpdate = false
 
     // Transparent meshes render after opaque
     if (isTransparent) {
@@ -380,11 +394,15 @@ export class GreedyChunkMesh implements IChunkMesh {
     const indexArray = vertOffset > 65535 ? new Uint32Array(indices) : new Uint16Array(indices)
     geometry.setIndex(new THREE.BufferAttribute(indexArray, 1))
 
+    // Set bounds from the known sub-chunk cube instead of a lazy per-vertex scan.
+    this.setStaticChunkBounds(geometry)
+
     // Create mesh
     const mesh = new THREE.Mesh(geometry, material)
     mesh.frustumCulled = true
     mesh.castShadow = true
     mesh.receiveShadow = true
+    mesh.matrixAutoUpdate = false
 
     if (mat && mat.transparent) {
       mesh.renderOrder = 1
@@ -421,6 +439,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     batchedMesh.perObjectFrustumCulled = false  // Disable per-instance culling too
     batchedMesh.castShadow = true
     batchedMesh.receiveShadow = true
+    batchedMesh.matrixAutoUpdate = false  // Static: instance transforms are baked
     batchedMesh.sortObjects = true  // Enable per-instance depth sorting
     batchedMesh.renderOrder = 2     // Render after alpha-tested transparency
 
@@ -468,6 +487,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     instancedMesh.frustumCulled = true
     instancedMesh.castShadow = true
     instancedMesh.receiveShadow = true
+    instancedMesh.matrixAutoUpdate = false  // Static: per-instance transforms are baked
 
     // Set renderOrder for alpha-tested transparent materials
     if (mat && mat.transparent) {
@@ -533,6 +553,9 @@ export class GreedyChunkMesh implements IChunkMesh {
    */
   addToScene(scene: THREE.Scene): void {
     scene.add(this.group)
+    // The group opts out of the scene's per-frame updateMatrixWorld walk, so
+    // force the one-time world-matrix computation now that it has a parent.
+    this.group.updateMatrixWorld(true)
   }
 
   /**

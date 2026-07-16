@@ -3,6 +3,7 @@ import { Entity } from '../../Entity.ts'
 import type { IEntityConfig } from '../../interfaces/IEntityConfig.ts'
 import type { IItem } from '../../../items/Item.ts'
 import { PillarDetector, type PillarClingPoint } from './PillarDetector.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 import { EmberRoachWingItem } from '../../../items/materials/ember_roach_wing/EmberRoachWingItem.ts'
 import { CorruptedEssenceItem } from '../../../items/materials/corrupted_essence/CorruptedEssenceItem.ts'
 
@@ -27,6 +28,11 @@ const ATTACK_KNOCKBACK_VERTICAL = 4.0
 
 // Flight speeds (blocks/sec)
 const FLIGHT_SPEED = 8.0
+
+// Minimum seconds between pillar-search attempts while flying with no target.
+// Bounds the cost of the (expensive) pillar scan to ~1/sec per roach; a pillar
+// entering range is discovered within this interval at worst.
+const PILLAR_SEARCH_INTERVAL = 1.0
 
 // Timing constants
 const MIN_CLING_DURATION = 3.0 // seconds
@@ -129,6 +135,8 @@ export class EmberRoachEntity extends Entity {
   private pillarDetector: PillarDetector | null = null
   private currentClingPoint: PillarClingPoint | null = null
   private targetClingPoint: PillarClingPoint | null = null
+  // Seconds until the next pillar-search attempt is allowed (throttle).
+  private pillarSearchCooldown = 0
 
   // World query for ground collision during knockback
   private solidQueryFn: ((x: number, y: number, z: number) => boolean) | null = null
@@ -380,6 +388,15 @@ export class EmberRoachEntity extends Entity {
 
     group.add(bodyGroup)
 
+    // Collapse the rigid carapace/leg boxes into merged meshes and freeze the
+    // non-animated nodes. Wings and each leg group animate; eyes are emissive
+    // (auto-excluded from merging) and stay put.
+    optimizeEntityMesh(group, {
+      merge: true,
+      dynamic: [this.leftWing, this.rightWing, ...this.legs],
+      registerForLighting: (m) => this.registerMaterialForLighting(m),
+    })
+
     return group
   }
 
@@ -543,8 +560,13 @@ export class EmberRoachEntity extends Entity {
     this.stateTimer += deltaTime
 
     if (!this.targetClingPoint) {
-      // Try to find a pillar
-      this.findNewTargetPillar()
+      // Try to find a pillar, throttled to ~1 attempt/sec. The scan is expensive
+      // (thousands of block queries) and, with no pillar in range, was previously
+      // run every tick per roach.
+      this.pillarSearchCooldown -= deltaTime
+      if (this.pillarSearchCooldown <= 0) {
+        this.findNewTargetPillar()
+      }
       if (!this.targetClingPoint) {
         // No pillars found - fly upward to the air gap (Y=64-100) and search again
         // If already high enough, fly in a random direction
@@ -631,17 +653,36 @@ export class EmberRoachEntity extends Entity {
   }
 
   private findNewTargetPillar(): void {
+    // Reset the throttle on every attempt (successful or not) so callers never
+    // trigger back-to-back scans.
+    this.pillarSearchCooldown = PILLAR_SEARCH_INTERVAL
+
     if (!this.pillarDetector) return
 
-    // Prefer random pillar for variety
-    const point = this.pillarDetector.findRandomClingPoint(this.position, 5, 25)
-    if (point) {
-      this.targetClingPoint = point
-    } else {
-      // Fallback to nearest
-      const nearest = this.pillarDetector.findNearestClingPoint(this.position, 3, 30)
-      if (nearest) {
-        this.targetClingPoint = nearest
+    // Single scan reused for both the random-variety pick and the nearest
+    // fallback, instead of two full scans over the same volume.
+    const points = this.pillarDetector.findNearbyPillarClingPoints(this.position, 30)
+    if (points.length === 0) return
+
+    // Prefer a random nearby pillar (5-25 blocks) for behavioral variety.
+    // points is already sorted nearest-first, so this matches the previous
+    // findRandomClingPoint weighting toward the closest few.
+    const candidates: PillarClingPoint[] = []
+    for (const p of points) {
+      const dist = p.position.distanceTo(this.position)
+      if (dist >= 5 && dist <= 25) candidates.push(p)
+    }
+    if (candidates.length > 0) {
+      const idx = Math.floor(Math.random() * Math.min(candidates.length, 5))
+      this.targetClingPoint = candidates[idx]
+      return
+    }
+
+    // Fallback: nearest point at least 3 blocks away.
+    for (const p of points) {
+      if (p.position.distanceTo(this.position) >= 3) {
+        this.targetClingPoint = p
+        return
       }
     }
   }

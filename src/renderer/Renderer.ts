@@ -27,6 +27,13 @@ export class Renderer {
   private readonly tempSize = new THREE.Vector2()
   private readonly renderResolution = { width: 0, height: 0 }
 
+  // Cached scene-object count for the debug overlay. The full scene.traverse()
+  // is expensive at 12k-20k objects and its result only changes on chunk
+  // load/unload, so recompute it at most once per second rather than per frame.
+  private cachedSceneObjects = 0
+  private lastSceneObjectsTime = 0
+  private static readonly SCENE_OBJECT_RECOUNT_INTERVAL_MS = 1000
+
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setSize(window.innerWidth, window.innerHeight)
@@ -139,15 +146,22 @@ export class Renderer {
    */
   getRendererStats(): { drawCalls: number; triangles: number; geometries: number; textures: number; sceneObjects: number } {
     const info = this.renderer.info
-    // Count total objects in scene graph (for debugging updateMatrixWorld performance)
-    let sceneObjects = 0
-    this.scene.traverse(() => { sceneObjects++ })
+    // Count total objects in scene graph (for debugging updateMatrixWorld
+    // performance). Throttled to ~1 Hz — the count only changes on chunk
+    // load/unload and feeds a debug overlay that repaints every 500ms.
+    const now = performance.now()
+    if (now - this.lastSceneObjectsTime >= Renderer.SCENE_OBJECT_RECOUNT_INTERVAL_MS) {
+      let sceneObjects = 0
+      this.scene.traverse(() => { sceneObjects++ })
+      this.cachedSceneObjects = sceneObjects
+      this.lastSceneObjectsTime = now
+    }
     return {
       drawCalls: info.render.calls,
       triangles: info.render.triangles,
       geometries: info.memory.geometries,
       textures: info.memory.textures,
-      sceneObjects,
+      sceneObjects: this.cachedSceneObjects,
     }
   }
 

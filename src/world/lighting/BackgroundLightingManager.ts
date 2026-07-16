@@ -59,6 +59,9 @@ export class BackgroundLightingManager {
 
   // High-priority queue for block changes when workers are busy
   private readonly blockChangeQueue: BlockChangeLightingRequest[] = []
+  // Column keys with a request already sitting in blockChangeQueue, so repeat block
+  // changes to the same column coalesce instead of re-serializing the whole column.
+  private readonly blockChangeQueueKeys: Set<ChunkKey> = new Set()
 
   // Pending force remesh sub-chunks (for when block change requests are skipped due to pending column)
   private readonly pendingForceRemesh: Map<ChunkKey, Set<number>> = new Map()
@@ -74,6 +77,12 @@ export class BackgroundLightingManager {
   // Cooldown for edge propagation to prevent cascading re-queueing
   private readonly recentlyPropagated: Map<ChunkKey, number> = new Map()
   private readonly PROPAGATION_COOLDOWN_MS = 500
+
+  // Neighbors whose edge-propagation enqueue was skipped by the cooldown, mapped to the
+  // earliest time they may be retried. Without this, a neighbor lit just before this column
+  // (e.g. two columns generated <500ms apart) would silently never receive its border light,
+  // since nothing re-enqueues it once the periodic re-queue safety net is gone.
+  private readonly deferredEdgePropagation: Map<ChunkKey, number> = new Map()
 
   // Player position for priority processing (in chunk coordinates)
   private playerChunkX = 0
@@ -238,6 +247,20 @@ export class BackgroundLightingManager {
       return
     }
 
+    // A serialized request for this column is already waiting for a free worker. Don't
+    // re-serialize the whole column (~1.5MB) — just record the sub-chunk to force-remesh
+    // when that queued request completes, mirroring the in-flight case above. This stops
+    // block-placement bursts (e.g. tree decoration) from copying the column per block.
+    if (this.blockChangeQueueKeys.has(key)) {
+      let pending = this.pendingForceRemesh.get(key)
+      if (!pending) {
+        pending = new Set()
+        this.pendingForceRemesh.set(key, pending)
+      }
+      pending.add(subY)
+      return
+    }
+
     const subChunks = this.serializeSubChunks(column)
     if (subChunks.length === 0) return
 
@@ -259,6 +282,7 @@ export class BackgroundLightingManager {
     if (workerIndex === -1) {
       // All workers busy - queue for later processing
       this.blockChangeQueue.push(request)
+      this.blockChangeQueueKeys.add(key)
       return
     }
 
@@ -285,6 +309,7 @@ export class BackgroundLightingManager {
 
       const request = this.blockChangeQueue.shift()!
       const key = createChunkKey(BigInt(request.chunkX), BigInt(request.chunkZ))
+      this.blockChangeQueueKeys.delete(key)
 
       // Skip if column is already being processed
       if (this.pendingColumns.has(key)) continue
@@ -351,6 +376,21 @@ export class BackgroundLightingManager {
 
     // Clean up pending force remesh entries
     this.pendingForceRemesh.delete(key)
+
+    // Drop any deferred edge-propagation retry for this column
+    this.deferredEdgePropagation.delete(key)
+
+    // Drop any queued block-change request for this column
+    if (this.blockChangeQueueKeys.delete(key)) {
+      const cx = Number(coordinate.x)
+      const cz = Number(coordinate.z)
+      for (let i = this.blockChangeQueue.length - 1; i >= 0; i--) {
+        const req = this.blockChangeQueue[i]
+        if (req.chunkX === cx && req.chunkZ === cz) {
+          this.blockChangeQueue.splice(i, 1)
+        }
+      }
+    }
   }
 
   /**
@@ -389,6 +429,9 @@ export class BackgroundLightingManager {
       const key = this.pendingAddQueue.shift()!
       this.columnQueue.push(key)
     }
+
+    // Re-arm any edge-propagation requests whose cooldown has now expired before processing.
+    this.flushDeferredEdgePropagation()
 
     // Process edge propagation (spreads light across chunk borders)
     this.processEdgePropagation()
@@ -563,14 +606,15 @@ export class BackgroundLightingManager {
       return
     }
 
-    // Mark as processed
+    // Mark as processed (drives the reprocess cooldown while a column is briefly
+    // re-queued as its sub-chunks stream in during generation).
     this.processedColumns.set(key, Date.now())
 
-    // Re-add to queue for future processing
-    if (!this.columnQueueSet.has(key)) {
-      this.columnQueue.push(key)
-      this.columnQueueSet.add(key)
-    }
+    // NOTE: columns are deliberately NOT re-queued here. Re-lighting is event-driven —
+    // a column is (re)lit only when it is generated/loaded (queueColumn), when a block
+    // changes in it (queueBlockChange), or when a neighbor's border light actually changes
+    // (the edge-propagation queue below). Unconditional re-queueing previously kept every
+    // nearby column relighting every ~1-2s forever, so an idle world never quiesced.
 
     // First pass: Apply ALL light data before queueing any meshes
     // (meshes need neighbor light data, so all light must be updated first)
@@ -588,9 +632,13 @@ export class BackgroundLightingManager {
       changedSubChunks.push(subChunk)
     }
 
-    // Immediately propagate light FROM neighbors INTO this column
-    // This restores edge light that was cleared by the worker before remeshing
-    this.propagateFromNeighborsImmediately(column.coordinate)
+    // Immediately propagate light FROM neighbors INTO this column, restoring edge light
+    // that the column recompute cleared before we remesh. Skip entirely when nothing
+    // changed: a no-op result already has correct borders and needs no propagation work.
+    const hadLightChange = changedSubChunks.length > 0
+    if (hadLightChange) {
+      this.propagateFromNeighborsImmediately(column.coordinate)
+    }
 
     // Second pass: Queue all changed sub-chunks for remeshing
     // (now all neighbor light data is correct)
@@ -621,13 +669,29 @@ export class BackgroundLightingManager {
       forceRemeshSubYs.add(result.forceRemeshSubY)
     }
 
-    // From pending map (block changes that were skipped due to pending column)
+    // From pending map (block changes that were skipped due to pending column).
+    // These were coalesced into a remesh-only path while this column's lighting job
+    // was in flight (or queued), so their lighting was NEVER computed - the incremental
+    // update-block-lighting only propagated from the one block this job carried.
     const pendingForce = this.pendingForceRemesh.get(key)
+    const hadCoalescedChanges = pendingForce !== undefined && pendingForce.size > 0
     if (pendingForce) {
       for (const subY of pendingForce) {
         forceRemeshSubYs.add(subY)
       }
       this.pendingForceRemesh.delete(key)
+    }
+
+    // Coalesced block changes force-remeshed above but were never actually lit. Re-queue
+    // this column for a full recalculate-column (source rescan) so newly-placed light
+    // sources / blockers propagate. Clear the reprocess cooldown just set above so it runs
+    // promptly. This terminates: the follow-up job finds pendingForceRemesh empty.
+    if (hadCoalescedChanges) {
+      this.processedColumns.delete(key)
+      if (!this.columnQueueSet.has(key)) {
+        this.columnQueueSet.add(key)
+        this.columnQueue.push(key)
+      }
     }
 
     // Force remesh these sub-chunks if not already queued by lighting pass
@@ -646,8 +710,14 @@ export class BackgroundLightingManager {
       this.propagateToNeighborsImmediately(column.coordinate)
     }
 
-    // Queue neighbors for edge propagation to spread light across chunk borders
-    this.queueNeighborsForEdgePropagation(column.coordinate)
+    // Queue neighbors for edge propagation to spread light across chunk borders — but only
+    // when this column's light actually changed (or a block changed in it). This difference
+    // check is what terminates the cross-border convergence cascade: a neighbor is re-lit
+    // only when the light reaching its border truly moved, so an idle world settles instead
+    // of ping-ponging edge updates between adjacent columns forever.
+    if (hadLightChange || forceRemeshSubYs.size > 0) {
+      this.queueNeighborsForEdgePropagation(column.coordinate)
+    }
   }
 
   /**
@@ -779,14 +849,17 @@ export class BackgroundLightingManager {
     ]
 
     for (const neighborKey of neighbors) {
-      // Skip if recently propagated (prevents cascading)
+      // Skip if recently propagated (prevents cascading), but remember to retry once the
+      // cooldown lapses so the request is deferred, not silently dropped forever.
       const lastTime = this.recentlyPropagated.get(neighborKey)
       if (lastTime && now - lastTime < this.PROPAGATION_COOLDOWN_MS) {
+        this.deferEdgePropagation(neighborKey, lastTime + this.PROPAGATION_COOLDOWN_MS)
         continue
       }
 
       this.edgePropagationQueue.add(neighborKey)
       this.recentlyPropagated.set(neighborKey, now)
+      this.deferredEdgePropagation.delete(neighborKey)
     }
 
     // Also add the source column itself (it may receive light from neighbors)
@@ -795,6 +868,37 @@ export class BackgroundLightingManager {
     if (!sourceLastTime || now - sourceLastTime >= this.PROPAGATION_COOLDOWN_MS) {
       this.edgePropagationQueue.add(sourceKey)
       this.recentlyPropagated.set(sourceKey, now)
+      this.deferredEdgePropagation.delete(sourceKey)
+    } else {
+      this.deferEdgePropagation(sourceKey, sourceLastTime + this.PROPAGATION_COOLDOWN_MS)
+    }
+  }
+
+  /**
+   * Record a cooldown-skipped edge-propagation request to retry once its cooldown lapses.
+   * Keeps the earliest retry time so an actively-touched key can't be pushed out forever.
+   */
+  private deferEdgePropagation(key: ChunkKey, retryAt: number): void {
+    const existing = this.deferredEdgePropagation.get(key)
+    if (existing === undefined || retryAt < existing) {
+      this.deferredEdgePropagation.set(key, retryAt)
+    }
+  }
+
+  /**
+   * Move deferred edge-propagation requests whose cooldown has expired back into the queue.
+   * Called each frame so cross-border light convergence still completes without the old
+   * unconditional re-queue safety net.
+   */
+  private flushDeferredEdgePropagation(): void {
+    if (this.deferredEdgePropagation.size === 0) return
+    const now = Date.now()
+    for (const [key, retryAt] of this.deferredEdgePropagation) {
+      if (now >= retryAt) {
+        this.edgePropagationQueue.add(key)
+        this.recentlyPropagated.set(key, now)
+        this.deferredEdgePropagation.delete(key)
+      }
     }
   }
 
@@ -944,7 +1048,10 @@ export class BackgroundLightingManager {
     this.columnQueue.length = 0
     this.columnQueueSet.clear()
     this.pendingAddQueue.length = 0
+    this.blockChangeQueue.length = 0
+    this.blockChangeQueueKeys.clear()
     this.edgePropagationQueue.clear()
+    this.deferredEdgePropagation.clear()
     this.onSubChunkLightingUpdated.length = 0
   }
 }

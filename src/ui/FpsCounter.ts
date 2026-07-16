@@ -151,6 +151,12 @@ export function createFpsCounterUI(
   let liquidColumnsProcessedTotal = 0
   let entityStats: EntityStats | null = null
 
+  // Change-detection caches so we only touch the DOM when rendered text differs
+  let lastStatsHtml = ''
+  let lastMiniMapHtml = ''
+  let lastMiniMapGrid: string[][] | null = null
+  let lastMiniMapRotationIndex = -1
+
   // Target frame budget for 60 FPS
   const frameBudgetMs = 16.67
 
@@ -165,6 +171,15 @@ export function createFpsCounterUI(
       totalTickCount += metrics.tickCount
 
       if (elapsedTime >= updateInterval) {
+        // Skip all string building and DOM work while hidden
+        if (!isVisible) {
+          frameCount = 0
+          elapsedTime = 0
+          totalCpuTime = 0
+          totalTickCount = 0
+          liquidColumnsProcessedTotal = 0
+          return
+        }
         const fps = Math.round((frameCount / elapsedTime) * 1000)
         const ups = Math.round((totalTickCount / elapsedTime) * 1000)
         const avgFrameTime = elapsedTime / frameCount
@@ -216,7 +231,11 @@ export function createFpsCounterUI(
           const pendingColor = entityStats.pendingRemovalCount > 0 ? '#ffaa00' : '#00ff00'
           lines.push(`Entities: ${entityStats.activeCount} <span style="color:${pendingColor}">(${entityStats.pendingRemovalCount} pending delete)</span>`)
         }
-        el.innerHTML = lines.join('<br>')
+        const statsHtml = lines.join('<br>')
+        if (statsHtml !== lastStatsHtml) {
+          el.innerHTML = statsHtml
+          lastStatsHtml = statsHtml
+        }
 
         frameCount = 0
         elapsedTime = 0
@@ -262,6 +281,7 @@ export function createFpsCounterUI(
     },
 
     setBiomeMiniMap(data: BiomeMiniMapData): void {
+      if (!isVisible) return
       if (!data.grid || data.grid.length !== 5) return
 
       // Normalize yaw to [0, 2π) and determine rotation index (0-3)
@@ -269,6 +289,13 @@ export function createFpsCounterUI(
       const TWO_PI = 2 * Math.PI
       const normalizedYaw = ((data.yaw % TWO_PI) + TWO_PI) % TWO_PI
       const rotationIndex = Math.round(normalizedYaw / (Math.PI / 2)) % 4
+
+      // The rendered map only changes when the grid (region/layer) or the yaw
+      // quadrant changes; skip the closure/string rebuild otherwise. Callers pass
+      // a stable grid reference that is only reallocated when the region changes.
+      if (data.grid === lastMiniMapGrid && rotationIndex === lastMiniMapRotationIndex) return
+      lastMiniMapGrid = data.grid
+      lastMiniMapRotationIndex = rotationIndex
 
       // Get rotated cell value based on rotation index
       // 0: no rotation (North at top)
@@ -311,7 +338,11 @@ export function createFpsCounterUI(
         }
         lines.push(cells.join(' '))
       }
-      miniMapEl.innerHTML = lines.join('\n')
+      const miniMapHtml = lines.join('\n')
+      if (miniMapHtml !== lastMiniMapHtml) {
+        miniMapEl.innerHTML = miniMapHtml
+        lastMiniMapHtml = miniMapHtml
+      }
     },
 
     show(): void {

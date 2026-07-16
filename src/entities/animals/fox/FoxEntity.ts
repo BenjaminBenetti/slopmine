@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
 import { RawFoxMeatItem } from '../../../items/food/raw_fox_meat/RawFoxMeatItem.ts'
+import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Fox colors
 const FOX_ORANGE = 0xd35400
@@ -210,6 +211,14 @@ export class FoxEntity extends PeacefulEntity {
       group.add(leg)
       this.legs.push(leg)
     }
+
+    // Merge rigid same-shadow boxes and freeze static nodes. Legs, head and tail
+    // animate; the MeshBasic eye highlights are left as-is.
+    optimizeEntityMesh(group, {
+      merge: true,
+      dynamic: [...this.legs, this.head, this.tail],
+      registerForLighting: (m) => this.registerMaterialForLighting(m),
+    })
 
     return group
   }

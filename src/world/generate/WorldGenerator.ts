@@ -69,6 +69,8 @@ export class WorldGenerator {
 
   // Sub-chunk queue for 3D generation
   private readonly subChunkQueue: QueuedSubChunk[] = []
+  // Mirrors membership of subChunkQueue for O(1) lookups and incremental updates.
+  private readonly queuedSubChunkKeys: Set<SubChunkKey> = new Set()
   private readonly generatingSubChunks: Set<SubChunkKey> = new Set()
   private readonly generatedSubChunks: Set<SubChunkKey> = new Set()
 
@@ -304,15 +306,20 @@ export class WorldGenerator {
 
     const subYChanged = clampedPlayerSubY !== this.playerSubY
 
+    // Capture the previous center before overwriting - needed for incremental updates.
+    const prevCenter = { x: this.playerChunkX, z: this.playerChunkZ, subY: this.playerSubY }
+    const wasInitialized = this.initialized
+
     this.playerChunkX = playerChunk.x
     this.playerChunkZ = playerChunk.z
     this.playerSubY = clampedPlayerSubY
     this.playerWorldY = playerY
 
     // Update queue on first call or when player moves to new chunk/sub-chunk
-    if (!this.initialized || chunkChanged || subYChanged) {
+    if (!wasInitialized || chunkChanged || subYChanged) {
       this.initialized = true
-      this.updateSubChunkQueue()
+      // First initialization does a full rebuild; subsequent crosses update incrementally.
+      this.updateSubChunkQueue(wasInitialized ? prevCenter : null)
       this.unloadDistantChunks()
     }
   }
@@ -323,7 +330,8 @@ export class WorldGenerator {
    */
   refreshChunks(): void {
     if (!this.initialized) return
-    this.updateSubChunkQueue()
+    // chunkDistance may have changed - do a full rebuild rather than an incremental diff.
+    this.updateSubChunkQueue(null)
     this.unloadDistantChunks()
   }
 
@@ -426,6 +434,7 @@ export class WorldGenerator {
    */
   reset(): void {
     this.subChunkQueue.length = 0
+    this.queuedSubChunkKeys.clear()
     this.generatingSubChunks.clear()
     this.generatedSubChunks.clear()
     this.initialized = false
@@ -481,56 +490,107 @@ export class WorldGenerator {
   }
 
   /**
-   * Rebuild the sub-chunk queue based on current player position.
+   * Update the sub-chunk generation queue based on current player position.
    * Uses an ellipsoid where Y distance is scaled to use half the chunk distance.
+   *
+   * When `prevCenter` is null, rebuilds the queue from scratch (first init / config
+   * change). Otherwise updates incrementally on a chunk-boundary cross: drops queued
+   * entries that left range, enqueues only the newly-in-range ring (candidates that
+   * were NOT in range at prevCenter), and keeps overlap entries with their existing
+   * priorities. This avoids re-scanning + re-keying the whole disk every cross.
    */
-  private updateSubChunkQueue(): void {
-    this.subChunkQueue.length = 0
-
+  private updateSubChunkQueue(prevCenter: { x: bigint; z: bigint; subY: number } | null): void {
     const horizontalDistance = this.config.chunkDistance
     const verticalDistance = this.config.getVerticalDistance()
     const yScale = horizontalDistance / verticalDistance // Scale factor to compress Y
+    const maxDist2 = horizontalDistance * horizontalDistance
     const centerX = this.playerChunkX
     const centerZ = this.playerChunkZ
+    const refSubY = this.playerSubY
 
-    // Generate sub-chunks using horizontal distance for X/Z spiral
-    for (const coord of this.spiralCoordinates(horizontalDistance)) {
-      const chunkX = centerX + BigInt(coord.dx)
-      const chunkZ = centerZ + BigInt(coord.dz)
+    if (prevCenter === null) {
+      // Full rebuild.
+      this.subChunkQueue.length = 0
+      this.queuedSubChunkKeys.clear()
 
-      // For each column, check ellipsoid distance (Y scaled to use half distance)
-      for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
-        const dy = subY - this.playerSubY
-        const scaledDy = dy * yScale
+      for (const coord of this.spiralCoordinates(horizontalDistance)) {
+        const chunkX = centerX + BigInt(coord.dx)
+        const chunkZ = centerZ + BigInt(coord.dz)
 
-        // Check ellipsoid distance - Y is scaled so it effectively uses half the distance
-        const ellipsoidDist = Math.sqrt(coord.dx * coord.dx + coord.dz * coord.dz + scaledDy * scaledDy)
-        if (ellipsoidDist > horizontalDistance) continue
+        for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
+          const scaledDy = (subY - refSubY) * yScale
+          if (coord.dx * coord.dx + coord.dz * coord.dz + scaledDy * scaledDy > maxDist2) continue
 
-        const subCoord: ISubChunkCoordinate = {
-          x: chunkX,
-          z: chunkZ,
-          subY,
+          const key = createSubChunkKey(chunkX, chunkZ, subY)
+          if (this.generatedSubChunks.has(key) || this.generatingSubChunks.has(key)) continue
+
+          const subCoord: ISubChunkCoordinate = { x: chunkX, z: chunkZ, subY }
+          this.subChunkQueue.push({ coordinate: subCoord, priority: this.calculateSubChunkPriority(subCoord) })
+          this.queuedSubChunkKeys.add(key)
         }
+      }
 
+      this.subChunkQueue.sort((a, b) => a.priority - b.priority)
+      return
+    }
+
+    // Incremental update.
+    // Step 1: drop queued entries that are no longer in range (keep the rest with priorities).
+    let write = 0
+    for (let i = 0; i < this.subChunkQueue.length; i++) {
+      const entry = this.subChunkQueue[i]
+      const dx = Number(entry.coordinate.x - centerX)
+      const dz = Number(entry.coordinate.z - centerZ)
+      const scaledDy = (entry.coordinate.subY - refSubY) * yScale
+      if (dx * dx + dz * dz + scaledDy * scaledDy <= maxDist2) {
+        this.subChunkQueue[write++] = entry
+      } else {
+        this.queuedSubChunkKeys.delete(
+          createSubChunkKey(entry.coordinate.x, entry.coordinate.z, entry.coordinate.subY)
+        )
+      }
+    }
+    this.subChunkQueue.length = write
+
+    // Step 2: enqueue the newly-in-range ring (in range now, but NOT at prevCenter).
+    const shiftX = Number(centerX - prevCenter.x)
+    const shiftZ = Number(centerZ - prevCenter.z)
+    let addedAny = false
+    for (const coord of this.spiralCoordinates(horizontalDistance)) {
+      for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
+        const scaledDy = (subY - refSubY) * yScale
+        // In range now?
+        if (coord.dx * coord.dx + coord.dz * coord.dz + scaledDy * scaledDy > maxDist2) continue
+
+        // Was it in range at the previous center? If so it's an overlap - already handled.
+        const pdx = coord.dx + shiftX
+        const pdz = coord.dz + shiftZ
+        const pScaledDy = (subY - prevCenter.subY) * yScale
+        if (pdx * pdx + pdz * pdz + pScaledDy * pScaledDy <= maxDist2) continue
+
+        const chunkX = centerX + BigInt(coord.dx)
+        const chunkZ = centerZ + BigInt(coord.dz)
         const key = createSubChunkKey(chunkX, chunkZ, subY)
 
-        // Skip already generated or in-progress sub-chunks
-        if (this.generatedSubChunks.has(key) || this.generatingSubChunks.has(key)) {
+        if (
+          this.generatedSubChunks.has(key) ||
+          this.generatingSubChunks.has(key) ||
+          this.queuedSubChunkKeys.has(key)
+        ) {
           continue
         }
 
-        const priority = this.calculateSubChunkPriority(subCoord)
-
-        this.subChunkQueue.push({
-          coordinate: subCoord,
-          priority,
-        })
+        const subCoord: ISubChunkCoordinate = { x: chunkX, z: chunkZ, subY }
+        this.subChunkQueue.push({ coordinate: subCoord, priority: this.calculateSubChunkPriority(subCoord) })
+        this.queuedSubChunkKeys.add(key)
+        addedAny = true
       }
     }
 
-    // Sort by priority (closest first)
-    this.subChunkQueue.sort((a, b) => a.priority - b.priority)
+    // Re-sort only if membership changed (removal preserves relative order).
+    if (addedAny) {
+      this.subChunkQueue.sort((a, b) => a.priority - b.priority)
+    }
   }
 
   /**
@@ -548,6 +608,7 @@ export class WorldGenerator {
         queued.coordinate.z,
         queued.coordinate.subY
       )
+      this.queuedSubChunkKeys.delete(key)
 
       // Double-check not already generating
       if (this.generatingSubChunks.has(key)) continue
@@ -576,6 +637,7 @@ export class WorldGenerator {
       queued.coordinate.z,
       queued.coordinate.subY
     )
+    this.queuedSubChunkKeys.delete(key)
 
     // Skip if already generating
     if (this.generatingSubChunks.has(key)) {
@@ -658,12 +720,19 @@ export class WorldGenerator {
         workerResult.metadataData
       )
 
-      // Generate decorations (trees, etc) for this sub-chunk using the primary biome
+      // Generate decorations (trees, etc) for this sub-chunk using the primary biome.
+      // Wrap in a decoration batch so structure block writes bypass the per-block
+      // setBlock side-effect cascade (one lighting + mesh enqueue per touched sub-chunk).
       const subChunk = this.world.getSubChunk(coordinate)
       if (subChunk) {
         const biomeType = this.getBiomeForChunk(chunkX, chunkZ, layer)
         const generator = this.getGeneratorForBiome(biomeType)
-        await generator.generateSubChunkDecorations(subChunk, this.world)
+        this.world.beginDecorationBatch()
+        try {
+          await generator.generateSubChunkDecorations(subChunk, this.world)
+        } finally {
+          this.world.endDecorationBatch()
+        }
       }
 
       // Mark as generated BEFORE water propagation checks
