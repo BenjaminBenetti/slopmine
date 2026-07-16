@@ -7,6 +7,7 @@ import { localToWorld } from '../coordinates/CoordinateUtils.ts'
 import { FrameBudget } from '../../core/FrameBudget.ts'
 import { Feature, type FeatureContext } from './features/Feature.ts'
 import { CaveCarver } from './caves/CaveCarver.ts'
+import { createConstantCaveSampleGetter, type CaveConfig } from './caves/CaveConfig.ts'
 import { SkylightPropagator } from '../lighting/SkylightPropagator.ts'
 import { evaluateTerrainConfig } from './terrain/NoiseEvaluator.ts'
 import type { TerrainConfig } from './terrain/TerrainConfig.ts'
@@ -76,189 +77,9 @@ export interface WaterSettings {
   readonly shoreRadius?: number
 }
 
-/**
- * Configuration for cave generation within a biome.
- * Uses Perlin worm algorithm to create interconnected tunnel networks.
- */
-export interface CaveSettings {
-  /**
-   * Turns cave generation on or off for this specific biome.
-   * If set to `true`, caves will generate; if `false`, no caves will appear in this biome.
-   */
-  readonly enabled: boolean
-
-  /**
-   * The lowest point in the world where these caves can begin to form.
-   * Caves will not generate below this Y-level, leaving the deep underground mostly solid.
-   */
-  readonly minY: number
-  /**
-   * The highest point in the world where these caves can reach.
-   * Caves will not generate above this Y-level, ensuring that the surface and sky remain undisturbed by cave openings (unless `entrancesEnabled` is on).
-   */
-  readonly maxY: number
-
-  // ==================== Tunnel Network Settings ====================
-
-  /**
-   * Number of tunnel worms to spawn per 64x64 block region.
-   * Higher values create denser tunnel networks.
-   * Typical range: 2-6
-   */
-  readonly tunnelDensity: number
-
-  /**
-   * Minimum radius of carved tunnels in blocks.
-   * Typical range: 2-3
-   */
-  readonly tunnelMinRadius: number
-
-  /**
-   * Maximum radius of carved tunnels in blocks.
-   * Typical range: 3-5
-   */
-  readonly tunnelMaxRadius: number
-
-  /**
-   * Maximum number of steps a tunnel worm can take before stopping.
-   * Longer values create more extensive tunnel systems.
-   * Typical range: 150-400
-   */
-  readonly tunnelMaxLength: number
-
-  /**
-   * Probability (0-1) that a tunnel will branch at each step.
-   * Higher values create more interconnected networks.
-   * Typical range: 0.1-0.2
-   */
-  readonly tunnelBranchChance: number
-
-  /**
-   * How quickly the tunnel changes direction (0-1).
-   * Lower values create straighter tunnels, higher values create more winding paths.
-   * Typical range: 0.2-0.4
-   */
-  readonly tunnelTurnRate: number
-
-  /**
-   * Vertical bias for tunnel direction (-1 to 1).
-   * Negative values make tunnels tend downward, positive upward, 0 is neutral.
-   * Typical range: -0.3 to 0.3
-   */
-  readonly tunnelVerticalBias: number
-
-  // ==================== Noise-Based Surface Entrance Settings ====================
-
-  /**
-   * Enable noise-based surface entrances.
-   * These create visible depressions/holes at the surface that lead underground.
-   * Uses grid-based placement with noise filtering for natural distribution.
-   */
-  readonly noiseEntranceEnabled?: boolean
-
-  /**
-   * Probability (0.0-1.0) of an entrance spawning in each 128-block grid cell.
-   * Lower values = rarer entrances.
-   * ~0.15 recommended for moderate density (roughly one per 4-5 grid cells).
-   * Default: 0.15
-   */
-  readonly noiseEntranceDensity?: number
-
-  /**
-   * Minimum radius of entrance openings in blocks.
-   * Default: 4
-   */
-  readonly noiseEntranceMinRadius?: number
-
-  /**
-   * Maximum radius of entrance openings in blocks.
-   * Default: 10
-   */
-  readonly noiseEntranceMaxRadius?: number
-
-  /**
-   * Minimum depth of entrance carving in blocks.
-   * Shallow entrances may not connect to cave networks.
-   * Default: 20
-   */
-  readonly noiseEntranceMinDepth?: number
-
-  /**
-   * Maximum depth of entrance carving in blocks.
-   * Deeper entrances are more likely to connect to cave tunnels.
-   * Default: 50
-   */
-  readonly noiseEntranceMaxDepth?: number
-
-  /**
-   * Style of entrance shapes to generate.
-   * - 'sinkhole': Bowl-shaped depression, wide at top, narrows with depth
-   * - 'pit': Vertical shaft, small constant radius
-   * - 'slope': Asymmetric, one side has a gradual descent
-   * - 'mixed': Per-entrance style selected via noise (default)
-   */
-  readonly noiseEntranceStyle?: 'sinkhole' | 'pit' | 'slope' | 'mixed'
-
-  // ==================== Chamber Settings ====================
-
-  /**
-   * Enable large underground chamber generation.
-   * Chambers are elongated ellipsoid-shaped caverns with organic, blob-like shapes.
-   * They are rotated randomly and have multi-octave noise perturbation for variety.
-   * Default: false
-   */
-  readonly chamberEnabled?: boolean
-
-  /**
-   * Probability (0.0-1.0) of a chamber spawning in each 128-block grid cell.
-   * Lower values = rarer chambers.
-   * ~0.30 recommended for moderate density.
-   * Default: 0.25
-   */
-  readonly chamberDensity?: number
-
-  /**
-   * Minimum horizontal radius of chambers in blocks.
-   * Note: chambers can be elongated up to 2.5x in one direction.
-   * Default: 12
-   */
-  readonly chamberMinRadius?: number
-
-  /**
-   * Maximum horizontal radius of chambers in blocks.
-   * Note: chambers can be elongated up to 2.5x in one direction.
-   * Default: 28
-   */
-  readonly chamberMaxRadius?: number
-
-  /**
-   * Minimum Y level where chambers can generate.
-   * Default: 170
-   */
-  readonly chamberMinY?: number
-
-  /**
-   * Maximum Y level where chambers can generate.
-   * Default: 200
-   */
-  readonly chamberMaxY?: number
-
-  // ==================== Legacy Entrance Settings (deprecated) ====================
-  // Kept for backwards compatibility but no longer used
-
-  /** @deprecated Use noiseEntranceEnabled instead */
-  readonly entranceEnabled?: boolean
-  /** @deprecated Use noiseEntranceDensity instead */
-  readonly entranceDensity?: number
-  /** @deprecated Use noiseEntranceMinRadius instead */
-  readonly entranceMinRadius?: number
-  /** @deprecated Use noiseEntranceMaxRadius instead */
-  readonly entranceMaxRadius?: number
-  /** @deprecated No longer used - entrances use depth instead of length */
-  readonly entranceMaxLength?: number
-  /** @deprecated No longer used - noise-based entrances don't use turn rate */
-  readonly entranceTurnRate?: number
-}
+// Cave generation configuration lives in ./caves/CaveConfig.ts.
+// Re-exported here so biome generators can import it alongside WaterSettings.
+export type { CaveConfig } from './caves/CaveConfig.ts'
 
 /**
  * Configuration for biome-specific skybox modifications.
@@ -315,9 +136,9 @@ export interface BiomeProperties {
   readonly features: Feature[]
   /**
    * Optional settings specifically for how caves generate within this biome.
-   * If not provided, default or no cave generation rules will apply.
+   * If not provided, no caves will generate in this biome.
    */
-  readonly caves?: CaveSettings
+  readonly caves?: CaveConfig
 
   /**
    * Optional settings for water/liquid generation within this biome.
@@ -453,6 +274,8 @@ export abstract class BiomeGenerator extends TerrainGenerator {
 
   /**
    * Generate caves by carving air pockets in the terrain.
+   * Main-thread path: no biome blending, so the resolved parameters of this
+   * biome apply uniformly (the worker path blends across biome borders).
    */
   protected async generateCaves(chunk: IChunkData): Promise<void> {
     const caves = this.properties.caves
@@ -463,11 +286,10 @@ export abstract class BiomeGenerator extends TerrainGenerator {
       this.caveCarver = new CaveCarver(this.config.seed)
     }
 
-    await this.caveCarver.carve(
+    this.caveCarver.carve(
       chunk,
-      caves,
-      (worldX, worldZ) => this.getHeightAt(worldX, worldZ),
-      this.frameBudget
+      createConstantCaveSampleGetter(caves),
+      (worldX, worldZ) => this.getHeightAt(worldX, worldZ)
     )
   }
 

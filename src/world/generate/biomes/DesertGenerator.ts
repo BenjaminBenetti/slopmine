@@ -102,31 +102,20 @@ export class DesertGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      minY: 164,
-      maxY: 224,
-      // Tunnel network settings - slightly sparser in desert
-      tunnelDensity: 3,
-      tunnelMinRadius: 2,
-      tunnelMaxRadius: 3,       // narrower tunnels
-      tunnelMaxLength: 200,
-      tunnelBranchChance: 0.12,
-      tunnelTurnRate: 0.25,     // straighter tunnels
-      tunnelVerticalBias: 0,
-      // Noise-based surface entrance settings - sinkholes in sandy terrain
-      noiseEntranceEnabled: true,
-      noiseEntranceDensity: 0.35,     // common sinkholes
-      noiseEntranceMinRadius: 3,
-      noiseEntranceMaxRadius: 6,
-      noiseEntranceMinDepth: 25,
-      noiseEntranceMaxDepth: 55,
-      noiseEntranceStyle: 'sinkhole', // sandy sinkholes
-      // Chamber settings - massive desert caverns
-      chamberEnabled: true,
-      chamberDensity: 0.35,
-      chamberMinRadius: 16,
-      chamberMaxRadius: 32,
-      chamberMinY: 165,
-      chamberMaxY: 195,
+      minY: 146,
+      maxY: 320,
+      floorFadeDepth: 10,
+      // Deep falloff keeps the big caverns from tearing open every dune flank
+      surfaceFalloffDepth: 22,
+      // Vast echoing caverns beneath the dunes
+      cheese: { enabled: true, threshold: 0.4, scale: 0.009, verticalScale: 1.3 },
+      spaghetti: { enabled: true, thickness: 0.09, thicknessVariance: 0.7, scale: 0.01, verticalSquash: 1.4 },
+      // Ravines are rare in the open desert
+      ravine: { enabled: true, scale: 0.0025, width: 0.025, depth: 45, taper: 0.8, density: 0.3 },
+      // Occasional sinkhole entrances in the sandy terrain
+      entrance: { enabled: true, scale: 0.009, threshold: 0.84, boost: 0.55, depth: 60 },
+      floodLevel: 150,
+      floodBlockId: BlockIds.LAVA,
     },
     // No water in desert
     water: {

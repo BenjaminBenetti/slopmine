@@ -41,18 +41,8 @@ export class HellGenerator extends BiomeGenerator {
         targetTopY: 127,
       }),
     ],
-    caves: {
-      enabled: false, // No caves in Hell
-      minY: 0,
-      maxY: 0,
-      tunnelDensity: 0,
-      tunnelMinRadius: 0,
-      tunnelMaxRadius: 0,
-      tunnelMaxLength: 0,
-      tunnelBranchChance: 0,
-      tunnelTurnRate: 0,
-      tunnelVerticalBias: 0,
-    },
+    // No caves in Hell - the layer itself is one giant cavern
+    caves: undefined,
     // Lava fills all terrain depressions below waterLevel
     water: {
       enabled: true,

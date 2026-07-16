@@ -80,4 +80,7 @@ export enum BlockIds {
   ROPE_LADDER = 74,
   DIVINING_STICK = 75,
   CHEST = 76,
+  WATER_FALLING = 77,
+  LAVA_FALLING = 78,
+  SWAMP_WATER_FALLING = 79,
 }

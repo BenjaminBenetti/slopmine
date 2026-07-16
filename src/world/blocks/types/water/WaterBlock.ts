@@ -76,8 +76,8 @@ export class WaterBlock extends TransparentBlock {
     if (neighbor.properties.id === BlockIds.AIR) {
       return true
     }
-    // Don't render faces between water blocks
-    if (neighbor.properties.id === BlockIds.WATER) {
+    // Don't render faces between full water blocks (source or falling)
+    if (neighbor.properties.id === BlockIds.WATER || neighbor.properties.id === BlockIds.WATER_FALLING) {
       return false
     }
     // Render face against any other block

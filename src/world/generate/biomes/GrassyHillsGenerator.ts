@@ -108,31 +108,21 @@ export class GrassyHillsGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      minY: 164,
-      maxY: 224,
-      // Tunnel network settings - same as plains
-      tunnelDensity: 4,
-      tunnelMinRadius: 2,
-      tunnelMaxRadius: 4,
-      tunnelMaxLength: 250,
-      tunnelBranchChance: 0.15,
-      tunnelTurnRate: 0.3,
-      tunnelVerticalBias: 0,
-      // Noise-based surface entrance settings - more common in hilly terrain
-      noiseEntranceEnabled: true,
-      noiseEntranceDensity: 0.45,     // very frequent in hilly terrain
-      noiseEntranceMinRadius: 2,
-      noiseEntranceMaxRadius: 5,
-      noiseEntranceMinDepth: 30,
-      noiseEntranceMaxDepth: 60,
-      noiseEntranceStyle: 'mixed',
-      // Chamber settings - medium to large hill chambers
-      chamberEnabled: true,
-      chamberDensity: 0.30,
-      chamberMinRadius: 12,
-      chamberMaxRadius: 26,
-      chamberMinY: 165,
-      chamberMaxY: 200,
+      minY: 146,
+      maxY: 320,
+      floorFadeDepth: 10,
+      // Deep falloff: hills have steep flanks, so caves must close well below
+      // the local surface or they tear open on every hillside
+      surfaceFalloffDepth: 20,
+      // Larger caverns that hillsides frequently expose
+      cheese: { enabled: true, threshold: 0.43, scale: 0.011, verticalScale: 1.4 },
+      spaghetti: { enabled: true, thickness: 0.085, thicknessVariance: 0.6, scale: 0.012, verticalSquash: 1.5 },
+      ravine: { enabled: true, scale: 0.0035, width: 0.035, depth: 60, taper: 0.7, density: 0.3 },
+      // Frequent entrances - hills wear through into the caves below
+      entrance: { enabled: true, scale: 0.011, threshold: 0.78, boost: 0.6, depth: 55 },
+      floodLevel: 152,
+      floodBlockId: BlockIds.LAVA,
+      liquidSurfaceGuardY: 237,   // waterLevel 238 - 1: only guards entrance mouths
     },
     water: {
       enabled: true,

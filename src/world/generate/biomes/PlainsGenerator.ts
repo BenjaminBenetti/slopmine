@@ -126,31 +126,18 @@ export class PlainsGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      minY: 164,
-      maxY: 224,
-      // Tunnel network settings
-      tunnelDensity: 4,         // worms per 64x64 region
-      tunnelMinRadius: 2,       // min tunnel width
-      tunnelMaxRadius: 4,       // max tunnel width
-      tunnelMaxLength: 250,     // how far worms travel
-      tunnelBranchChance: 0.15, // moderate branching
-      tunnelTurnRate: 0.3,      // moderate winding
-      tunnelVerticalBias: 0,    // neutral vertical movement
-      // Noise-based surface entrance settings
-      noiseEntranceEnabled: true,
-      noiseEntranceDensity: 0.4,      // ~40% of grid cells have entrances
-      noiseEntranceMinRadius: 2,
-      noiseEntranceMaxRadius: 5,
-      noiseEntranceMinDepth: 30,
-      noiseEntranceMaxDepth: 60,
-      noiseEntranceStyle: 'mixed',
-      // Chamber settings - medium to large chambers
-      chamberEnabled: true,
-      chamberDensity: 0.30,
-      chamberMinRadius: 12,
-      chamberMaxRadius: 24,
-      chamberMinY: 168,
-      chamberMaxY: 200,
+      minY: 146,                  // just above the terrain stone floor (140)
+      maxY: 320,                  // above max terrain so entrances can breach
+      floorFadeDepth: 10,
+      surfaceFalloffDepth: 18,
+      // Balanced caverns - the baseline cave feel
+      cheese: { enabled: true, threshold: 0.42, scale: 0.012, verticalScale: 1.5 },
+      spaghetti: { enabled: true, thickness: 0.08, thicknessVariance: 0.6, scale: 0.012, verticalSquash: 1.5 },
+      ravine: { enabled: true, scale: 0.003, width: 0.03, depth: 50, taper: 0.75, density: 0.3 },
+      entrance: { enabled: true, scale: 0.012, threshold: 0.8, boost: 0.55, depth: 50 },
+      floodLevel: 152,            // deep caves flood with lava
+      floodBlockId: BlockIds.LAVA,
+      liquidSurfaceGuardY: 237,   // waterLevel 238 - 1: only guard entrance mouths under pools
     },
     water: {
       enabled: true,

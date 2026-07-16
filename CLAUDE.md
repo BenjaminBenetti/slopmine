@@ -252,10 +252,8 @@ Procedural terrain generation with biomes, caves, and features.
 - `BiomeRegistry.ts` - Biome selection (16×16 chunk regions)
 - `TerrainGenerator.ts` - Height-based terrain filling
 - `SimplexNoise.ts` - Seeded noise for deterministic generation
-- `caves/CaveCarver.ts` - Orchestrates spaghetti + cheese cave systems
-- `caves/SpaghettiCarver.ts` - Thin winding tunnels (dual noise)
-- `caves/CheeseCarver.ts` - Large chambers (fractal noise)
-- `caves/EntranceGenerator.ts` - Surface cave entrances
+- `caves/CaveCarver.ts` - Noise-density cave carver (lattice-sampled 3D fields)
+- `caves/CaveConfig.ts` - Per-biome cave config + blendable flat parameters
 - `features/OreFeature.ts` - Gaussian Y-distribution ore veins
 - `features/WaterFeature.ts` - Depression-based water pools
 - `features/CliffFeature.ts` - Noise-based cliff formations
@@ -264,21 +262,55 @@ Procedural terrain generation with biomes, caves, and features.
 **Generation Pipeline:**
 1. Select biome for region (16×16 chunks)
 2. Generate base terrain with biome blending
-3. Carve spaghetti caves (tunnels)
-4. Carve cheese caves (chambers)
-5. Apply features (ores, cliffs, water)
-6. Propagate initial skylight
+3. Carve caves from the density field (cheese caverns + spaghetti tunnels + ravines)
+4. Fill water depressions
+5. Propagate initial skylight
+6. Apply features (ores, cliffs)
 7. Place decorations (trees) on main thread
-8. Carve cave entrances on main thread
+
+**Cave System (noise-density carving):**
+
+Caves are carved from continuous noise fields evaluated per block — no worm
+tracing, so carving is purely local and seamless across chunk borders.
+Three layers combine (see `caves/CaveConfig.ts` for all parameters):
+- **Cheese**: 3D fractal noise above a threshold → large open caverns
+- **Spaghetti**: two 3D noises both near zero → winding tunnels that swell/pinch
+- **Ravines**: 2D ridge noise → deep tapered canyons open to the sky
+
+Near the surface, caves pinch closed over `surfaceFalloffDepth` blocks —
+except inside *entrance zone cores* (2D noise above `entrance.threshold`),
+where the falloff is cancelled and cheese carving is boosted (the boost
+shares the falloff's depth curve, keeping the threshold monotone toward the
+surface — different decay rates would carve bowls sealed under a lid). Each
+strong core also carves a guaranteed **entrance ramp**: the entrance field is
+sampled at coordinates sheared by world Y, producing a constant-cross-section
+tube at ~45° that runs from a surface mouth down `entrance.depth` blocks into
+the cave band. The requirement is depth-constant, so ramps always reach full
+depth (a depth-narrowing cone pinches out early unless the noise peak is
+improbably strong — that bug produced blind stub entrances). Ravines are additionally gated by a
+low-frequency density mask (`ravine.density`, ~0.3 keeps a quarter of the
+lines) that culls whole ravines rather than thinning them. Carved blocks
+below `floodLevel` become `floodBlockId` (lava, swamp water). Columns whose
+surface is below `liquidSurfaceGuardY` suppress entrance mouths (ravines are
+allowed through pools — draining waterfalls are a feature).
+
+Each biome sets its own `caves: CaveConfig` in `BiomeProperties`; all numeric
+parameters are blended per-column across biome borders in the worker (same
+bilinear machinery as terrain height). Performance: the 3D fields are sampled
+on a 4-block lattice and trilinearly interpolated (~50× fewer noise calls).
+NOTE: entrance/ravine/spaghetti thresholds are calibrated against this
+codebase's SimplexNoise output distribution (2D raw > 0.5 covers ~18% of
+area, `norm() > 0.87` ≈ 5%) — tune with that in mind, not assuming a
+narrow bell curve.
 
 **Biomes:**
-- **Layer 1 (Surface, Y=128-1023)**: Plains, Grassy Hills, Desert, Volcanic, Jungle, Swamp
+- **Layer 1 (Surface, Y=128-511)**: Plains, Grassy Hills, Desert, Volcanic, Jungle, Swamp
 - **Layer 0 (Underground, Y=0-127)**: Hell
 
 **Biome Layer System:**
 Biomes are assigned to vertical layers:
-- **Layer 0**: Underground biomes (Y=0-127, sub-chunks 0-1)
-- **Layer 1**: Surface biomes (Y=128-1023, sub-chunks 2-15)
+- **Layer 0**: Underground biomes (Y=0-127, sub-chunks 0-3)
+- **Layer 1**: Surface biomes (Y=128-511, sub-chunks 4-15)
 
 When creating a new biome:
 1. Set `layer: 0` or `layer: 1` in `BiomeProperties`

@@ -99,31 +99,21 @@ export class SwampGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      minY: 164,
-      maxY: 220,
-      // Tunnel network settings - winding tunnels in swamp
-      tunnelDensity: 4,
-      tunnelMinRadius: 2,
-      tunnelMaxRadius: 4,
-      tunnelMaxLength: 280,     // longer winding tunnels
-      tunnelBranchChance: 0.18, // more branching
-      tunnelTurnRate: 0.4,      // more winding
-      tunnelVerticalBias: -0.1, // slight downward tendency
-      // Noise-based surface entrance settings - muddy sinkholes
-      noiseEntranceEnabled: true,
-      noiseEntranceDensity: 0.4,
-      noiseEntranceMinRadius: 2,
-      noiseEntranceMaxRadius: 5,
-      noiseEntranceMinDepth: 25,
-      noiseEntranceMaxDepth: 50,
-      noiseEntranceStyle: 'sinkhole', // muddy sinkholes
-      // Chamber settings - varied swamp caverns
-      chamberEnabled: true,
-      chamberDensity: 0.35,
-      chamberMinRadius: 10,
-      chamberMaxRadius: 20,
-      chamberMinY: 170,
-      chamberMaxY: 200,
+      minY: 150,
+      maxY: 320,
+      floorFadeDepth: 10,
+      surfaceFalloffDepth: 14,
+      // Wide, flat, muddy chambers with enough diving tunnels to explore down
+      cheese: { enabled: true, threshold: 0.44, scale: 0.011, verticalScale: 1.6 },
+      spaghetti: { enabled: true, thickness: 0.075, thicknessVariance: 0.6, scale: 0.013, verticalSquash: 1.2 },
+      // No ravines in the soft waterlogged ground
+      ravine: { enabled: false, scale: 0.003, width: 0.03, depth: 40, taper: 0.75, density: 0.3 },
+      // Muddy sinkhole entrances
+      entrance: { enabled: true, scale: 0.01, threshold: 0.81, boost: 0.6, depth: 30 },
+      // The deep swamp caves are waterlogged
+      floodLevel: 168,
+      floodBlockId: BlockIds.SWAMP_WATER,
+      liquidSurfaceGuardY: 233,   // waterLevel 234 - 1: only guards entrance mouths
     },
     // Swamp water - murky water pools throughout
     water: {

@@ -173,31 +173,20 @@ export class JungleGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      minY: 164,
-      maxY: 224,
-      // Tunnel network settings - moderate jungle caves
-      tunnelDensity: 3,         // reduced from 5
-      tunnelMinRadius: 2,
-      tunnelMaxRadius: 3,       // narrower tunnels
-      tunnelMaxLength: 180,     // shorter systems
-      tunnelBranchChance: 0.12, // less branching
-      tunnelTurnRate: 0.35,
-      tunnelVerticalBias: 0,
-      // Noise-based surface entrance settings - moderate (hidden by canopy)
-      noiseEntranceEnabled: true,
-      noiseEntranceDensity: 0.30,     // reduced from 0.45
-      noiseEntranceMinRadius: 2,
-      noiseEntranceMaxRadius: 4,
-      noiseEntranceMinDepth: 25,
-      noiseEntranceMaxDepth: 50,
-      noiseEntranceStyle: 'mixed',
-      // Chamber settings - occasional jungle chambers
-      chamberEnabled: true,
-      chamberDensity: 0.20,           // reduced from 0.40
-      chamberMinRadius: 10,
-      chamberMaxRadius: 20,
-      chamberMinY: 168,
-      chamberMaxY: 200,
+      minY: 146,
+      maxY: 320,
+      floorFadeDepth: 10,
+      surfaceFalloffDepth: 16,
+      // Smaller, squashed chambers under the jungle floor
+      cheese: { enabled: true, threshold: 0.48, scale: 0.014, verticalScale: 1.7 },
+      // A dense tangle of narrow twisting tunnels (high frequency)
+      spaghetti: { enabled: true, thickness: 0.065, thicknessVariance: 0.8, scale: 0.017, verticalSquash: 1.3 },
+      ravine: { enabled: true, scale: 0.0035, width: 0.03, depth: 55, taper: 0.75, density: 0.3 },
+      // Entrances exist but are subtler, hidden beneath the canopy
+      entrance: { enabled: true, scale: 0.012, threshold: 0.82, boost: 0.5, depth: 45 },
+      floodLevel: 152,
+      floodBlockId: BlockIds.LAVA,
+      liquidSurfaceGuardY: 237,   // waterLevel 238 - 1: only guards entrance mouths
     },
     water: {
       enabled: true,

@@ -27,13 +27,21 @@ import { RiverbankMudFeature, type RiverbankMudFeatureSettings } from '../world/
 import { JungleFernFeature, type JungleFernFeatureSettings } from '../world/generate/features/JungleFernFeature.ts'
 import { RiverbankClayFeature, type RiverbankClayFeatureSettings } from '../world/generate/features/RiverbankClayFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
 import { registerDefaultBlocks } from '../world/blocks/registerDefaultBlocks.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
 import { evaluateTerrainConfig } from '../world/generate/terrain/NoiseEvaluator.ts'
 import type { TerrainConfig } from '../world/generate/terrain/TerrainConfig.ts'
-import type { CaveSettings, WaterSettings, BiomeGenerator } from '../world/generate/BiomeGenerator.ts'
+import type { WaterSettings, BiomeGenerator } from '../world/generate/BiomeGenerator.ts'
+import { createConstantCaveSampleGetter, type CaveConfig } from '../world/generate/caves/CaveConfig.ts'
+import {
+  createCaveSampleGetter,
+  BIOME_REGION_SIZE_BLOCKS,
+  BLEND_DISTANCE,
+  smoothstep,
+  lerp,
+} from '../world/generate/caves/CaveBlend.ts'
 import type { IGenerationConfig } from '../world/generate/GenerationConfig.ts'
 
 // Import biome registry for dynamic biome instantiation
@@ -113,7 +121,7 @@ export interface WorkerBiomeConfig {
   name: string
   treeDensity: number
   features: FeatureConfig[]
-  caves?: CaveSettings
+  caves?: CaveConfig
   water?: WaterSettings
   terrainConfig: TerrainConfig
   /** Maximum skylight level for this biome (0-15). Default is 15. */
@@ -142,29 +150,8 @@ export interface BiomeBlendData {
   chunkLocalZ: number
 }
 
-/**
- * Size of a biome region in blocks (16 chunks × 32 blocks).
- */
-const BIOME_REGION_SIZE_BLOCKS = 16 * 32 // 512 blocks
-
-/**
- * Width of blend zone on each side of boundary (96 blocks).
- */
-const BLEND_DISTANCE = 96
-
-/**
- * Smoothstep interpolation for smoother blending.
- */
-function smoothstep(t: number): number {
-  return t * t * (3 - 2 * t)
-}
-
-/**
- * Linear interpolation.
- */
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t
-}
+// Region size, blend distance, smoothstep and lerp are shared with the cave
+// blend module (imported above) so caves and terrain use identical geometry.
 
 /**
  * Get the TerrainConfig from a biome config.
@@ -468,6 +455,49 @@ function getBlendedHeightAt(
 }
 
 /**
+ * Cave carver cached per seed (its noise tables are seed-derived and the
+ * carver holds reusable scratch buffers, so one instance serves all requests).
+ */
+let cachedCaveCarver: CaveCarver | null = null
+let cachedCaveCarverSeed = 0
+
+function getCaveCarver(seed: number): CaveCarver {
+  if (!cachedCaveCarver || cachedCaveCarverSeed !== seed) {
+    cachedCaveCarver = new CaveCarver(seed)
+    cachedCaveCarverSeed = seed
+  }
+  return cachedCaveCarver
+}
+
+/**
+ * True if any biome in the blend neighborhood has caves enabled AND the
+ * requested Y range can intersect a cave band. Conservative: blended
+ * minY/maxY are weighted means, so they can never exceed the min/max of
+ * the contributing configs.
+ */
+function cavesCanAffect(biomeData: BiomeBlendData, minWorldY: number, maxWorldY: number): boolean {
+  const configs = [
+    biomeData.primary,
+    biomeData.north,
+    biomeData.south,
+    biomeData.east,
+    biomeData.west,
+    biomeData.northeast,
+    biomeData.northwest,
+    biomeData.southeast,
+    biomeData.southwest,
+  ]
+  let bandLo = Infinity
+  let bandHi = -Infinity
+  for (const c of configs) {
+    if (!c?.caves?.enabled) continue
+    if (c.caves.minY < bandLo) bandLo = c.caves.minY
+    if (c.caves.maxY > bandHi) bandHi = c.caves.maxY
+  }
+  return bandLo <= maxWorldY && bandHi >= minWorldY
+}
+
+/**
  * Generate terrain for the chunk using the biome's fillChunk method.
  */
 function generateTerrain(
@@ -508,11 +538,10 @@ async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGene
   // Phase 1: Generate terrain using biome's fillColumn
   generateTerrain(chunk, noise, seed, seaLevel, terrainThickness, biomeConfig)
 
-  // Phase 2: Carve caves
+  // Phase 2: Carve caves (single biome, no blending on the legacy path)
   const caves = biomeConfig.caves
   if (caves?.enabled) {
-    const caveCarver = new CaveCarver(seed)
-    await caveCarver.carve(chunk, caves, getHeight)
+    getCaveCarver(seed).carve(chunk, createConstantCaveSampleGetter(caves), getHeight)
   }
 
   // Phase 3: Apply features
@@ -803,14 +832,11 @@ function generateSubChunkTerrain(
   terrainThickness: number,
   minWorldY: number,
   maxWorldY: number,
-  biomeData: BiomeBlendData
+  biomeData: BiomeBlendData,
+  getHeight: (worldX: number, worldZ: number) => number
 ): { hasTerrainAbove: boolean; maxSolidY: number } {
   // Get primary biome generator
   const primaryBiome = getBiomeGenerator(biomeData.primary.name, seed, seaLevel, terrainThickness)
-
-  // Height getter with biome blending
-  const getHeight = (worldX: number, worldZ: number) =>
-    getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
 
   // Fill with primary biome first
   ;(primaryBiome as any).fillChunk(subChunk, minWorldY, maxWorldY, noise, getHeight)
@@ -920,12 +946,10 @@ function generateSubChunkTerrain(
  */
 function applyProvisionalSkylight(
   subChunk: WorkerSubChunk,
-  noise: SimplexNoise,
-  seaLevel: number,
   minWorldY: number,
   maxWorldY: number,
-  biomeData: BiomeBlendData,
-  skylightValue: number
+  skylightValue: number,
+  getHeight: (worldX: number, worldZ: number) => number
 ): void {
   const coord = subChunk.coordinate
 
@@ -939,7 +963,7 @@ function applyProvisionalSkylight(
       const worldZ = Number(worldCoord.z)
 
       // Use blended height for consistent skylight with terrain
-      const terrainHeight = getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
+      const terrainHeight = getHeight(worldX, worldZ)
 
       // Apply skylight to blocks above terrain within this sub-chunk
       for (let worldY = maxWorldY; worldY >= minWorldY; worldY--) {
@@ -977,9 +1001,36 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   // Create noise generator
   const noise = new SimplexNoise(seed)
 
-  // Create height getter for caves (uses blended height for consistency)
-  const getHeight = (worldX: number, worldZ: number) =>
-    getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
+  // Memoized blended-height getter shared by terrain, caves, skylight, and
+  // features. Blended height costs up to 4 terrain evaluations per call and
+  // several phases query every column, so cache the chunk's 32x32 columns in
+  // a typed array (NaN = not yet computed) with a Map fallback for the rare
+  // out-of-chunk queries some features make.
+  const chunkWorldX = chunkX * CHUNK_SIZE_X
+  const chunkWorldZ = chunkZ * CHUNK_SIZE_Z
+  const heightGrid = new Float64Array(CHUNK_SIZE_X * CHUNK_SIZE_Z).fill(NaN)
+  let outOfChunkHeights: Map<string, number> | null = null
+  const getHeight = (worldX: number, worldZ: number): number => {
+    const localX = worldX - chunkWorldX
+    const localZ = worldZ - chunkWorldZ
+    if (localX >= 0 && localX < CHUNK_SIZE_X && localZ >= 0 && localZ < CHUNK_SIZE_Z) {
+      const idx = localZ * CHUNK_SIZE_X + localX
+      let height = heightGrid[idx]
+      if (Number.isNaN(height)) {
+        height = getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
+        heightGrid[idx] = height
+      }
+      return height
+    }
+    if (!outOfChunkHeights) outOfChunkHeights = new Map()
+    const key = worldX + ',' + worldZ
+    let height = outOfChunkHeights.get(key)
+    if (height === undefined) {
+      height = getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
+      outOfChunkHeights.set(key, height)
+    }
+    return height
+  }
 
   // Phase 1: Generate terrain within this sub-chunk's Y range (with biome blending)
   const { hasTerrainAbove, maxSolidY } = generateSubChunkTerrain(
@@ -990,15 +1041,24 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     terrainThickness,
     minWorldY,
     maxWorldY,
-    biomeData
+    biomeData,
+    getHeight
   )
 
-  // Phase 2: Carve caves (only within this Y range, uses primary biome settings)
-  const caves = biomeConfig.caves
-  if (caves?.enabled) {
-    const caveCarver = new CaveCarver(seed)
-    await caveCarver.carveSubChunk(subChunk, caves, getHeight, minWorldY, maxWorldY)
+  // Phase 2: Carve caves (only within this Y range, parameters blended
+  // per-column across biome borders like terrain height)
+  const anyCaves = cavesCanAffect(biomeData, 0, CHUNK_HEIGHT - 1)
+  const getCaveSample = anyCaves ? createCaveSampleGetter(biomeData, chunkWorldX, chunkWorldZ) : null
+  if (getCaveSample && cavesCanAffect(biomeData, minWorldY, maxWorldY)) {
+    getCaveCarver(seed).carveSubChunk(subChunk, getCaveSample, getHeight, minWorldY, maxWorldY)
   }
+
+  // Surface-open probe for features: lets tree placement (which spans
+  // sub-chunks) deterministically avoid entrance mouths and ravines.
+  const isSurfaceCarvedAt = getCaveSample
+    ? (worldX: number, worldZ: number): boolean =>
+        getCaveCarver(seed).isSurfaceOpenAt(worldX, worldZ, getHeight(worldX, worldZ), getCaveSample(worldX, worldZ))
+    : undefined
 
   // Phase 2.5: Apply water to terrain depressions (after caves, before skylight)
   // Water only fills open-air depressions above terrain surface, not caves
@@ -1026,7 +1086,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   }
 
   // Phase 3: Apply provisional skylight (uses blended height and biome skylight value)
-  applyProvisionalSkylight(subChunk, noise, seaLevel, minWorldY, maxWorldY, biomeData, biomeConfig.skylightValue)
+  applyProvisionalSkylight(subChunk, minWorldY, maxWorldY, biomeConfig.skylightValue, getHeight)
 
   // Phase 4: Apply all features (uses primary biome)
   const orePositions: OrePosition[] = []
@@ -1048,6 +1108,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
       terrainConfig: biomeConfig.terrainConfig,
     },
     getBaseHeightAt: getHeight,
+    isSurfaceCarvedAt,
   }
 
   // Apply all features

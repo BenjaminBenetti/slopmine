@@ -332,6 +332,10 @@ export class MegaTreeFeature extends Feature {
         // Check if tree should exist
         if (!this.shouldPlaceTree(treeWorldX, treeWorldZ)) continue
 
+        // Don't grow trees over cave mouths or ravines (the check is
+        // deterministic, so every sub-chunk slice of the tree agrees)
+        if (context.isSurfaceCarvedAt?.(treeWorldX, treeWorldZ)) continue
+
         // Get ground height and tree base
         const groundHeight = getBaseHeightAt(treeWorldX, treeWorldZ)
         const treeBaseY = groundHeight + 1

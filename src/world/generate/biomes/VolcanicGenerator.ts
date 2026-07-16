@@ -96,31 +96,21 @@ export class VolcanicGenerator extends BiomeGenerator {
     ],
     caves: {
       enabled: true,
-      minY: 164,
-      maxY: 230,
-      // Tunnel network settings - volcanic lava tubes
-      tunnelDensity: 4,
-      tunnelMinRadius: 2,
-      tunnelMaxRadius: 5,       // can be wider (lava tubes)
-      tunnelMaxLength: 220,
-      tunnelBranchChance: 0.1,  // less branching
-      tunnelTurnRate: 0.2,      // straighter tunnels (lava flow)
-      tunnelVerticalBias: -0.15, // tend downward
-      // Noise-based surface entrance settings - volcanic pits
-      noiseEntranceEnabled: true,
-      noiseEntranceDensity: 0.35,     // volcanic vents
-      noiseEntranceMinRadius: 2,
-      noiseEntranceMaxRadius: 4,
-      noiseEntranceMinDepth: 30,
-      noiseEntranceMaxDepth: 55,
-      noiseEntranceStyle: 'pit',      // volcanic vents/pits
-      // Chamber settings - large volcanic magma chambers
-      chamberEnabled: true,
-      chamberDensity: 0.25,
-      chamberMinRadius: 14,
-      chamberMaxRadius: 28,
-      chamberMinY: 165,
-      chamberMaxY: 195,
+      minY: 146,
+      maxY: 320,
+      floorFadeDepth: 10,
+      // Steep volcanic slopes need a deep falloff to avoid flank exposure
+      surfaceFalloffDepth: 20,
+      // Modest magma chambers
+      cheese: { enabled: true, threshold: 0.46, scale: 0.013, verticalScale: 1.2 },
+      // Long straight horizontal lava tubes (low variance = uniform bore)
+      spaghetti: { enabled: true, thickness: 0.075, thicknessVariance: 0.3, scale: 0.009, verticalSquash: 1.9 },
+      // Deep volcanic fissures are common
+      ravine: { enabled: true, scale: 0.004, width: 0.04, depth: 70, taper: 0.6, density: 0.4 },
+      entrance: { enabled: true, scale: 0.01, threshold: 0.82, boost: 0.6, depth: 55 },
+      floodLevel: 170,            // high lava table - the deep is dangerous
+      floodBlockId: BlockIds.LAVA,
+      liquidSurfaceGuardY: 237,   // lava lakes at 238: keep entrance mouths out of them
     },
     // No water in volcanic biomes - too hot!
     water: {

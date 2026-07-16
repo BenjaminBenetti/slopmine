@@ -9,7 +9,7 @@ import type { IChunkCoordinate } from '../interfaces/ICoordinates.ts'
 import { createChunkKey, type ChunkKey } from '../interfaces/ICoordinates.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
 import { getBlock } from '../blocks/BlockRegistry.ts'
-import { getLiquidBlockId } from './LiquidRegistry.ts'
+import { getLiquidBlockId, getFallingLiquidBlockId } from './LiquidRegistry.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
 
 export interface LiquidPhysicsConfig {
@@ -280,6 +280,9 @@ export class LiquidPhysicsManager {
     liquidPositions.sort((a, b) => b.worldY - a.worldY)
 
     let anyChanged = false
+    // Per-pass throttle: only one falling segment per block-column dries per
+    // pass, so cut waterfalls peter out top-down instead of vanishing at once.
+    const driedFallingColumns = new Set<string>()
 
     for (const pos of liquidPositions) {
       const worldX = baseX + BigInt(pos.x)
@@ -288,7 +291,7 @@ export class LiquidPhysicsManager {
 
       const blockId = this.getBlockId!(worldX, worldY, worldZ)
       if (this.isLiquidBlock(blockId)) {
-        if (this.processLiquidBlock(worldX, worldY, worldZ)) {
+        if (this.processLiquidBlock(worldX, worldY, worldZ, driedFallingColumns)) {
           anyChanged = true
         }
       }
@@ -317,6 +320,13 @@ export class LiquidPhysicsManager {
    */
   private isLiquidBlock(blockId: BlockId): boolean {
     return getBlock(blockId).properties.isLiquid
+  }
+
+  /**
+   * Check if a block is falling liquid (a waterfall column segment).
+   */
+  private isFallingLiquid(blockId: BlockId): boolean {
+    return getBlock(blockId).properties.isFallingLiquid === true
   }
 
   /**
@@ -360,7 +370,7 @@ export class LiquidPhysicsManager {
    * Process a single liquid block using Minecraft-style flow.
    * Returns true if any change occurred.
    */
-  private processLiquidBlock(x: bigint, y: bigint, z: bigint): boolean {
+  private processLiquidBlock(x: bigint, y: bigint, z: bigint, driedFallingColumns?: Set<string>): boolean {
     const blockId = this.getBlockId!(x, y, z)
     const level = this.getLiquidLevel(blockId)
     const family = this.getLiquidFamily(blockId)
@@ -374,6 +384,55 @@ export class LiquidPhysicsManager {
     // Get the source block ID for this liquid family
     const sourceBlockId = getLiquidBlockId(family, LIQUID_LEVEL_MAX)
 
+    // === FALLING LIQUID (waterfall column segment) ===
+    // Falling liquid never spreads sideways and never becomes an infinite
+    // source. Landed on solid -> convert to a real source (waterfall pools
+    // form and persist). Fed from above -> keep falling. Feed cut -> dry up
+    // (one segment per column per pass so streams peter out top-down).
+    if (this.isFallingLiquid(blockId)) {
+      if (this.isSolid(belowId)) {
+        if (this.setBlockRaw!(x, y, z, sourceBlockId)) {
+          this.queueColumnAt(x, z) // landed source spreads next tick
+          return true
+        }
+        return false
+      }
+
+      const aboveId = this.getBlockId!(x, y + 1n, z)
+      if (this.getLiquidFamily(aboveId) !== family) {
+        const colKey = `${x},${z}`
+        if (driedFallingColumns?.has(colKey)) {
+          this.queueColumnAt(x, z) // keep draining next tick
+          return false
+        }
+        driedFallingColumns?.add(colKey)
+        if (this.setBlockRaw!(x, y, z, BlockIds.AIR)) {
+          this.queueColumnAt(x, z)
+          return true
+        }
+        return false
+      }
+
+      // Still fed: continue the fall downward
+      if (belowId === BlockIds.AIR) {
+        if (this.setBlockRaw!(x, y - 1n, z, getFallingLiquidBlockId(family))) {
+          this.queueColumnAt(x, z)
+          return true
+        }
+      } else if (
+        belowFamily === family &&
+        !this.isFallingLiquid(belowId) &&
+        this.getLiquidLevel(belowId) < LIQUID_LEVEL_MAX
+      ) {
+        // Falling onto partial flow: overwhelm it with the falling column
+        if (this.setBlockRaw!(x, y - 1n, z, getFallingLiquidBlockId(family))) {
+          this.queueColumnAt(x, z)
+          return true
+        }
+      }
+      return false
+    }
+
     // === STEP 0: SOURCE CREATION (Minecraft infinite liquid) ===
     // If this is flowing liquid on a solid block with 2+ adjacent source blocks of same family, become a source
     if (level < LIQUID_LEVEL_MAX && this.isSolid(belowId)) {
@@ -385,10 +444,12 @@ export class LiquidPhysicsManager {
       const n3 = this.getBlockId!(x, y, z + 1n)
       const n4 = this.getBlockId!(x, y, z - 1n)
 
-      if (this.getLiquidFamily(n1) === family && this.getLiquidLevel(n1) >= LIQUID_LEVEL_MAX) sourceCount++
-      if (this.getLiquidFamily(n2) === family && this.getLiquidLevel(n2) >= LIQUID_LEVEL_MAX) sourceCount++
-      if (this.getLiquidFamily(n3) === family && this.getLiquidLevel(n3) >= LIQUID_LEVEL_MAX) sourceCount++
-      if (this.getLiquidFamily(n4) === family && this.getLiquidLevel(n4) >= LIQUID_LEVEL_MAX) sourceCount++
+      // Falling liquid is full-level but is NOT a source - without this
+      // exclusion, two adjacent waterfalls would mint permanent lakes mid-air.
+      if (this.getLiquidFamily(n1) === family && this.getLiquidLevel(n1) >= LIQUID_LEVEL_MAX && !this.isFallingLiquid(n1)) sourceCount++
+      if (this.getLiquidFamily(n2) === family && this.getLiquidLevel(n2) >= LIQUID_LEVEL_MAX && !this.isFallingLiquid(n2)) sourceCount++
+      if (this.getLiquidFamily(n3) === family && this.getLiquidLevel(n3) >= LIQUID_LEVEL_MAX && !this.isFallingLiquid(n3)) sourceCount++
+      if (this.getLiquidFamily(n4) === family && this.getLiquidLevel(n4) >= LIQUID_LEVEL_MAX && !this.isFallingLiquid(n4)) sourceCount++
 
       // Also count liquid above of same family as a source
       if (sourceCount < 2) {
@@ -407,8 +468,10 @@ export class LiquidPhysicsManager {
 
     // === STEP 1: FLOW DOWN ===
     if (belowId === BlockIds.AIR) {
-      // Flow down into air - create full liquid (falling liquid is full)
-      if (this.setBlockRaw!(x, y - 1n, z, sourceBlockId)) {
+      // Flow down into air as FALLING liquid: full-looking but not a source,
+      // so cutting the stream above drains the column instead of leaving a
+      // permanent pillar of water.
+      if (this.setBlockRaw!(x, y - 1n, z, getFallingLiquidBlockId(family))) {
         changed = true
         this.queueColumnAt(x, z)  // Same column, but queue for next tick
       }
@@ -422,8 +485,12 @@ export class LiquidPhysicsManager {
       }
     }
 
-    // === STEP 2: HORIZONTAL SPREAD (only if can't flow down) ===
-    if (this.isSolid(belowId) || (belowFamily === family && this.getLiquidLevel(belowId) >= LIQUID_LEVEL_MAX)) {
+    // === STEP 2: HORIZONTAL SPREAD (only when resting on solid ground) ===
+    // Minecraft rule: liquid on top of liquid never spreads sideways - it
+    // only feeds the column below. Only liquid resting on a solid floor
+    // spreads, which stops breached pools from cascading into caves at
+    // every depth of the water column while keeping waterfalls working.
+    if (this.isSolid(belowId)) {
       // Calculate the level we spread at
       const spreadLevel = level - 1
 

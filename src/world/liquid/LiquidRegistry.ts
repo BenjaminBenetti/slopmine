@@ -13,6 +13,9 @@ export class LiquidRegistry {
   // Map: "water:8" -> BlockIds.WATER
   private readonly familyLevelToBlockId: Map<string, BlockId> = new Map()
 
+  // Map: "water" -> BlockIds.WATER_FALLING
+  private readonly familyToFallingBlockId: Map<string, BlockId> = new Map()
+
   private constructor() {
     this.buildIndex()
   }
@@ -36,10 +39,15 @@ export class LiquidRegistry {
     for (const id of registry.getAllBlockIds()) {
       const block = registry.getBlock(id)
       const props = block.properties
-      if (props.isLiquid && props.liquidFamily && props.liquidLevel) {
-        const key = `${props.liquidFamily}:${props.liquidLevel}`
-        this.familyLevelToBlockId.set(key, props.id)
+      if (!props.isLiquid || !props.liquidFamily || !props.liquidLevel) continue
+      if (props.isFallingLiquid) {
+        // Falling variants are full-level but must never win the (family,
+        // level 8) lookup - that must always return the true source block.
+        this.familyToFallingBlockId.set(props.liquidFamily, props.id)
+        continue
       }
+      const key = `${props.liquidFamily}:${props.liquidLevel}`
+      this.familyLevelToBlockId.set(key, props.id)
     }
   }
 
@@ -59,6 +67,14 @@ export class LiquidRegistry {
   getSourceBlockId(family: string): BlockId {
     return this.getBlockId(family, 8)
   }
+
+  /**
+   * Get the falling-liquid block ID for a family.
+   * Falls back to the source block for families without a falling variant.
+   */
+  getFallingBlockId(family: string): BlockId {
+    return this.familyToFallingBlockId.get(family) ?? this.getSourceBlockId(family)
+  }
 }
 
 /**
@@ -73,4 +89,11 @@ export function getLiquidBlockId(family: string, level: number): BlockId {
  */
 export function getLiquidSourceBlockId(family: string): BlockId {
   return LiquidRegistry.getInstance().getSourceBlockId(family)
+}
+
+/**
+ * Convenience function to get the falling-liquid block ID for a family.
+ */
+export function getFallingLiquidBlockId(family: string): BlockId {
+  return LiquidRegistry.getInstance().getFallingBlockId(family)
 }

@@ -5,7 +5,7 @@
 
 import { getBlock } from '../blocks/BlockRegistry.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
-import { getLiquidBlockId } from './LiquidRegistry.ts'
+import { getLiquidBlockId, getFallingLiquidBlockId } from './LiquidRegistry.ts'
 import type { BlockId } from '../interfaces/IBlock.ts'
 
 /**
@@ -56,6 +56,13 @@ export function getLiquidFamily(blockId: BlockId): string | undefined {
  */
 export function isLiquidBlock(blockId: BlockId): boolean {
   return getBlock(blockId).properties.isLiquid
+}
+
+/**
+ * Check if a block is falling liquid (a waterfall column segment).
+ */
+export function isFallingLiquid(blockId: BlockId): boolean {
+  return getBlock(blockId).properties.isFallingLiquid === true
 }
 
 /**
@@ -112,7 +119,8 @@ export function processLiquidBlock(
   y: number,
   z: number,
   chunkSize: number,
-  columnsToRequeue: Set<string>
+  columnsToRequeue: Set<string>,
+  driedFallingColumns?: Set<string>
 ): boolean {
   const blockId = accessor.getBlockId(x, y, z)
   const level = getLiquidLevel(blockId)
@@ -127,6 +135,63 @@ export function processLiquidBlock(
   // Get the source block ID for this liquid family
   const sourceBlockId = getLiquidBlockId(family, LIQUID_LEVEL_MAX)
 
+  // Helper to queue a column based on world coordinates (defined early so
+  // the falling-liquid branch can use it)
+  const queueColumn = (wx: number, wz: number) => {
+    const chunkX = Math.floor(wx / chunkSize)
+    const chunkZ = Math.floor(wz / chunkSize)
+    columnsToRequeue.add(`${chunkX},${chunkZ}`)
+  }
+
+  // === FALLING LIQUID (waterfall column segment) ===
+  // Falling liquid never spreads sideways and never becomes an infinite
+  // source. It has exactly three behaviors:
+  //  1. Landed on solid ground -> convert to a real source block, so the
+  //     pool at the bottom of a waterfall forms and persists normally.
+  //  2. Fed from directly above -> keep falling (extend the column down).
+  //  3. Feed cut -> dry up. At most one segment per block-column dries per
+  //     pass so a cut stream visibly peters out top-down.
+  if (isFallingLiquid(blockId)) {
+    if (isSolid(belowId)) {
+      if (accessor.setBlock(x, y, z, sourceBlockId)) {
+        queueColumn(x, z) // landed source spreads next tick
+        return true
+      }
+      return false
+    }
+
+    const aboveId = accessor.getBlockId(x, y + 1, z)
+    if (getLiquidFamily(aboveId) !== family) {
+      // Stream cut - dry up (throttled to one segment per column per pass)
+      const colKey = `${x},${z}`
+      if (driedFallingColumns?.has(colKey)) {
+        queueColumn(x, z) // keep draining next tick
+        return false
+      }
+      driedFallingColumns?.add(colKey)
+      if (accessor.setBlock(x, y, z, BlockIds.AIR)) {
+        queueColumn(x, z)
+        return true
+      }
+      return false
+    }
+
+    // Still fed: continue the fall downward
+    if (belowId === BlockIds.AIR) {
+      if (accessor.setBlock(x, y - 1, z, getFallingLiquidBlockId(family))) {
+        queueColumn(x, z)
+        return true
+      }
+    } else if (belowFamily === family && !isFallingLiquid(belowId) && getLiquidLevel(belowId) < LIQUID_LEVEL_MAX) {
+      // Falling onto partial flow: overwhelm it with the falling column
+      if (accessor.setBlock(x, y - 1, z, getFallingLiquidBlockId(family))) {
+        queueColumn(x, z)
+        return true
+      }
+    }
+    return false
+  }
+
   // === STEP 0: SOURCE CREATION (Minecraft infinite liquid) ===
   // If this is flowing liquid on a solid block with 2+ adjacent source blocks of same family, become a source
   if (level < LIQUID_LEVEL_MAX && isSolid(belowId)) {
@@ -138,10 +203,12 @@ export function processLiquidBlock(
     const n3 = accessor.getBlockId(x, y, z + 1)
     const n4 = accessor.getBlockId(x, y, z - 1)
 
-    if (getLiquidFamily(n1) === family && getLiquidLevel(n1) >= LIQUID_LEVEL_MAX) sourceCount++
-    if (getLiquidFamily(n2) === family && getLiquidLevel(n2) >= LIQUID_LEVEL_MAX) sourceCount++
-    if (getLiquidFamily(n3) === family && getLiquidLevel(n3) >= LIQUID_LEVEL_MAX) sourceCount++
-    if (getLiquidFamily(n4) === family && getLiquidLevel(n4) >= LIQUID_LEVEL_MAX) sourceCount++
+    // Falling liquid is full-level but is NOT a source - without this
+    // exclusion, two adjacent waterfalls would mint permanent lakes mid-air.
+    if (getLiquidFamily(n1) === family && getLiquidLevel(n1) >= LIQUID_LEVEL_MAX && !isFallingLiquid(n1)) sourceCount++
+    if (getLiquidFamily(n2) === family && getLiquidLevel(n2) >= LIQUID_LEVEL_MAX && !isFallingLiquid(n2)) sourceCount++
+    if (getLiquidFamily(n3) === family && getLiquidLevel(n3) >= LIQUID_LEVEL_MAX && !isFallingLiquid(n3)) sourceCount++
+    if (getLiquidFamily(n4) === family && getLiquidLevel(n4) >= LIQUID_LEVEL_MAX && !isFallingLiquid(n4)) sourceCount++
 
     // Also count liquid above of same family as a source
     if (sourceCount < 2) {
@@ -158,19 +225,14 @@ export function processLiquidBlock(
     }
   }
 
-  // Helper to queue a column based on world coordinates
-  const queueColumnAt = (wx: number, wz: number) => {
-    const chunkX = Math.floor(wx / chunkSize)
-    const chunkZ = Math.floor(wz / chunkSize)
-    columnsToRequeue.add(`${chunkX},${chunkZ}`)
-  }
-
   // === STEP 1: FLOW DOWN ===
   if (belowId === BlockIds.AIR) {
-    // Flow down into air - create full liquid (falling liquid is full)
-    if (accessor.setBlock(x, y - 1, z, sourceBlockId)) {
+    // Flow down into air as FALLING liquid: full-looking but not a source,
+    // so cutting the stream above drains the column instead of leaving a
+    // permanent pillar of water.
+    if (accessor.setBlock(x, y - 1, z, getFallingLiquidBlockId(family))) {
       changed = true
-      queueColumnAt(x, z) // Same column, but queue for next tick
+      queueColumn(x, z) // Same column, but queue for next tick
     }
   } else if (belowFamily === family) {
     // Below is same liquid family - make it full if not already
@@ -182,8 +244,12 @@ export function processLiquidBlock(
     }
   }
 
-  // === STEP 2: HORIZONTAL SPREAD (only if can't flow down) ===
-  if (isSolid(belowId) || (belowFamily === family && getLiquidLevel(belowId) >= LIQUID_LEVEL_MAX)) {
+  // === STEP 2: HORIZONTAL SPREAD (only when resting on solid ground) ===
+  // Minecraft rule: liquid on top of liquid never spreads sideways - it only
+  // feeds the column below. Only the liquid resting on a solid floor spreads.
+  // This keeps waterfalls as narrow columns and stops a breached pool from
+  // cascading sideways into caves at every depth of its water column.
+  if (isSolid(belowId)) {
     // Calculate the level we spread at
     const spreadLevel = level - 1
 
@@ -205,13 +271,13 @@ export function processLiquidBlock(
         if (nId === BlockIds.AIR) {
           if (accessor.setBlock(n.x, y, n.z, spreadBlockId)) {
             changed = true
-            queueColumnAt(n.x, n.z) // Queue neighbor chunk for processing
+            queueColumn(n.x, n.z) // Queue neighbor chunk for processing
           }
         } else if (nFamily === family && nLevel < spreadLevel) {
           // Upgrade lower liquid of same family to our spread level
           if (accessor.setBlock(n.x, y, n.z, spreadBlockId)) {
             changed = true
-            queueColumnAt(n.x, n.z) // Queue neighbor chunk for processing
+            queueColumn(n.x, n.z) // Queue neighbor chunk for processing
           }
         }
       }
@@ -251,6 +317,9 @@ export function processLiquidColumn(
   liquidPositions.sort((a, b) => b.worldY - a.worldY)
 
   const columnsToRequeue = new Set<string>()
+  // Per-pass throttle: only one falling segment per block-column dries per
+  // pass, so cut waterfalls peter out top-down instead of vanishing at once.
+  const driedFallingColumns = new Set<string>()
   let anyChanged = false
 
   for (const pos of liquidPositions) {
@@ -260,7 +329,7 @@ export function processLiquidColumn(
 
     const blockId = accessor.getBlockId(worldX, worldY, worldZ)
     if (isLiquidBlock(blockId)) {
-      if (processLiquidBlock(accessor, worldX, worldY, worldZ, chunkSize, columnsToRequeue)) {
+      if (processLiquidBlock(accessor, worldX, worldY, worldZ, chunkSize, columnsToRequeue, driedFallingColumns)) {
         anyChanged = true
       }
     }

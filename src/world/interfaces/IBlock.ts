@@ -43,6 +43,13 @@ export interface IBlockProperties {
   readonly liquidLevel?: number
   /** For liquid blocks: the liquid family (e.g., 'water', 'lava') */
   readonly liquidFamily?: string
+  /**
+   * For liquid blocks: true if this is falling liquid (a waterfall column).
+   * Falling liquid renders full but is not a source: it survives only while
+   * fed by liquid directly above, and converts to a real source block when
+   * it lands on solid ground.
+   */
+  readonly isFallingLiquid?: boolean
 }
 
 /**

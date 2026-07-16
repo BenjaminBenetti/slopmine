@@ -21,6 +21,12 @@ export interface FeatureContext {
   readonly biomeProperties: BiomeProperties
   /** Get base terrain height at world coordinates (before features) */
   readonly getBaseHeightAt: (worldX: number, worldZ: number) => number
+  /**
+   * True if cave carving opened the surface at this column (entrance mouth,
+   * ravine). Deterministic across sub-chunks - use to avoid placing surface
+   * structures over holes. Optional: absent outside the worker pipeline.
+   */
+  readonly isSurfaceCarvedAt?: (worldX: number, worldZ: number) => boolean
   /** Frame budget for yielding to prevent blocking (optional in worker) */
   readonly frameBudget?: FrameBudget
 }

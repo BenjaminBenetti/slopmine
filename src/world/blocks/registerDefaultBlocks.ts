@@ -19,6 +19,7 @@ import { WaterHalfBlock } from './types/water_half/WaterHalfBlock.ts'
 import { WaterThreeEighthBlock } from './types/water_three_eighth/WaterThreeEighthBlock.ts'
 import { WaterQuarterBlock } from './types/water_quarter/WaterQuarterBlock.ts'
 import { WaterEighthBlock } from './types/water_eighth/WaterEighthBlock.ts'
+import { WaterFallingBlock } from './types/water/WaterFallingBlock.ts'
 import { LavaBlock } from './types/lava/LavaBlock.ts'
 import { LavaSevenEighthBlock } from './types/lava_seven_eighth/LavaSevenEighthBlock.ts'
 import { LavaThreeQuarterBlock } from './types/lava_three_quarter/LavaThreeQuarterBlock.ts'
@@ -27,6 +28,7 @@ import { LavaHalfBlock } from './types/lava_half/LavaHalfBlock.ts'
 import { LavaThreeEighthBlock } from './types/lava_three_eighth/LavaThreeEighthBlock.ts'
 import { LavaQuarterBlock } from './types/lava_quarter/LavaQuarterBlock.ts'
 import { LavaEighthBlock } from './types/lava_eighth/LavaEighthBlock.ts'
+import { LavaFallingBlock } from './types/lava/LavaFallingBlock.ts'
 import { SandBlock } from './types/sand/SandBlock.ts'
 import { SandstoneBlock } from './types/sandstone/SandstoneBlock.ts'
 import { CactusBlock } from './types/cactus/CactusBlock.ts'
@@ -45,6 +47,7 @@ import { SwampWaterHalfBlock } from './types/swamp_water_half/SwampWaterHalfBloc
 import { SwampWaterThreeEighthBlock } from './types/swamp_water_three_eighth/SwampWaterThreeEighthBlock.ts'
 import { SwampWaterQuarterBlock } from './types/swamp_water_quarter/SwampWaterQuarterBlock.ts'
 import { SwampWaterEighthBlock } from './types/swamp_water_eighth/SwampWaterEighthBlock.ts'
+import { SwampWaterFallingBlock } from './types/swamp_water/SwampWaterFallingBlock.ts'
 import { MuddyGrassBlock } from './types/muddy_grass/MuddyGrassBlock.ts'
 import { BlueMushroomBlock } from './types/blue_mushroom/BlueMushroomBlock.ts'
 import { BlueMushroomCapBlock } from './types/blue_mushroom_cap/BlueMushroomCapBlock.ts'
@@ -112,6 +115,7 @@ export function registerDefaultBlocks(): void {
   registerBlock(new WaterThreeEighthBlock())
   registerBlock(new WaterQuarterBlock())
   registerBlock(new WaterEighthBlock())
+  registerBlock(new WaterFallingBlock())
 
   // Lava blocks
   registerBlock(new LavaBlock())
@@ -122,6 +126,7 @@ export function registerDefaultBlocks(): void {
   registerBlock(new LavaThreeEighthBlock())
   registerBlock(new LavaQuarterBlock())
   registerBlock(new LavaEighthBlock())
+  registerBlock(new LavaFallingBlock())
 
   // Desert biome blocks
   registerBlock(new SandBlock())
@@ -155,6 +160,7 @@ export function registerDefaultBlocks(): void {
   registerBlock(new SwampWaterThreeEighthBlock())
   registerBlock(new SwampWaterQuarterBlock())
   registerBlock(new SwampWaterEighthBlock())
+  registerBlock(new SwampWaterFallingBlock())
 
   // Crop blocks
   registerBlock(new Wheat1Block())
