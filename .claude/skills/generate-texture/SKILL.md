@@ -28,11 +28,63 @@ Style requirements:
 - Inspired by 16-bit era games and modern voxel games like Minecraft but with more textural detail
 ```
 
+## Face-Specific Design Rules
+
+- **Log/pillar END textures (top/bottom faces)**: never accept a circular ring
+  motif floating inside the square — corners read as a "pasted-on circle" on the
+  cube face. Prompt for rings that FILL the square edge-to-edge, e.g. "concentric
+  squarish growth rings following the square shape of the face, filling it
+  edge-to-edge, with a bark rim running along all four edges".
+- **Foliage/leaf textures**: must ship with REAL alpha holes (the game standard —
+  e.g. oak-leaves.webp is TrueColorAlpha; leaf materials use `alphaTest: 0.5`).
+  The AI generator cannot output true transparency, so:
+  1. Prompt for foliage "on a plain solid WHITE background, with small white
+     gaps showing through between the leaf clusters" (never say "transparent" —
+     the AI paints a fake checkerboard).
+  2. Punch out ALL white (including interior gaps — unlike icons, do NOT
+     floodfill from the corner):
+     `convert in.png -fuzz 12% -transparent white -resize 64x64 -quality 60 out.webp`
+  3. Verify: `identify -verbose out.webp | grep Type:` must say `TrueColorAlpha`,
+     and measure what `alphaTest: 0.5` will actually keep:
+     `convert out.webp -alpha extract -threshold 50% -format "%[fx:mean]" info:`
+     — aim for 0.70-0.90 solid (10-30% holes).
+  4. **Proven fallback** (use when the white-background prompt yields sparse
+     foliage that ends up mostly holes — it often does): generate the foliage
+     DENSE and fully opaque (no white background in the prompt), then knock the
+     darkest shadow pixels out as holes, tuning the luminance threshold until
+     the solid fraction lands in 0.70-0.90:
+     `convert dense.webp \( +clone -colorspace gray -threshold 15% \) -alpha off -compose CopyOpacity -composite out.webp`
+     The holes land in the shadowed gaps between leaf clumps, which reads
+     naturally in-game.
+
 ## Workflow
 
 1. **Generate** using `mcp__art-gen__generate_image` with the combined base prompt + user description
 2. **Convert** to 64x64 WebP: `convert "{output}.png" -resize 64x64 -quality 60 "{name}.webp"`
-3. **Place** in `src/world/blocks/types/{block_name}/assets/`
+   (foliage: use the alpha punch-out command from the design rules above instead)
+3. **REVIEW — mandatory, never skip.** Every generated texture must be visually
+   inspected before it is placed, and regenerated (with an adjusted prompt) if it
+   fails any check:
+   1. Build a review sheet showing the texture solo AND tiled 2x2 (tiling is
+      where seams and repeating artifacts show up):
+      ```bash
+      montage tex.webp tex.webp tex.webp tex.webp -tile 2x2 -geometry +0+0 tiled.png
+      montage tex.webp tiled.png -tile 2x1 -geometry 256x256+8+8 -background gray20 review.png
+      ```
+   2. View review.png with the Read tool and check ALL of:
+      - tiles seamlessly — no visible grid lines, edge discontinuities, or one
+        conspicuous feature that repeats like wallpaper
+      - the design fills the square face (see face-specific rules: no circle-in-
+        square log ends, no vignettes, no borders)
+      - foliage shows real transparent holes in the tiled view
+      - reads correctly at block scale (64px) — not muddy, not one flat color
+      - palette and pixelation match the existing textures in
+        src/world/blocks/types/*/assets/
+   3. If any check fails: adjust the prompt to name the failure explicitly
+      (e.g. "rings must reach the square edges") and regenerate. Do not place a
+      failing texture, and do not stop reviewing after the first success —
+      re-review after every regeneration.
+4. **Place** in `src/world/blocks/types/{block_name}/assets/`
 
 ---
 

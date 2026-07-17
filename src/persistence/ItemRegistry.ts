@@ -55,6 +55,14 @@ import { Hemp3BlockItem } from '../items/blocks/hemp/Hemp3BlockItem.ts'
 import { BedBlockItem } from '../items/blocks/bed/BedBlockItem.ts'
 import { DiviningStickBlockItem } from '../items/blocks/divining_stick/DiviningStickBlockItem.ts'
 import { ChestBlockItem } from '../items/blocks/chest/ChestBlockItem.ts'
+import { PineLogBlockItem } from '../items/blocks/pine_log/PineLogBlockItem.ts'
+import { PineNeedlesBlockItem } from '../items/blocks/pine_needles/PineNeedlesBlockItem.ts'
+import { PodzolBlockItem } from '../items/blocks/podzol/PodzolBlockItem.ts'
+import { RedwoodLogBlockItem } from '../items/blocks/redwood_log/RedwoodLogBlockItem.ts'
+import { RedwoodLeavesBlockItem } from '../items/blocks/redwood_leaves/RedwoodLeavesBlockItem.ts'
+import { MossBlockItem } from '../items/blocks/moss/MossBlockItem.ts'
+import { MossyStoneBlockItem } from '../items/blocks/mossy_stone/MossyStoneBlockItem.ts'
+import { CoastalFernBlockItem } from '../items/blocks/coastal_fern/CoastalFernBlockItem.ts'
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
@@ -220,6 +228,14 @@ export function initializeItemRegistry(): void {
   registerItemFactory('bed_head_block', () => new BedBlockItem())
   registerItemFactory('divining_stick_block', () => new DiviningStickBlockItem())
   registerItemFactory('chest_block', () => new ChestBlockItem())
+  registerItemFactory('pine_log_block', () => new PineLogBlockItem())
+  registerItemFactory('pine_needles_block', () => new PineNeedlesBlockItem())
+  registerItemFactory('podzol_block', () => new PodzolBlockItem())
+  registerItemFactory('redwood_log_block', () => new RedwoodLogBlockItem())
+  registerItemFactory('redwood_leaves_block', () => new RedwoodLeavesBlockItem())
+  registerItemFactory('moss_block', () => new MossBlockItem())
+  registerItemFactory('mossy_stone_block', () => new MossyStoneBlockItem())
+  registerItemFactory('coastal_fern_block', () => new CoastalFernBlockItem())
 
   // Ore/resource items
   registerItemFactory('coal', () => new CoalItem())

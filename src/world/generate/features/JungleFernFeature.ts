@@ -44,7 +44,7 @@ export class JungleFernFeature extends Feature {
   }
 
   async scan(context: FeatureContext): Promise<void> {
-    const { chunk, getBaseHeightAt, frameBudget } = context
+    const { chunk, getBaseHeightAt, frameBudget, isSurfaceCarvedAt } = context
     const { density, gridSize, minPatchSize, maxPatchSize, patchRadius } = this.settings
     const coord = chunk.coordinate
 
@@ -98,7 +98,8 @@ export class JungleFernFeature extends Feature {
           patchRadius,
           subChunkMinY,
           subChunkMaxY,
-          getBaseHeightAt
+          getBaseHeightAt,
+          isSurfaceCarvedAt
         )
       }
     }
@@ -121,7 +122,8 @@ export class JungleFernFeature extends Feature {
     patchRadius: number,
     subChunkMinY: number,
     subChunkMaxY: number,
-    getBaseHeightAt: (worldX: number, worldZ: number) => number
+    getBaseHeightAt: (worldX: number, worldZ: number) => number,
+    isSurfaceCarvedAt?: (worldX: number, worldZ: number) => boolean
   ): void {
     let placed = 0
 
@@ -149,6 +151,12 @@ export class JungleFernFeature extends Feature {
 
       const worldX = centerWorldX + dx
       const worldZ = centerWorldZ + dz
+
+      // Skip columns where cave carving opened the surface - the ground-block
+      // check below only catches carved columns whose ground Y lands inside
+      // this sub-chunk, so this per-fern guard gives full coverage and keeps
+      // ferns from floating over cave mouths/ravines.
+      if (isSurfaceCarvedAt?.(worldX, worldZ)) continue
 
       // Get height at this position
       const groundHeight = getBaseHeightAt(worldX, worldZ)

@@ -15,8 +15,10 @@ import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandl
 const MAX_INTERACTION_DISTANCE = 5
 
 /**
- * Handles E-key interaction with blocks.
- * Opens appropriate UI for interactable blocks.
+ * Handles the E key — the single "interact" key:
+ * - Targeting an interactable block: run its action or open its UI
+ * - Otherwise: toggle the player inventory
+ * - Any open overlay (block UI or inventory): close it
  */
 export class BlockInteractionHandler {
   private readonly domElement: HTMLElement
@@ -88,6 +90,10 @@ export class BlockInteractionHandler {
     // Avoid conflicting with browser/system shortcuts
     if (event.altKey || event.ctrlKey || event.metaKey) return
 
+    // Don't steal 'e' while typing in a text field (e.g. recipe book search)
+    const target = event.target
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+
     // If block UI is open, close it
     if (this.isBlockUIOpen) {
       event.preventDefault()
@@ -95,17 +101,32 @@ export class BlockInteractionHandler {
       return
     }
 
+    // If the inventory is open, close it
+    if (this.inventoryInputHandler.isOpen) {
+      event.preventDefault()
+      this.inventoryInputHandler.toggleInventory()
+      return
+    }
+
     // Only open when pointer locked (in game)
     if (!this.pointerLocked) return
 
     event.preventDefault()
-    this.tryOpenBlockUI()
+
+    // Targeting an interactable block takes priority; otherwise open inventory
+    if (!this.tryOpenBlockUI()) {
+      this.inventoryInputHandler.toggleInventory()
+    }
   }
 
-  private tryOpenBlockUI(): void {
+  /**
+   * Attempt to interact with the targeted block.
+   * Returns true if the key was consumed (action ran or a UI opened).
+   */
+  private tryOpenBlockUI(): boolean {
     // Raycast to find targeted block
     const hit = this.raycaster.castFromCamera(this.camera, MAX_INTERACTION_DISTANCE)
-    if (!hit) return
+    if (!hit) return false
 
     // First check if block has a simple action (no UI needed)
     if (blockActionRegistry.hasAction(hit.blockId)) {
@@ -118,24 +139,25 @@ export class BlockInteractionHandler {
         hit.worldZ,
         metadata
       )
-      return
+      return true
     }
 
     // Check if block has a registered UI
-    if (!blockUIRegistry.hasUI(hit.blockId)) return
+    if (!blockUIRegistry.hasUI(hit.blockId)) return false
 
     // Get the block state
     const position = { x: hit.worldX, y: hit.worldY, z: hit.worldZ }
     const state = BlockStateManager.getInstance().getState(position)
-    if (!state) return
+    if (!state) return false
 
     // Create the block UI
     const blockUI = blockUIRegistry.createUI(hit.blockId, state)
-    if (!blockUI) return
+    if (!blockUI) return false
 
     this.currentBlockUI = blockUI
     this.currentHit = hit
     this.showBlockUI()
+    return true
   }
 
   private showBlockUI(): void {

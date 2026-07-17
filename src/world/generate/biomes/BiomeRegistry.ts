@@ -7,6 +7,8 @@ import { DesertGenerator } from './DesertGenerator.ts'
 import { VolcanicGenerator } from './VolcanicGenerator.ts'
 import { JungleGenerator } from './JungleGenerator.ts'
 import { SwampGenerator } from './SwampGenerator.ts'
+import { PineForestGenerator } from './PineForestGenerator.ts'
+import { CoastalRainforestGenerator } from './CoastalRainforestGenerator.ts'
 import { HellGenerator } from './HellGenerator.ts'
 
 /**
@@ -104,6 +106,22 @@ export class BiomeRegistry {
       frequency: swampGen.getBiomeProperties().frequency,
       layer: 1,
       createGenerator: (config) => new SwampGenerator(config),
+    })
+
+    const pineForestGen = new PineForestGenerator(defaultConfig)
+    this.register({
+      type: 'pine-forest',
+      frequency: pineForestGen.getBiomeProperties().frequency,
+      layer: 1,
+      createGenerator: (config) => new PineForestGenerator(config),
+    })
+
+    const coastalRainforestGen = new CoastalRainforestGenerator(defaultConfig)
+    this.register({
+      type: 'coastal-rainforest',
+      frequency: coastalRainforestGen.getBiomeProperties().frequency,
+      layer: 1,
+      createGenerator: (config) => new CoastalRainforestGenerator(config),
     })
 
     // Layer 0 (underground) biomes

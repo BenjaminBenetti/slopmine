@@ -440,7 +440,7 @@ Player state, controls, and block interactions.
 - `BlockInteractionHandler.ts` - E-key block UI interaction (forge, etc.)
 - `MiningDamage.ts` - Tool effectiveness calculations
 - `ToolbarInput.ts` - Hotbar selection (1-9, 0, mouse wheel)
-- `InventoryInput.ts` - Inventory toggle (I/Q key)
+- `InventoryInput.ts` - Inventory overlay open/close mechanics (toggled via E in BlockInteractionHandler)
 
 **Controls:**
 | Key | Action |
@@ -451,8 +451,7 @@ Player state, controls, and block interactions.
 | Ctrl+Alt+P | Toggle flying |
 | 1-9, 0 | Select hotbar slot |
 | Mouse Wheel | Cycle hotbar |
-| I / Q | Toggle inventory |
-| E | Interact with block |
+| E | Interact with targeted block, else toggle inventory; closes any open overlay |
 | Left Click | Mine block (hold) |
 | Right Click | Place block |
 

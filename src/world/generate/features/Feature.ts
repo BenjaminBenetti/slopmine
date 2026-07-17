@@ -27,6 +27,13 @@ export interface FeatureContext {
    * structures over holes. Optional: absent outside the worker pipeline.
    */
   readonly isSurfaceCarvedAt?: (worldX: number, worldZ: number) => boolean
+  /**
+   * Biome name owning the 512-block biome region containing this column.
+   * Deterministic across chunks/sub-chunks - use to keep cross-chunk
+   * structures out of regions whose biome doesn't run this feature.
+   * Optional: absent outside the worker pipeline.
+   */
+  readonly getBiomeNameAt?: (worldX: number, worldZ: number) => string
   /** Frame budget for yielding to prevent blocking (optional in worker) */
   readonly frameBudget?: FrameBudget
 }

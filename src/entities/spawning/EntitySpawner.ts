@@ -214,6 +214,12 @@ export class EntitySpawner implements ITask {
       const maxY = config.maxY ?? 1024
       if (spawnY < minY || spawnY > maxY) continue
 
+      // Check ground block constraint if specified (e.g. beach creatures on sand)
+      if (config.validGroundBlocks !== undefined) {
+        const groundBlockId = this.worldManager.getBlockIdFast(worldX, Number(groundY), worldZ)
+        if (!config.validGroundBlocks.includes(groundBlockId)) continue
+      }
+
       // Check maximum light level constraint if specified (for cave creatures)
       if (config.maxLightLevel !== undefined) {
         const lightLevel = this.worldManager.getLightLevelAtWorld(worldX, spawnY, worldZ)

@@ -43,6 +43,14 @@ export interface EntitySpawnConfig {
   minLightLevel?: number
 
   /**
+   * Block IDs the entity may spawn on.
+   * When specified, the solid ground block directly beneath the spawn
+   * position must be one of these (e.g. sand for beach creatures).
+   * When omitted, any ground block is valid.
+   */
+  validGroundBlocks?: number[]
+
+  /**
    * Factory function to create the entity at the given position.
    */
   createEntity: (position: THREE.Vector3) => IEntity

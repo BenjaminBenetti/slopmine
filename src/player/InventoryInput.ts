@@ -18,12 +18,17 @@ export interface InventoryInput {
   readonly isBlockUIActive: boolean
   /** Set block UI active state (called by BlockInteractionHandler) */
   setBlockUIActive(active: boolean): void
+  /** Whether the inventory overlay is currently open */
+  readonly isOpen: boolean
+  /** Toggle the inventory open/closed (called by BlockInteractionHandler on 'E') */
+  toggleInventory(): void
   dispose(): void
 }
 
   /**
    * Handles input for the full inventory UI:
-   * - Press 'I' (while pointer locked) to toggle open/closed
+   * - 'E' toggles it via BlockInteractionHandler (which owns the key
+   *   and routes to a block UI instead when targeting an interactable)
    * - Press Escape to close when open
    *
    * When the inventory is open, pointer lock is released so the mouse
@@ -59,6 +64,11 @@ export class InventoryInputHandler implements InventoryInput {
   /** Check if block UI has control of the inventory overlay */
   get isBlockUIActive(): boolean {
     return this.blockUIActive
+  }
+
+  /** Whether the inventory overlay is currently open */
+  get isOpen(): boolean {
+    return this.inventoryUI.isOpen
   }
 
   /** Set block UI active state */
@@ -187,22 +197,19 @@ export class InventoryInputHandler implements InventoryInput {
 
     // Ignore input completely when the game is not focused on the canvas
     // and the inventory is not open. Once the inventory is open we still
-    // want ESC / 'I' to work even though pointer lock has been released.
+    // want ESC to work even though pointer lock has been released.
     if (!this.pointerLocked && !this.inventoryUI.isOpen) return
 
     // Avoid conflicting with browser/system shortcuts
     if (event.altKey || event.ctrlKey || event.metaKey) return
 
-    if (event.code === 'KeyI' || event.code === 'KeyQ') {
-      event.preventDefault()
-      this.toggleInventory()
-    } else if (event.code === 'Escape' && this.inventoryUI.isOpen) {
+    if (event.code === 'Escape' && this.inventoryUI.isOpen) {
       event.preventDefault()
       this.closeInventory()
     }
   }
 
-  private toggleInventory(): void {
+  toggleInventory(): void {
     if (this.inventoryUI.isOpen) {
       this.closeInventory()
     } else {

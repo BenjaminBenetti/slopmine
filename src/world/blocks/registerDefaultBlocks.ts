@@ -78,6 +78,15 @@ import { BedFootBlock } from './types/bed_foot/BedFootBlock.ts'
 import { RopeLadderBlock } from './types/rope_ladder/RopeLadderBlock.ts'
 import { DiviningStickBlock } from './types/divining_stick/DiviningStickBlock.ts'
 import { ChestBlock } from './types/chest/ChestBlock.ts'
+import { PineLogBlock } from './types/pine_log/PineLogBlock.ts'
+import { PineNeedlesBlock } from './types/pine_needles/PineNeedlesBlock.ts'
+import { PodzolBlock } from './types/podzol/PodzolBlock.ts'
+import { RedwoodLogBlock } from './types/redwood_log/RedwoodLogBlock.ts'
+import { RedwoodLeavesBlock } from './types/redwood_leaves/RedwoodLeavesBlock.ts'
+import { MossBlock } from './types/moss/MossBlock.ts'
+import { MossyStoneBlock } from './types/mossy_stone/MossyStoneBlock.ts'
+import { CoastalFernBlock } from './types/coastal_fern/CoastalFernBlock.ts'
+import { CoastalFernTopBlock } from './types/coastal_fern_top/CoastalFernTopBlock.ts'
 
 /**
  * Register all default block types.
@@ -198,4 +207,17 @@ export function registerDefaultBlocks(): void {
   // Furniture blocks
   registerBlock(new BedHeadBlock())
   registerBlock(new BedFootBlock())
+
+  // Pine forest biome blocks
+  registerBlock(new PineLogBlock())
+  registerBlock(new PineNeedlesBlock())
+  registerBlock(new PodzolBlock())
+
+  // Coastal rain forest biome blocks
+  registerBlock(new RedwoodLogBlock())
+  registerBlock(new RedwoodLeavesBlock())
+  registerBlock(new MossBlock())
+  registerBlock(new MossyStoneBlock())
+  registerBlock(new CoastalFernBlock())
+  registerBlock(new CoastalFernTopBlock())
 }

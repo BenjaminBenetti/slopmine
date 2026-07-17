@@ -100,6 +100,17 @@ export enum TextureId {
   CHEST_FRONT = 89,              // chest-front.webp
   CHEST_SIDE = 90,               // chest-side.webp
   CHEST_TOP = 91,                // chest-top.webp
+  PINE_LOG_SIDE = 92,            // pine-log.webp
+  PINE_LOG_END = 93,             // pine-log-top.webp
+  PINE_NEEDLES = 94,             // pine-needles.webp
+  PODZOL = 95,                   // podzol.webp
+  REDWOOD_LOG_SIDE = 96,         // redwood-log.webp
+  REDWOOD_LOG_END = 97,          // redwood-log-top.webp
+  REDWOOD_LEAVES = 98,           // redwood-leaves.webp
+  MOSS = 99,                     // moss.webp
+  MOSSY_STONE = 100,             // mossy-stone.webp
+  COASTAL_FERN = 101,            // coastal-fern.webp (bottom half)
+  COASTAL_FERN_TOP = 102,        // coastal-fern-top.webp (top half)
 }
 
 // Cache for the face texture map

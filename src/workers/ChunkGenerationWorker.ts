@@ -26,6 +26,10 @@ import { FlowerPatchFeature, type FlowerPatchFeatureSettings } from '../world/ge
 import { RiverbankMudFeature, type RiverbankMudFeatureSettings } from '../world/generate/features/RiverbankMudFeature.ts'
 import { JungleFernFeature, type JungleFernFeatureSettings } from '../world/generate/features/JungleFernFeature.ts'
 import { RiverbankClayFeature, type RiverbankClayFeatureSettings } from '../world/generate/features/RiverbankClayFeature.ts'
+import { PineTreeFeature, type PineTreeFeatureSettings } from '../world/generate/features/PineTreeFeature.ts'
+import { GiantConiferFeature, type GiantConiferFeatureSettings } from '../world/generate/features/GiantConiferFeature.ts'
+import { BoulderFeature, type BoulderFeatureSettings } from '../world/generate/features/BoulderFeature.ts'
+import { TallFernFeature, type TallFernFeatureSettings } from '../world/generate/features/TallFernFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
@@ -113,6 +117,10 @@ export type FeatureConfig =
   | { type: 'jungleFern'; settings: JungleFernFeatureSettings }
   | { type: 'riverbankClay'; settings: RiverbankClayFeatureSettings }
   | { type: 'hemp'; settings: HempFeatureSettings }
+  | { type: 'pineTree'; settings: PineTreeFeatureSettings }
+  | { type: 'giantConifer'; settings: GiantConiferFeatureSettings }
+  | { type: 'boulder'; settings: BoulderFeatureSettings }
+  | { type: 'tallFern'; settings: TallFernFeatureSettings }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -309,6 +317,14 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new RiverbankClayFeature(config.settings)
       case 'hemp':
         return new HempFeature(config.settings)
+      case 'pineTree':
+        return new PineTreeFeature(config.settings)
+      case 'giantConifer':
+        return new GiantConiferFeature(config.settings)
+      case 'boulder':
+        return new BoulderFeature(config.settings)
+      case 'tallFern':
+        return new TallFernFeature(config.settings)
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }
@@ -1092,6 +1108,27 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   const orePositions: OrePosition[] = []
   const features = createFeatures(biomeConfig.features)
 
+  // Biome name lookup for feature placement decisions. Maps a world column's
+  // 512-block biome region onto this chunk's blend data (undefined neighbor
+  // entries mean "same as primary"). Pure function of world coords, so every
+  // chunk/sub-chunk rendering a slice of the same structure gets the same
+  // answer. Columns beyond the 8 adjacent regions clamp to the nearest edge.
+  const homeRegionX = Math.floor((chunkX * CHUNK_SIZE_X) / BIOME_REGION_SIZE_BLOCKS)
+  const homeRegionZ = Math.floor((chunkZ * CHUNK_SIZE_Z) / BIOME_REGION_SIZE_BLOCKS)
+  const getBiomeNameAt = (worldX: number, worldZ: number): string => {
+    const dx = Math.max(-1, Math.min(1, Math.floor(worldX / BIOME_REGION_SIZE_BLOCKS) - homeRegionX))
+    const dz = Math.max(-1, Math.min(1, Math.floor(worldZ / BIOME_REGION_SIZE_BLOCKS) - homeRegionZ))
+    let cfg: WorkerBiomeConfig | undefined
+    if (dz === -1) {
+      cfg = dx === -1 ? biomeData.northwest : dx === 1 ? biomeData.northeast : biomeData.north
+    } else if (dz === 1) {
+      cfg = dx === -1 ? biomeData.southwest : dx === 1 ? biomeData.southeast : biomeData.south
+    } else {
+      cfg = dx === -1 ? biomeData.west : dx === 1 ? biomeData.east : biomeData.primary
+    }
+    return (cfg ?? biomeData.primary).name
+  }
+
   // Create feature context for this sub-chunk
   const featureContext: FeatureContext = {
     chunk: subChunk,
@@ -1109,6 +1146,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     },
     getBaseHeightAt: getHeight,
     isSurfaceCarvedAt,
+    getBiomeNameAt,
   }
 
   // Apply all features

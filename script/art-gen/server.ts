@@ -10,7 +10,10 @@ import * as path from "path";
 
 const OUTPUT_DIR = path.join(import.meta.dirname, "output");
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MODEL_ID = "gemini-2.0-flash-exp-image-generation";
+// Nano Banana 2 (stable). Override via GEMINI_IMAGE_MODEL, e.g.
+// "gemini-3-pro-image" for the premium tier or
+// "gemini-3.1-flash-lite-image" for the fast/cheap tier.
+const MODEL_ID = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent`;
 
 // Ensure output directory exists

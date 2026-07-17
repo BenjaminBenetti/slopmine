@@ -6,3 +6,7 @@ export { OasisFeature, type OasisSettings, type OasisLocation } from './OasisFea
 export { LavaFeature, type LavaFeatureConfig } from './LavaFeature.ts'
 export { HellPillarFeature, type HellPillarFeatureConfig } from './HellPillarFeature.ts'
 export { FlowerPatchFeature, type FlowerPatchFeatureSettings } from './FlowerPatchFeature.ts'
+export { PineTreeFeature, type PineTreeFeatureSettings } from './PineTreeFeature.ts'
+export { GiantConiferFeature, type GiantConiferFeatureSettings } from './GiantConiferFeature.ts'
+export { BoulderFeature, type BoulderFeatureSettings } from './BoulderFeature.ts'
+export { TallFernFeature, type TallFernFeatureSettings } from './TallFernFeature.ts'

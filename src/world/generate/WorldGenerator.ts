@@ -22,6 +22,10 @@ import { FlowerPatchFeature } from './features/FlowerPatchFeature.ts'
 import { RiverbankMudFeature } from './features/RiverbankMudFeature.ts'
 import { JungleFernFeature } from './features/JungleFernFeature.ts'
 import { RiverbankClayFeature } from './features/RiverbankClayFeature.ts'
+import { PineTreeFeature } from './features/PineTreeFeature.ts'
+import { GiantConiferFeature } from './features/GiantConiferFeature.ts'
+import { BoulderFeature } from './features/BoulderFeature.ts'
+import { TallFernFeature } from './features/TallFernFeature.ts'
 import type { WaterEdgeEffects } from './features/WaterFeature.ts'
 import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../workers/ChunkGenerationWorker.ts'
 import type { PersistenceManager } from '../../persistence/PersistenceManager.ts'
@@ -211,6 +215,18 @@ export class WorldGenerator {
       }
       if (feature instanceof RiverbankClayFeature) {
         return { type: 'riverbankClay', settings: feature.settings }
+      }
+      if (feature instanceof PineTreeFeature) {
+        return { type: 'pineTree', settings: feature.settings }
+      }
+      if (feature instanceof GiantConiferFeature) {
+        return { type: 'giantConifer', settings: feature.settings }
+      }
+      if (feature instanceof BoulderFeature) {
+        return { type: 'boulder', settings: feature.settings }
+      }
+      if (feature instanceof TallFernFeature) {
+        return { type: 'tallFern', settings: feature.settings }
       }
       throw new Error(`Unknown feature type: ${feature.constructor.name}`)
     })
