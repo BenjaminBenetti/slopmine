@@ -137,7 +137,7 @@ export class PlainsGenerator extends BiomeGenerator {
       entrance: { enabled: true, scale: 0.012, threshold: 0.8, boost: 0.55, depth: 50 },
       floodLevel: 152,            // deep caves flood with lava
       floodBlockId: BlockIds.LAVA,
-      liquidSurfaceGuardY: 237,   // waterLevel 238 - 1: only guard entrance mouths under pools
+      liquidSurfaceGuardY: 240,   // waterLevel 238 + 2: guards entrance mouths, pipes, and (partially) ravines under pools and shores
     },
     water: {
       enabled: true,

@@ -291,8 +291,17 @@ improbably strong — that bug produced blind stub entrances). Ravines are addit
 low-frequency density mask (`ravine.density`, ~0.3 keeps a quarter of the
 lines) that culls whole ravines rather than thinning them. Carved blocks
 below `floodLevel` become `floodBlockId` (lava, swamp water). Columns whose
-surface is below `liquidSurfaceGuardY` suppress entrance mouths (ravines are
-allowed through pools — draining waterfalls are a feature).
+surface is at or below `liquidSurfaceGuardY` (set to the biome's
+`waterLevel + 2`, so it covers lake/pool beds *and* their shore ring) are
+lake/pool beds: they fully suppress entrance mouths and pipes so caves don't
+tear open water beds that then drain at runtime. Ravines under such columns
+are only *partially* culled — the density mask is tightened by
+`ravine.poolCrossDensity` (~0.25), and because the mask is low-frequency
+(whole-line) this seals the under-pool segment of ~75% of pool-crossing
+ravines while the strongest-mask quarter still cross fully, leaving the
+occasional intentional draining waterfall. (Desert `OasisFeature` runs the
+same guard the other way: it probes its footprint with `isSurfaceCarvedAt`
+and skips any oasis whose bed a cave already breached.)
 
 Each biome sets its own `caves: CaveConfig` in `BiomeProperties`; all numeric
 parameters are blended per-column across biome borders in the worker (same

@@ -186,7 +186,7 @@ export class JungleGenerator extends BiomeGenerator {
       entrance: { enabled: true, scale: 0.012, threshold: 0.82, boost: 0.5, depth: 45 },
       floodLevel: 152,
       floodBlockId: BlockIds.LAVA,
-      liquidSurfaceGuardY: 237,   // waterLevel 238 - 1: only guards entrance mouths
+      liquidSurfaceGuardY: 240,   // waterLevel 238 + 2: guards entrance mouths, pipes, and (partially) ravines under pools and shores
     },
     water: {
       enabled: true,

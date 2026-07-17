@@ -110,7 +110,7 @@ export class VolcanicGenerator extends BiomeGenerator {
       entrance: { enabled: true, scale: 0.01, threshold: 0.82, boost: 0.6, depth: 55 },
       floodLevel: 170,            // high lava table - the deep is dangerous
       floodBlockId: BlockIds.LAVA,
-      liquidSurfaceGuardY: 237,   // lava lakes at 238: keep entrance mouths out of them
+      liquidSurfaceGuardY: 240,   // lava lakes at 238 + 2: guards entrance mouths, pipes, and (partially) ravines under lava lakes and shores
     },
     // No water in volcanic biomes - too hot!
     water: {

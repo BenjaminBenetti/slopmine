@@ -255,8 +255,13 @@ export class CaveCarver {
     const entranceFactorSq = entranceFactor * entranceFactor
 
     if (params.ravineStrength > 0.001 && params.ravineWidth > 0 && params.ravineDensity > 0.001) {
+      // Mirror carveRegion: guarded columns use a tightened density so the
+      // surface probe agrees with the carver about under-pool ravine crossings.
+      const ravineDensityEff = liquidGuarded
+        ? params.ravineDensity * params.ravinePoolCrossDensity
+        : params.ravineDensity
       const mask = norm(this.sample2D(this.ravineModNoise, worldX, worldZ, components, (c) => c.params.ravineScale * 0.6, 2048))
-      if (mask < params.ravineDensity) {
+      if (mask < ravineDensityEff) {
         const r = this.sample2D(this.ravineNoise, worldX, worldZ, components, (c) => c.params.ravineScale)
         const widthMod =
           0.7 + 0.6 * norm(this.sample2D(this.ravineModNoise, worldX, worldZ, components, (c) => c.params.ravineScale * 2.7))
@@ -410,9 +415,10 @@ export class CaveCarver {
         const yHi = Math.min(maxWorldY, Math.floor(params.maxY), surfaceY)
         if (yLo > yHi) continue
 
-        // Liquid guard: don't open entrance mouths under lakes and pools.
-        // (Ravines are allowed through - draining a pool into a canyon is a
-        // waterfall, which is a feature.)
+        // Liquid guard: columns whose surface is at or below the guard Y are
+        // lake/pool beds. Guarded columns fully suppress entrance mouths and
+        // pipes; ravines are only partially culled (see ravinePoolCrossDensity)
+        // so a rare crossing survives as an intentional draining waterfall.
         const liquidGuarded = surfaceY <= params.liquidSurfaceGuardY
 
         // Entrance zone factor (0-1) for this column. The squared factor
@@ -433,13 +439,21 @@ export class CaveCarver {
 
         // Ravine profile for this column. A low-frequency density mask culls
         // whole ravine lines so lowering density means fewer ravines, not
-        // thinner ones.
+        // thinner ones. Under pools (liquid-guarded columns) the effective
+        // density is scaled by ravinePoolCrossDensity: because the mask is
+        // low-frequency the tighter threshold removes the whole under-pool
+        // segment of most crossing ravines (keeping terrain intact beneath the
+        // water), while the strongest-mask fraction still crosses as an
+        // intentional draining waterfall.
         let ravineHalfWidth = 0
         let ravineAbs = Infinity
         let ravineDepthCol = 0
         if (params.ravineStrength > 0.001 && params.ravineWidth > 0 && params.ravineDensity > 0.001) {
+          const ravineDensityEff = liquidGuarded
+            ? params.ravineDensity * params.ravinePoolCrossDensity
+            : params.ravineDensity
           const mask = norm(this.sample2D(this.ravineModNoise, worldX, worldZ, components, (c) => c.params.ravineScale * 0.6, 2048))
-          if (mask < params.ravineDensity) {
+          if (mask < ravineDensityEff) {
             const r = this.sample2D(this.ravineNoise, worldX, worldZ, components, (c) => c.params.ravineScale)
             ravineAbs = Math.abs(r)
             const widthMod =

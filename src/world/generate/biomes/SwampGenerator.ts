@@ -113,7 +113,7 @@ export class SwampGenerator extends BiomeGenerator {
       // The deep swamp caves are waterlogged
       floodLevel: 168,
       floodBlockId: BlockIds.SWAMP_WATER,
-      liquidSurfaceGuardY: 233,   // waterLevel 234 - 1: only guards entrance mouths
+      liquidSurfaceGuardY: 236,   // waterLevel 234 + 2: guards entrance mouths, pipes, and (partially) ravines under pools and shores
     },
     // Swamp water - murky water pools throughout
     water: {

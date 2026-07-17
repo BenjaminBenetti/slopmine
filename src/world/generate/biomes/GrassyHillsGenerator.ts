@@ -122,7 +122,7 @@ export class GrassyHillsGenerator extends BiomeGenerator {
       entrance: { enabled: true, scale: 0.011, threshold: 0.78, boost: 0.6, depth: 55 },
       floodLevel: 152,
       floodBlockId: BlockIds.LAVA,
-      liquidSurfaceGuardY: 237,   // waterLevel 238 - 1: only guards entrance mouths
+      liquidSurfaceGuardY: 240,   // waterLevel 238 + 2: guards entrance mouths, pipes, and (partially) ravines under pools and shores
     },
     water: {
       enabled: true,

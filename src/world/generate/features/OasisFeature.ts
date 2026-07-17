@@ -96,6 +96,28 @@ export class OasisFeature extends Feature {
   }
 
   /**
+   * True if any column in the oasis footprint has been carved open by a cave
+   * (entrance mouth or ravine breaching the surface). Such a bed cannot hold
+   * water — the pool would drain into the cave — so the oasis is skipped.
+   * Cheap per-column scan over the circular footprint at feature time.
+   */
+  private isFootprintBreached(
+    centerX: number,
+    centerZ: number,
+    radius: number,
+    isSurfaceCarvedAt: (worldX: number, worldZ: number) => boolean
+  ): boolean {
+    const radiusSq = radius * radius
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        if (dx * dx + dz * dz > radiusSq) continue
+        if (isSurfaceCarvedAt(centerX + dx, centerZ + dz)) return true
+      }
+    }
+    return false
+  }
+
+  /**
    * Calculate the radius for an oasis at a given position.
    */
   private getOasisRadius(centerX: number, centerZ: number): number {
@@ -111,7 +133,7 @@ export class OasisFeature extends Feature {
     // Clear previous oases before generating new ones
     this.clearOases()
 
-    const { chunk, getBaseHeightAt, noise, frameBudget } = context
+    const { chunk, getBaseHeightAt, noise, frameBudget, isSurfaceCarvedAt } = context
     const { liquidBlock, waterDepth } = this.settings
     const coord = chunk.coordinate
 
@@ -163,6 +185,13 @@ export class OasisFeature extends Feature {
         const overlapsChunkZ = maxZ >= chunkBaseZ && minZ < chunkBaseZ + CHUNK_SIZE_Z
 
         if (overlapsChunkX && overlapsChunkZ) {
+          // Skip oases whose bed a cave carved open: pooling water on top of a
+          // cave hole just drains into the cave at runtime. isSurfaceCarvedAt
+          // is deterministic per column, so every sub-chunk pass over the same
+          // oasis makes the same skip decision (no half-dug pools).
+          if (isSurfaceCarvedAt && this.isFootprintBreached(centerX, centerZ, radius, isSurfaceCarvedAt)) {
+            continue
+          }
           oasesToApply.push({ x: centerX, z: centerZ, radius })
         }
       }

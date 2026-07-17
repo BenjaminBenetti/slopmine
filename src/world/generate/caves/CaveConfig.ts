@@ -76,6 +76,22 @@ export interface RavineConfig {
    * thinning them: ~0.3 keeps roughly a quarter of the lines, 1 keeps all.
    */
   readonly density: number
+  /**
+   * Multiplier on `density` (0-1) applied only in liquid-guarded columns
+   * (surface at or below liquidSurfaceGuardY — lake and pool beds). Guarded
+   * columns require mask < density * poolCrossDensity while open land keeps
+   * mask < density, so a ravine that would slice under a pool is culled
+   * unless its mask is in the strongest poolCrossDensity fraction.
+   *
+   * WHY this seals ~(1 - poolCrossDensity) of pool crossings cleanly: the
+   * mask is low-frequency (it culls whole lines, not individual columns), so
+   * a given ravine's mask value is nearly constant along its length. Tightening
+   * the threshold under pools therefore removes the ENTIRE under-pool segment
+   * of most crossing ravines — terrain stays intact beneath the water — while
+   * the strongest-mask fraction still crosses fully, leaving the occasional
+   * intentional draining waterfall. Default ~0.25 (a quarter still cross).
+   */
+  readonly poolCrossDensity?: number
 }
 
 /** Surface entrance zones where cave carving is allowed to breach the surface. */
@@ -165,6 +181,7 @@ export interface CaveParams {
   ravineDepth: number
   ravineTaper: number
   ravineDensity: number
+  ravinePoolCrossDensity: number
   entranceStrength: number
   entranceScale: number
   entranceThreshold: number
@@ -202,6 +219,7 @@ export const DEFAULT_CAVE_CONFIG: CaveConfig = {
     depth: 55,
     taper: 0.75,
     density: 0.3,
+    poolCrossDensity: 0.25,
   },
   entrance: {
     enabled: true,
@@ -266,6 +284,7 @@ const DISABLED_PARAMS: CaveParams = Object.freeze({
   ravineDepth: 0,
   ravineTaper: 0.75,
   ravineDensity: 0,
+  ravinePoolCrossDensity: 0.25,
   entranceStrength: 0,
   entranceScale: 0.005,
   entranceThreshold: 1,
@@ -306,6 +325,7 @@ export function resolveCaveParams(config: CaveConfig | undefined): CaveParams {
     ravineDepth: config.ravine.depth,
     ravineTaper: config.ravine.taper,
     ravineDensity: config.ravine.density,
+    ravinePoolCrossDensity: config.ravine.poolCrossDensity ?? 0.25,
     entranceStrength: config.entrance.enabled ? 1 : 0,
     entranceScale: config.entrance.scale,
     entranceThreshold: config.entrance.threshold,
@@ -341,6 +361,7 @@ const MIXED_FIELDS = [
   'ravineDepth',
   'ravineTaper',
   'ravineDensity',
+  'ravinePoolCrossDensity',
   'entranceStrength',
   'entranceThreshold',
   'entranceScale',

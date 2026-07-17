@@ -116,6 +116,9 @@ export class DesertGenerator extends BiomeGenerator {
       entrance: { enabled: true, scale: 0.009, threshold: 0.84, boost: 0.55, depth: 60 },
       floodLevel: 150,
       floodBlockId: BlockIds.LAVA,
+      // Oasis pools sit at the desert waterLevel (238); guard 2 above so caves
+      // don't tear open sinkhole mouths or ravines through an oasis bed.
+      liquidSurfaceGuardY: 240,   // oasis waterLevel 238 + 2
     },
     // No water in desert
     water: {
