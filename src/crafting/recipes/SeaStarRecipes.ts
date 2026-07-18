@@ -12,7 +12,7 @@ export const brewHealthPotion2SeaStarRecipe: IBrewingRecipe = {
   name: 'Healing Potion II',
   ingredients: [
     { itemId: 'herb', count: 1 },
-    { itemId: 'sea_star', count: 1 },
+    { itemId: 'sea_star_block', count: 1 },
   ],
   createResult: () => new HealthPotion2Item(),
   resultCount: 1,

@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
-import { SeaStarItem } from '../../../items/materials/sea_star/SeaStarItem.ts'
+import { SeaStarBlockItem } from '../../../items/blocks/sea_star/SeaStarBlockItem.ts'
 import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Sea star colors - warm orange
@@ -55,7 +55,7 @@ export class SeaStarEntity extends PeacefulEntity {
       fleeDuration: 1.0,
 
       // Picking up a sea star always yields the sea star itself
-      drops: [{ createItem: () => new SeaStarItem(), minCount: 1, maxCount: 1 }],
+      drops: [{ createItem: () => new SeaStarBlockItem(), minCount: 1, maxCount: 1 }],
     })
   }
 

@@ -89,6 +89,7 @@ import { CoastalFernBlock } from './types/coastal_fern/CoastalFernBlock.ts'
 import { CoastalFernTopBlock } from './types/coastal_fern_top/CoastalFernTopBlock.ts'
 import { SeaShellBlock } from './types/sea_shell/SeaShellBlock.ts'
 import { CrabShellBlock } from './types/crab_shell/CrabShellBlock.ts'
+import { SeaStarBlock } from './types/sea_star/SeaStarBlock.ts'
 import { ResinTorchBlock } from './types/resin_torch/ResinTorchBlock.ts'
 
 /**
@@ -227,6 +228,7 @@ export function registerDefaultBlocks(): void {
   // Beach decoration blocks
   registerBlock(new SeaShellBlock())
   registerBlock(new CrabShellBlock())
+  registerBlock(new SeaStarBlock())
 
   // Upgraded light sources
   registerBlock(new ResinTorchBlock())

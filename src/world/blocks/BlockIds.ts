@@ -95,4 +95,5 @@ export enum BlockIds {
   SEA_SHELL = 89,
   CRAB_SHELL = 90,
   RESIN_TORCH = 91,
+  SEA_STAR = 92,
 }

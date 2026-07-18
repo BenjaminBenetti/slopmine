@@ -114,6 +114,7 @@ export enum TextureId {
   SEA_SHELL = 103,               // sea-shell.webp (decor block face map entry)
   CRAB_SHELL = 104,              // crab-shell.webp (decor block face map entry)
   RESIN_TORCH = 105,             // custom geometry, colored materials (like TORCH)
+  SEA_STAR = 106,                // sea-star.webp (decor block face map entry)
 }
 
 // Cache for the face texture map

@@ -111,8 +111,8 @@ import { RopeItem } from '../items/materials/rope/RopeItem.ts'
 import { CharcoalItem } from '../items/materials/charcoal/CharcoalItem.ts'
 import { PineResinItem } from '../items/materials/pine_resin/PineResinItem.ts'
 import { DriedMossItem } from '../items/materials/dried_moss/DriedMossItem.ts'
-import { SeaStarItem } from '../items/materials/sea_star/SeaStarItem.ts'
 import { SeaShellBlockItem } from '../items/blocks/sea_shell/SeaShellBlockItem.ts'
+import { SeaStarBlockItem } from '../items/blocks/sea_star/SeaStarBlockItem.ts'
 import { CrabShellBlockItem } from '../items/blocks/crab_shell/CrabShellBlockItem.ts'
 import { ResinTorchBlockItem } from '../items/blocks/resin_torch/ResinTorchBlockItem.ts'
 import { GoldBarItem } from '../items/bars/gold/GoldBarItem.ts'
@@ -298,8 +298,8 @@ export function initializeItemRegistry(): void {
   registerItemFactory('charcoal', () => new CharcoalItem())
   registerItemFactory('pine_resin', () => new PineResinItem())
   registerItemFactory('dried_moss', () => new DriedMossItem())
-  registerItemFactory('sea_star', () => new SeaStarItem())
   registerItemFactory('sea_shell_block', () => new SeaShellBlockItem())
+  registerItemFactory('sea_star_block', () => new SeaStarBlockItem())
   registerItemFactory('crab_shell_block', () => new CrabShellBlockItem())
   registerItemFactory('resin_torch_block', () => new ResinTorchBlockItem())
 
