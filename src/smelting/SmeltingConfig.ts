@@ -8,6 +8,8 @@ export const FUEL_VALUES: Record<string, number> = {
   oak_log_block: 1.5, // 1.5 items per log
   pine_log_block: 1.5, // 1.5 items per log
   redwood_log_block: 1.5, // 1.5 items per log
+  pine_resin: 1.0, // flammable sap - weak fuel; a free bonus drop, so kept below log value
+  dried_moss: 2.0, // fast-burning tinder - above logs, well below coal
 }
 
 /**

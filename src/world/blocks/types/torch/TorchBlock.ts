@@ -41,7 +41,7 @@ export class TorchBlock extends TransparentBlock {
     isSolid: false, // No collision - players can walk through
     isLiquid: false,
     hardness: 0, // Instant break
-    lightLevel: 14, // Emits light like Minecraft torch
+    lightLevel: 11, // Full brightness at the source (knee is 11); resin torch (15) carries 4 blocks farther
     lightBlocking: 0, // Doesn't block light
     demolitionForceRequired: 0,
     tags: [],

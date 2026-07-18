@@ -92,4 +92,7 @@ export enum BlockIds {
   MOSSY_STONE = 86,
   COASTAL_FERN = 87,
   COASTAL_FERN_TOP = 88,
+  SEA_SHELL = 89,
+  CRAB_SHELL = 90,
+  RESIN_TORCH = 91,
 }

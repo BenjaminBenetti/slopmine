@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
+import { RawCrabMeatItem } from '../../../items/food/raw_crab_meat/RawCrabMeatItem.ts'
+import { CrabShellBlockItem } from '../../../items/blocks/crab_shell/CrabShellBlockItem.ts'
 import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Crab colors - red-orange beach crab
@@ -59,6 +61,12 @@ export class CrabEntity extends PeacefulEntity {
       // Fragile, skittish
       maxHealth: 4,
       fleeSpeed: 2.5,
+
+      // Drops
+      drops: [
+        { createItem: () => new RawCrabMeatItem(), minCount: 0, maxCount: 1 },
+        { createItem: () => new CrabShellBlockItem(), minCount: 0, maxCount: 1 },
+      ],
     })
   }
 

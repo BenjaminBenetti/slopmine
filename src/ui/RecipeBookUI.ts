@@ -462,6 +462,38 @@ export function createRecipeBookUI(options: RecipeBookUIOptions = {}): RecipeBoo
 
     detailPanel.appendChild(itemHeader)
 
+    // Traits row - the item's tags (e.g. "wood", "coal") so players can see
+    // why it satisfies tag-based recipe ingredients like "Any coal"
+    const traits = recipeBook.getItemTags(itemId)
+    if (traits.length > 0) {
+      const traitsRow = document.createElement('div')
+      traitsRow.style.display = 'flex'
+      traitsRow.style.flexWrap = 'wrap'
+      traitsRow.style.gap = '0.3rem'
+      traitsRow.style.marginBottom = '0.6rem'
+
+      const traitsLabel = document.createElement('span')
+      traitsLabel.textContent = 'Traits:'
+      traitsLabel.style.color = 'rgba(255, 255, 255, 0.5)'
+      traitsLabel.style.fontSize = '0.75rem'
+      traitsLabel.style.alignSelf = 'center'
+      traitsRow.appendChild(traitsLabel)
+
+      for (const trait of traits) {
+        const chip = document.createElement('span')
+        chip.textContent = trait
+        chip.style.fontSize = '0.7rem'
+        chip.style.color = 'rgba(255, 230, 170, 0.9)'
+        chip.style.background = 'rgba(70, 60, 35, 0.9)'
+        chip.style.border = '1px solid rgba(255, 230, 170, 0.25)'
+        chip.style.borderRadius = '999px'
+        chip.style.padding = '0.1rem 0.5rem'
+        traitsRow.appendChild(chip)
+      }
+
+      detailPanel.appendChild(traitsRow)
+    }
+
     // Crafted By section
     const craftedBySection = document.createElement('div')
 

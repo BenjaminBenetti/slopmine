@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
+import { SeaShellBlockItem } from '../../../items/blocks/sea_shell/SeaShellBlockItem.ts'
 import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Sea shell colors - cream and pink spiral
@@ -41,6 +42,9 @@ export class SeaShellEntity extends PeacefulEntity {
       knockbackVertical: 0,
       fleeSpeed: 0,
       fleeDuration: 0,
+
+      // The entity IS the shell, so breaking it always yields exactly one
+      drops: [{ createItem: () => new SeaShellBlockItem(), minCount: 1, maxCount: 1 }],
     })
   }
 

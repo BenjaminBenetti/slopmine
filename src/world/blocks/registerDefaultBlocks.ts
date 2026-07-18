@@ -87,6 +87,9 @@ import { MossBlock } from './types/moss/MossBlock.ts'
 import { MossyStoneBlock } from './types/mossy_stone/MossyStoneBlock.ts'
 import { CoastalFernBlock } from './types/coastal_fern/CoastalFernBlock.ts'
 import { CoastalFernTopBlock } from './types/coastal_fern_top/CoastalFernTopBlock.ts'
+import { SeaShellBlock } from './types/sea_shell/SeaShellBlock.ts'
+import { CrabShellBlock } from './types/crab_shell/CrabShellBlock.ts'
+import { ResinTorchBlock } from './types/resin_torch/ResinTorchBlock.ts'
 
 /**
  * Register all default block types.
@@ -220,4 +223,11 @@ export function registerDefaultBlocks(): void {
   registerBlock(new MossyStoneBlock())
   registerBlock(new CoastalFernBlock())
   registerBlock(new CoastalFernTopBlock())
+
+  // Beach decoration blocks
+  registerBlock(new SeaShellBlock())
+  registerBlock(new CrabShellBlock())
+
+  // Upgraded light sources
+  registerBlock(new ResinTorchBlock())
 }

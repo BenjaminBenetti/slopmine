@@ -17,6 +17,13 @@ import { workstationRecipes } from './WorkstationRecipes.ts'
 import { smeltingRecipes } from './SmeltingRecipes.ts'
 import { brewingRecipes } from './BrewingRecipes.ts'
 import { diviningStickRecipes } from './DiviningStickRecipe.ts'
+import { mossyStoneRecipes } from './MossyStoneRecipes.ts'
+import { pineLogRecipes } from './PineLogRecipes.ts'
+import { coastalFernRecipes, coastalFernSmeltingRecipes } from './CoastalFernRecipes.ts'
+import { mossSmeltingRecipes } from './MossRecipes.ts'
+import { crabSmeltingRecipes } from './CrabRecipes.ts'
+import { pineNeedleBrewingRecipes } from './PineNeedleRecipes.ts'
+import { seaStarBrewingRecipes } from './SeaStarRecipes.ts'
 
 /**
  * Register all default recipes.
@@ -62,14 +69,38 @@ export function registerDefaultRecipes(): void {
   for (const recipe of diviningStickRecipes) {
     recipeRegistry.register(recipe)
   }
+  for (const recipe of mossyStoneRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of pineLogRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of coastalFernRecipes) {
+    recipeRegistry.register(recipe)
+  }
 
   // Smelting recipes
   for (const recipe of smeltingRecipes) {
     smeltingRegistry.register(recipe)
   }
+  for (const recipe of mossSmeltingRecipes) {
+    smeltingRegistry.register(recipe)
+  }
+  for (const recipe of crabSmeltingRecipes) {
+    smeltingRegistry.register(recipe)
+  }
+  for (const recipe of coastalFernSmeltingRecipes) {
+    smeltingRegistry.register(recipe)
+  }
 
   // Brewing recipes
   for (const recipe of brewingRecipes) {
+    brewingRegistry.register(recipe)
+  }
+  for (const recipe of pineNeedleBrewingRecipes) {
+    brewingRegistry.register(recipe)
+  }
+  for (const recipe of seaStarBrewingRecipes) {
     brewingRegistry.register(recipe)
   }
 }

@@ -188,7 +188,8 @@ export abstract class Entity implements IEntity {
    */
   updateLightLevel(lightLevel: number): void {
     // Calculate brightness using the same formula as block vertex colors
-    const normalized = lightLevel / 15
+    // (full-brightness knee at 11, matching GreedyMeshWorker)
+    const normalized = Math.min(lightLevel, 11) / 11
     const brightness = MIN_BRIGHTNESS + Math.pow(normalized, 2.2) * (1 - MIN_BRIGHTNESS)
 
     // Skip update if brightness hasn't changed significantly

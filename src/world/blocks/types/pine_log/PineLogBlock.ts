@@ -8,6 +8,7 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { PineLogBlockItem } from '../../../../items/blocks/pine_log/PineLogBlockItem.ts'
+import { PineResinItem } from '../../../../items/materials/pine_resin/PineResinItem.ts'
 import pineLogTexUrl from './assets/pine-log.webp'
 import pineLogTopTexUrl from './assets/pine-log-top.webp'
 
@@ -66,6 +67,11 @@ export class PineLogBlock extends SolidBlock {
   }
 
   getDrops(): IItem[] {
-    return [new PineLogBlockItem()]
+    const drops: IItem[] = [new PineLogBlockItem()]
+    // Sticky resin occasionally oozes from felled pine logs
+    if (Math.random() < 0.25) {
+      drops.push(new PineResinItem())
+    }
+    return drops
   }
 }

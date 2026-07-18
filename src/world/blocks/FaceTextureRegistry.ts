@@ -111,6 +111,9 @@ export enum TextureId {
   MOSSY_STONE = 100,             // mossy-stone.webp
   COASTAL_FERN = 101,            // coastal-fern.webp (bottom half)
   COASTAL_FERN_TOP = 102,        // coastal-fern-top.webp (top half)
+  SEA_SHELL = 103,               // sea-shell.webp (decor block face map entry)
+  CRAB_SHELL = 104,              // crab-shell.webp (decor block face map entry)
+  RESIN_TORCH = 105,             // custom geometry, colored materials (like TORCH)
 }
 
 // Cache for the face texture map

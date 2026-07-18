@@ -88,15 +88,21 @@ export class RecipeBook {
   
   /** Item ID -> recipes that use it as ingredient */
   private readonly usedInIndex: Map<string, IRecipeInfo[]> = new Map()
-  
+
+  /** Tag -> recipes that use the tag as ingredient (e.g. torch takes any 'coal') */
+  private readonly usedInByTagIndex: Map<string, IRecipeInfo[]> = new Map()
+
   /** All item IDs sorted alphabetically by display name */
   private sortedItemIds: string[] = []
-  
+
   /** Cache of item display names */
   private readonly itemDisplayNames: Map<string, string> = new Map()
-  
+
   /** Cache of item icon URLs */
   private readonly itemIconUrls: Map<string, string | undefined> = new Map()
+
+  /** Cache of item tags (traits) - drives tag-based usedIn matches and the UI trait chips */
+  private readonly itemTags: Map<string, ReadonlyArray<string>> = new Map()
 
   /**
    * Build the recipe index from all registries.
@@ -106,8 +112,10 @@ export class RecipeBook {
     this.recipeIndex.clear()
     this.craftedByIndex.clear()
     this.usedInIndex.clear()
+    this.usedInByTagIndex.clear()
     this.itemDisplayNames.clear()
     this.itemIconUrls.clear()
+    this.itemTags.clear()
 
     // Index hand crafting recipes
     for (const recipe of recipeRegistry.getAllRecipes()) {
@@ -240,14 +248,43 @@ export class RecipeBook {
     craftedBy.push(info)
     this.craftedByIndex.set(info.resultItemId, craftedBy)
 
-    // Index by ingredient items (only for itemId-based, not tags)
+    // Index by ingredient items and by ingredient tags, so items that only
+    // satisfy a recipe through a tag (e.g. dried moss matching the torch's
+    // 'coal' ingredient) still show up under "Used In"
     for (const ing of ingredients) {
       if (ing.itemId) {
         const usedIn = this.usedInIndex.get(ing.itemId) ?? []
         usedIn.push(info)
         this.usedInIndex.set(ing.itemId, usedIn)
       }
+      if (ing.tag) {
+        const usedIn = this.usedInByTagIndex.get(ing.tag) ?? []
+        usedIn.push(info)
+        this.usedInByTagIndex.set(ing.tag, usedIn)
+      }
     }
+  }
+
+  /**
+   * All recipes that use an item as an ingredient, matched by exact item id
+   * OR by any of the item's tags, deduplicated by recipe id.
+   */
+  private collectUsedInRecipes(itemId: string): IRecipeInfo[] {
+    const seen = new Set<string>()
+    const result: IRecipeInfo[] = []
+    const add = (recipes: IRecipeInfo[] | undefined) => {
+      for (const recipe of recipes ?? []) {
+        if (!seen.has(recipe.recipeId)) {
+          seen.add(recipe.recipeId)
+          result.push(recipe)
+        }
+      }
+    }
+    add(this.usedInIndex.get(itemId))
+    for (const tag of this.itemTags.get(itemId) ?? []) {
+      add(this.usedInByTagIndex.get(tag))
+    }
+    return result
   }
 
   /**
@@ -264,6 +301,7 @@ export class RecipeBook {
         const iconUrl = item.iconUrl
         this.itemDisplayNames.set(itemId, displayName)
         this.itemIconUrls.set(itemId, iconUrl)
+        this.itemTags.set(itemId, item.tags ?? [])
         itemsWithNames.push({ id: itemId, displayName, iconUrl })
       }
     }
@@ -318,8 +356,15 @@ export class RecipeBook {
       displayName: this.getItemDisplayName(itemId),
       iconUrl: this.getItemIconUrl(itemId),
       craftedBy: this.craftedByIndex.get(itemId) ?? [],
-      usedIn: this.usedInIndex.get(itemId) ?? [],
+      usedIn: this.collectUsedInRecipes(itemId),
     }
+  }
+
+  /**
+   * Get the tags (traits) of an item, e.g. ['coal', 'fuel'] for dried moss.
+   */
+  getItemTags(itemId: string): ReadonlyArray<string> {
+    return this.itemTags.get(itemId) ?? []
   }
 
   /**
@@ -333,14 +378,14 @@ export class RecipeBook {
    * Get recipes that use an item as ingredient
    */
   getRecipesUsing(itemId: string): ReadonlyArray<IRecipeInfo> {
-    return this.usedInIndex.get(itemId) ?? []
+    return this.collectUsedInRecipes(itemId)
   }
 
   /**
    * Check if an item has any recipes (either crafted by or used in)
    */
   hasRecipes(itemId: string): boolean {
-    return (this.craftedByIndex.get(itemId)?.length ?? 0) > 0 || (this.usedInIndex.get(itemId)?.length ?? 0) > 0
+    return (this.craftedByIndex.get(itemId)?.length ?? 0) > 0 || this.collectUsedInRecipes(itemId).length > 0
   }
 
   /**

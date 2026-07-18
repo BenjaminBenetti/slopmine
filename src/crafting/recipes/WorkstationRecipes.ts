@@ -1,4 +1,5 @@
 import type { IRecipe } from '../RecipeRegistry.ts'
+import { ItemTags } from '../../items/tags/index.ts'
 import { ForgeBlockItem } from '../../items/blocks/forge/ForgeBlockItem.ts'
 import { ApothecaryWorkbenchBlockItem } from '../../items/blocks/apothecary_workbench/ApothecaryWorkbenchBlockItem.ts'
 import { WoodworkingBenchBlockItem } from '../../items/blocks/woodworking_bench/WoodworkingBenchBlockItem.ts'
@@ -27,7 +28,8 @@ export const woodworkingBenchRecipe: IRecipe = {
   name: 'Woodworking Bench',
   ingredients: [
     { itemId: 'stone_block', count: 4 },
-    { itemId: 'oak_log_block', count: 2 },
+    // Any log works - pine/redwood biome starts shouldn't be locked out
+    { tag: ItemTags.LOG, count: 2 },
   ],
   createResult: () => new WoodworkingBenchBlockItem(),
   resultCount: 1,

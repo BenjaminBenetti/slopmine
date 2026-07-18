@@ -89,6 +89,11 @@ import { RawSnakeItem } from '../items/food/raw_snake/RawSnakeItem.ts'
 import { CookedSnakeItem } from '../items/food/cooked_snake/CookedSnakeItem.ts'
 import { RawKomodoMeatItem } from '../items/food/raw_komodo_meat/RawKomodoMeatItem.ts'
 import { CookedKomodoMeatItem } from '../items/food/cooked_komodo_meat/CookedKomodoMeatItem.ts'
+import { PineNeedleTeaItem } from '../items/food/pine_needle_tea/PineNeedleTeaItem.ts'
+import { RawCrabMeatItem } from '../items/food/raw_crab_meat/RawCrabMeatItem.ts'
+import { CookedCrabMeatItem } from '../items/food/cooked_crab_meat/CookedCrabMeatItem.ts'
+import { FiddleheadsItem } from '../items/food/fiddleheads/FiddleheadsItem.ts'
+import { CookedFiddleheadsItem } from '../items/food/cooked_fiddleheads/CookedFiddleheadsItem.ts'
 
 // Bar items
 import { IronBarItem } from '../items/bars/iron/IronBarItem.ts'
@@ -104,6 +109,12 @@ import { HerbItem } from '../items/materials/herb/HerbItem.ts'
 import { HempFiberItem } from '../items/materials/hemp_fiber/HempFiberItem.ts'
 import { RopeItem } from '../items/materials/rope/RopeItem.ts'
 import { CharcoalItem } from '../items/materials/charcoal/CharcoalItem.ts'
+import { PineResinItem } from '../items/materials/pine_resin/PineResinItem.ts'
+import { DriedMossItem } from '../items/materials/dried_moss/DriedMossItem.ts'
+import { SeaStarItem } from '../items/materials/sea_star/SeaStarItem.ts'
+import { SeaShellBlockItem } from '../items/blocks/sea_shell/SeaShellBlockItem.ts'
+import { CrabShellBlockItem } from '../items/blocks/crab_shell/CrabShellBlockItem.ts'
+import { ResinTorchBlockItem } from '../items/blocks/resin_torch/ResinTorchBlockItem.ts'
 import { GoldBarItem } from '../items/bars/gold/GoldBarItem.ts'
 import { CopperBarItem } from '../items/bars/copper/CopperBarItem.ts'
 import { SteelBarItem } from '../items/bars/steel/SteelBarItem.ts'
@@ -262,6 +273,11 @@ export function initializeItemRegistry(): void {
   registerItemFactory('cooked_snake', () => new CookedSnakeItem())
   registerItemFactory('raw_komodo_meat', () => new RawKomodoMeatItem())
   registerItemFactory('cooked_komodo_meat', () => new CookedKomodoMeatItem())
+  registerItemFactory('pine_needle_tea', () => new PineNeedleTeaItem())
+  registerItemFactory('raw_crab_meat', () => new RawCrabMeatItem())
+  registerItemFactory('cooked_crab_meat', () => new CookedCrabMeatItem())
+  registerItemFactory('fiddleheads', () => new FiddleheadsItem())
+  registerItemFactory('cooked_fiddleheads', () => new CookedFiddleheadsItem())
 
   // Bar items
   registerItemFactory('iron_bar', () => new IronBarItem())
@@ -280,6 +296,12 @@ export function initializeItemRegistry(): void {
   registerItemFactory('hemp_fiber', () => new HempFiberItem())
   registerItemFactory('rope', () => new RopeItem())
   registerItemFactory('charcoal', () => new CharcoalItem())
+  registerItemFactory('pine_resin', () => new PineResinItem())
+  registerItemFactory('dried_moss', () => new DriedMossItem())
+  registerItemFactory('sea_star', () => new SeaStarItem())
+  registerItemFactory('sea_shell_block', () => new SeaShellBlockItem())
+  registerItemFactory('crab_shell_block', () => new CrabShellBlockItem())
+  registerItemFactory('resin_torch_block', () => new ResinTorchBlockItem())
 
   // Pickaxes
   registerItemFactory('wood_pickaxe', () => new WoodPickaxeItem())

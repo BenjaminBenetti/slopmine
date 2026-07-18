@@ -524,9 +524,12 @@ function emitMergedQuadWithAtlasUVs(
   lightLevel: number,
   atlasRegion: AtlasRegion
 ): Float32Array[] {
-  // Calculate brightness from light level
+  // Calculate brightness from light level.
+  // Full-brightness knee at 11: values 11-15 all render at 100%, so stronger
+  // sources (resin torch 15 vs torch 11) read as "carries farther", not
+  // "brighter at the source" - the falloff just starts farther out.
   const minBrightness = 0.02
-  const normalized = lightLevel / 15
+  const normalized = Math.min(lightLevel, 11) / 11
   const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
 
   const result: Float32Array[] = []

@@ -339,9 +339,10 @@ export class GreedyChunkMesh implements IChunkMesh {
       const pz = positions[i * 3 + 2] + 0.5
 
       // Calculate brightness
+      // Full-brightness knee at 11 (must match GreedyMeshWorker)
       const light = lights[i] ?? 15
       const minBrightness = 0.02
-      const normalized = light / 15
+      const normalized = Math.min(light, 11) / 11
       const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
 
       for (let f = 0; f < 6; f++) {
