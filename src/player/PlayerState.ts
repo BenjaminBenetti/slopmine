@@ -245,6 +245,15 @@ export interface IPlayerState {
    * @returns true if all items were added, false if inventory is full
    */
   addItem(item: IItem, amount?: number): boolean
+
+  /**
+   * Try to add an item to the player's inventory.
+   * Tries toolbar first, then main inventory.
+   * @param item The item to add
+   * @param amount The number of items to add (default 1)
+   * @returns the leftover count that did not fit (0 = all items were added)
+   */
+  addItemCounted(item: IItem, amount?: number): number
 }
 
 /**
@@ -267,6 +276,16 @@ export class PlayerState implements IPlayerState {
    * @returns true if item was added, false if inventory is full
    */
   addItem(item: IItem, amount = 1): boolean {
+    return this.addItemCounted(item, amount) === 0
+  }
+
+  /**
+   * Try to add an item to the player's inventory.
+   * First tries to stack with existing items, then uses empty slots.
+   * Tries toolbar first, then main inventory.
+   * @returns the leftover count that did not fit (0 = everything was added)
+   */
+  addItemCounted(item: IItem, amount = 1): number {
     let remaining = amount
 
     // First pass: try to stack with existing items in toolbar
@@ -304,7 +323,7 @@ export class PlayerState implements IPlayerState {
       }
     }
 
-    return remaining === 0
+    return remaining
   }
 }
 

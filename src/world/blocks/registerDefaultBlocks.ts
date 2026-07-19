@@ -1,4 +1,53 @@
 import { registerBlock } from './BlockRegistry.ts'
+// Carpentry blocks
+import { OakPlanksBlock } from './types/oak_planks/OakPlanksBlock.ts'
+import { PinePlanksBlock } from './types/pine_planks/PinePlanksBlock.ts'
+import { RedwoodPlanksBlock } from './types/redwood_planks/RedwoodPlanksBlock.ts'
+import { OakSlabBlock } from './types/oak_slab/OakSlabBlock.ts'
+import { PineSlabBlock } from './types/pine_slab/PineSlabBlock.ts'
+import { RedwoodSlabBlock } from './types/redwood_slab/RedwoodSlabBlock.ts'
+import { OakStairsBlock } from './types/oak_stairs/OakStairsBlock.ts'
+import { PineStairsBlock } from './types/pine_stairs/PineStairsBlock.ts'
+import { RedwoodStairsBlock } from './types/redwood_stairs/RedwoodStairsBlock.ts'
+import { OakFenceBlock } from './types/oak_fence/OakFenceBlock.ts'
+import { PineFenceBlock } from './types/pine_fence/PineFenceBlock.ts'
+import { RedwoodFenceBlock } from './types/redwood_fence/RedwoodFenceBlock.ts'
+import { OakFenceGateBlock } from './types/oak_fence_gate/OakFenceGateBlock.ts'
+import { OakFenceGateOpenBlock } from './types/oak_fence_gate/OakFenceGateOpenBlock.ts'
+import { PineFenceGateBlock } from './types/pine_fence_gate/PineFenceGateBlock.ts'
+import { PineFenceGateOpenBlock } from './types/pine_fence_gate/PineFenceGateOpenBlock.ts'
+import { RedwoodFenceGateBlock } from './types/redwood_fence_gate/RedwoodFenceGateBlock.ts'
+import { RedwoodFenceGateOpenBlock } from './types/redwood_fence_gate/RedwoodFenceGateOpenBlock.ts'
+import { OakDoorBlock } from './types/oak_door/OakDoorBlock.ts'
+import { OakDoorUpperBlock } from './types/oak_door_upper/OakDoorUpperBlock.ts'
+import { OakDoorOpenBlock } from './types/oak_door_open/OakDoorOpenBlock.ts'
+import { OakDoorUpperOpenBlock } from './types/oak_door_upper_open/OakDoorUpperOpenBlock.ts'
+import { PineDoorBlock } from './types/pine_door/PineDoorBlock.ts'
+import { PineDoorUpperBlock } from './types/pine_door_upper/PineDoorUpperBlock.ts'
+import { PineDoorOpenBlock } from './types/pine_door_open/PineDoorOpenBlock.ts'
+import { PineDoorUpperOpenBlock } from './types/pine_door_upper_open/PineDoorUpperOpenBlock.ts'
+import { RedwoodDoorBlock } from './types/redwood_door/RedwoodDoorBlock.ts'
+import { RedwoodDoorUpperBlock } from './types/redwood_door_upper/RedwoodDoorUpperBlock.ts'
+import { RedwoodDoorOpenBlock } from './types/redwood_door_open/RedwoodDoorOpenBlock.ts'
+import { RedwoodDoorUpperOpenBlock } from './types/redwood_door_upper_open/RedwoodDoorUpperOpenBlock.ts'
+import { OakTrapdoorBlock } from './types/oak_trapdoor/OakTrapdoorBlock.ts'
+import { OakTrapdoorOpenBlock } from './types/oak_trapdoor_open/OakTrapdoorOpenBlock.ts'
+import { PineTrapdoorBlock } from './types/pine_trapdoor/PineTrapdoorBlock.ts'
+import { PineTrapdoorOpenBlock } from './types/pine_trapdoor_open/PineTrapdoorOpenBlock.ts'
+import { RedwoodTrapdoorBlock } from './types/redwood_trapdoor/RedwoodTrapdoorBlock.ts'
+import { RedwoodTrapdoorOpenBlock } from './types/redwood_trapdoor_open/RedwoodTrapdoorOpenBlock.ts'
+import { OakTableBlock } from './types/oak_table/OakTableBlock.ts'
+import { PineTableBlock } from './types/pine_table/PineTableBlock.ts'
+import { RedwoodTableBlock } from './types/redwood_table/RedwoodTableBlock.ts'
+import { OakChairBlock } from './types/oak_chair/OakChairBlock.ts'
+import { PineChairBlock } from './types/pine_chair/PineChairBlock.ts'
+import { RedwoodChairBlock } from './types/redwood_chair/RedwoodChairBlock.ts'
+import { OakShelfBlock } from './types/oak_shelf/OakShelfBlock.ts'
+import { PineShelfBlock } from './types/pine_shelf/PineShelfBlock.ts'
+import { RedwoodShelfBlock } from './types/redwood_shelf/RedwoodShelfBlock.ts'
+import { OakWindowBlock } from './types/oak_window/OakWindowBlock.ts'
+import { PineWindowBlock } from './types/pine_window/PineWindowBlock.ts'
+import { RedwoodWindowBlock } from './types/redwood_window/RedwoodWindowBlock.ts'
 import { StoneBlock } from './types/stone/StoneBlock.ts'
 import { DirtBlock } from './types/dirt/DirtBlock.ts'
 import { GrassBlock } from './types/grass/GrassBlock.ts'
@@ -232,4 +281,54 @@ export function registerDefaultBlocks(): void {
 
   // Upgraded light sources
   registerBlock(new ResinTorchBlock())
+
+  // Carpentry blocks
+  registerBlock(new OakPlanksBlock())
+  registerBlock(new PinePlanksBlock())
+  registerBlock(new RedwoodPlanksBlock())
+  registerBlock(new OakSlabBlock())
+  registerBlock(new PineSlabBlock())
+  registerBlock(new RedwoodSlabBlock())
+  registerBlock(new OakStairsBlock())
+  registerBlock(new PineStairsBlock())
+  registerBlock(new RedwoodStairsBlock())
+  registerBlock(new OakFenceBlock())
+  registerBlock(new PineFenceBlock())
+  registerBlock(new RedwoodFenceBlock())
+  registerBlock(new OakFenceGateBlock())
+  registerBlock(new OakFenceGateOpenBlock())
+  registerBlock(new PineFenceGateBlock())
+  registerBlock(new PineFenceGateOpenBlock())
+  registerBlock(new RedwoodFenceGateBlock())
+  registerBlock(new RedwoodFenceGateOpenBlock())
+  registerBlock(new OakDoorBlock())
+  registerBlock(new OakDoorUpperBlock())
+  registerBlock(new OakDoorOpenBlock())
+  registerBlock(new OakDoorUpperOpenBlock())
+  registerBlock(new PineDoorBlock())
+  registerBlock(new PineDoorUpperBlock())
+  registerBlock(new PineDoorOpenBlock())
+  registerBlock(new PineDoorUpperOpenBlock())
+  registerBlock(new RedwoodDoorBlock())
+  registerBlock(new RedwoodDoorUpperBlock())
+  registerBlock(new RedwoodDoorOpenBlock())
+  registerBlock(new RedwoodDoorUpperOpenBlock())
+  registerBlock(new OakTrapdoorBlock())
+  registerBlock(new OakTrapdoorOpenBlock())
+  registerBlock(new PineTrapdoorBlock())
+  registerBlock(new PineTrapdoorOpenBlock())
+  registerBlock(new RedwoodTrapdoorBlock())
+  registerBlock(new RedwoodTrapdoorOpenBlock())
+  registerBlock(new OakTableBlock())
+  registerBlock(new PineTableBlock())
+  registerBlock(new RedwoodTableBlock())
+  registerBlock(new OakChairBlock())
+  registerBlock(new PineChairBlock())
+  registerBlock(new RedwoodChairBlock())
+  registerBlock(new OakShelfBlock())
+  registerBlock(new PineShelfBlock())
+  registerBlock(new RedwoodShelfBlock())
+  registerBlock(new OakWindowBlock())
+  registerBlock(new PineWindowBlock())
+  registerBlock(new RedwoodWindowBlock())
 }

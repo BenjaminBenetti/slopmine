@@ -19,6 +19,9 @@ export const PLAYER_DEPTH = 0.6
 export const EYE_HEIGHT = 1.62
 
 /** Small epsilon for floating point comparisons */
+// Maximum ledge height the player walks up without jumping (slabs, stairs)
+export const STEP_HEIGHT = 0.55
+
 export const EPSILON = 0.001
 
 /** Fall damage threshold in blocks (no damage below this) */

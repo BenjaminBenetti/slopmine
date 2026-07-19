@@ -7,7 +7,7 @@ import { getBlock } from '../world/blocks/BlockRegistry.ts'
 import type { MeshGroup, GreedyMeshResponse } from '../workers/GreedyMeshWorker.ts'
 import type { IChunkMesh } from './ChunkMesh.ts'
 import { getTextureAtlas } from './TextureAtlas.ts'
-import { getMetadataFacing, getMetadataUses3DRotation, facingToEuler } from '../world/blocks/BlockFacing.ts'
+import { getMetadataFacing, getMetadataUses3DRotation, getMetadataFlipped, facingToEuler } from '../world/blocks/BlockFacing.ts'
 
 // Liquid block ID ranges for identifying liquid blocks
 const LIQUID_BLOCK_IDS = new Set([
@@ -509,7 +509,8 @@ export class GreedyChunkMesh implements IChunkMesh {
       const blockMeta = metadata[j] ?? 0
       const facing = getMetadataFacing(blockMeta)
       const uses3D = getMetadataUses3DRotation(blockMeta)
-      const euler = facingToEuler(facing, uses3D)
+      const flipped = getMetadataFlipped(blockMeta)
+        const euler = facingToEuler(facing, uses3D, flipped)
 
       // Build transformation matrix: rotation then translation
       if (euler.x !== 0 || euler.y !== 0 || euler.z !== 0) {

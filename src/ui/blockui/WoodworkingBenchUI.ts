@@ -1,55 +1,49 @@
 import type { IBlockUI } from './interfaces/IBlockUI.ts'
-import type { IItemStack } from '../../player/PlayerState.ts'
+import type { IItemStack, IPlayerState } from '../../player/PlayerState.ts'
 import type { WoodworkingBenchState } from '../../world/blocks/types/woodworking_bench/WoodworkingBenchState.ts'
 import type { IWoodworkingRecipe } from '../../woodworking/interfaces/IWoodworkingRecipe.ts'
 import { syncSlotsFromState } from '../SlotRenderer.ts'
 
 /**
- * UI panel for the Woodworking Bench block.
- * Shows input slot, available recipes with craft buttons, and output slots.
- *
- * Layout (4 slots total):
- * - Slot 0: Input (left)
- * - Slots 1-3: Output (right)
- *
- * Visual layout:
- *   Input      Recipes       Output
- *  [Slot 0]   Recipe 1     [Slot 1]
- *             [Craft]      [Slot 2]
- *             Recipe 2     [Slot 3]
- *             [Craft]
+ * Woodworking bench UI - deliberately mirrors the hand-crafting panel:
+ * a small ingredient grid on top and a clickable "Craftable" recipe list
+ * below. Clicking a recipe consumes ingredients from the bench slots and
+ * puts the result straight into the player inventory. Leftover ingredients
+ * are returned to the player when the UI closes.
  */
-export function createWoodworkingBenchUI(state: WoodworkingBenchState): IBlockUI {
+export function createWoodworkingBenchUI(
+  state: WoodworkingBenchState,
+  playerState: IPlayerState
+): IBlockUI {
   const slotSize = 44
-  let isOpen = false
 
-  // Track recipe buttons for updates
-  const recipeButtons: HTMLButtonElement[] = []
-
-  // Main container
   const root = document.createElement('div')
   root.style.display = 'flex'
   root.style.flexDirection = 'column'
-  root.style.gap = '0.75rem'
+  root.style.gap = '1rem'
   root.style.padding = '1rem'
   root.style.background = 'rgba(12, 12, 12, 0.96)'
   root.style.borderRadius = '8px'
   root.style.border = '2px solid rgba(255, 255, 255, 0.18)'
-  root.style.minWidth = '320px'
+  root.style.minWidth = '180px'
 
-  // Title
   const title = document.createElement('div')
   title.textContent = 'Woodworking Bench'
   title.style.color = 'rgba(255, 255, 255, 0.9)'
   title.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
   title.style.fontSize = '0.85rem'
   title.style.fontWeight = 'bold'
-  title.style.textAlign = 'center'
-  title.style.marginBottom = '0.5rem'
+  title.style.marginBottom = '0.25rem'
   root.appendChild(title)
 
-  // Create a slot element
-  function createSlot(): HTMLDivElement {
+  // Ingredient grid (3x1)
+  const grid = document.createElement('div')
+  grid.style.display = 'grid'
+  grid.style.gridTemplateColumns = `repeat(3, ${slotSize}px)`
+  grid.style.gap = '0.4rem'
+
+  const slots: HTMLDivElement[] = []
+  for (let i = 0; i < state.getSlotCount(); i++) {
     const slot = document.createElement('div')
     slot.style.width = `${slotSize}px`
     slot.style.height = `${slotSize}px`
@@ -61,238 +55,162 @@ export function createWoodworkingBenchUI(state: WoodworkingBenchState): IBlockUI
     slot.style.alignItems = 'center'
     slot.style.justifyContent = 'center'
     slot.style.position = 'relative'
-    return slot
+    slots.push(slot)
+    grid.appendChild(slot)
+  }
+  root.appendChild(grid)
+
+  const divider = document.createElement('div')
+  divider.style.height = '1px'
+  divider.style.background = 'rgba(255, 255, 255, 0.2)'
+  divider.style.margin = '0.5rem 0'
+  root.appendChild(divider)
+
+  const craftableLabel = document.createElement('div')
+  craftableLabel.textContent = 'Craftable'
+  craftableLabel.style.color = 'rgba(255, 255, 255, 0.9)'
+  craftableLabel.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
+  craftableLabel.style.fontSize = '0.85rem'
+  craftableLabel.style.fontWeight = 'bold'
+  craftableLabel.style.marginBottom = '0.25rem'
+  root.appendChild(craftableLabel)
+
+  const craftableList = document.createElement('div')
+  craftableList.style.display = 'flex'
+  craftableList.style.flexDirection = 'column'
+  craftableList.style.gap = '0.3rem'
+  craftableList.style.maxHeight = '200px'
+  craftableList.style.overflowY = 'auto'
+  craftableList.style.minHeight = '60px'
+  root.appendChild(craftableList)
+
+  let isOpen = false
+  let itemsReturned = false
+  // Signature of the last rendered state, so the per-frame sync only
+  // rebuilds the recipe list when slot contents actually change
+  let lastSignature = ''
+
+  const craft = (recipe: IWoodworkingRecipe): void => {
+    if (!state.craft(recipe)) return
+    playerState.addItem(recipe.createResult(), recipe.resultCount)
+    refresh()
   }
 
-  // Main crafting row: Input | Recipes | Output
-  const craftingRow = document.createElement('div')
-  craftingRow.style.display = 'flex'
-  craftingRow.style.alignItems = 'flex-start'
-  craftingRow.style.justifyContent = 'center'
-  craftingRow.style.gap = '1rem'
-
-  // Input section
-  const inputSection = document.createElement('div')
-  inputSection.style.display = 'flex'
-  inputSection.style.flexDirection = 'column'
-  inputSection.style.alignItems = 'center'
-  inputSection.style.gap = '0.25rem'
-
-  const inputLabel = document.createElement('div')
-  inputLabel.textContent = 'Input'
-  inputLabel.style.color = 'rgba(255, 255, 255, 0.7)'
-  inputLabel.style.fontFamily = 'system-ui, sans-serif'
-  inputLabel.style.fontSize = '0.7rem'
-  inputLabel.style.marginBottom = '0.25rem'
-  inputSection.appendChild(inputLabel)
-
-  const inputSlot = createSlot()
-  inputSection.appendChild(inputSlot)
-
-  craftingRow.appendChild(inputSection)
-
-  // Recipes section (scrollable if many recipes)
-  const recipesSection = document.createElement('div')
-  recipesSection.style.display = 'flex'
-  recipesSection.style.flexDirection = 'column'
-  recipesSection.style.alignItems = 'center'
-  recipesSection.style.gap = '0.5rem'
-  recipesSection.style.minWidth = '120px'
-  recipesSection.style.maxHeight = '180px'
-  recipesSection.style.overflowY = 'auto'
-
-  const recipesLabel = document.createElement('div')
-  recipesLabel.textContent = 'Recipes'
-  recipesLabel.style.color = 'rgba(255, 255, 255, 0.7)'
-  recipesLabel.style.fontFamily = 'system-ui, sans-serif'
-  recipesLabel.style.fontSize = '0.7rem'
-  recipesLabel.style.marginBottom = '0.25rem'
-  recipesSection.appendChild(recipesLabel)
-
-  // Recipes container (will be populated dynamically)
-  const recipesContainer = document.createElement('div')
-  recipesContainer.style.display = 'flex'
-  recipesContainer.style.flexDirection = 'column'
-  recipesContainer.style.gap = '0.5rem'
-  recipesContainer.style.width = '100%'
-  recipesSection.appendChild(recipesContainer)
-
-  // No recipes message
-  const noRecipesMsg = document.createElement('div')
-  noRecipesMsg.textContent = 'Add wood to see recipes'
-  noRecipesMsg.style.color = 'rgba(255, 255, 255, 0.4)'
-  noRecipesMsg.style.fontFamily = 'system-ui, sans-serif'
-  noRecipesMsg.style.fontSize = '0.65rem'
-  noRecipesMsg.style.textAlign = 'center'
-  noRecipesMsg.style.padding = '0.5rem'
-  recipesContainer.appendChild(noRecipesMsg)
-
-  craftingRow.appendChild(recipesSection)
-
-  // Output section
-  const outputSection = document.createElement('div')
-  outputSection.style.display = 'flex'
-  outputSection.style.flexDirection = 'column'
-  outputSection.style.alignItems = 'center'
-  outputSection.style.gap = '0.25rem'
-
-  const outputLabel = document.createElement('div')
-  outputLabel.textContent = 'Output'
-  outputLabel.style.color = 'rgba(255, 255, 255, 0.7)'
-  outputLabel.style.fontFamily = 'system-ui, sans-serif'
-  outputLabel.style.fontSize = '0.7rem'
-  outputLabel.style.marginBottom = '0.25rem'
-  outputSection.appendChild(outputLabel)
-
-  const outputSlots: HTMLDivElement[] = []
-  for (let i = 0; i < 3; i++) {
-    const slot = createSlot()
-    outputSlots.push(slot)
-    outputSection.appendChild(slot)
-    if (i < 2) {
-      const spacer = document.createElement('div')
-      spacer.style.height = '0.25rem'
-      outputSection.appendChild(spacer)
-    }
-  }
-
-  craftingRow.appendChild(outputSection)
-  root.appendChild(craftingRow)
-
-  // Collect all slots in order: input (0), output (1-3)
-  const allSlots = [inputSlot, ...outputSlots]
-
-  // Build state slots array for syncing
-  function getStateSlots(): ReadonlyArray<IItemStack | null> {
-    const slots: (IItemStack | null)[] = []
-    for (let i = 0; i < 4; i++) {
-      slots.push(state.getStack(i))
-    }
-    return slots
-  }
-
-  // Create a recipe entry element
-  function createRecipeEntry(recipe: IWoodworkingRecipe): HTMLDivElement {
-    const entry = document.createElement('div')
-    entry.style.display = 'flex'
-    entry.style.flexDirection = 'column'
-    entry.style.alignItems = 'center'
-    entry.style.gap = '0.25rem'
-    entry.style.padding = '0.5rem'
-    entry.style.background = 'rgba(40, 40, 40, 0.6)'
-    entry.style.borderRadius = '4px'
-    entry.style.border = '1px solid rgba(255, 255, 255, 0.1)'
-
-    // Recipe name
-    const name = document.createElement('div')
-    name.textContent = recipe.name
-    name.style.color = 'rgba(255, 255, 255, 0.8)'
-    name.style.fontFamily = 'system-ui, sans-serif'
-    name.style.fontSize = '0.7rem'
-    entry.appendChild(name)
-
-    // Recipe info (input x count -> output x count)
-    const info = document.createElement('div')
-    info.textContent = `${recipe.inputCount} \u2192 ${recipe.resultCount}`
-    info.style.color = 'rgba(255, 255, 255, 0.5)'
-    info.style.fontFamily = 'system-ui, sans-serif'
-    info.style.fontSize = '0.6rem'
-    entry.appendChild(info)
-
-    // Craft button
-    const craftBtn = document.createElement('button')
-    craftBtn.textContent = 'Craft'
-    craftBtn.style.padding = '0.25rem 0.75rem'
-    craftBtn.style.background = 'rgba(139, 90, 43, 0.8)'
-    craftBtn.style.border = '1px solid rgba(255, 255, 255, 0.3)'
-    craftBtn.style.borderRadius = '3px'
-    craftBtn.style.color = 'white'
-    craftBtn.style.fontFamily = 'system-ui, sans-serif'
-    craftBtn.style.fontSize = '0.7rem'
-    craftBtn.style.cursor = 'pointer'
-    craftBtn.style.transition = 'background 0.15s'
-
-    craftBtn.addEventListener('mouseenter', () => {
-      if (!craftBtn.disabled) {
-        craftBtn.style.background = 'rgba(169, 120, 73, 0.9)'
-      }
-    })
-    craftBtn.addEventListener('mouseleave', () => {
-      if (!craftBtn.disabled) {
-        craftBtn.style.background = 'rgba(139, 90, 43, 0.8)'
-      }
-    })
-
-    craftBtn.addEventListener('click', () => {
-      if (state.craft(recipe)) {
-        // Refresh UI after crafting
-        updateRecipes()
-        syncSlotsFromState(allSlots, getStateSlots())
-      }
-    })
-
-    // Store recipe reference for updating enabled state
-    ;(craftBtn as any).__recipe = recipe
-    recipeButtons.push(craftBtn)
-
-    entry.appendChild(craftBtn)
-    return entry
-  }
-
-  // Update recipes display based on current input
-  function updateRecipes(): void {
-    // Clear existing recipes
-    recipesContainer.innerHTML = ''
-    recipeButtons.length = 0
-
-    const recipes = state.getAvailableRecipes()
+  const updateCraftableList = (recipes: IWoodworkingRecipe[]): void => {
+    craftableList.innerHTML = ''
 
     if (recipes.length === 0) {
-      recipesContainer.appendChild(noRecipesMsg)
+      const emptyMsg = document.createElement('div')
+      emptyMsg.textContent = 'Add wood to see recipes'
+      emptyMsg.style.color = 'rgba(255, 255, 255, 0.4)'
+      emptyMsg.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
+      emptyMsg.style.fontSize = '0.75rem'
+      emptyMsg.style.fontStyle = 'italic'
+      craftableList.appendChild(emptyMsg)
       return
     }
 
     for (const recipe of recipes) {
-      const entry = createRecipeEntry(recipe)
-      recipesContainer.appendChild(entry)
-    }
+      const row = document.createElement('div')
+      row.style.display = 'flex'
+      row.style.alignItems = 'center'
+      row.style.gap = '0.5rem'
+      row.style.padding = '0.4rem 0.5rem'
+      row.style.background = 'rgba(40, 40, 40, 0.8)'
+      row.style.borderRadius = '4px'
+      row.style.cursor = 'pointer'
+      row.style.transition = 'background 0.15s'
+      row.addEventListener('mouseenter', () => {
+        row.style.background = 'rgba(60, 60, 60, 0.9)'
+      })
+      row.addEventListener('mouseleave', () => {
+        row.style.background = 'rgba(40, 40, 40, 0.8)'
+      })
 
-    // Update button states
-    updateCraftButtons()
+      const resultItem = recipe.createResult()
+      if (resultItem.iconUrl) {
+        const icon = document.createElement('img')
+        icon.src = resultItem.iconUrl
+        icon.style.width = '24px'
+        icon.style.height = '24px'
+        icon.style.objectFit = 'contain'
+        icon.style.imageRendering = 'pixelated'
+        icon.draggable = false
+        row.appendChild(icon)
+      }
+
+      const name = document.createElement('span')
+      name.textContent =
+        recipe.resultCount > 1 ? `${recipe.name} ×${recipe.resultCount}` : recipe.name
+      name.style.color = 'rgba(255, 255, 255, 0.9)'
+      name.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
+      name.style.fontSize = '0.8rem'
+      row.appendChild(name)
+
+      row.addEventListener('click', () => craft(recipe))
+      craftableList.appendChild(row)
+    }
   }
 
-  // Update craft button enabled/disabled states
-  function updateCraftButtons(): void {
-    for (const btn of recipeButtons) {
-      const recipe = (btn as any).__recipe as IWoodworkingRecipe
-      const canCraft = state.canCraft(recipe)
-      btn.disabled = !canCraft
-      btn.style.opacity = canCraft ? '1' : '0.5'
-      btn.style.cursor = canCraft ? 'pointer' : 'not-allowed'
+  const stateSlots = (): (IItemStack | null)[] => {
+    const arr: (IItemStack | null)[] = []
+    for (let i = 0; i < state.getSlotCount(); i++) {
+      arr.push(state.getStack(i))
+    }
+    return arr
+  }
+
+  const refresh = (): void => {
+    const current = stateSlots()
+    syncSlotsFromState(slots, current)
+    const signature = current
+      .map((s) => (s ? `${s.item.id}:${s.count}` : '-'))
+      .join('|')
+    if (signature !== lastSignature) {
+      lastSignature = signature
+      updateCraftableList(state.getCraftableRecipes())
+    }
+  }
+
+  const returnItemsToPlayer = (): void => {
+    if (itemsReturned) return
+    itemsReturned = true
+    for (let i = 0; i < state.getSlotCount(); i++) {
+      const stack = state.getStack(i)
+      if (stack) {
+        playerState.addItem(stack.item, stack.count)
+        state.setStack(i, null)
+      }
     }
   }
 
   const api: IBlockUI = {
     root,
-    slots: allSlots,
+    slots,
 
     open(): void {
       isOpen = true
-      updateRecipes()
+      itemsReturned = false
+      lastSignature = ''
+      refresh()
     },
 
     close(): void {
       isOpen = false
+      // Like the hand-crafting grid: leftover ingredients go back to the player
+      returnItemsToPlayer()
     },
 
     syncFromState(): void {
       if (!isOpen) return
+      refresh()
+    },
 
-      // Sync slot contents
-      syncSlotsFromState(allSlots, getStateSlots())
-
-      // Update recipes if input changed
-      updateRecipes()
+    destroy(): void {
+      returnItemsToPlayer()
+      if (root.parentElement) {
+        root.parentElement.removeChild(root)
+      }
     },
 
     getStack(index: number): IItemStack | null {
@@ -301,18 +219,9 @@ export function createWoodworkingBenchUI(state: WoodworkingBenchState): IBlockUI
 
     setStack(index: number, stack: IItemStack | null): void {
       state.setStack(index, stack)
-      // Trigger recipe update when input changes
-      if (index === 0) {
-        updateRecipes()
-      }
-    },
-
-    destroy(): void {
-      if (root.parentElement) {
-        root.parentElement.removeChild(root)
-      }
     },
   }
 
+  updateCraftableList([])
   return api
 }

@@ -367,6 +367,24 @@ export class ApothecaryWorkbenchState implements ITickableBlockState {
   }
 
   /**
+   * Remove empty (count <= 0) stacks after a partial content transfer.
+   */
+  compactSlots(): void {
+    for (let i = 0; i < this.ingredientSlots.length; i++) {
+      const stack = this.ingredientSlots[i]
+      if (stack && stack.count <= 0) {
+        this.ingredientSlots[i] = null
+      }
+    }
+    if (this.fuelSlot && this.fuelSlot.count <= 0) {
+      this.fuelSlot = null
+    }
+    if (this.outputSlot && this.outputSlot.count <= 0) {
+      this.outputSlot = null
+    }
+  }
+
+  /**
    * Get all items to drop when the workbench is broken.
    */
   getAllItems(): IItemStack[] {

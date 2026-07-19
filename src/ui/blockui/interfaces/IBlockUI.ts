@@ -1,3 +1,4 @@
+import type { IItem } from '../../../items/Item.ts'
 import type { IItemStack } from '../../../player/PlayerState.ts'
 
 /**
@@ -28,6 +29,13 @@ export interface IBlockUI {
 
   /** Set stack at slot index (for drag-drop) */
   setStack(index: number, stack: IItemStack | null): void
+
+  /**
+   * Whether ctrl+click quick transfer may place the item into this slot.
+   * Omit to accept everything; UIs with special slots (fuel, output) use
+   * this to keep transfers out of them. Direct drag-drop is not affected.
+   */
+  acceptsQuickTransfer?(index: number, item: IItem): boolean
 }
 
 /**

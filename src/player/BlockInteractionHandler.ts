@@ -198,6 +198,9 @@ export class BlockInteractionHandler {
         setStack: (index: number, stack: IItemStack | null) => this.currentBlockUI?.setStack(index, stack),
         clearSlot: (index: number) => this.currentBlockUI?.setStack(index, null),
       } as any,
+      quickTransferIntoCrafting: true,
+      craftingSlotAccepts: (index, item) =>
+        this.currentBlockUI?.acceptsQuickTransfer?.(index, item) ?? true,
       onStateChanged: () => {
         this.syncUI()
         this.onStateChanged?.()
@@ -243,6 +246,10 @@ export class BlockInteractionHandler {
     }
     this.currentHit = null
 
+    // Block UIs may hand items to the player on close (bench ingredients,
+    // craft results) - re-render toolbar/inventory so they show up
+    this.syncUI()
+
     // Show crafting panel
     this.inventoryInputHandler.craftingPanelRoot.style.display = ''
 
@@ -272,6 +279,10 @@ export class BlockInteractionHandler {
   update(): void {
     if (this.isBlockUIOpen && this.currentBlockUI) {
       this.currentBlockUI.syncFromState()
+      // Crafting in a block UI adds results directly to the player
+      // inventory - keep the toolbar/grid in sync (differential renders,
+      // so per-frame cost is negligible)
+      this.syncUI()
     }
   }
 

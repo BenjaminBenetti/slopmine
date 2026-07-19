@@ -35,6 +35,22 @@ class WoodworkingRegistry {
   }
 
   /**
+   * Get all recipes craftable from aggregated ingredient counts
+   * (shapeless matching across the bench's input slots).
+   */
+  findCraftableRecipes(countsById: Readonly<Record<string, number>>): IWoodworkingRecipe[] {
+    const craftable: IWoodworkingRecipe[] = []
+    for (const [itemId, count] of Object.entries(countsById)) {
+      for (const recipe of this.recipesByInput.get(itemId) ?? []) {
+        if (count >= recipe.inputCount) {
+          craftable.push(recipe)
+        }
+      }
+    }
+    return craftable
+  }
+
+  /**
    * Get all registered recipes.
    */
   getAllRecipes(): IWoodworkingRecipe[] {

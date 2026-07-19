@@ -11,6 +11,7 @@ export const ItemTags = {
   BAR: 'bar',
   COAL: 'coal',
   LOG: 'log',
+  PLANK: 'plank',
 } as const
 
 export type ItemTag = (typeof ItemTags)[keyof typeof ItemTags]

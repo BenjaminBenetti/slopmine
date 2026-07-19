@@ -56,7 +56,11 @@ import { BlockTickManager } from './world/blockstate/BlockTickManager.ts'
 import { setForgeBlockTickManager } from './world/blocks/types/forge/ForgeBlock.ts'
 import { setApothecaryWorkbenchBlockTickManager } from './world/blocks/types/apothecary_workbench/ApothecaryWorkbenchBlock.ts'
 import { setWoodworkingBenchBlockTickManager } from './world/blocks/types/woodworking_bench/WoodworkingBenchBlock.ts'
-import { blockUIRegistry, blockActionRegistry, createForgeUI, createApothecaryWorkbenchUI, createWoodworkingBenchUI, createChestUI } from './ui/blockui/index.ts'
+import { blockUIRegistry, blockActionRegistry, createForgeUI, createApothecaryWorkbenchUI, createWoodworkingBenchUI, createChestUI, createShelfUI } from './ui/blockui/index.ts'
+import type { ShelfBlockState } from './world/blocks/types/shelf_shared/ShelfBlockState.ts'
+import { DOOR_TOGGLE_PAIRS, toggleDoor } from './world/blocks/types/door_shared/DoorToggle.ts'
+import { GATE_TOGGLE_PAIRS, toggleFenceGate } from './world/blocks/types/fence_gate_shared/FenceGateToggle.ts'
+import { TRAPDOOR_TOGGLE_PAIRS, toggleTrapdoor } from './world/blocks/types/trapdoor_shared/TrapdoorToggle.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
 import { BlockInteractionHandler } from './player/BlockInteractionHandler.ts'
 import { BlockRaycaster } from './player/BlockRaycaster.ts'
@@ -103,11 +107,17 @@ blockUIRegistry.register(BlockIds.FORGE, (state) => createForgeUI(state as Forge
 // Register block UI for apothecary workbench
 blockUIRegistry.register(BlockIds.APOTHECARY_WORKBENCH, (state) => createApothecaryWorkbenchUI(state as ApothecaryWorkbenchState))
 
-// Register block UI for woodworking bench
-blockUIRegistry.register(BlockIds.WOODWORKING_BENCH, (state) => createWoodworkingBenchUI(state as WoodworkingBenchState))
+// Register block UI for woodworking bench (needs playerState: results and
+// leftover ingredients go straight to the player inventory)
+blockUIRegistry.register(BlockIds.WOODWORKING_BENCH, (state) => createWoodworkingBenchUI(state as WoodworkingBenchState, playerState))
 
 // Register block UI for chest
 blockUIRegistry.register(BlockIds.CHEST, (state) => createChestUI(state as ChestBlockState))
+
+// Register shelf UI for all three wood variants (shared state/UI implementation)
+for (const shelfId of [BlockIds.OAK_SHELF, BlockIds.PINE_SHELF, BlockIds.REDWOOD_SHELF]) {
+  blockUIRegistry.register(shelfId, (state) => createShelfUI(state as ShelfBlockState))
+}
 
 
 
@@ -587,6 +597,84 @@ blockActionRegistry.register(BlockIds.BED_HEAD, (worldX, worldY, worldZ) => {
   
   return true
 })
+
+// Register carpentry open/close toggles (doors swap both halves; all swaps
+// omit the metadata arg so facing is preserved across the id swap)
+
+// OPEN-variant ids: toggling one of these CLOSES the block, which becomes
+// solid — refuse the toggle if it would embed the player in the closed block.
+const openCarpentryIds = new Set<number>([
+  BlockIds.OAK_DOOR_OPEN,
+  BlockIds.OAK_DOOR_UPPER_OPEN,
+  BlockIds.PINE_DOOR_OPEN,
+  BlockIds.PINE_DOOR_UPPER_OPEN,
+  BlockIds.REDWOOD_DOOR_OPEN,
+  BlockIds.REDWOOD_DOOR_UPPER_OPEN,
+  BlockIds.OAK_FENCE_GATE_OPEN,
+  BlockIds.PINE_FENCE_GATE_OPEN,
+  BlockIds.REDWOOD_FENCE_GATE_OPEN,
+  BlockIds.OAK_TRAPDOOR_OPEN,
+  BlockIds.PINE_TRAPDOOR_OPEN,
+  BlockIds.REDWOOD_TRAPDOOR_OPEN,
+])
+
+/**
+ * True if closing the block at (x, y, z) would trap the player: the player's
+ * AABB (position is feet-center, matching PhysicsBody.getAABB) intersects the
+ * block's full cell. Doors close both halves, so also test the cells above
+ * and below the toggled coordinate.
+ */
+const wouldTrapPlayer = (x: bigint, y: bigint, z: bigint, isDoor: boolean): boolean => {
+  const pos = playerBody.position
+  const minX = pos.x - PLAYER_WIDTH / 2
+  const maxX = pos.x + PLAYER_WIDTH / 2
+  const minY = pos.y
+  const maxY = pos.y + PLAYER_HEIGHT
+  const minZ = pos.z - PLAYER_DEPTH / 2
+  const maxZ = pos.z + PLAYER_DEPTH / 2
+
+  const intersectsCell = (cx: bigint, cy: bigint, cz: bigint): boolean => {
+    const bx = Number(cx)
+    const by = Number(cy)
+    const bz = Number(cz)
+    return (
+      maxX > bx && minX < bx + 1 &&
+      maxY > by && minY < by + 1 &&
+      maxZ > bz && minZ < bz + 1
+    )
+  }
+
+  if (intersectsCell(x, y, z)) return true
+  if (isDoor && (intersectsCell(x, y - 1n, z) || intersectsCell(x, y + 1n, z))) return true
+  return false
+}
+
+for (const doorId of DOOR_TOGGLE_PAIRS.keys()) {
+  blockActionRegistry.register(doorId, (x, y, z) => {
+    if (openCarpentryIds.has(world.getBlockId(x, y, z)) && wouldTrapPlayer(x, y, z, true)) {
+      return false
+    }
+    return toggleDoor(world, x, y, z)
+  })
+}
+for (const gateId of Object.keys(GATE_TOGGLE_PAIRS)) {
+  blockActionRegistry.register(Number(gateId), (x, y, z) => {
+    if (openCarpentryIds.has(world.getBlockId(x, y, z)) && wouldTrapPlayer(x, y, z, false)) {
+      return false
+    }
+    return toggleFenceGate(world, x, y, z)
+  })
+}
+for (const pair of TRAPDOOR_TOGGLE_PAIRS) {
+  const toggleWithGuard = (x: bigint, y: bigint, z: bigint): boolean => {
+    if (openCarpentryIds.has(world.getBlockId(x, y, z)) && wouldTrapPlayer(x, y, z, false)) {
+      return false
+    }
+    return toggleTrapdoor(world, x, y, z)
+  }
+  blockActionRegistry.register(pair.closedId, toggleWithGuard)
+  blockActionRegistry.register(pair.openId, toggleWithGuard)
+}
 
 // Position camera at player spawn with eye height offset
 renderer.camera.position.set(

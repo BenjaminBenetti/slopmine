@@ -3,7 +3,7 @@ import type { BlockId } from '../world/interfaces/IBlock.ts'
 import type { IChunkCoordinate, SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { createSubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
-import { getMetadataFacing, getMetadataUses3DRotation, facingToEuler } from '../world/blocks/BlockFacing.ts'
+import { getMetadataFacing, getMetadataUses3DRotation, getMetadataFlipped, facingToEuler } from '../world/blocks/BlockFacing.ts'
 
 /**
  * Common interface for chunk mesh types (ChunkMesh, GreedyChunkMesh).
@@ -122,7 +122,8 @@ export class ChunkMesh implements IChunkMesh {
         const blockMeta = metadata[i] ?? 0
         const facing = getMetadataFacing(blockMeta)
         const uses3D = getMetadataUses3DRotation(blockMeta)
-        const euler = facingToEuler(facing, uses3D)
+        const flipped = getMetadataFlipped(blockMeta)
+        const euler = facingToEuler(facing, uses3D, flipped)
 
         // Build transformation matrix: rotation then translation
         if (euler.x !== 0 || euler.y !== 0 || euler.z !== 0) {

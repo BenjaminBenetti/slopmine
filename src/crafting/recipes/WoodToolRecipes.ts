@@ -7,7 +7,7 @@ import { WoodAxeItem } from '../../items/tools/axe/WoodAxeItem.ts'
 export const woodPickaxeRecipe: IRecipe = {
   id: 'wood_pickaxe',
   name: 'Wood Pickaxe',
-  ingredients: [{ tag: ItemTags.WOOD, count: 3 }],
+  ingredients: [{ tag: ItemTags.WOOD, count: 3 }, { itemId: 'stick', count: 2 }],
   createResult: () => new WoodPickaxeItem(),
   resultCount: 1,
 }
@@ -15,7 +15,7 @@ export const woodPickaxeRecipe: IRecipe = {
 export const woodShovelRecipe: IRecipe = {
   id: 'wood_shovel',
   name: 'Wood Shovel',
-  ingredients: [{ tag: ItemTags.WOOD, count: 1 }],
+  ingredients: [{ tag: ItemTags.WOOD, count: 1 }, { itemId: 'stick', count: 2 }],
   createResult: () => new WoodShovelItem(),
   resultCount: 1,
 }
@@ -23,7 +23,7 @@ export const woodShovelRecipe: IRecipe = {
 export const woodAxeRecipe: IRecipe = {
   id: 'wood_axe',
   name: 'Wood Axe',
-  ingredients: [{ tag: ItemTags.WOOD, count: 2 }],
+  ingredients: [{ tag: ItemTags.WOOD, count: 2 }, { itemId: 'stick', count: 2 }],
   createResult: () => new WoodAxeItem(),
   resultCount: 1,
 }

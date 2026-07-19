@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
 import type { IPhysicsWorld } from '../physics/interfaces/IPhysicsWorld.ts'
 import type { PhysicsEngine } from '../physics/PhysicsEngine.ts'
-import { EYE_HEIGHT, JUMP_VELOCITY, CLIMB_VELOCITY } from '../physics/constants.ts'
+import { EYE_HEIGHT, JUMP_VELOCITY, CLIMB_VELOCITY, STEP_HEIGHT } from '../physics/constants.ts'
 
 export interface FirstPersonCameraControlOptions {
   movementSpeed?: number
@@ -34,6 +34,14 @@ export class FirstPersonCameraControls implements CameraControls {
 
   private yaw = 0
   private pitch = 0
+
+  // Auto step-up camera smoothing: sudden grounded rises (walking up a slab
+  // or stair) are absorbed into this offset, which decays so the eye glides
+  // up instead of popping. Physics position stays exact.
+  private stepSmoothOffset = 0
+  private prevBodyY: number | null = null
+  /** Exponential decay rate (1/s) - ~90% of the step absorbed in ~160ms */
+  private static readonly STEP_SMOOTH_DECAY = 14
 
   private moveForward = false
   private moveBackward = false
@@ -322,11 +330,24 @@ export class FirstPersonCameraControls implements CameraControls {
       this.physicsEngine.applyJump(this.physicsBody, JUMP_VELOCITY)
     }
 
+    // Absorb auto step-up pops into the smoothing offset. Steps are the only
+    // grounded, zero-vertical-velocity upward displacements (jumps and climbs
+    // carry velocity; landings move down), so gate on exactly that.
+    if (this.prevBodyY !== null) {
+      const dy = this.physicsBody.position.y - this.prevBodyY
+      if (dy > 0.01 && this.physicsBody.isOnGround && Math.abs(this.physicsBody.velocity.y) < 0.01) {
+        this.stepSmoothOffset = Math.min(this.stepSmoothOffset + dy, STEP_HEIGHT)
+      }
+    }
+    this.prevBodyY = this.physicsBody.position.y
+    this.stepSmoothOffset *= Math.exp(-FirstPersonCameraControls.STEP_SMOOTH_DECAY * _deltaTime)
+    if (this.stepSmoothOffset < 0.001) this.stepSmoothOffset = 0
+
     // Sync camera position with physics body (add eye height)
     // Offset camera forward (-Z) to align view with hitbox center
     this.camera.position.set(
       this.physicsBody.position.x,
-      this.physicsBody.position.y + EYE_HEIGHT,
+      this.physicsBody.position.y + EYE_HEIGHT - this.stepSmoothOffset,
       this.physicsBody.position.z
     )
   }
@@ -366,6 +387,10 @@ export class FirstPersonCameraControls implements CameraControls {
 
     // Reset velocity so physics doesn't accumulate when we exit flying mode
     this.physicsBody.velocity.set(0, 0, 0)
+
+    // No step smoothing while flying
+    this.stepSmoothOffset = 0
+    this.prevBodyY = this.physicsBody.position.y
 
     // Sync camera position
     this.camera.position.set(

@@ -9,7 +9,26 @@ import * as fs from "fs";
 import * as path from "path";
 
 const OUTPUT_DIR = path.join(import.meta.dirname, "output");
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// Resolve the API key. The env var is preferred, but when Claude Code is not
+// launched from a shell that exports it, the ${GEMINI_API_KEY} placeholder in
+// .mcp.json arrives literally unexpanded — fall back to a key file in that case.
+const KEY_FILE = path.join(
+  process.env.HOME ?? "~",
+  ".config",
+  "slopmine",
+  "gemini_api_key"
+);
+function resolveApiKey(): string | undefined {
+  const fromEnv = process.env.GEMINI_API_KEY;
+  if (fromEnv && !fromEnv.startsWith("${")) return fromEnv;
+  try {
+    return fs.readFileSync(KEY_FILE, "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+const GEMINI_API_KEY = resolveApiKey();
 // Nano Banana 2 (stable). Override via GEMINI_IMAGE_MODEL, e.g.
 // "gemini-3-pro-image" for the premium tier or
 // "gemini-3.1-flash-lite-image" for the fast/cheap tier.

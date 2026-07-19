@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import type { IPhysicsWorld } from '../interfaces/IPhysicsWorld.ts'
 import type { ICollisionResult } from '../interfaces/ICollisionResult.ts'
 import { AABB } from './AABB.ts'
-import { EPSILON } from '../constants.ts'
+import { EPSILON, STEP_HEIGHT } from '../constants.ts'
 
 /**
  * Handles collision detection and resolution between physics bodies and the world.
@@ -19,6 +19,8 @@ export class CollisionDetector {
   private readonly sweptAABB = new AABB(new THREE.Vector3(), new THREE.Vector3())
   // Pre-allocated AABB array for currentAABBs - resized as needed
   private currentAABBsPool: AABB[] = []
+  // Scratch AABBs for the auto step-up retry - resized as needed
+  private stepAABBsPool: AABB[] = []
   // Pre-allocated collision result to avoid per-frame GC pressure
   private readonly collisionResult: ICollisionResult = {
     position: new THREE.Vector3(),
@@ -85,6 +87,12 @@ export class CollisionDetector {
     else this.sweptAABB.max.y += this.tempMovement.y
     if (this.tempMovement.z < 0) this.sweptAABB.min.z += this.tempMovement.z
     else this.sweptAABB.max.z += this.tempMovement.z
+    // Auto step-up retries the horizontal movement from up to STEP_HEIGHT
+    // higher; include that region in the broad-phase (the block AABB pool is
+    // reused, so a second query mid-resolution would invalidate results)
+    if (Math.abs(this.tempMovement.x) > EPSILON || Math.abs(this.tempMovement.z) > EPSILON) {
+      this.sweptAABB.max.y += STEP_HEIGHT
+    }
 
     // Query all potentially colliding blocks
     const blockAABBs = this.world.getBlockCollisions(this.sweptAABB)
@@ -142,10 +150,131 @@ export class CollisionDetector {
       result.velocity.z = 0
     }
 
+    // Auto step-up: walking on the ground into a low ledge (slab, stair)
+    // retries the horizontal movement from up to STEP_HEIGHT higher and
+    // settles onto the step - no jump needed. hitGround is only true while
+    // gravity is being clipped by the floor, so this never fires mid-air.
+    if (
+      result.hitGround &&
+      (result.collidedX || result.collidedZ) &&
+      (Math.abs(this.tempMovement.x) > EPSILON || Math.abs(this.tempMovement.z) > EPSILON)
+    ) {
+      this.tryStepUp(aabbs, currentAABBsLength, yMove, xMove, zMove, velocity, blockAABBs, result)
+    }
+
     // Extract final position from first AABB center-bottom (into pre-allocated vector)
     this.currentAABBsPool[0].getCenterBottomInto(result.position)
 
     return result
+  }
+
+  /**
+   * Attempt to step up onto a low ledge instead of being blocked by it.
+   * Starting from the post-gravity position: lift by up to STEP_HEIGHT
+   * (ceiling-checked), retry the full horizontal movement, then settle back
+   * down onto the step surface. The stepped position is accepted only when
+   * it gains real horizontal progress AND lands on a raised surface;
+   * otherwise the original (blocked) result stands.
+   */
+  private tryStepUp(
+    originalAABBs: AABB[],
+    count: number,
+    yMove: number,
+    xMove: number,
+    zMove: number,
+    velocity: THREE.Vector3,
+    blockAABBs: AABB[],
+    result: ICollisionResult
+  ): void {
+    // Scratch AABBs at the post-gravity, pre-horizontal position
+    while (this.stepAABBsPool.length < count) {
+      this.stepAABBsPool.push(new AABB(new THREE.Vector3(), new THREE.Vector3()))
+    }
+    for (let i = 0; i < count; i++) {
+      this.stepAABBsPool[i].min.copy(originalAABBs[i].min)
+      this.stepAABBsPool[i].max.copy(originalAABBs[i].max)
+    }
+    this.tempOffset.set(0, yMove, 0)
+    for (let i = 0; i < count; i++) {
+      this.stepAABBsPool[i].translateInPlace(this.tempOffset)
+    }
+
+    // Lift as far as the ceiling allows, up to STEP_HEIGHT
+    const upMove = this.resolveAxisOnPool(this.stepAABBsPool, count, STEP_HEIGHT, 'y', blockAABBs)
+    if (upMove < 2 * EPSILON) return
+    this.tempOffset.set(0, upMove, 0)
+    for (let i = 0; i < count; i++) {
+      this.stepAABBsPool[i].translateInPlace(this.tempOffset)
+    }
+
+    // Retry the full horizontal movement from the lifted position
+    const xMove2 = this.resolveAxisOnPool(this.stepAABBsPool, count, this.tempMovement.x, 'x', blockAABBs)
+    if (Math.abs(xMove2) > EPSILON) {
+      this.tempOffset.set(xMove2, 0, 0)
+      for (let i = 0; i < count; i++) {
+        this.stepAABBsPool[i].translateInPlace(this.tempOffset)
+      }
+    }
+    const zMove2 = this.resolveAxisOnPool(this.stepAABBsPool, count, this.tempMovement.z, 'z', blockAABBs)
+    if (Math.abs(zMove2) > EPSILON) {
+      this.tempOffset.set(0, 0, zMove2)
+      for (let i = 0; i < count; i++) {
+        this.stepAABBsPool[i].translateInPlace(this.tempOffset)
+      }
+    }
+
+    // Must gain horizontal progress over the blocked attempt
+    const blockedProgress = Math.abs(xMove) + Math.abs(zMove)
+    const steppedProgress = Math.abs(xMove2) + Math.abs(zMove2)
+    if (steppedProgress <= blockedProgress + EPSILON) return
+
+    // Settle back down onto the step surface
+    const downMove = this.resolveAxisOnPool(this.stepAABBsPool, count, -upMove, 'y', blockAABBs)
+    const netRise = upMove + downMove
+    // Reject if nothing was actually stepped onto (came all the way back
+    // down) or the rise somehow exceeds the step limit
+    if (netRise <= EPSILON || netRise > STEP_HEIGHT + EPSILON) return
+    this.tempOffset.set(0, downMove, 0)
+    for (let i = 0; i < count; i++) {
+      this.stepAABBsPool[i].translateInPlace(this.tempOffset)
+    }
+
+    // Accept: replace the resolved AABBs and update the result for the
+    // retried axes. The body stands on the step, so it stays grounded.
+    for (let i = 0; i < count; i++) {
+      this.currentAABBsPool[i].min.copy(this.stepAABBsPool[i].min)
+      this.currentAABBsPool[i].max.copy(this.stepAABBsPool[i].max)
+    }
+    result.collidedX = Math.abs(xMove2) < Math.abs(this.tempMovement.x) - EPSILON
+    result.collidedZ = Math.abs(zMove2) < Math.abs(this.tempMovement.z) - EPSILON
+    result.velocity.x = result.collidedX ? 0 : velocity.x
+    result.velocity.z = result.collidedZ ? 0 : velocity.z
+    result.velocity.y = 0
+    result.hitGround = true
+  }
+
+  /**
+   * Resolve movement along a single axis for an explicit AABB pool.
+   */
+  private resolveAxisOnPool(
+    pool: AABB[],
+    count: number,
+    distance: number,
+    axis: 'x' | 'y' | 'z',
+    blockAABBs: AABB[]
+  ): number {
+    if (Math.abs(distance) < EPSILON) return 0
+
+    let minMove = distance
+    for (let i = 0; i < count; i++) {
+      const move = this.resolveAxis(pool[i], distance, axis, blockAABBs)
+      if (distance > 0) {
+        minMove = Math.min(minMove, move)
+      } else {
+        minMove = Math.max(minMove, move)
+      }
+    }
+    return minMove
   }
 
   /**

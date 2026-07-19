@@ -7,8 +7,13 @@ const TARGET_RESOLUTION = 32 // Downsample to 32x32 for better detail
 const EXTRUSION_DEPTH = 0.03 // Thin like a tool blade
 const ALPHA_THRESHOLD = 25
 
-// Geometry cache keyed by icon URL
+// Geometry cache keyed by icon URL (resolved builds)
 const geometryCache = new Map<string, THREE.BufferGeometry>()
+
+// In-flight geometry builds keyed by icon URL. Concurrent callers for the
+// same icon share one build promise instead of racing the resolved cache
+// (the race orphaned the loser's geometry, which was never disposed).
+const pendingGeometry = new Map<string, Promise<THREE.BufferGeometry>>()
 
 // Shared material for all extruded tools
 let sharedToolMaterial: THREE.MeshStandardMaterial | null = null
@@ -247,17 +252,47 @@ function getToolMaterial(): THREE.MeshStandardMaterial {
 }
 
 /**
- * Build an extruded tool mesh asynchronously.
+ * Get (or build) the cached extruded geometry for an icon URL.
+ *
+ * Cache-miss builds are deduplicated: the in-flight promise is cached so
+ * concurrent callers await the same build and receive the same geometry.
  */
-async function buildExtrudedToolMesh(iconUrl: string): Promise<THREE.Mesh> {
-  let geometry = geometryCache.get(iconUrl)
+function getExtrudedGeometry(iconUrl: string): Promise<THREE.BufferGeometry> {
+  const cached = geometryCache.get(iconUrl)
+  if (cached) return Promise.resolve(cached)
 
-  if (!geometry) {
-    const pixelData = await loadImagePixelData(iconUrl)
-    geometry = buildExtrudedPixelGeometry(pixelData)
-    geometryCache.set(iconUrl, geometry)
+  let pending = pendingGeometry.get(iconUrl)
+  if (!pending) {
+    pending = loadImagePixelData(iconUrl)
+      .then(pixelData => {
+        const geometry = buildExtrudedPixelGeometry(pixelData)
+        geometryCache.set(iconUrl, geometry)
+        return geometry
+      })
+      .finally(() => {
+        pendingGeometry.delete(iconUrl)
+      })
+    pendingGeometry.set(iconUrl, pending)
   }
+  return pending
+}
 
+/**
+ * Build an extruded tool mesh asynchronously.
+ *
+ * Returns an un-posed mesh (no rotation/translation applied) so callers can
+ * position it freely (held-item view, shelf displays, etc.).
+ *
+ * SHARED RESOURCES: the returned mesh uses the SHARED cached geometry (keyed
+ * by icon URL) and the SHARED tool material - every mesh built for the same
+ * icon references the same geometry instance, and ALL meshes reference one
+ * material singleton. Callers must NOT dispose either, and must NOT mutate
+ * material properties (e.g. emissive) in place. Callers that need to mutate
+ * or dispose must first replace them with their own `geometry.clone()` /
+ * `material.clone()` copies and manage those copies themselves.
+ */
+export async function buildExtrudedToolMesh(iconUrl: string): Promise<THREE.Mesh> {
+  const geometry = await getExtrudedGeometry(iconUrl)
   return new THREE.Mesh(geometry, getToolMaterial())
 }
 

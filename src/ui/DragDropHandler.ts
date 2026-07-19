@@ -19,6 +19,15 @@ export interface DragDropOptions {
   inventorySlots: HTMLDivElement[]
   craftingRoot?: HTMLDivElement
   craftingSlots?: HTMLDivElement[]
+  /**
+   * Ctrl+click on a toolbar/inventory slot moves the stack into the crafting
+   * container (set when it is an external block inventory like a chest or
+   * bench). When false, ctrl+click transfers between toolbar and inventory.
+   * Crafting slots always quick-transfer back to the player either way.
+   */
+  quickTransferIntoCrafting?: boolean
+  /** Per-slot filter for quick transfers into the crafting container */
+  craftingSlotAccepts?: (index: number, item: IItem) => boolean
   /** Called after any successful drop to sync UI with state */
   onStateChanged?: () => void
 }
@@ -43,6 +52,8 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     inventorySlots,
     craftingRoot,
     craftingSlots,
+    quickTransferIntoCrafting,
+    craftingSlotAccepts,
     onStateChanged,
   } = options
 
@@ -338,6 +349,76 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     onStateChanged?.()
   }
 
+  function slotInfosFor(
+    container: DragDropSlotInfo['container'],
+    elements: HTMLDivElement[]
+  ): DragDropSlotInfo[] {
+    return elements.map((element, index) => ({ element, container, index }))
+  }
+
+  /**
+   * Ctrl+click: move a whole stack to the "other side" — player slots go to
+   * an open block inventory (or between toolbar and inventory grid when none
+   * is open), block/crafting slots come back to the player. Merges into
+   * existing stacks first, then takes the first empty slot; whatever doesn't
+   * fit stays where it was.
+   */
+  function performQuickTransfer(source: DragDropSlotInfo, stack: IItemStack): void {
+    let targets: DragDropSlotInfo[]
+    if (source.container === 'crafting') {
+      targets = [
+        ...slotInfosFor('inventory', inventorySlots),
+        ...slotInfosFor('toolbar', toolbarSlots),
+      ]
+    } else if (quickTransferIntoCrafting && craftingSlots && craftingSlots.length > 0) {
+      targets = slotInfosFor('crafting', craftingSlots)
+    } else if (source.container === 'toolbar') {
+      targets = slotInfosFor('inventory', inventorySlots)
+    } else {
+      targets = slotInfosFor('toolbar', toolbarSlots)
+    }
+
+    const accepts = (target: DragDropSlotInfo): boolean =>
+      target.container !== 'crafting' ||
+      !craftingSlotAccepts ||
+      craftingSlotAccepts(target.index, stack.item)
+
+    let remaining = stack.count
+    const maxStack = stack.item.maxStackSize
+
+    // Top up existing stacks of the same item first
+    for (const target of targets) {
+      if (remaining <= 0) break
+      if (!accepts(target)) continue
+      const existing = getStackFromSlot(target)
+      if (!existing || existing.item.id !== stack.item.id) continue
+      const space = maxStack - existing.count
+      if (space <= 0) continue
+      const moved = Math.min(space, remaining)
+      const merged = { item: existing.item, count: existing.count + moved }
+      setStackInSlot(target, merged)
+      renderStackInSlot(target.element, merged)
+      remaining -= moved
+    }
+
+    // Then drop the remainder into the first empty slot that accepts it
+    for (const target of targets) {
+      if (remaining <= 0) break
+      if (!accepts(target)) continue
+      if (getStackFromSlot(target)) continue
+      const placed = { item: stack.item, count: remaining }
+      setStackInSlot(target, placed)
+      renderStackInSlot(target.element, placed)
+      remaining = 0
+    }
+
+    const leftover = remaining > 0 ? { item: stack.item, count: remaining } : null
+    setStackInSlot(source, leftover)
+    renderStackInSlot(source.element, leftover)
+
+    onStateChanged?.()
+  }
+
   function cancelDrag(): void {
     if (dragging && dragSource) {
       dragSource.element.style.opacity = '1'
@@ -368,15 +449,18 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     // Hide tooltip when starting to drag
     hideTooltip()
 
+    // Ctrl+click: quick transfer instead of dragging
+    if (event.ctrlKey) {
+      performQuickTransfer(slot, stack)
+      return
+    }
+
     // Determine how many items to pick up based on modifiers
     let pickupCount = stack.count
 
     if (event.shiftKey) {
       // Shift: pick up half (round up)
       pickupCount = Math.ceil(stack.count / 2)
-    } else if (event.ctrlKey) {
-      // Ctrl: pick up 10 (or all if less)
-      pickupCount = Math.min(10, stack.count)
     }
 
     // Create the dragged stack

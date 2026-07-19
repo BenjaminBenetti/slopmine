@@ -108,6 +108,28 @@ export function setMetadataUses3DRotation(metadata: number, uses3D: boolean): nu
 }
 
 /**
+ * Check if the block is placed vertically flipped (upside down).
+ * Stored in bit 4 of metadata. Set at placement time when the player clicks
+ * the underside of a block or the upper half of a side face (Minecraft-style
+ * placement for stairs, slabs, and trapdoors).
+ */
+export function getMetadataFlipped(metadata: number): boolean {
+  return (metadata & 0b10000) !== 0
+}
+
+/**
+ * Set the vertical-flip flag in metadata.
+ * Preserves other metadata bits.
+ */
+export function setMetadataFlipped(metadata: number, flipped: boolean): number {
+  if (flipped) {
+    return metadata | 0b10000
+  } else {
+    return metadata & ~0b10000
+  }
+}
+
+/**
  * Get Euler rotation angles for a facing direction.
  * Uses metadata bit 3 to determine rotation mode:
  * - If uses3D is true: Full 3D rotation for surface-attached blocks
@@ -115,9 +137,14 @@ export function setMetadataUses3DRotation(metadata: number, uses3D: boolean): nu
  *
  * @param facing The facing direction
  * @param uses3D Whether to use full 3D rotation (from metadata bit 3)
- * @returns Euler angles {x, y, z} in radians
+ * @param flipped Vertical flip (from metadata bit 4) - a local roll applied
+ *   before the yaw, turning bottom-anchored geometry (slab, stair, closed
+ *   trapdoor) into its ceiling-mounted variant. Only meaningful for the
+ *   Y-rotation path; geometry must be symmetric across its local YZ plane.
+ * @returns Euler angles {x, y, z} in radians (THREE 'XYZ' order)
  */
-export function facingToEuler(facing: BlockFacing, uses3D: boolean = false): { x: number; y: number; z: number } {
+export function facingToEuler(facing: BlockFacing, uses3D: boolean = false, flipped: boolean = false): { x: number; y: number; z: number } {
+  const roll = flipped ? Math.PI : 0
   // UP (0) is default - no rotation needed for any block type
   if (facing === BlockFacing.UP) {
     return { x: 0, y: 0, z: 0 }
@@ -146,16 +173,17 @@ export function facingToEuler(facing: BlockFacing, uses3D: boolean = false): { x
     }
   }
 
-  // Horizontal blocks: Y-rotation only (geometry has front at +Z)
+  // Horizontal blocks: Y-rotation plus optional vertical flip (local roll,
+  // applied before the yaw in THREE's 'XYZ' euler order)
   switch (facing) {
     case BlockFacing.SOUTH:
-      return { x: 0, y: 0, z: 0 }
+      return { x: 0, y: 0, z: roll }
     case BlockFacing.WEST:
-      return { x: 0, y: -Math.PI / 2, z: 0 }
+      return { x: 0, y: -Math.PI / 2, z: roll }
     case BlockFacing.NORTH:
-      return { x: 0, y: Math.PI, z: 0 }
+      return { x: 0, y: Math.PI, z: roll }
     case BlockFacing.EAST:
-      return { x: 0, y: Math.PI / 2, z: 0 }
+      return { x: 0, y: Math.PI / 2, z: roll }
   }
 }
 

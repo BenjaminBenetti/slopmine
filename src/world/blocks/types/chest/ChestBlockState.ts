@@ -67,6 +67,18 @@ export class ChestBlockState implements IBlockState {
   }
 
   /**
+   * Remove empty (count <= 0) stacks after a partial content transfer.
+   */
+  compactSlots(): void {
+    for (let i = 0; i < this.slots.length; i++) {
+      const stack = this.slots[i]
+      if (stack && stack.count <= 0) {
+        this.slots[i] = null
+      }
+    }
+  }
+
+  /**
    * Get all items to drop when the chest is broken.
    */
   getAllItems(): IItemStack[] {

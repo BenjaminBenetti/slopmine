@@ -115,6 +115,21 @@ export enum TextureId {
   CRAB_SHELL = 104,              // crab-shell.webp (decor block face map entry)
   RESIN_TORCH = 105,             // custom geometry, colored materials (like TORCH)
   SEA_STAR = 106,                // sea-star.webp (decor block face map entry)
+  OAK_PLANKS = 107,              // oak-planks.webp (shared by oak slab/stairs/fence/gate/table/chair/shelf)
+  PINE_PLANKS = 108,             // pine-planks.webp (shared by pine carpentry blocks)
+  REDWOOD_PLANKS = 109,          // redwood-planks.webp (shared by redwood carpentry blocks)
+  OAK_DOOR_LOWER = 110,          // oak-door-lower.webp
+  OAK_DOOR_UPPER = 111,          // oak-door-upper.webp
+  PINE_DOOR_LOWER = 112,         // pine-door-lower.webp
+  PINE_DOOR_UPPER = 113,         // pine-door-upper.webp
+  REDWOOD_DOOR_LOWER = 114,      // redwood-door-lower.webp
+  REDWOOD_DOOR_UPPER = 115,      // redwood-door-upper.webp
+  OAK_TRAPDOOR = 116,            // oak-trapdoor.webp
+  PINE_TRAPDOOR = 117,           // pine-trapdoor.webp
+  REDWOOD_TRAPDOOR = 118,        // redwood-trapdoor.webp
+  OAK_WINDOW = 119,              // oak-window.webp (transparent)
+  PINE_WINDOW = 120,             // pine-window.webp (transparent)
+  REDWOOD_WINDOW = 121,          // redwood-window.webp (transparent)
 }
 
 // Cache for the face texture map
@@ -202,6 +217,11 @@ export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   75, // Divining Stick - custom Y-shaped geometry
   76, // Chest - directional block with rotation
   // Water (13-16) is now greedy-meshed to eliminate internal face z-fighting
+  // Carpentry (oak 94-108, pine 110-124, redwood 126-140): everything except
+  // planks is custom geometry/rotation; windows need blended transparency like glass
+  94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108,
+  110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124,
+  126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140,
 ])
 
 /**

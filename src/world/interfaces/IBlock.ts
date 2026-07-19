@@ -105,6 +105,23 @@ export interface IBlock {
   canPlace?(world: IWorld, x: bigint, y: bigint, z: bigint, facing?: BlockFacing): boolean
 
   /**
+   * Collision boxes for blocks whose shape needs more than one AABB
+   * (stairs). Boxes are in local [0,1] cell coordinates for the canonical
+   * orientation (facing SOUTH, unflipped); the physics adapter mirrors and
+   * rotates them per the block's metadata. Takes precedence over
+   * getCollisionBox when present.
+   */
+  getCollisionBoxes?(): THREE.Box3[]
+
+  /**
+   * Whether this block supports Minecraft-style vertical flip on placement
+   * (metadata bit 4): clicking a block's underside or the upper half of a
+   * side face places the block upside down (stairs, slabs, trapdoors).
+   * Geometry must be symmetric across its local YZ plane.
+   */
+  supportsVerticalFlip?(): boolean
+
+  /**
    * Called when this block is placed.
    * @param facing The direction the block should face (for directional blocks)
    */
@@ -131,6 +148,20 @@ export interface IBlock {
    * Block handles any random drop logic internally.
    */
   getDrops?(): IItem[]
+
+  /**
+   * Get items held in this block's state (e.g., chest/bench slots) to return
+   * to the player on break. Called BEFORE onBreak removes the state.
+   * Returned stacks MUST be the live state stacks (counts are mutated by the
+   * mining code as items transfer).
+   */
+  getStateDrops?(x: bigint, y: bigint, z: bigint): ReadonlyArray<{ readonly item: IItem; count: number }>
+
+  /**
+   * Remove empty (count<=0) stacks from this block's state slots after a
+   * partial content transfer.
+   */
+  compactStateSlots?(x: bigint, y: bigint, z: bigint): void
 
   /**
    * Create a block entity for this block when placed or loaded.

@@ -1,6 +1,8 @@
 import type { IBlockUI } from './interfaces/IBlockUI.ts'
+import type { IItem } from '../../items/Item.ts'
 import type { IItemStack } from '../../player/PlayerState.ts'
 import type { ApothecaryWorkbenchState } from '../../world/blocks/types/apothecary_workbench/ApothecaryWorkbenchState.ts'
+import { ItemTags } from '../../items/tags/index.ts'
 import { syncSlotsFromState } from '../SlotRenderer.ts'
 
 /**
@@ -262,6 +264,12 @@ export function createApothecaryWorkbenchUI(state: ApothecaryWorkbenchState): IB
 
     setStack(index: number, stack: IItemStack | null): void {
       state.setStack(index, stack)
+    },
+
+    acceptsQuickTransfer(index: number, item: IItem): boolean {
+      if (index <= 3) return true // ingredient inputs
+      if (index === 4) return item.tags?.includes(ItemTags.FUEL) ?? false
+      return false // output slot
     },
 
     destroy(): void {

@@ -7,7 +7,7 @@ import { BlockRaycaster } from './BlockRaycaster.ts'
 import { BlockRegistry } from '../world/blocks/BlockRegistry.ts'
 import { BlockFace } from '../world/interfaces/IBlock.ts'
 import { AABB } from '../physics/collision/AABB.ts'
-import { yawToFacing, hitFaceToFacing, setMetadataFacing, setMetadataUses3DRotation, BlockFacing } from '../world/blocks/BlockFacing.ts'
+import { yawToFacing, hitFaceToFacing, setMetadataFacing, setMetadataUses3DRotation, setMetadataFlipped, BlockFacing } from '../world/blocks/BlockFacing.ts'
 
 /** Maximum reach distance for block placement */
 const MAX_REACH_DISTANCE = 5
@@ -146,6 +146,20 @@ export class BlockPlacement {
       facing = yawToFacing(yaw)
     }
     metadata = setMetadataFacing(metadata, facing)
+
+    // Minecraft-style vertical orientation: clicking a block's underside, or
+    // the upper half of a side face, places the block upside down
+    if (block.supportsVerticalFlip?.()) {
+      let flipped = false
+      if (hit.face === BlockFace.BOTTOM) {
+        flipped = true
+      } else if (hit.face !== BlockFace.TOP) {
+        // Side face: use where on the face the player clicked
+        const faceFraction = hit.point.y - Number(hit.worldY)
+        flipped = faceFraction > 0.5
+      }
+      metadata = setMetadataFlipped(metadata, flipped)
+    }
 
     // Check if the block allows placement (for multi-block structures like beds)
     if (block.canPlace && !block.canPlace(this.worldManager, placePos.x, placePos.y, placePos.z, facing)) {

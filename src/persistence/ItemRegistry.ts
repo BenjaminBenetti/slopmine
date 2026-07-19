@@ -5,6 +5,42 @@
 
 import type { IItem } from '../items/Item.ts'
 
+// Carpentry block items
+import { OakPlanksBlockItem } from '../items/blocks/oak_planks/OakPlanksBlockItem.ts'
+import { PinePlanksBlockItem } from '../items/blocks/pine_planks/PinePlanksBlockItem.ts'
+import { RedwoodPlanksBlockItem } from '../items/blocks/redwood_planks/RedwoodPlanksBlockItem.ts'
+import { OakSlabBlockItem } from '../items/blocks/oak_slab/OakSlabBlockItem.ts'
+import { PineSlabBlockItem } from '../items/blocks/pine_slab/PineSlabBlockItem.ts'
+import { RedwoodSlabBlockItem } from '../items/blocks/redwood_slab/RedwoodSlabBlockItem.ts'
+import { OakStairsBlockItem } from '../items/blocks/oak_stairs/OakStairsBlockItem.ts'
+import { PineStairsBlockItem } from '../items/blocks/pine_stairs/PineStairsBlockItem.ts'
+import { RedwoodStairsBlockItem } from '../items/blocks/redwood_stairs/RedwoodStairsBlockItem.ts'
+import { OakFenceBlockItem } from '../items/blocks/oak_fence/OakFenceBlockItem.ts'
+import { PineFenceBlockItem } from '../items/blocks/pine_fence/PineFenceBlockItem.ts'
+import { RedwoodFenceBlockItem } from '../items/blocks/redwood_fence/RedwoodFenceBlockItem.ts'
+import { OakFenceGateBlockItem } from '../items/blocks/oak_fence_gate/OakFenceGateBlockItem.ts'
+import { PineFenceGateBlockItem } from '../items/blocks/pine_fence_gate/PineFenceGateBlockItem.ts'
+import { RedwoodFenceGateBlockItem } from '../items/blocks/redwood_fence_gate/RedwoodFenceGateBlockItem.ts'
+import { OakDoorBlockItem } from '../items/blocks/oak_door/OakDoorBlockItem.ts'
+import { PineDoorBlockItem } from '../items/blocks/pine_door/PineDoorBlockItem.ts'
+import { RedwoodDoorBlockItem } from '../items/blocks/redwood_door/RedwoodDoorBlockItem.ts'
+import { OakTrapdoorBlockItem } from '../items/blocks/oak_trapdoor/OakTrapdoorBlockItem.ts'
+import { PineTrapdoorBlockItem } from '../items/blocks/pine_trapdoor/PineTrapdoorBlockItem.ts'
+import { RedwoodTrapdoorBlockItem } from '../items/blocks/redwood_trapdoor/RedwoodTrapdoorBlockItem.ts'
+import { OakTableBlockItem } from '../items/blocks/oak_table/OakTableBlockItem.ts'
+import { PineTableBlockItem } from '../items/blocks/pine_table/PineTableBlockItem.ts'
+import { RedwoodTableBlockItem } from '../items/blocks/redwood_table/RedwoodTableBlockItem.ts'
+import { OakChairBlockItem } from '../items/blocks/oak_chair/OakChairBlockItem.ts'
+import { PineChairBlockItem } from '../items/blocks/pine_chair/PineChairBlockItem.ts'
+import { RedwoodChairBlockItem } from '../items/blocks/redwood_chair/RedwoodChairBlockItem.ts'
+import { OakShelfBlockItem } from '../items/blocks/oak_shelf/OakShelfBlockItem.ts'
+import { PineShelfBlockItem } from '../items/blocks/pine_shelf/PineShelfBlockItem.ts'
+import { RedwoodShelfBlockItem } from '../items/blocks/redwood_shelf/RedwoodShelfBlockItem.ts'
+import { OakWindowBlockItem } from '../items/blocks/oak_window/OakWindowBlockItem.ts'
+import { PineWindowBlockItem } from '../items/blocks/pine_window/PineWindowBlockItem.ts'
+import { RedwoodWindowBlockItem } from '../items/blocks/redwood_window/RedwoodWindowBlockItem.ts'
+import { StickItem } from '../items/materials/stick/StickItem.ts'
+
 // Block items
 import { GrassBlockItem } from '../items/blocks/grass/GrassBlockItem.ts'
 import { DirtBlockItem } from '../items/blocks/dirt/DirtBlockItem.ts'
@@ -328,6 +364,42 @@ export function initializeItemRegistry(): void {
   registerItemFactory('health_potion_1', () => new HealthPotion1Item())
   registerItemFactory('health_potion_2', () => new HealthPotion2Item())
   registerItemFactory('health_potion_3', () => new HealthPotion3Item())
+
+  // Carpentry
+  registerItemFactory('oak_planks_block', () => new OakPlanksBlockItem())
+  registerItemFactory('pine_planks_block', () => new PinePlanksBlockItem())
+  registerItemFactory('redwood_planks_block', () => new RedwoodPlanksBlockItem())
+  registerItemFactory('oak_slab_block', () => new OakSlabBlockItem())
+  registerItemFactory('pine_slab_block', () => new PineSlabBlockItem())
+  registerItemFactory('redwood_slab_block', () => new RedwoodSlabBlockItem())
+  registerItemFactory('oak_stairs_block', () => new OakStairsBlockItem())
+  registerItemFactory('pine_stairs_block', () => new PineStairsBlockItem())
+  registerItemFactory('redwood_stairs_block', () => new RedwoodStairsBlockItem())
+  registerItemFactory('oak_fence_block', () => new OakFenceBlockItem())
+  registerItemFactory('pine_fence_block', () => new PineFenceBlockItem())
+  registerItemFactory('redwood_fence_block', () => new RedwoodFenceBlockItem())
+  registerItemFactory('oak_fence_gate_block', () => new OakFenceGateBlockItem())
+  registerItemFactory('pine_fence_gate_block', () => new PineFenceGateBlockItem())
+  registerItemFactory('redwood_fence_gate_block', () => new RedwoodFenceGateBlockItem())
+  registerItemFactory('oak_door_block', () => new OakDoorBlockItem())
+  registerItemFactory('pine_door_block', () => new PineDoorBlockItem())
+  registerItemFactory('redwood_door_block', () => new RedwoodDoorBlockItem())
+  registerItemFactory('oak_trapdoor_block', () => new OakTrapdoorBlockItem())
+  registerItemFactory('pine_trapdoor_block', () => new PineTrapdoorBlockItem())
+  registerItemFactory('redwood_trapdoor_block', () => new RedwoodTrapdoorBlockItem())
+  registerItemFactory('oak_table_block', () => new OakTableBlockItem())
+  registerItemFactory('pine_table_block', () => new PineTableBlockItem())
+  registerItemFactory('redwood_table_block', () => new RedwoodTableBlockItem())
+  registerItemFactory('oak_chair_block', () => new OakChairBlockItem())
+  registerItemFactory('pine_chair_block', () => new PineChairBlockItem())
+  registerItemFactory('redwood_chair_block', () => new RedwoodChairBlockItem())
+  registerItemFactory('oak_shelf_block', () => new OakShelfBlockItem())
+  registerItemFactory('pine_shelf_block', () => new PineShelfBlockItem())
+  registerItemFactory('redwood_shelf_block', () => new RedwoodShelfBlockItem())
+  registerItemFactory('oak_window_block', () => new OakWindowBlockItem())
+  registerItemFactory('pine_window_block', () => new PineWindowBlockItem())
+  registerItemFactory('redwood_window_block', () => new RedwoodWindowBlockItem())
+  registerItemFactory('stick', () => new StickItem())
 
   console.log(`Item registry initialized with ${itemFactories.size} items`)
 }

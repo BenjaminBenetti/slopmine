@@ -1,6 +1,10 @@
 import { recipeRegistry } from '../RecipeRegistry.ts'
 import { smeltingRegistry } from '../../smelting/index.ts'
 import { brewingRegistry } from '../../brewing/index.ts'
+import { woodworkingRegistry } from '../../woodworking/index.ts'
+import { carpentryWoodworkingRecipes, carpentryHandRecipes } from './CarpentryRecipes.ts'
+import { stickRecipes } from './StickRecipes.ts'
+import { chestRecipes } from './ChestRecipe.ts'
 import { woodToolRecipes } from './WoodToolRecipes.ts'
 import { stoneToolRecipes } from './StoneToolRecipes.ts'
 import { ironToolRecipes } from './IronToolRecipes.ts'
@@ -78,6 +82,12 @@ export function registerDefaultRecipes(): void {
   for (const recipe of coastalFernRecipes) {
     recipeRegistry.register(recipe)
   }
+  for (const recipe of stickRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of chestRecipes) {
+    recipeRegistry.register(recipe)
+  }
 
   // Smelting recipes
   for (const recipe of smeltingRecipes) {
@@ -102,6 +112,14 @@ export function registerDefaultRecipes(): void {
   }
   for (const recipe of seaStarBrewingRecipes) {
     brewingRegistry.register(recipe)
+  }
+
+  // Carpentry recipes (windows are hand-crafted; the rest run on the woodworking bench)
+  for (const recipe of carpentryHandRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of carpentryWoodworkingRecipes) {
+    woodworkingRegistry.register(recipe)
   }
 }
 

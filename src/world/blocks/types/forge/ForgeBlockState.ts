@@ -303,6 +303,27 @@ export class ForgeBlockState implements ITickableBlockState {
   }
 
   /**
+   * Remove empty (count <= 0) stacks after a partial content transfer.
+   */
+  compactSlots(): void {
+    for (let i = 0; i < this.oreSlots.length; i++) {
+      const stack = this.oreSlots[i]
+      if (stack && stack.count <= 0) {
+        this.oreSlots[i] = null
+      }
+    }
+    if (this.fuelSlot && this.fuelSlot.count <= 0) {
+      this.fuelSlot = null
+    }
+    for (let i = 0; i < this.outputSlots.length; i++) {
+      const stack = this.outputSlots[i]
+      if (stack && stack.count <= 0) {
+        this.outputSlots[i] = null
+      }
+    }
+  }
+
+  /**
    * Get all items to drop when the forge is broken.
    */
   getAllItems(): IItemStack[] {

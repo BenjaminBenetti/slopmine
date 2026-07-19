@@ -9,6 +9,7 @@ import { MiningOverlay } from '../renderer/MiningOverlay.ts'
 import { BlockIds } from '../world/blocks/BlockIds.ts'
 import { calculateMiningDamage } from './MiningDamage.ts'
 import { hasToolStats, HAND_STATS } from '../items/interfaces/IToolStats.ts'
+import { FloatingTextManager } from '../ui/floating-text/index.ts'
 
 /** Maximum reach distance for block interaction */
 const MAX_REACH_DISTANCE = 5
@@ -265,6 +266,47 @@ export class BlockInteraction {
     const { worldX, worldY, worldZ } = this.currentMining
     const block = this.worldManager.getBlock(worldX, worldY, worldZ)
 
+    // Transfer items held in block state (chest/bench slots) FIRST - if they
+    // don't all fit, the block must survive so no contents are destroyed.
+    // getStateDrops returns the LIVE state stacks, so writing the leftover
+    // count back keeps the untransferred remainder inside the block.
+    const stateDrops = block.getStateDrops?.(worldX, worldY, worldZ) ?? []
+    let transferredAny = false
+    let hasLeftover = false
+    for (const stack of stateDrops) {
+      const leftover = this.playerState.addItemCounted(stack.item, stack.count)
+      if (leftover < stack.count) {
+        transferredAny = true
+      }
+      if (leftover > 0) {
+        hasLeftover = true
+      }
+      stack.count = leftover
+    }
+
+    if (hasLeftover) {
+      // Inventory full - keep the block (with its remaining contents) intact
+      block.compactStateSlots?.(worldX, worldY, worldZ)
+
+      FloatingTextManager.instance.spawn({
+        text: 'Inventory full!',
+        position: new THREE.Vector3(Number(worldX) + 0.5, Number(worldY) + 1.2, Number(worldZ) + 0.5),
+        mode: 'floating',
+        duration: 2,
+      })
+
+      this.miningOverlay.hide()
+      this.currentMining = null
+
+      if (transferredAny) {
+        this.onItemsCollected?.()
+      }
+      return
+    }
+
+    // Everything fit - clear the now-empty state slots before breaking
+    block.compactStateSlots?.(worldX, worldY, worldZ)
+
     // Get drops from block and add to inventory
     const drops = block.getDrops?.() ?? []
     for (const item of drops) {
@@ -272,7 +314,7 @@ export class BlockInteraction {
     }
 
     // Notify listeners that items were collected
-    if (drops.length > 0) {
+    if (drops.length > 0 || stateDrops.length > 0) {
       this.onItemsCollected?.()
     }
 

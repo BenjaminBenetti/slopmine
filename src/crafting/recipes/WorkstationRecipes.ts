@@ -35,9 +35,22 @@ export const woodworkingBenchRecipe: IRecipe = {
   resultCount: 1,
 }
 
+// Plank-built variant (8 planks = the same 2 logs' worth of wood)
+export const woodworkingBenchFromPlanksRecipe: IRecipe = {
+  id: 'craft_woodworking_bench_planks',
+  name: 'Woodworking Bench',
+  ingredients: [
+    { itemId: 'stone_block', count: 4 },
+    { tag: ItemTags.PLANK, count: 8 },
+  ],
+  createResult: () => new WoodworkingBenchBlockItem(),
+  resultCount: 1,
+}
+
 /** All workstation crafting recipes */
 export const workstationRecipes: IRecipe[] = [
   forgeRecipe,
   apothecaryWorkbenchRecipe,
   woodworkingBenchRecipe,
+  woodworkingBenchFromPlanksRecipe,
 ]
