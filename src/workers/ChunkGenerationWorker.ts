@@ -30,6 +30,13 @@ import { PineTreeFeature, type PineTreeFeatureSettings } from '../world/generate
 import { GiantConiferFeature, type GiantConiferFeatureSettings } from '../world/generate/features/GiantConiferFeature.ts'
 import { BoulderFeature, type BoulderFeatureSettings } from '../world/generate/features/BoulderFeature.ts'
 import { TallFernFeature, type TallFernFeatureSettings } from '../world/generate/features/TallFernFeature.ts'
+import { FallenPineLogFeature, type FallenPineLogFeatureSettings } from '../world/generate/features/FallenPineLogFeature.ts'
+import { PineStumpFeature, type PineStumpFeatureSettings } from '../world/generate/features/PineStumpFeature.ts'
+import { BerryBushFeature, type BerryBushFeatureSettings } from '../world/generate/features/BerryBushFeature.ts'
+import { MorelFeature, type MorelFeatureSettings } from '../world/generate/features/MorelFeature.ts'
+import { BearDenFeature, type BearDenFeatureSettings } from '../world/generate/features/BearDenFeature.ts'
+import { AbandonedCabinFeature, type AbandonedCabinFeatureSettings } from '../world/generate/features/AbandonedCabinFeature.ts'
+import { HuntersCampFeature, type HuntersCampFeatureSettings } from '../world/generate/features/HuntersCampFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
@@ -121,6 +128,13 @@ export type FeatureConfig =
   | { type: 'giantConifer'; settings: GiantConiferFeatureSettings }
   | { type: 'boulder'; settings: BoulderFeatureSettings }
   | { type: 'tallFern'; settings: TallFernFeatureSettings }
+  | { type: 'fallenPineLog'; settings: FallenPineLogFeatureSettings }
+  | { type: 'pineStump'; settings: PineStumpFeatureSettings }
+  | { type: 'berryBush'; settings: BerryBushFeatureSettings }
+  | { type: 'morel'; settings: MorelFeatureSettings }
+  | { type: 'bearDen'; settings: BearDenFeatureSettings }
+  | { type: 'abandonedCabin'; settings: AbandonedCabinFeatureSettings }
+  | { type: 'huntersCamp'; settings: HuntersCampFeatureSettings }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -325,6 +339,20 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new BoulderFeature(config.settings)
       case 'tallFern':
         return new TallFernFeature(config.settings)
+      case 'fallenPineLog':
+        return new FallenPineLogFeature(config.settings)
+      case 'pineStump':
+        return new PineStumpFeature(config.settings)
+      case 'berryBush':
+        return new BerryBushFeature(config.settings)
+      case 'morel':
+        return new MorelFeature(config.settings)
+      case 'bearDen':
+        return new BearDenFeature(config.settings)
+      case 'abandonedCabin':
+        return new AbandonedCabinFeature(config.settings)
+      case 'huntersCamp':
+        return new HuntersCampFeature(config.settings)
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }

@@ -4,9 +4,9 @@ import type { IWorld, IBlock } from '../../../interfaces/IBlock.ts'
 import type { IWorldCoordinate } from '../../../interfaces/ICoordinates.ts'
 import type { IItemStack } from '../../../../player/PlayerState.ts'
 import { BlockStateManager } from '../../../blockstate/BlockStateManager.ts'
-import { BlockRegistry } from '../../BlockRegistry.ts'
 import { getMetadataFacing, facingToRotationY } from '../../BlockFacing.ts'
 import { buildExtrudedToolMesh } from '../../../../renderer/helditem/meshes/ToolMesh.ts'
+import { getBlockForItem } from '../../../../renderer/itemdisplay/index.ts'
 import { ShelfBlockState, SHELF_SLOT_COUNT } from './ShelfBlockState.ts'
 import { SHELF_BOARD_TOP_Y } from './ShelfGeometry.ts'
 
@@ -140,13 +140,9 @@ export class ShelfBlockEntity extends BlockEntity {
    * Build and attach the display mesh for a single slot.
    */
   private addSlotDisplay(stack: IItemStack, slotIndex: number, token: number): void {
-    const itemId = stack.item.id
-
-    // Block items: "oak_planks_block" -> block "oak_planks"
-    const blockName = itemId.endsWith('_block') ? itemId.slice(0, -6) : null
-    const block = blockName
-      ? BlockRegistry.getInstance().getBlockByName(blockName)
-      : undefined
+    // Central item->block resolution (src/renderer/itemdisplay) so shelves
+    // agree with the held-item and dropped-item views on what is block-shaped
+    const block = getBlockForItem(stack.item)
 
     if (block) {
       this.addBlockDisplay(block, slotIndex)
@@ -216,7 +212,9 @@ export class ShelfBlockEntity extends BlockEntity {
         if (token !== this.rebuildToken || !this.displayGroup) return
 
         // Take ownership: replace shared geometry/material with clones this
-        // entity disposes itself.
+        // entity disposes itself (and clear the shared-resource flag so
+        // flag-aware disposal helpers treat the clones as owned).
+        mesh.userData.sharedDisplayResources = false
         const geometry = mesh.geometry.clone()
         this.ownedGeometries.push(geometry)
         mesh.geometry = geometry

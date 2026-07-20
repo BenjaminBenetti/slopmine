@@ -129,6 +129,18 @@ import { DiviningStickBlock } from './types/divining_stick/DiviningStickBlock.ts
 import { ChestBlock } from './types/chest/ChestBlock.ts'
 import { PineLogBlock } from './types/pine_log/PineLogBlock.ts'
 import { PineNeedlesBlock } from './types/pine_needles/PineNeedlesBlock.ts'
+import { PineSaplingBlock } from './types/pine_sapling/PineSaplingBlock.ts'
+import { ResinTapBlock } from './types/resin_tap/ResinTapBlock.ts'
+import { SnowyGrassBlock } from './types/snowy_grass/SnowyGrassBlock.ts'
+import { SnowyPineNeedlesBlock } from './types/snowy_pine_needles/SnowyPineNeedlesBlock.ts'
+import { PineconeBlock } from './types/pinecone/PineconeBlock.ts'
+import { BerryBushBlock } from './types/berry_bush/BerryBushBlock.ts'
+import { BerryBushLadenBlock } from './types/berry_bush_berries/BerryBushLadenBlock.ts'
+import { MorelMushroomBlock } from './types/morel_mushroom/MorelMushroomBlock.ts'
+import { CampfireBlock } from './types/campfire/CampfireBlock.ts'
+import { FallenPineLogXBlock } from './types/fallen_pine_log_x/FallenPineLogXBlock.ts'
+import { FallenPineLogZBlock } from './types/fallen_pine_log_z/FallenPineLogZBlock.ts'
+import { PineStumpBlock } from './types/pine_stump/PineStumpBlock.ts'
 import { PodzolBlock } from './types/podzol/PodzolBlock.ts'
 import { RedwoodLogBlock } from './types/redwood_log/RedwoodLogBlock.ts'
 import { RedwoodLeavesBlock } from './types/redwood_leaves/RedwoodLeavesBlock.ts'
@@ -264,6 +276,18 @@ export function registerDefaultBlocks(): void {
   // Pine forest biome blocks
   registerBlock(new PineLogBlock())
   registerBlock(new PineNeedlesBlock())
+  registerBlock(new PineSaplingBlock())
+  registerBlock(new ResinTapBlock())
+  registerBlock(new SnowyGrassBlock())
+  registerBlock(new SnowyPineNeedlesBlock())
+  registerBlock(new PineconeBlock())
+  registerBlock(new BerryBushBlock())
+  registerBlock(new BerryBushLadenBlock())
+  registerBlock(new MorelMushroomBlock())
+  registerBlock(new CampfireBlock())
+  registerBlock(new FallenPineLogXBlock())
+  registerBlock(new FallenPineLogZBlock())
+  registerBlock(new PineStumpBlock())
   registerBlock(new PodzolBlock())
 
   // Coastal rain forest biome blocks

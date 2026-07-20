@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
-import { SolidBlock } from '../../Block.ts'
+import { LogBlock, LOG_SUPPORT_TICK_INTERVAL } from '../log_shared/LogBlock.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
@@ -21,7 +21,7 @@ const oakLogTopTexture = loadBlockTexture(oakLogTopTexUrl)
 const oakLogMaterial = new THREE.MeshLambertMaterial({ map: oakLogTexture })
 const oakLogTopMaterial = new THREE.MeshLambertMaterial({ map: oakLogTopTexture })
 
-export class OakLogBlock extends SolidBlock {
+export class OakLogBlock extends LogBlock {
   readonly properties: IBlockProperties = {
     id: BlockIds.OAK_LOG,
     name: 'oak_log',
@@ -33,6 +33,7 @@ export class OakLogBlock extends SolidBlock {
     lightBlocking: 15,
     demolitionForceRequired: 0,
     tags: [BlockTags.WOOD],
+    tickInterval: LOG_SUPPORT_TICK_INTERVAL,
   }
 
   protected get defaultTextureId(): number {

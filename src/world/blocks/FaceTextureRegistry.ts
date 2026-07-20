@@ -130,6 +130,18 @@ export enum TextureId {
   OAK_WINDOW = 119,              // oak-window.webp (transparent)
   PINE_WINDOW = 120,             // pine-window.webp (transparent)
   REDWOOD_WINDOW = 121,          // redwood-window.webp (transparent)
+
+  // Pine forest expansion (fallen logs / stumps reuse PINE_LOG_SIDE/END)
+  SNOWY_GRASS_TOP = 122,         // snowy-grass.webp
+  SNOWY_GRASS_SIDE = 123,        // snowy-grass-side.webp
+  SNOWY_PINE_NEEDLES = 124,      // snowy-pine-needles.webp (transparent)
+  PINECONE = 125,                // pinecone.webp (transparent)
+  PINE_SAPLING = 126,            // pine-sapling.webp (transparent)
+  BERRY_BUSH = 127,              // berry-bush.webp (transparent)
+  BERRY_BUSH_BERRIES = 128,      // berry-bush-berries.webp (transparent)
+  MOREL_MUSHROOM = 129,          // morel-mushroom.webp (transparent)
+  RESIN_TAP = 130,               // resin-tap.webp
+  CAMPFIRE = 131,                // campfire.webp
 }
 
 // Cache for the face texture map

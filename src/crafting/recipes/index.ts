@@ -28,6 +28,9 @@ import { mossSmeltingRecipes } from './MossRecipes.ts'
 import { crabSmeltingRecipes } from './CrabRecipes.ts'
 import { pineNeedleBrewingRecipes } from './PineNeedleRecipes.ts'
 import { seaStarBrewingRecipes } from './SeaStarRecipes.ts'
+import { pineconeRecipes } from './PineconeRecipes.ts'
+import { resinTapRecipes } from './ResinTapRecipes.ts'
+import { morelSmeltingRecipes } from './MorelRecipes.ts'
 
 /**
  * Register all default recipes.
@@ -36,6 +39,12 @@ import { seaStarBrewingRecipes } from './SeaStarRecipes.ts'
 export function registerDefaultRecipes(): void {
   // Hand crafting recipes
   for (const recipe of woodToolRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of pineconeRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of resinTapRecipes) {
     recipeRegistry.register(recipe)
   }
   for (const recipe of stoneToolRecipes) {
@@ -100,6 +109,9 @@ export function registerDefaultRecipes(): void {
     smeltingRegistry.register(recipe)
   }
   for (const recipe of coastalFernSmeltingRecipes) {
+    smeltingRegistry.register(recipe)
+  }
+  for (const recipe of morelSmeltingRecipes) {
     smeltingRegistry.register(recipe)
   }
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { IItem } from '../../../items/Item.ts'
+import { markSharedDisplayResources } from '../../itemdisplay/index.ts'
 
 // Constants for extruded tool meshes
 const TOOL_TOTAL_SIZE = 0.7 // Large tool size
@@ -286,14 +287,18 @@ function getExtrudedGeometry(iconUrl: string): Promise<THREE.BufferGeometry> {
  * SHARED RESOURCES: the returned mesh uses the SHARED cached geometry (keyed
  * by icon URL) and the SHARED tool material - every mesh built for the same
  * icon references the same geometry instance, and ALL meshes reference one
- * material singleton. Callers must NOT dispose either, and must NOT mutate
- * material properties (e.g. emissive) in place. Callers that need to mutate
- * or dispose must first replace them with their own `geometry.clone()` /
- * `material.clone()` copies and manage those copies themselves.
+ * material singleton. The mesh is flagged for `disposeItemDisplayObject`
+ * (src/renderer/itemdisplay), which skips shared resources - always dispose
+ * through that helper. Callers must NOT dispose geometry/material directly
+ * and must NOT mutate material properties (e.g. emissive) in place; to mutate
+ * or own the resources, replace them with `geometry.clone()` /
+ * `material.clone()` copies first (and clear the shared flag).
  */
 export async function buildExtrudedToolMesh(iconUrl: string): Promise<THREE.Mesh> {
   const geometry = await getExtrudedGeometry(iconUrl)
-  return new THREE.Mesh(geometry, getToolMaterial())
+  const mesh = new THREE.Mesh(geometry, getToolMaterial())
+  markSharedDisplayResources(mesh)
+  return mesh
 }
 
 /**

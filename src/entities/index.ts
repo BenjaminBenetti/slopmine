@@ -15,6 +15,8 @@ export { EntityManager } from './EntityManager.ts'
 export type { EntityManagerConfig } from './EntityManager.ts'
 export { Entity } from './Entity.ts'
 export { AggressiveEntity } from './AggressiveEntity.ts'
+export { DroppedItemEntity } from './DroppedItemEntity.ts'
+export type { IDroppedItemConfig } from './DroppedItemEntity.ts'
 
 // Constants
 export * from './constants.ts'

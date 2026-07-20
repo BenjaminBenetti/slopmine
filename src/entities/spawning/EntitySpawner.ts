@@ -6,6 +6,7 @@ import type { WorldGenerator } from '../../world/generate/WorldGenerator.ts'
 import type { WorldManager } from '../../world/WorldManager.ts'
 import type { IPhysicsBody } from '../../physics/interfaces/IPhysicsBody.ts'
 import type { EntitySpawnConfig } from './EntitySpawnConfig.ts'
+import { BlockTags } from '../../world/blocks/tags/BlockTags.ts'
 
 // Spawning constants
 const SPAWN_CHECK_INTERVAL = 20.0 // seconds between spawn checks (faster cycle)
@@ -197,13 +198,17 @@ export class EntitySpawner implements ITask {
       const worldX = chunkX * CHUNK_SIZE + localX
       const worldZ = chunkZ * CHUNK_SIZE + localZ
 
-      // Get ground height near player's Y level
-      // This correctly finds the floor in underground biomes instead of the ceiling
-      const groundY = this.worldManager.getGroundNearY(
-        BigInt(Math.floor(worldX)),
-        BigInt(Math.floor(worldZ)),
-        Math.floor(playerY)
-      )
+      // Player-relative search finds cavern floors in underground biomes but
+      // cannot see surfaces above the player's feet; searchFromSky configs
+      // (surface creatures on raised structures, e.g. bears on den mounds)
+      // scan down through the tree canopy instead.
+      const groundY = config.searchFromSky
+        ? this.findSurfaceGroundY(Math.floor(worldX), Math.floor(worldZ))
+        : this.worldManager.getGroundNearY(
+            BigInt(Math.floor(worldX)),
+            BigInt(Math.floor(worldZ)),
+            Math.floor(playerY)
+          )
 
       if (groundY === null) continue
 
@@ -237,6 +242,25 @@ export class EntitySpawner implements ITask {
       return this.tempPosition.clone()
     }
 
+    return null
+  }
+
+  /**
+   * Sky-down surface ground search that sees THROUGH tree canopies: air,
+   * non-solid decorations, and leaf-tagged blocks are all skipped, so a
+   * den mound under a dense pine canopy is still found. Returns the ground
+   * Y, or null when the column is unloaded / has no valid surface.
+   */
+  private findSurfaceGroundY(worldX: number, worldZ: number): bigint | null {
+    // Surface terrain tops out well below 320 (peaks ~284 + trees)
+    for (let y = 320; y >= 128; y--) {
+      const blockId = this.worldManager.getBlockIdFast(worldX, y, worldZ)
+      if (blockId === 0) continue
+      const block = this.worldManager.getBlockFast(worldX, y, worldZ)
+      if (!block.properties.isSolid) continue
+      if (block.properties.tags.includes(BlockTags.LEAVES)) continue
+      return BigInt(y)
+    }
     return null
   }
 

@@ -147,4 +147,18 @@ export enum BlockIds {
   REDWOOD_CHAIR = 138,
   REDWOOD_SHELF = 139,
   REDWOOD_WINDOW = 140,
+
+  // Pine forest expansion
+  FALLEN_PINE_LOG_X = 141,   // fallen log lying along the X axis
+  FALLEN_PINE_LOG_Z = 142,   // fallen log lying along the Z axis
+  PINE_STUMP = 143,
+  SNOWY_GRASS = 144,
+  SNOWY_PINE_NEEDLES = 145,
+  PINECONE = 146,            // hangs under pine canopies
+  PINE_SAPLING = 147,
+  BERRY_BUSH = 148,          // picked-clean bush
+  BERRY_BUSH_BERRIES = 149,  // bush laden with berries
+  MOREL_MUSHROOM = 150,
+  RESIN_TAP = 151,
+  CAMPFIRE = 152,
 }

@@ -5,6 +5,7 @@ import type { IBlockUI } from '../ui/blockui/interfaces/IBlockUI.ts'
 import type { InventoryUI } from '../ui/Inventory.ts'
 import type { InventoryInput } from './InventoryInput.ts'
 import type { CameraControls } from './FirstPersonCameraControls.ts'
+import type { IItem } from '../items/Item.ts'
 import type { IPlayerState, IInventoryGridState, IToolbarState, IItemStack } from './PlayerState.ts'
 import type { ToolbarUI } from '../ui/Toolbar.ts'
 import { blockUIRegistry } from '../ui/blockui/BlockUIRegistry.ts'
@@ -42,6 +43,9 @@ export class BlockInteractionHandler {
   // Callback to sync UI after drag-drop
   private onStateChanged: (() => void) | null = null
 
+  /** Throws a dragged-out stack into the world (set from main.ts) */
+  private throwStackHandler: ((item: IItem, count: number) => boolean) | null = null
+
   private pointerLocked = false
 
   constructor(options: {
@@ -72,6 +76,11 @@ export class BlockInteractionHandler {
     this.onStateChanged = options.onStateChanged ?? null
 
     this.setupEventListeners()
+  }
+
+  /** Set the handler that throws a dragged-out stack into the world */
+  setThrowStackHandler(handler: (item: IItem, count: number) => boolean): void {
+    this.throwStackHandler = handler
   }
 
   private setupEventListeners(): void {
@@ -205,6 +214,7 @@ export class BlockInteractionHandler {
         this.syncUI()
         this.onStateChanged?.()
       },
+      onDropOutside: (stack) => this.throwStackHandler?.(stack.item, stack.count) ?? false,
     })
     this.blockUIDragDrop.enable()
 

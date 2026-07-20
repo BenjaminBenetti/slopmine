@@ -1,3 +1,5 @@
+import { applyUIScale } from './uiScale.ts'
+
 export interface HealthDisplayOptions {
   heartSizePx?: number
   heartCount?: number
@@ -167,6 +169,7 @@ export function createHealthDisplayUI(
   root.style.gap = '3px'
   root.style.pointerEvents = 'none'
   root.style.zIndex = '26'
+  applyUIScale(root)
 
   const hearts: Array<{
     container: HTMLDivElement

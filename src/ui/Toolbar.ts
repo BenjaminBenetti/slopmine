@@ -1,5 +1,6 @@
 import type { IItemStack } from '../player/PlayerState.ts'
 import { syncSlotsFromState } from './SlotRenderer.ts'
+import { applyUIScale } from './uiScale.ts'
 
 export interface ToolbarUIOptions {
   slotCount?: number
@@ -40,6 +41,7 @@ export function createToolbarUI(
   root.style.pointerEvents = 'none'
   root.style.zIndex = '25'
   root.style.justifyContent = 'center'
+  applyUIScale(root)
 
   const slots: HTMLDivElement[] = []
 

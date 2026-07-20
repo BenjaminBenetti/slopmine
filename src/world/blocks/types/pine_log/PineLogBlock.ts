@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
-import { SolidBlock } from '../../Block.ts'
+import { LogBlock, LOG_SUPPORT_TICK_INTERVAL } from '../log_shared/LogBlock.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
@@ -22,7 +22,7 @@ const pineLogTopTexture = loadBlockTexture(pineLogTopTexUrl)
 const pineLogMaterial = new THREE.MeshLambertMaterial({ map: pineLogTexture })
 const pineLogTopMaterial = new THREE.MeshLambertMaterial({ map: pineLogTopTexture })
 
-export class PineLogBlock extends SolidBlock {
+export class PineLogBlock extends LogBlock {
   readonly properties: IBlockProperties = {
     id: BlockIds.PINE_LOG,
     name: 'pine_log',
@@ -34,6 +34,7 @@ export class PineLogBlock extends SolidBlock {
     lightBlocking: 15,
     demolitionForceRequired: 0,
     tags: [BlockTags.WOOD],
+    tickInterval: LOG_SUPPORT_TICK_INTERVAL,
   }
 
   protected get defaultTextureId(): number {

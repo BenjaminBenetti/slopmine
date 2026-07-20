@@ -51,6 +51,16 @@ export interface EntitySpawnConfig {
   validGroundBlocks?: number[]
 
   /**
+   * Search for ground from the sky down instead of from the player's Y.
+   * The default player-relative search cannot see surfaces ABOVE the
+   * player's feet (it scans strictly downward), which makes it blind to
+   * raised structures like bear-den mounds. Surface-only creatures that
+   * spawn on such structures should set this; underground biomes must NOT
+   * (a sky scan would find the terrain surface, not the cavern floor).
+   */
+  searchFromSky?: boolean
+
+  /**
    * Factory function to create the entity at the given position.
    */
   createEntity: (position: THREE.Vector3) => IEntity

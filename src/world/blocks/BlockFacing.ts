@@ -130,6 +130,14 @@ export function setMetadataFlipped(metadata: number, flipped: boolean): number {
 }
 
 /**
+ * Metadata bit 7: marks a block placed by the player rather than worldgen.
+ * Natural-structure blocks (leaves, logs) use this to exempt player builds
+ * from decay/collapse rules. Bits 0-4 are facing/3D-rotation/flip (above);
+ * bits 5-6 remain free.
+ */
+export const PERSISTENT_PLACED_METADATA_BIT = 0b1000_0000
+
+/**
  * Get Euler rotation angles for a facing direction.
  * Uses metadata bit 3 to determine rotation mode:
  * - If uses3D is true: Full 3D rotation for surface-attached blocks

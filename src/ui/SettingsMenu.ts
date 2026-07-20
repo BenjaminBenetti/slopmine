@@ -1,3 +1,4 @@
+import { applyUIScale } from './uiScale.ts'
 import type { GenerationConfig } from '../world/generate/GenerationConfig.ts'
 import type { GraphicsSettings, ResolutionPreset, FramerateLimit, ShadowMapSize } from '../settings/index.ts'
 
@@ -64,6 +65,7 @@ export function createSettingsMenuUI(
   panel.style.minWidth = '320px'
   panel.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
   panel.style.color = 'rgba(255, 255, 255, 0.9)'
+  applyUIScale(panel)
 
   overlay.appendChild(panel)
   parent.appendChild(overlay)

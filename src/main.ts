@@ -59,6 +59,8 @@ import { setWoodworkingBenchBlockTickManager } from './world/blocks/types/woodwo
 import { blockUIRegistry, blockActionRegistry, createForgeUI, createApothecaryWorkbenchUI, createWoodworkingBenchUI, createChestUI, createShelfUI } from './ui/blockui/index.ts'
 import type { ShelfBlockState } from './world/blocks/types/shelf_shared/ShelfBlockState.ts'
 import { DOOR_TOGGLE_PAIRS, toggleDoor } from './world/blocks/types/door_shared/DoorToggle.ts'
+import { harvestBerryBush } from './world/blocks/types/berry_bush_berries/BerryBushLadenBlock.ts'
+import { collectResin } from './world/blocks/types/resin_tap/ResinTapBlock.ts'
 import { GATE_TOGGLE_PAIRS, toggleFenceGate } from './world/blocks/types/fence_gate_shared/FenceGateToggle.ts'
 import { TRAPDOOR_TOGGLE_PAIRS, toggleTrapdoor } from './world/blocks/types/trapdoor_shared/TrapdoorToggle.ts'
 import { BlockIds } from './world/blocks/BlockIds.ts'
@@ -82,7 +84,8 @@ import { PlayerHealth } from './player/PlayerHealth.ts'
 import { FallDamageTracker } from './player/FallDamageTracker.ts'
 import { createHealthDisplayUI } from './ui/HealthDisplay.ts'
 import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
-import { EntityManager, EntitySpawner } from './entities/index.ts'
+import { EntityManager, EntitySpawner, DroppedItemEntity } from './entities/index.ts'
+import type { IItem } from './items/Item.ts'
 import { FloatingTextManager } from './ui/floating-text/index.ts'
 import { DiviningParticleManager } from './renderer/particles/DiviningParticleManager.ts'
 import { MagmaSlimeEntity } from './entities/animals/magma_slime/index.ts'
@@ -676,6 +679,23 @@ for (const pair of TRAPDOOR_TOGGLE_PAIRS) {
   blockActionRegistry.register(pair.openId, toggleWithGuard)
 }
 
+// Berry bush harvest (E): swap laden bush -> picked-clean, scatter berries.
+// The setBlock swap preserves metadata (arg omitted) and auto-schedules the regrow tick.
+blockActionRegistry.register(BlockIds.BERRY_BUSH_BERRIES, (x, y, z) => {
+  const items = harvestBerryBush(world, x, y, z)
+  if (items.length === 0) return false
+  world.spawnBlockDrops(x, y, z, items)
+  return true
+})
+
+// Resin tap collection (E): collect stored resin, then re-schedule the fill tick
+// (a full tap goes dormant; collection must wake it).
+blockActionRegistry.register(BlockIds.RESIN_TAP, (x, y, z) => {
+  const collected = collectResin(world, x, y, z)
+  world.scheduledBlockTicks.scheduleIfTickable(x, y, z)
+  return collected > 0
+})
+
 // Position camera at player spawn with eye height offset
 renderer.camera.position.set(
   originalSpawnPoint.x,
@@ -793,6 +813,28 @@ const blockInteraction = new BlockInteraction(
   }
 )
 
+// World-driven block breaks (tree felling) scatter drops the same way mining does
+world.setDropSpawner((item, x, y, z) => {
+  const drop = new DroppedItemEntity({
+    item,
+    position: new THREE.Vector3(x + 0.5, y + 0.4, z + 0.5),
+    velocity: new THREE.Vector3(
+      (Math.random() - 0.5) * 3,
+      3.2,
+      (Math.random() - 0.5) * 3
+    ),
+    onCollect: (collected, count) => {
+      const leftover = playerState.addItemCounted(collected, count)
+      if (leftover < count) {
+        toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
+        updateHeldItem()
+      }
+      return leftover
+    },
+  })
+  entityManager.addEntity(drop)
+})
+
 // Block placement system (right-click to place blocks)
 const blockPlacement = new BlockPlacement(
   renderer.camera,
@@ -846,6 +888,49 @@ const blockInteractionHandler = new BlockInteractionHandler({
     updateHeldItem()
   },
 })
+
+// Dragging a stack out of the inventory (or a block UI) throws it into the
+// world: the drop spews out of the player along the camera's facing direction
+// and lands a few blocks away. The longer pickup delay keeps it from being
+// vacuumed straight back into the inventory before it lands.
+const throwStackFromPlayer = (item: IItem, count: number): boolean => {
+  const dir = new THREE.Vector3()
+  renderer.camera.getWorldDirection(dir)
+
+  // Horizontal throw direction (fall back to +X when looking straight up/down)
+  const horiz = new THREE.Vector3(dir.x, 0, dir.z)
+  if (horiz.lengthSq() < 1e-4) horiz.set(1, 0, 0)
+  horiz.normalize()
+
+  const drop = new DroppedItemEntity({
+    item,
+    count,
+    position: new THREE.Vector3(
+      playerBody.position.x + horiz.x * 0.6,
+      playerBody.position.y + EYE_HEIGHT - 0.4,
+      playerBody.position.z + horiz.z * 0.6
+    ),
+    velocity: new THREE.Vector3(
+      horiz.x * 7.5 + (Math.random() - 0.5),
+      3.0,
+      horiz.z * 7.5 + (Math.random() - 0.5)
+    ),
+    pickupDelay: 1.5,
+    requirePlayerExit: true,
+    onCollect: (collected, n) => {
+      const leftover = playerState.addItemCounted(collected, n)
+      if (leftover < n) {
+        toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
+        inventoryUI.syncFromState(playerState.inventory.inventory.slots)
+        updateHeldItem()
+      }
+      return leftover
+    },
+  })
+  return entityManager.addEntity(drop)
+}
+inventoryInput.setThrowStackHandler(throwStackFromPlayer)
+blockInteractionHandler.setThrowStackHandler(throwStackFromPlayer)
 
 let frameCpuStart = 0
 let lastTickCount = 0
@@ -928,6 +1013,9 @@ scheduler.createTask({
 
 // Register block tick manager (for forge smelting, etc.)
 scheduler.registerTask(blockTickManager)
+
+// Register scheduled block ticks (interval-based block logic: leaf decay, etc.)
+scheduler.registerTask(world.scheduledBlockTicks)
 
 // Register entity manager
 scheduler.registerTask(entityManager)

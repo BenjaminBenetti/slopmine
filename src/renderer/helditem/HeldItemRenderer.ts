@@ -4,6 +4,7 @@ import { createHandMesh } from './meshes/HandMesh.ts'
 import { createToolMesh } from './meshes/ToolMesh.ts'
 import { createBlockMesh } from './meshes/BlockMesh.ts'
 import { BlockIds } from '../../world/blocks/BlockIds.ts'
+import { isBlockShapedItem, disposeItemDisplayObject } from '../itemdisplay/index.ts'
 
 /**
  * Interface for querying block data for cave detection.
@@ -95,14 +96,9 @@ const EATING_CONFIG: EatingAnimationConfig = {
 
 /**
  * Determines the type of item for rendering purposes.
+ * Block-vs-icon classification lives in src/renderer/itemdisplay
+ * (isBlockShapedItem) so every display surface agrees.
  */
-/** Item IDs that end with '_block' but should render as a tool (flat plane), not a cube. */
-const BLOCK_ID_TOOL_OVERRIDES = new Set(['divining_stick_block'])
-
-function isBlockItem(item: IItem): boolean {
-  return item.id.endsWith('_block') && !BLOCK_ID_TOOL_OVERRIDES.has(item.id)
-}
-
 function isToolItem(item: IItem): boolean {
   return (
     item.id.endsWith('_pickaxe') ||
@@ -283,8 +279,8 @@ export class HeldItemRenderer {
     if (!item) {
       // Empty slot - show hand
       mesh = createHandMesh()
-    } else if (isBlockItem(item)) {
-      // Block item - show 3D cube
+    } else if (isBlockShapedItem(item)) {
+      // Block item - show a miniature of the block's real geometry
       mesh = createBlockMesh(item)
     } else {
       // Tool/other item - show flat plane
@@ -690,18 +686,10 @@ export class HeldItemRenderer {
   }
 
   /**
-   * Dispose mesh and its children recursively.
+   * Dispose mesh and its children recursively, skipping shared display
+   * resources (block registry geometry/materials, cached icon geometry).
    */
   private disposeMesh(object: THREE.Object3D): void {
-    if (object instanceof THREE.Mesh) {
-      object.geometry?.dispose()
-      if (Array.isArray(object.material)) {
-        object.material.forEach(m => m.dispose())
-      } else if (object.material) {
-        object.material.dispose()
-      }
-    }
-
-    object.children.forEach(child => this.disposeMesh(child))
+    disposeItemDisplayObject(object)
   }
 }

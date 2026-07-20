@@ -1,3 +1,5 @@
+import { applyUIScale } from './uiScale.ts'
+
 export interface CrosshairOptions {
   sizePx?: number
   color?: string
@@ -31,6 +33,7 @@ export function createCrosshairUI(
   el.style.boxShadow = '0 0 4px rgba(0, 0, 0, 0.8)'
   el.style.pointerEvents = 'none'
   el.style.zIndex = '30'
+  applyUIScale(el)
 
   parent.appendChild(el)
 

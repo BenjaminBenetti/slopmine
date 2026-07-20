@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { Entity } from './Entity.ts'
 import type { IEntityConfig } from './interfaces/IEntityConfig.ts'
+import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
 import type { IItem } from '../items/Item.ts'
 
 // Default movement constants
@@ -211,6 +212,18 @@ export abstract class PeacefulEntity extends Entity {
       this.fleeTimer -= deltaTime
       const body = this.getPhysicsBody()
       if (body) {
+        // Jump 1-block obstacles just like wandering does; if a jump didn't
+        // clear it (wall too high), deflect the escape route sideways instead
+        // of pinning against the wall
+        if (this.handleObstacleWhileMoving(body, this.fleeDirection, this.fleeSpeed, deltaTime)) {
+          const turn = (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2)
+          const cos = Math.cos(turn)
+          const sin = Math.sin(turn)
+          const dx = this.fleeDirection.x
+          const dz = this.fleeDirection.z
+          this.fleeDirection.set(dx * cos - dz * sin, 0, dx * sin + dz * cos)
+        }
+
         // Run in flee direction at flee speed
         body.velocity.x = this.fleeDirection.x * this.fleeSpeed
         body.velocity.z = this.fleeDirection.z * this.fleeSpeed
@@ -247,43 +260,15 @@ export abstract class PeacefulEntity extends Entity {
       const distance = this.wanderDirection.length()
 
       if (distance > 0.5) {
-        // Check if we're stuck (trying to move but not moving in intended direction)
-        const actualMoveX = this.position.x - this.lastPosition.x
-        const actualMoveZ = this.position.z - this.lastPosition.z
-        const movementInDirection =
-          actualMoveX * this.wanderDirection.x + actualMoveZ * this.wanderDirection.z
-        const expectedMovement = this.walkSpeed * deltaTime
+        this.wanderDirection.normalize()
 
-        // Stuck if we're not making progress in our intended direction
-        if (this.isWalking && movementInDirection < expectedMovement * DEFAULT_STUCK_MOVEMENT_RATIO) {
-          this.stuckTime += deltaTime
-
-          if (this.stuckTime >= DEFAULT_STUCK_TIME_THRESHOLD) {
-            if (!this.hasTriedJump && body.isOnGround) {
-              // Try jumping over 1-block obstacle
-              body.velocity.y = this.jumpVelocity
-              this.hasTriedJump = true
-              this.stuckTime = 0
-            } else if (this.hasTriedJump || !body.isOnGround) {
-              // Already tried jumping or in the air - wait until we land
-              if (body.isOnGround && this.hasTriedJump) {
-                // We landed and are still stuck - obstacle is too high, pick new direction
-                this.pickNewWanderTarget()
-                this.hasTriedJump = false
-                this.stuckTime = 0
-              }
-            }
-          }
-        } else {
-          // We're moving, reset stuck tracking
-          this.stuckTime = 0
-          if (body.isOnGround) {
-            this.hasTriedJump = false
-          }
+        // Jump 1-block obstacles; if a jump didn't clear it, the obstacle is
+        // too high - pick a new direction
+        if (this.handleObstacleWhileMoving(body, this.wanderDirection, this.walkSpeed, deltaTime)) {
+          this.pickNewWanderTarget()
         }
 
         // Still moving toward target - set velocity on physics body
-        this.wanderDirection.normalize()
         body.velocity.x = this.wanderDirection.x * this.walkSpeed
         body.velocity.z = this.wanderDirection.z * this.walkSpeed
         this.isWalking = true
@@ -313,6 +298,58 @@ export abstract class PeacefulEntity extends Entity {
 
     // Update animations
     this.updateAnimations(deltaTime)
+  }
+
+  /**
+   * Shared obstacle handling for any intentional movement (wandering AND
+   * fleeing): while walking, detect lack of progress along the desired
+   * direction, first try a jump to clear a 1-block obstacle, and report when
+   * the jump didn't help so the caller can change course.
+   *
+   * @param desiredDirection Normalized horizontal movement direction
+   * @param speed Intended movement speed (blocks/s)
+   * @returns True when the entity is still stuck after a jump attempt
+   *          (obstacle too high) - the caller should pick a new direction
+   */
+  private handleObstacleWhileMoving(
+    body: IPhysicsBody,
+    desiredDirection: THREE.Vector3,
+    speed: number,
+    deltaTime: number
+  ): boolean {
+    const actualMoveX = this.position.x - this.lastPosition.x
+    const actualMoveZ = this.position.z - this.lastPosition.z
+    const movementInDirection =
+      actualMoveX * desiredDirection.x + actualMoveZ * desiredDirection.z
+    const expectedMovement = speed * deltaTime
+
+    // Stuck if we're not making progress in our intended direction
+    if (this.isWalking && movementInDirection < expectedMovement * DEFAULT_STUCK_MOVEMENT_RATIO) {
+      this.stuckTime += deltaTime
+
+      if (this.stuckTime >= DEFAULT_STUCK_TIME_THRESHOLD) {
+        if (!this.hasTriedJump && body.isOnGround) {
+          // Try jumping over 1-block obstacle
+          body.velocity.y = this.jumpVelocity
+          this.hasTriedJump = true
+          this.stuckTime = 0
+        } else if (body.isOnGround && this.hasTriedJump) {
+          // We landed and are still stuck - the jump didn't clear it
+          this.hasTriedJump = false
+          this.stuckTime = 0
+          return true
+        }
+        // Otherwise we're mid-air after a jump - wait until we land
+      }
+    } else {
+      // We're moving, reset stuck tracking
+      this.stuckTime = 0
+      if (body.isOnGround) {
+        this.hasTriedJump = false
+      }
+    }
+
+    return false
   }
 
   private pickNewWanderTarget(): void {

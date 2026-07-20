@@ -2,6 +2,7 @@ import { Feature, type FeatureContext } from './Feature.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import type { ISubChunkCoordinate } from '../../interfaces/ICoordinates.ts'
+import { SNOW_LINE_Y, SNOW_DUSTING_START_Y, SNOW_DUSTING_FULL_Y } from '../biomes/pineForestConstants.ts'
 
 /**
  * Configuration for pine tree generation.
@@ -31,6 +32,16 @@ export interface PineTreeFeatureSettings {
  * band can have its surface swapped to a foreign block, making the base
  * slice's ground check disagree with slices that cannot check.
  */
+/**
+ * Fraction of bottom-canopy-ring leaves that grow a hanging pinecone in the
+ * cell directly beneath them. Rolled deterministically per leaf world (x, z)
+ * so every chunk/sub-chunk slice agrees.
+ */
+const PINECONE_CHANCE = 0.1
+
+/** Salt for the pinecone roll (existing salts: 0-2 placement, 40 params). */
+const PINECONE_SALT = 60
+
 const BIOME_BORDER_MARGIN = 16
 const BIOME_BORDER_PROBES: ReadonlyArray<readonly [number, number]> = [
   [0, 0],
@@ -208,8 +219,16 @@ export class PineTreeFeature extends Feature {
           treeBaseY >= subChunkMinY && treeBaseY <= subChunkMaxY
 
         if (baseIsAccessible) {
-          const validBlocks = this.settings.validGroundBlocks ??
-            [BlockIds.GRASS, BlockIds.DIRT, BlockIds.PODZOL]
+          const validBlocks = [...(this.settings.validGroundBlocks ??
+            [BlockIds.GRASS, BlockIds.DIRT, BlockIds.PODZOL])]
+
+          // Above the snow line the pine-forest surface is SNOWY_GRASS
+          // (see pineForestConstants.ts); accept it as ground there so trees
+          // still grow on snow-capped peaks. Height-gated, so this verdict is
+          // deterministic across slices like everything else here.
+          if (groundHeight >= SNOW_LINE_Y) {
+            validBlocks.push(BlockIds.SNOWY_GRASS)
+          }
 
           const groundLocalY = groundHeight - subChunkMinY
           if (groundLocalY >= 0 && groundLocalY < SUB_CHUNK_HEIGHT) {
@@ -240,6 +259,30 @@ export class PineTreeFeature extends Feature {
     const { logBlockId, leafBlockId } = this.settings
     const { trunkHeight, canopyStartDy, maxRadius } = params
 
+    // Alpine snow dusting: each pine leaf rolls per-block against a chance
+    // that ramps with altitude (0 at SNOW_DUSTING_START_Y -> 1 at
+    // SNOW_DUSTING_FULL_Y), so canopies whiten gradually instead of showing
+    // a hard horizontal line. Guarded on the configured leaf so other biomes
+    // reusing this feature never get snowed; the roll derives only from
+    // world coords, so all chunk slices agree.
+    const isPine = leafBlockId === BlockIds.PINE_NEEDLES
+    const leafIdAt = (worldX: number, worldY: number, worldZ: number): number => {
+      if (!isPine || worldY < SNOW_DUSTING_START_Y) return leafBlockId
+      const snowChance = (worldY - SNOW_DUSTING_START_Y) / (SNOW_DUSTING_FULL_Y - SNOW_DUSTING_START_Y)
+      if (snowChance < 1 && this.positionRandom(worldX + worldY * 131, worldZ - worldY * 57, 73) >= snowChance) {
+        return leafBlockId
+      }
+      return BlockIds.SNOWY_PINE_NEEDLES
+    }
+
+    // Blocks this tree's trunk may overwrite: air, its own foliage (either
+    // snow variant), and stray pinecones hanging from a neighbor's canopy
+    // (skipping those would leave one-block trunk gaps).
+    const trunkReplaceable = (blockId: number): boolean =>
+      blockId === BlockIds.AIR ||
+      blockId === leafBlockId ||
+      (isPine && (blockId === BlockIds.SNOWY_PINE_NEEDLES || blockId === BlockIds.PINECONE))
+
     // Trunk
     const trunkLocalX = treeWorldX - chunkWorldX
     const trunkLocalZ = treeWorldZ - chunkWorldZ
@@ -250,7 +293,7 @@ export class PineTreeFeature extends Feature {
 
         const localY = worldY - subChunkMinY
         const currentBlock = chunk.getBlockId(trunkLocalX, localY, trunkLocalZ)
-        if (currentBlock === BlockIds.AIR || currentBlock === leafBlockId) {
+        if (trunkReplaceable(currentBlock)) {
           chunk.setBlockId(trunkLocalX, localY, trunkLocalZ, logBlockId)
         }
       }
@@ -260,7 +303,7 @@ export class PineTreeFeature extends Feature {
       if (tipWorldY >= subChunkMinY && tipWorldY <= subChunkMaxY) {
         const tipLocalY = tipWorldY - subChunkMinY
         if (chunk.getBlockId(trunkLocalX, tipLocalY, trunkLocalZ) === BlockIds.AIR) {
-          chunk.setBlockId(trunkLocalX, tipLocalY, trunkLocalZ, leafBlockId)
+          chunk.setBlockId(trunkLocalX, tipLocalY, trunkLocalZ, leafIdAt(treeWorldX, tipWorldY, treeWorldZ))
         }
       }
     }
@@ -274,7 +317,18 @@ export class PineTreeFeature extends Feature {
       const depthFromTop = trunkHeight - 1 - dy
       const radius = Math.min(maxRadius, 1 + Math.floor(depthFromTop / 2))
 
-      this.placeLeafRing(chunk, treeWorldX, treeWorldZ, localY, radius, chunkWorldX, chunkWorldZ)
+      this.placeLeafRing(chunk, treeWorldX, treeWorldZ, localY, worldY, radius, chunkWorldX, chunkWorldZ, leafIdAt)
+    }
+
+    // Hanging pinecones under the bottom canopy ring (pine foliage only)
+    if (isPine && canopyStartDy < trunkHeight) {
+      const bottomRingWorldY = treeBaseY + canopyStartDy
+      const bottomDepthFromTop = trunkHeight - 1 - canopyStartDy
+      const bottomRadius = Math.min(maxRadius, 1 + Math.floor(bottomDepthFromTop / 2))
+      this.placePinecones(
+        chunk, treeWorldX, treeWorldZ, bottomRingWorldY, bottomRadius,
+        subChunkMinY, subChunkMaxY, chunkWorldX, chunkWorldZ
+      )
     }
   }
 
@@ -286,12 +340,12 @@ export class PineTreeFeature extends Feature {
     treeWorldX: number,
     treeWorldZ: number,
     localY: number,
+    worldY: number,
     radius: number,
     chunkWorldX: number,
-    chunkWorldZ: number
+    chunkWorldZ: number,
+    leafIdAt: (worldX: number, worldY: number, worldZ: number) => number
   ): void {
-    const { leafBlockId } = this.settings
-
     for (let dx = -radius; dx <= radius; dx++) {
       for (let dz = -radius; dz <= radius; dz++) {
         if (dx === 0 && dz === 0) continue
@@ -305,8 +359,66 @@ export class PineTreeFeature extends Feature {
 
         const currentBlock = chunk.getBlockId(localX, localY, localZ)
         if (currentBlock === BlockIds.AIR) {
-          chunk.setBlockId(localX, localY, localZ, leafBlockId)
+          chunk.setBlockId(localX, localY, localZ, leafIdAt(treeWorldX + dx, worldY, treeWorldZ + dz))
         }
+      }
+    }
+  }
+
+  /**
+   * Hang PINECONE blocks in the cell directly below ~PINECONE_CHANCE of the
+   * bottom canopy ring's leaves.
+   *
+   * Determinism across slices: the roll uses positionRandom on the leaf's
+   * world (x, z), and the pinecone cell lives in exactly one sub-chunk — only
+   * that slice places it, clipped by Y exactly like other placements. When
+   * the leaf's own cell is visible in this slice we require it to actually
+   * hold the ring's leaf block; when the leaf sits in the sub-chunk above
+   * (ring Y just out of range) we trust placement, and the pinecone's
+   * scheduled tick self-destructs it at runtime if the leaf turned out to be
+   * missing.
+   */
+  private placePinecones(
+    chunk: { getBlockId: (x: number, y: number, z: number) => number; setBlockId: (x: number, y: number, z: number, id: number) => void },
+    treeWorldX: number,
+    treeWorldZ: number,
+    ringWorldY: number,
+    radius: number,
+    subChunkMinY: number,
+    subChunkMaxY: number,
+    chunkWorldX: number,
+    chunkWorldZ: number
+  ): void {
+    const pineconeWorldY = ringWorldY - 1
+    if (pineconeWorldY < subChunkMinY || pineconeWorldY > subChunkMaxY) return
+
+    const pineconeLocalY = pineconeWorldY - subChunkMinY
+    const leafInRange = ringWorldY >= subChunkMinY && ringWorldY <= subChunkMaxY
+    const leafLocalY = ringWorldY - subChunkMinY
+
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        if (dx === 0 && dz === 0) continue
+
+        const dist = Math.sqrt(dx * dx + dz * dz)
+        if (dist > radius + 0.5) continue
+
+        const worldX = treeWorldX + dx
+        const worldZ = treeWorldZ + dz
+        if (this.positionRandom(worldX, worldZ, PINECONE_SALT) >= PINECONE_CHANCE) continue
+
+        const localX = worldX - chunkWorldX
+        const localZ = worldZ - chunkWorldZ
+        if (localX < 0 || localX >= CHUNK_SIZE_X || localZ < 0 || localZ >= CHUNK_SIZE_Z) continue
+
+        // Snow dusting makes ring leaves either variant - accept both
+        if (leafInRange) {
+          const leafId = chunk.getBlockId(localX, leafLocalY, localZ)
+          if (leafId !== BlockIds.PINE_NEEDLES && leafId !== BlockIds.SNOWY_PINE_NEEDLES) continue
+        }
+        if (chunk.getBlockId(localX, pineconeLocalY, localZ) !== BlockIds.AIR) continue
+
+        chunk.setBlockId(localX, pineconeLocalY, localZ, BlockIds.PINECONE)
       }
     }
   }

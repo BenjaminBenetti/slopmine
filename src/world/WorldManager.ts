@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { BlockId, IBlock } from './interfaces/IBlock.ts'
+import type { IItem } from '../items/Item.ts'
 import type { IChunkCoordinate, IWorldCoordinate, ISubChunkCoordinate } from './interfaces/ICoordinates.ts'
 import { createChunkKey, parseChunkKey, createSubChunkKey, parseSubChunkKey, type ChunkKey, type SubChunkKey } from './interfaces/ICoordinates.ts'
 import { worldToChunk, worldToLocal, localToWorld } from './coordinates/CoordinateUtils.ts'
@@ -28,6 +29,7 @@ import type { OrePosition } from './generate/features/OreFeature.ts'
 import type { WaterEdgeEffects } from './generate/features/WaterFeature.ts'
 import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
 import { BackgroundLiquidPhysicsManager } from './liquid/BackgroundLiquidPhysicsManager.ts'
+import { ScheduledBlockTicks } from './blocktick/ScheduledBlockTicks.ts'
 import type { PersistenceManager, IModifiedChunkProvider } from '../persistence/PersistenceManager.ts'
 import type { EntityManager } from '../entities/EntityManager.ts'
 import { BlockStateManager } from './blockstate/BlockStateManager.ts'
@@ -104,6 +106,13 @@ export class WorldManager implements IModifiedChunkProvider {
   // Liquid physics manager for water flow simulation (background worker pool)
   private readonly liquidPhysicsManager: BackgroundLiquidPhysicsManager
 
+  // Scheduled block ticks (leaf decay, etc.) - registered with the TaskScheduler in main.ts
+  readonly scheduledBlockTicks: ScheduledBlockTicks
+
+  // Spawns dropped item entities for world-driven block breaks (tree felling).
+  // Wired from main.ts; block logic reaches it via IWorld.spawnBlockDrops.
+  private dropSpawner: ((item: IItem, x: number, y: number, z: number) => void) | null = null
+
   // Persistence manager for saving/loading world data
   private persistenceManager: PersistenceManager | null = null
 
@@ -155,6 +164,9 @@ export class WorldManager implements IModifiedChunkProvider {
       (x, y, z, blockId) => this.setBlockRaw(x, y, z, blockId),
       () => this.flushBlockChanges()
     )
+
+    // Initialize scheduled block ticks (interval-based block logic like leaf decay)
+    this.scheduledBlockTicks = new ScheduledBlockTicks(this)
   }
 
   /**
@@ -1473,6 +1485,24 @@ export class WorldManager implements IModifiedChunkProvider {
     return changed
   }
 
+  /**
+   * Wire the dropped-item spawner (see dropSpawner field).
+   */
+  setDropSpawner(spawner: (item: IItem, x: number, y: number, z: number) => void): void {
+    this.dropSpawner = spawner
+  }
+
+  /**
+   * Scatter items as dropped item entities at a block position.
+   * IWorld.spawnBlockDrops - used by world-driven breaks like tree felling.
+   */
+  spawnBlockDrops(x: bigint, y: bigint, z: bigint, items: IItem[]): void {
+    if (!this.dropSpawner) return
+    for (const item of items) {
+      this.dropSpawner(item, Number(x), Number(y), Number(z))
+    }
+  }
+
   // Track pending block changes for bulk updates
   private readonly pendingBlockChanges: Map<string, { coord: IChunkCoordinate; subY: number; wasRemoval: boolean }> = new Map()
 
@@ -1604,6 +1634,9 @@ export class WorldManager implements IModifiedChunkProvider {
       if (isLiquid || wasLiquid || wasBlockRemoved) {
         this.liquidPhysicsManager.queueColumnAndNeighbors(x, z)
       }
+
+      // Schedule interval ticks for this block and its neighbors (leaf decay, etc.)
+      this.scheduledBlockTicks.onBlockChanged(x, y, z)
 
       // Handle block entities: remove old one and create new one if needed
       if (this.entityManager) {
@@ -2004,9 +2037,10 @@ export class WorldManager implements IModifiedChunkProvider {
     // Remove from background lighting queue
     this.backgroundLightingManager.unloadColumn(coordinate)
 
-    // Remove all block entities in this chunk
+    // Remove all block entities and dropped items in this chunk
     if (this.entityManager) {
       this.entityManager.removeBlockEntitiesInChunk(coordinate.x, coordinate.z)
+      this.entityManager.removeDroppedItemsInChunk(coordinate.x, coordinate.z)
     }
 
     // Then unload the column data
@@ -2218,5 +2252,8 @@ export class WorldManager implements IModifiedChunkProvider {
 
     // Dispose background lighting manager
     this.backgroundLightingManager.dispose()
+
+    // Drop any queued block ticks
+    this.scheduledBlockTicks.dispose()
   }
 }

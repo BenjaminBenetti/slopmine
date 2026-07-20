@@ -43,6 +43,14 @@ export interface NoiseLayerConfig {
   /** Constant added to noise output before weighting */
   readonly offset?: number
 
+  /**
+   * Clamp the layer's (noise + offset) value to at least this, applied before
+   * weighting. With a negative offset and clampMin 0, the layer contributes
+   * only where the noise crests above the offset — e.g. ridged mountain
+   * layers that raise peaks without deepening the valleys between them.
+   */
+  readonly clampMin?: number
+
   /** For 'warped' type: how far to offset coordinates (in blocks) */
   readonly warpStrength?: number
 

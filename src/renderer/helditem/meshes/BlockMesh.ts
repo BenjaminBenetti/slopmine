@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import type { IItem } from '../../../items/Item.ts'
-import { BlockRegistry } from '../../../world/blocks/BlockRegistry.ts'
-import { SharedGeometry } from '../../../world/blocks/Block.ts'
+import { getBlockForItem, createBlockDisplayMesh } from '../../itemdisplay/index.ts'
 import { loadBlockTexture } from '../../TextureLoader.ts'
 
 /**
@@ -10,26 +9,22 @@ import { loadBlockTexture } from '../../TextureLoader.ts'
 const BLOCK_SCALE = 0.25
 
 /**
- * Creates a 3D cube mesh for block items.
- * Uses the actual block's materials for realistic rendering.
+ * Creates a miniature 3D mesh for block items held in the hand.
+ *
+ * Uses the shared item-display factory, so blocks with custom geometry
+ * (torches, flowers, slabs, doors, ...) render as that geometry - the same
+ * one the world renderer uses - not as a generic cube.
  */
 export function createBlockMesh(item: IItem): THREE.Object3D {
   const group = new THREE.Group()
 
-  // Try to get the actual block for this item
-  // Item IDs follow pattern: "grass_block" -> block name "grass"
-  const blockName = getBlockNameFromItemId(item.id)
-  const block = blockName
-    ? BlockRegistry.getInstance().getBlockByName(blockName)
-    : undefined
+  const block = getBlockForItem(item)
 
   let mesh: THREE.Mesh
 
   if (block) {
-    // Use the block's actual materials
-    const materials = block.getInstanceMaterial()
-    const geometry = SharedGeometry.cube.clone()
-    mesh = new THREE.Mesh(geometry, materials)
+    // The block's real shape and materials (shared - never disposed)
+    mesh = createBlockDisplayMesh(block)
   } else {
     // Fallback: use item icon as texture on all faces
     mesh = createFallbackBlockMesh(item)
@@ -48,21 +43,10 @@ export function createBlockMesh(item: IItem): THREE.Object3D {
 }
 
 /**
- * Extract block name from item ID.
- * e.g., "grass_block" -> "grass", "oak_log_block" -> "oak_log"
- */
-function getBlockNameFromItemId(itemId: string): string | null {
-  if (!itemId.endsWith('_block')) {
-    return null
-  }
-  return itemId.slice(0, -6) // Remove "_block" suffix
-}
-
-/**
  * Creates a fallback cube using the item's icon texture.
  */
 function createFallbackBlockMesh(item: IItem): THREE.Mesh {
-  const geometry = SharedGeometry.cube.clone()
+  const geometry = new THREE.BoxGeometry(1, 1, 1)
 
   let material: THREE.Material
 

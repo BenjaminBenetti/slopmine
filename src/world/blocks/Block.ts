@@ -150,6 +150,7 @@ export abstract class Block implements IBlock {
   onPlace?(_world: IWorld, _x: bigint, _y: bigint, _z: bigint): void
   onBreak?(_world: IWorld, _x: bigint, _y: bigint, _z: bigint): void
   onNeighborChange?(_world: IWorld, _x: bigint, _y: bigint, _z: bigint, _face: BlockFace): void
+  onScheduledTick?(_world: IWorld, _x: bigint, _y: bigint, _z: bigint): boolean
 }
 
 /**

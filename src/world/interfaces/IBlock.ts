@@ -50,6 +50,15 @@ export interface IBlockProperties {
    * it lands on solid ground.
    */
   readonly isFallingLiquid?: boolean
+  /**
+   * Seconds between scheduled ticks for this block type. When set (together
+   * with onScheduledTick), the block is scheduled for a tick whenever it or a
+   * direct neighbor changes at runtime. The actual delay is jittered around
+   * this value so bulk changes don't fire in lockstep. Blocks placed during
+   * world generation are NOT scheduled - ticking starts at the first nearby
+   * runtime change.
+   */
+  readonly tickInterval?: number
 }
 
 /**
@@ -144,6 +153,14 @@ export interface IBlock {
   onNeighborChange?(world: IWorld, x: bigint, y: bigint, z: bigint, face: BlockFace): void
 
   /**
+   * Called when this block's scheduled tick fires (see properties.tickInterval).
+   * Runs on the main thread with a budget-aware drain, so keep the work small.
+   * @returns true to reschedule another tick after tickInterval, false to go
+   *   dormant until the next nearby block change re-schedules it
+   */
+  onScheduledTick?(world: IWorld, x: bigint, y: bigint, z: bigint): boolean
+
+  /**
    * Get items dropped when this block is broken.
    * Block handles any random drop logic internally.
    */
@@ -236,4 +253,11 @@ export interface IWorld {
   getBlockId?(x: bigint, y: bigint, z: bigint): BlockId
   /** Get block metadata at position */
   getMetadata?(x: bigint, y: bigint, z: bigint): number
+  /** Set block metadata at position without changing the block */
+  setBlockMetadata?(x: bigint, y: bigint, z: bigint, metadata: number): boolean
+  /**
+   * Scatter items as dropped item entities at a block position (used by
+   * world-driven breaks like tree felling). No-op when no spawner is wired.
+   */
+  spawnBlockDrops?(x: bigint, y: bigint, z: bigint, items: IItem[]): void
 }

@@ -108,7 +108,11 @@ export function evaluateTerrainConfig(
   // Evaluate all noise layers
   const layerValues = config.layers.map(layer => {
     const noiseValue = evaluateNoiseLayer(noise, layer, x, z)
-    return (noiseValue + (layer.offset ?? 0)) * layer.weight
+    let shifted = noiseValue + (layer.offset ?? 0)
+    if (layer.clampMin !== undefined && shifted < layer.clampMin) {
+      shifted = layer.clampMin
+    }
+    return shifted * layer.weight
   })
 
   // Combine all layer values

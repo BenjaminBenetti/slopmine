@@ -1,5 +1,6 @@
 import type { IItemStack } from '../player/PlayerState.ts'
 import { syncSlotsFromState } from './SlotRenderer.ts'
+import { applyUIScale } from './uiScale.ts'
 
 export interface InventoryUIOptions {
   columns?: number
@@ -53,6 +54,11 @@ export function createInventoryUI(
   overlay.style.zIndex = '35'
 
   const panel = document.createElement('div')
+  applyUIScale(panel)
+  // Safeguard for small viewports: the scaled panel scrolls instead of
+  // overflowing offscreen (vh here resolves against the zoom-adjusted viewport)
+  panel.style.maxHeight = '92vh'
+  panel.style.overflowY = 'auto'
 
   // Content wrapper for horizontal layout (sidebar + inventory grid + crafting panel)
   const contentWrapper = document.createElement('div')

@@ -146,6 +146,16 @@ import { HempFiberItem } from '../items/materials/hemp_fiber/HempFiberItem.ts'
 import { RopeItem } from '../items/materials/rope/RopeItem.ts'
 import { CharcoalItem } from '../items/materials/charcoal/CharcoalItem.ts'
 import { PineResinItem } from '../items/materials/pine_resin/PineResinItem.ts'
+import { PineconeItem } from '../items/materials/pinecone/PineconeItem.ts'
+import { PineSaplingBlockItem } from '../items/blocks/pine_sapling/PineSaplingBlockItem.ts'
+import { ResinTapBlockItem } from '../items/blocks/resin_tap/ResinTapBlockItem.ts'
+import { BerriesItem } from '../items/food/berries/BerriesItem.ts'
+import { MorelMushroomBlockItem } from '../items/blocks/morel_mushroom/MorelMushroomBlockItem.ts'
+import { CookedMorelItem } from '../items/food/cooked_morel/CookedMorelItem.ts'
+import { BerryBushBlockItem } from '../items/blocks/berry_bush/BerryBushBlockItem.ts'
+import { VenisonItem } from '../items/food/venison/VenisonItem.ts'
+import { WolfPeltItem } from '../items/materials/wolf_pelt/WolfPeltItem.ts'
+import { BearPeltItem } from '../items/materials/bear_pelt/BearPeltItem.ts'
 import { DriedMossItem } from '../items/materials/dried_moss/DriedMossItem.ts'
 import { SeaShellBlockItem } from '../items/blocks/sea_shell/SeaShellBlockItem.ts'
 import { SeaStarBlockItem } from '../items/blocks/sea_star/SeaStarBlockItem.ts'
@@ -333,6 +343,16 @@ export function initializeItemRegistry(): void {
   registerItemFactory('rope', () => new RopeItem())
   registerItemFactory('charcoal', () => new CharcoalItem())
   registerItemFactory('pine_resin', () => new PineResinItem())
+  registerItemFactory('pinecone', () => new PineconeItem())
+  registerItemFactory('pine_sapling_block', () => new PineSaplingBlockItem())
+  registerItemFactory('resin_tap_block', () => new ResinTapBlockItem())
+  registerItemFactory('berries', () => new BerriesItem())
+  registerItemFactory('morel_mushroom_block', () => new MorelMushroomBlockItem())
+  registerItemFactory('cooked_morel', () => new CookedMorelItem())
+  registerItemFactory('berry_bush_block', () => new BerryBushBlockItem())
+  registerItemFactory('venison', () => new VenisonItem())
+  registerItemFactory('wolf_pelt', () => new WolfPeltItem())
+  registerItemFactory('bear_pelt', () => new BearPeltItem())
   registerItemFactory('dried_moss', () => new DriedMossItem())
   registerItemFactory('sea_shell_block', () => new SeaShellBlockItem())
   registerItemFactory('sea_star_block', () => new SeaStarBlockItem())

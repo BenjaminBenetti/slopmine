@@ -2,6 +2,7 @@ import type { IItem } from '../items/Item.ts'
 import type { IItemStack, IToolbarState, IInventoryGridState } from '../player/PlayerState.ts'
 import type { ICraftingState } from '../crafting/CraftingState.ts'
 import { renderStackInSlot } from './SlotRenderer.ts'
+import { UI_SCALE } from './uiScale.ts'
 
 export interface DragDropSlotInfo {
   element: HTMLDivElement
@@ -30,6 +31,13 @@ export interface DragDropOptions {
   craftingSlotAccepts?: (index: number, item: IItem) => boolean
   /** Called after any successful drop to sync UI with state */
   onStateChanged?: () => void
+  /**
+   * Called when a dragged stack is released outside every slot area
+   * (over the game world). Return true if the stack was taken (thrown
+   * into the world); false/undefined returns the items to their source
+   * slot as before.
+   */
+  onDropOutside?: (stack: IItemStack) => boolean
 }
 
 export interface DragDropHandler {
@@ -55,6 +63,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     quickTransferIntoCrafting,
     craftingSlotAccepts,
     onStateChanged,
+    onDropOutside,
   } = options
 
   let enabled = false
@@ -104,10 +113,12 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
   }
 
   function createGhostElement(stack: IItemStack): HTMLDivElement {
+    // Sized (not zoomed) by UI_SCALE: the ghost is positioned with raw
+    // cursor coordinates, which CSS zoom would reinterpret in scaled units
     const ghost = document.createElement('div')
     ghost.style.position = 'fixed'
-    ghost.style.width = '44px'
-    ghost.style.height = '44px'
+    ghost.style.width = `${44 * UI_SCALE}px`
+    ghost.style.height = `${44 * UI_SCALE}px`
     ghost.style.pointerEvents = 'none'
     ghost.style.zIndex = '1000'
     ghost.style.opacity = '0.8'
@@ -132,7 +143,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
       countLabel.style.bottom = '2px'
       countLabel.style.right = '4px'
       countLabel.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
-      countLabel.style.fontSize = '0.7rem'
+      countLabel.style.fontSize = `${0.7 * UI_SCALE}rem`
       countLabel.style.fontWeight = 'bold'
       countLabel.style.color = 'white'
       countLabel.style.textShadow = '1px 1px 1px rgba(0, 0, 0, 0.8), -1px -1px 1px rgba(0, 0, 0, 0.8)'
@@ -166,7 +177,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     tooltip.style.border = '1px solid rgba(255, 255, 255, 0.3)'
     tooltip.style.borderRadius = '4px'
     tooltip.style.color = 'rgba(255, 255, 255, 0.95)'
-    tooltip.style.fontSize = '12px'
+    tooltip.style.fontSize = `${12 * UI_SCALE}px`
     tooltip.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
     tooltip.style.pointerEvents = 'none'
     tooltip.style.zIndex = '1001'
@@ -525,8 +536,11 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     if (targetSlot && (targetSlot.container !== dragSource.container || targetSlot.index !== dragSource.index)) {
       // Valid target - perform drop with merge logic
       performDrop(dragSource, targetSlot, draggedStack)
+    } else if (!targetSlot && onDropOutside?.(draggedStack)) {
+      // Released over the game world and the stack was thrown out
+      onStateChanged?.()
     } else {
-      // Dropped outside valid area or on same slot - return items to source
+      // Dropped on same slot or throw not handled - return items to source
       returnToSource(dragSource, draggedStack)
     }
 

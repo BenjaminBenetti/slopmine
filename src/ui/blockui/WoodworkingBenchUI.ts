@@ -3,6 +3,7 @@ import type { IItemStack, IPlayerState } from '../../player/PlayerState.ts'
 import type { WoodworkingBenchState } from '../../world/blocks/types/woodworking_bench/WoodworkingBenchState.ts'
 import type { IWoodworkingRecipe } from '../../woodworking/interfaces/IWoodworkingRecipe.ts'
 import { syncSlotsFromState } from '../SlotRenderer.ts'
+import type { CraftBatch } from '../CraftingPanel.ts'
 
 /**
  * Woodworking bench UI - deliberately mirrors the hand-crafting panel:
@@ -90,10 +91,21 @@ export function createWoodworkingBenchUI(
   // rebuilds the recipe list when slot contents actually change
   let lastSignature = ''
 
-  const craft = (recipe: IWoodworkingRecipe): void => {
-    if (!state.craft(recipe)) return
-    playerState.addItem(recipe.createResult(), recipe.resultCount)
-    refresh()
+  // Same batch semantics as the hand-crafting panel:
+  // plain click = 1, shift+click = 10, ctrl+click = all ('all' capped as a backstop)
+  const craft = (recipe: IWoodworkingRecipe, batch: CraftBatch): void => {
+    const cap = batch === 'one' ? 1 : batch === 'ten' ? 10 : 1000
+
+    let crafted = 0
+    while (crafted < cap) {
+      if (!state.craft(recipe)) break // ingredients exhausted
+
+      const leftover = playerState.addItemCounted(recipe.createResult(), recipe.resultCount)
+      crafted++
+      if (leftover > 0) break // inventory full - stop batching
+    }
+
+    if (crafted > 0) refresh()
   }
 
   const updateCraftableList = (recipes: IWoodworkingRecipe[]): void => {
@@ -120,6 +132,7 @@ export function createWoodworkingBenchUI(
       row.style.borderRadius = '4px'
       row.style.cursor = 'pointer'
       row.style.transition = 'background 0.15s'
+      row.title = 'Click: craft 1  •  Shift+click: craft 10  •  Ctrl+click: craft all'
       row.addEventListener('mouseenter', () => {
         row.style.background = 'rgba(60, 60, 60, 0.9)'
       })
@@ -147,7 +160,10 @@ export function createWoodworkingBenchUI(
       name.style.fontSize = '0.8rem'
       row.appendChild(name)
 
-      row.addEventListener('click', () => craft(recipe))
+      row.addEventListener('click', (event) => {
+        const batch: CraftBatch = event.ctrlKey ? 'all' : event.shiftKey ? 'ten' : 'one'
+        craft(recipe, batch)
+      })
       craftableList.appendChild(row)
     }
   }

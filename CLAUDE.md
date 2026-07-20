@@ -156,6 +156,7 @@ Core voxel data storage, chunk lifecycle, and world coordination.
 - `liquid/LiquidPhysicsManager.ts` - Water/lava flow simulation
 - `blockstate/BlockStateManager.ts` - Per-block persistent state (chests, forges)
 - `blockstate/BlockTickManager.ts` - Frame-based block state updates
+- `blocktick/ScheduledBlockTicks.ts` - Slow interval-based block ticks (leaf decay)
 
 **Chunk Architecture:**
 ```
@@ -239,6 +240,63 @@ When generating textures using AI image generation tools (like the `generate_ima
 - `shouldRenderFace(neighbor)` - Face culling logic
 - `getDrops()` - Items dropped when mined
 - `onPlace()`, `onBreak()`, `onNeighborChange()` - Lifecycle hooks
+- `onScheduledTick()` + `properties.tickInterval` - Slow interval ticks (see below)
+
+**Miniature block displays (`src/renderer/itemdisplay/`):**
+
+Every surface that shows a block OUTSIDE the voxel grid — held item in hand,
+dropped item entities, block icons, shelf contents — must build its mesh from
+`block.getInstanceGeometry()` / `block.getInstanceMaterial()`, the same pair
+the world's instanced renderer uses. `src/renderer/itemdisplay/` is the
+canonical helper module: `isBlockShapedItem()` / `getBlockForItem()` (item-id
+`<name>_block` → registry block, with deliberate icon overrides),
+`createBlockDisplayMesh()` (mesh in centered unit block space, shared
+resources), and `disposeItemDisplayObject()` (flag-aware disposal that skips
+shared geometry/materials). Rules:
+
+- Never build a display mesh from `SharedGeometry.cube` directly — custom
+  geometry blocks (torch, flowers, slabs, ladders) would wrongly render as
+  cubes. A block that looks right in the world must look right everywhere.
+- Never dispose display meshes with naive recursive disposal — use
+  `disposeItemDisplayObject()`, which respects the `sharedDisplayResources`
+  flag. Disposing the shared singletons corrupts world rendering state.
+- A surface that must MUTATE materials (e.g. shelf dimming) takes ownership:
+  clone geometry/materials, clear `userData.sharedDisplayResources`, and
+  dispose its clones itself (see `ShelfBlockEntity`).
+
+**Scheduled Block Ticks (`src/world/blocktick/ScheduledBlockTicks.ts`):**
+
+Reactive, interval-based block logic — distinct from `BlockTickManager` (per-frame
+updates for active stateful blocks like a smelting forge). A block type opts in by
+declaring `tickInterval` (seconds) in its properties plus an `onScheduledTick()`
+hook (return `true` to reschedule, `false` to go dormant). Whenever `setBlock`
+changes a block at runtime, the scheduler queues a jittered tick (0.75–1.5×
+interval) for that position and its 6 neighbors — only for opted-in block types.
+Worldgen and decoration-batch writes bypass `setBlock` side effects, so generated
+chunks schedule nothing until disturbed. Ticks drain in a budget-aware NORMAL task.
+
+Used for **leaf decay** (`src/world/blocks/types/leaf_shared/LeafBlock.ts`, the
+abstract base class all leaf blocks extend): a leaf with no
+log reachable through connected leaves within 6 steps removes itself; each removal
+re-queues its neighbors, cascading the melt across a felled tree's canopy.
+Any log sustains any leaf type; the 6-step reach
+is sized for the widest canopies (pine cone radius 4, redwood cluster radius 5) —
+keep it in sync if tree shapes grow.
+
+Also used for **tree felling** (`src/world/blocks/types/log_shared/LogBlock.ts`,
+the abstract base class all log blocks extend): a log whose entire connected log
+cluster touches nothing but logs, leaves, and non-solid blocks is unsupported —
+the whole cluster breaks at once, scattering each log's drops as
+`DroppedItemEntity` items (via `WorldManager.setDropSpawner`, wired in main.ts).
+Chopping the bottom of a trunk drops the whole tree, then leaf decay eats the
+orphaned canopy. Cluster search is capped at 1024 logs (treated as supported
+beyond that).
+
+Both rules exempt player builds: `onPlace` stamps metadata bit 7
+(`PERSISTENT_PLACED_METADATA_BIT` in `BlockFacing.ts`) on player-placed leaves
+and logs — persistent leaves never decay, and a cluster containing any
+persistent log never collapses. New leaf/log variants must be added to the
+`LEAF_BLOCK_IDS`/`LOG_BLOCK_IDS` sets in BOTH shared base files.
 
 ---
 

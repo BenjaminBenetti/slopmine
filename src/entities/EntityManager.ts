@@ -8,7 +8,7 @@ import { EntityState } from './interfaces/IEntity.ts'
 import type { IBlockEntity } from './interfaces/IBlockEntity.ts'
 import { isBlockEntity } from './interfaces/IBlockEntity.ts'
 import type { IEntityCallbacks } from './interfaces/IEntityCallbacks.ts'
-import { CHUNK_SIZE_X } from '../world/interfaces/IChunk.ts'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../world/interfaces/IChunk.ts'
 import type { IWorldCoordinate } from '../world/interfaces/ICoordinates.ts'
 import { Entity } from './Entity.ts'
 
@@ -298,6 +298,24 @@ export class EntityManager implements ITask {
   removeBlockEntitiesInChunk(chunkX: bigint, chunkZ: bigint): void {
     for (const [_key, entity] of this.blockEntityIndex) {
       if (entity.chunkCoordinate.x === chunkX && entity.chunkCoordinate.z === chunkZ) {
+        this.entitiesToRemove.add(entity.id)
+      }
+    }
+  }
+
+  /**
+   * Remove all dropped item entities in a specific chunk.
+   * Called when a chunk is unloaded, mirroring block entity cleanup.
+   */
+  removeDroppedItemsInChunk(chunkX: bigint, chunkZ: bigint): void {
+    const cx = Number(chunkX)
+    const cz = Number(chunkZ)
+    for (const entity of this.entities.values()) {
+      if (entity.type !== 'dropped_item') continue
+      if (
+        Math.floor(entity.position.x / CHUNK_SIZE_X) === cx &&
+        Math.floor(entity.position.z / CHUNK_SIZE_Z) === cz
+      ) {
         this.entitiesToRemove.add(entity.id)
       }
     }

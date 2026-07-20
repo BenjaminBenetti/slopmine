@@ -3,7 +3,9 @@ import type { BlockId } from '../world/interfaces/IBlock.ts'
 import type { WorldManager } from '../world/WorldManager.ts'
 import type { IPlayerState } from './PlayerState.ts'
 import type { EntityManager } from '../entities/EntityManager.ts'
+import { DroppedItemEntity } from '../entities/DroppedItemEntity.ts'
 import type { IEntity } from '../entities/interfaces/IEntity.ts'
+import type { IItem } from '../items/Item.ts'
 import { BlockRaycaster, type IBlockRaycastHit } from './BlockRaycaster.ts'
 import { MiningOverlay } from '../renderer/MiningOverlay.ts'
 import { BlockIds } from '../world/blocks/BlockIds.ts'
@@ -307,14 +309,13 @@ export class BlockInteraction {
     // Everything fit - clear the now-empty state slots before breaking
     block.compactStateSlots?.(worldX, worldY, worldZ)
 
-    // Get drops from block and add to inventory
+    // Scatter the block's drops on the ground as dropped item entities
     const drops = block.getDrops?.() ?? []
-    for (const item of drops) {
-      this.playerState.addItem(item)
-    }
+    this.spawnDrops(drops, worldX, worldY, worldZ)
 
-    // Notify listeners that items were collected
-    if (drops.length > 0 || stateDrops.length > 0) {
+    // Notify listeners about the directly-transferred state drops
+    // (regular drops notify later, when the dropped entity is picked up)
+    if (stateDrops.length > 0) {
       this.onItemsCollected?.()
     }
 
@@ -332,6 +333,46 @@ export class BlockInteraction {
     // Hide overlay and reset state
     this.miningOverlay.hide()
     this.currentMining = null
+  }
+
+  /**
+   * Spawn drops as physical items scattered around the broken block's center.
+   * Falls back to direct inventory pickup if no entity manager is available.
+   */
+  private spawnDrops(drops: IItem[], worldX: bigint, worldY: bigint, worldZ: bigint): void {
+    if (drops.length === 0) return
+
+    if (!this.entityManager) {
+      for (const item of drops) {
+        this.playerState.addItem(item)
+      }
+      this.onItemsCollected?.()
+      return
+    }
+
+    for (const item of drops) {
+      const drop = new DroppedItemEntity({
+        item,
+        position: new THREE.Vector3(
+          Number(worldX) + 0.5,
+          Number(worldY) + 0.4,
+          Number(worldZ) + 0.5
+        ),
+        velocity: new THREE.Vector3(
+          (Math.random() - 0.5) * 3,
+          3.2,
+          (Math.random() - 0.5) * 3
+        ),
+        onCollect: (collected, count) => {
+          const leftover = this.playerState.addItemCounted(collected, count)
+          if (leftover < count) {
+            this.onItemsCollected?.()
+          }
+          return leftover
+        },
+      })
+      this.entityManager.addEntity(drop)
+    }
   }
 
   private cancelMining(): void {

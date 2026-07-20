@@ -1,10 +1,11 @@
+import type { IItem } from '../items/Item.ts'
 import type { InventoryUI } from '../ui/Inventory.ts'
 import type { ToolbarUI } from '../ui/Toolbar.ts'
 import type { IInventoryGridState, IPlayerState, IToolbarState } from './PlayerState.ts'
 import type { CameraControls } from './FirstPersonCameraControls.ts'
 import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandler.ts'
 import { CraftingState } from '../crafting/CraftingState.ts'
-import { createCraftingPanelUI, type CraftingPanelUI } from '../ui/CraftingPanel.ts'
+import { createCraftingPanelUI, type CraftingPanelUI, type CraftBatch } from '../ui/CraftingPanel.ts'
 import { createRecipeBookUI, type RecipeBookUI } from '../ui/RecipeBookUI.ts'
 import { createItemFromId } from '../persistence/ItemRegistry.ts'
 import type { IRecipe } from '../crafting/RecipeRegistry.ts'
@@ -51,6 +52,12 @@ export class InventoryInputHandler implements InventoryInput {
   private pointerLocked = false
   private blockUIActive = false
 
+  /**
+   * Throws a stack out of the player into the world (set from main.ts once
+   * the entity system exists). Returns true if the stack was thrown.
+   */
+  private throwStackHandler: ((item: IItem, count: number) => boolean) | null = null
+
   /** Expose crafting panel root for BlockInteractionHandler */
   get craftingPanelRoot(): HTMLElement {
     return this.craftingPanel.root
@@ -69,6 +76,11 @@ export class InventoryInputHandler implements InventoryInput {
   /** Whether the inventory overlay is currently open */
   get isOpen(): boolean {
     return this.inventoryUI.isOpen
+  }
+
+  /** Set the handler that throws a dragged-out stack into the world */
+  setThrowStackHandler(handler: (item: IItem, count: number) => boolean): void {
+    this.throwStackHandler = handler
   }
 
   /** Set block UI active state */
@@ -123,8 +135,8 @@ export class InventoryInputHandler implements InventoryInput {
     // Append recipe book (hidden by default) to the content wrapper
     inventoryUI.contentWrapper.appendChild(this.recipeBook.root)
 
-    // Set up crafting callback
-    this.craftingPanel.onCraft((recipe) => this.handleCraft(recipe))
+    // Set up crafting callback (plain click = 1, shift = 10, ctrl = all)
+    this.craftingPanel.onCraft((recipe, batch) => this.handleCraft(recipe, batch))
 
     // Wire up recipe book toggle - completely replace inventory view
     inventoryUI.onRecipeBookToggle((showRecipeBook) => {
@@ -152,6 +164,7 @@ export class InventoryInputHandler implements InventoryInput {
       craftingRoot: this.craftingPanel.root,
       craftingSlots: this.craftingPanel.craftingSlots,
       onStateChanged: () => this.syncUI(),
+      onDropOutside: (stack) => this.throwStackHandler?.(stack.item, stack.count) ?? false,
     })
 
     document.addEventListener('pointerlockchange', this.onPointerLockChange)
@@ -168,11 +181,21 @@ export class InventoryInputHandler implements InventoryInput {
     this.craftingPanel.updateCraftableList(craftable)
   }
 
-  private handleCraft(recipe: IRecipe): void {
-    const result = this.craftingState.craft(recipe)
-    if (result) {
-      // Add crafted item to player inventory
-      this.playerState.addItem(result.item, result.count)
+  private handleCraft(recipe: IRecipe, batch: CraftBatch = 'one'): void {
+    // 'all' loops until ingredients run out (hard cap as a safety backstop)
+    const cap = batch === 'one' ? 1 : batch === 'ten' ? 10 : 1000
+
+    let crafted = 0
+    while (crafted < cap) {
+      const result = this.craftingState.craft(recipe)
+      if (!result) break // ingredients exhausted
+
+      const leftover = this.playerState.addItemCounted(result.item, result.count)
+      crafted++
+      if (leftover > 0) break // inventory full - stop batching
+    }
+
+    if (crafted > 0) {
       this.syncUI()
     }
   }

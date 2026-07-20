@@ -6,6 +6,12 @@ export interface CraftingPanelOptions {
   slotSizePx?: number
 }
 
+/**
+ * How many of a recipe to craft per click:
+ * plain click = 1, shift+click = 10, ctrl+click = as many as resources allow.
+ */
+export type CraftBatch = 'one' | 'ten' | 'all'
+
 export interface CraftingPanelUI {
   readonly root: HTMLDivElement
   readonly craftingSlots: HTMLDivElement[]
@@ -15,7 +21,7 @@ export interface CraftingPanelUI {
   updateCraftableList(recipes: IRecipe[]): void
 
   /** Set callback for when a craftable item is clicked */
-  onCraft(callback: (recipe: IRecipe) => void): void
+  onCraft(callback: (recipe: IRecipe, batch: CraftBatch) => void): void
 
   /** Sync crafting slots from state */
   syncFromState(stateSlots: ReadonlyArray<IItemStack | null>): void
@@ -106,7 +112,7 @@ export function createCraftingPanelUI(options: CraftingPanelOptions = {}): Craft
   craftableList.style.minHeight = '60px'
   root.appendChild(craftableList)
 
-  let craftCallback: ((recipe: IRecipe) => void) | null = null
+  let craftCallback: ((recipe: IRecipe, batch: CraftBatch) => void) | null = null
 
   const api: CraftingPanelUI = {
     root,
@@ -137,6 +143,7 @@ export function createCraftingPanelUI(options: CraftingPanelOptions = {}): Craft
         item.style.borderRadius = '4px'
         item.style.cursor = 'pointer'
         item.style.transition = 'background 0.15s'
+        item.title = 'Click: craft 1  •  Shift+click: craft 10  •  Ctrl+click: craft all'
 
         item.addEventListener('mouseenter', () => {
           item.style.background = 'rgba(60, 60, 60, 0.9)'
@@ -166,15 +173,16 @@ export function createCraftingPanelUI(options: CraftingPanelOptions = {}): Craft
         name.style.fontSize = '0.8rem'
         item.appendChild(name)
 
-        item.addEventListener('click', () => {
-          craftCallback?.(recipe)
+        item.addEventListener('click', (event) => {
+          const batch: CraftBatch = event.ctrlKey ? 'all' : event.shiftKey ? 'ten' : 'one'
+          craftCallback?.(recipe, batch)
         })
 
         craftableList.appendChild(item)
       }
     },
 
-    onCraft(callback: (recipe: IRecipe) => void): void {
+    onCraft(callback: (recipe: IRecipe, batch: CraftBatch) => void): void {
       craftCallback = callback
     },
 

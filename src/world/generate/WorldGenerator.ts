@@ -26,6 +26,13 @@ import { PineTreeFeature } from './features/PineTreeFeature.ts'
 import { GiantConiferFeature } from './features/GiantConiferFeature.ts'
 import { BoulderFeature } from './features/BoulderFeature.ts'
 import { TallFernFeature } from './features/TallFernFeature.ts'
+import { FallenPineLogFeature } from './features/FallenPineLogFeature.ts'
+import { PineStumpFeature } from './features/PineStumpFeature.ts'
+import { BerryBushFeature } from './features/BerryBushFeature.ts'
+import { MorelFeature } from './features/MorelFeature.ts'
+import { BearDenFeature } from './features/BearDenFeature.ts'
+import { AbandonedCabinFeature } from './features/AbandonedCabinFeature.ts'
+import { HuntersCampFeature } from './features/HuntersCampFeature.ts'
 import type { WaterEdgeEffects } from './features/WaterFeature.ts'
 import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../workers/ChunkGenerationWorker.ts'
 import type { PersistenceManager } from '../../persistence/PersistenceManager.ts'
@@ -227,6 +234,27 @@ export class WorldGenerator {
       }
       if (feature instanceof TallFernFeature) {
         return { type: 'tallFern', settings: feature.settings }
+      }
+      if (feature instanceof FallenPineLogFeature) {
+        return { type: 'fallenPineLog', settings: feature.settings }
+      }
+      if (feature instanceof PineStumpFeature) {
+        return { type: 'pineStump', settings: feature.settings }
+      }
+      if (feature instanceof BerryBushFeature) {
+        return { type: 'berryBush', settings: feature.settings }
+      }
+      if (feature instanceof MorelFeature) {
+        return { type: 'morel', settings: feature.settings }
+      }
+      if (feature instanceof BearDenFeature) {
+        return { type: 'bearDen', settings: feature.settings }
+      }
+      if (feature instanceof AbandonedCabinFeature) {
+        return { type: 'abandonedCabin', settings: feature.settings }
+      }
+      if (feature instanceof HuntersCampFeature) {
+        return { type: 'huntersCamp', settings: feature.settings }
       }
       throw new Error(`Unknown feature type: ${feature.constructor.name}`)
     })
