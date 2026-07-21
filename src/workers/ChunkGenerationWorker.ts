@@ -26,6 +26,7 @@ import { FlowerPatchFeature, type FlowerPatchFeatureSettings } from '../world/ge
 import { RiverbankMudFeature, type RiverbankMudFeatureSettings } from '../world/generate/features/RiverbankMudFeature.ts'
 import { JungleFernFeature, type JungleFernFeatureSettings } from '../world/generate/features/JungleFernFeature.ts'
 import { RiverbankClayFeature, type RiverbankClayFeatureSettings } from '../world/generate/features/RiverbankClayFeature.ts'
+import { CattailFeature, type CattailFeatureSettings } from '../world/generate/features/CattailFeature.ts'
 import { PineTreeFeature, type PineTreeFeatureSettings } from '../world/generate/features/PineTreeFeature.ts'
 import { GiantConiferFeature, type GiantConiferFeatureSettings } from '../world/generate/features/GiantConiferFeature.ts'
 import { BoulderFeature, type BoulderFeatureSettings } from '../world/generate/features/BoulderFeature.ts'
@@ -123,6 +124,7 @@ export type FeatureConfig =
   | { type: 'riverbankMud'; settings: RiverbankMudFeatureSettings }
   | { type: 'jungleFern'; settings: JungleFernFeatureSettings }
   | { type: 'riverbankClay'; settings: RiverbankClayFeatureSettings }
+  | { type: 'cattail'; settings: CattailFeatureSettings }
   | { type: 'hemp'; settings: HempFeatureSettings }
   | { type: 'pineTree'; settings: PineTreeFeatureSettings }
   | { type: 'giantConifer'; settings: GiantConiferFeatureSettings }
@@ -329,6 +331,8 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new JungleFernFeature(config.settings)
       case 'riverbankClay':
         return new RiverbankClayFeature(config.settings)
+      case 'cattail':
+        return new CattailFeature(config.settings)
       case 'hemp':
         return new HempFeature(config.settings)
       case 'pineTree':

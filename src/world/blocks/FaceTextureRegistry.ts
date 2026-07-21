@@ -142,6 +142,10 @@ export enum TextureId {
   MOREL_MUSHROOM = 129,          // morel-mushroom.webp (transparent)
   RESIN_TAP = 130,               // resin-tap.webp
   CAMPFIRE = 131,                // campfire.webp
+
+  // Jungle expansion
+  CATTAIL = 132,                 // cattail-bottom.webp (transparent)
+  CATTAIL_TOP = 133,             // cattail-top.webp (transparent)
 }
 
 // Cache for the face texture map

@@ -10,7 +10,9 @@ import { JungleTreeFeature } from '../features/JungleTreeFeature.ts'
 import { MegaTreeFeature } from '../features/MegaTreeFeature.ts'
 import { JungleFernFeature } from '../features/JungleFernFeature.ts'
 import { HempFeature } from '../features/HempFeature.ts'
+import { CattailFeature } from '../features/CattailFeature.ts'
 import { PigEntity } from '../../../entities/animals/pig/index.ts'
+import { MonkeyEntity } from '../../../entities/animals/monkey/index.ts'
 import { FoxEntity } from '../../../entities/animals/fox/index.ts'
 import { CaveSlimeEntity } from '../../../entities/animals/cave_slime/index.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
@@ -131,6 +133,14 @@ export class JungleGenerator extends BiomeGenerator {
         patchFrequency: 0.1,
         threshold: 0.45,
       }),
+      // Cattail reeds along the water's edge (after mud/clay so they can root on both)
+      new CattailFeature({
+        waterLevel: 238,
+        maxHeightAboveWater: 1,
+        zoneFrequency: 0.02,
+        zoneThreshold: 0.4,
+        density: 0.55,
+      }),
       // Dense jungle ferns in clumps covering the ground
       new JungleFernFeature({
         density: 20.0,      // Patch frequency (5x more frequent)
@@ -218,6 +228,13 @@ export class JungleGenerator extends BiomeGenerator {
       combineMode: 'add',
     } as TerrainConfig,
     entitySpawns: [
+      {
+        entityType: 'monkey',
+        spawnRate: 0.3, // Common - the jungle's signature animal
+        maxNearby: 6,
+        minLightLevel: 8, // Surface dweller
+        createEntity: (pos: THREE.Vector3) => new MonkeyEntity({ position: pos }),
+      },
       {
         entityType: 'pig',
         spawnRate: 0.2, // Less common in jungle

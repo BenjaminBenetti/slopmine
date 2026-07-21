@@ -30,6 +30,7 @@ export { PigEntity } from './animals/pig/index.ts'
 export { CowEntity } from './animals/cow/index.ts'
 export { RabbitEntity } from './animals/rabbit/index.ts'
 export { CaveSlimeEntity } from './animals/cave_slime/index.ts'
+export { MonkeyEntity, TreeDetector, type TreePerch } from './animals/monkey/index.ts'
 
 // Enemies
 export { SkeletonEntity } from './enemies/skeleton/index.ts'

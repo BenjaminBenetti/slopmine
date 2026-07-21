@@ -82,6 +82,7 @@ import { YellowFlowerBlockItem } from '../items/blocks/yellow_flower/YellowFlowe
 import { BlueFlowerBlockItem } from '../items/blocks/blue_flower/BlueFlowerBlockItem.ts'
 import { RedFlowerBlockItem } from '../items/blocks/red_flower/RedFlowerBlockItem.ts'
 import { JungleFernBlockItem } from '../items/blocks/jungle_fern/JungleFernBlockItem.ts'
+import { CattailBlockItem } from '../items/blocks/cattail/CattailBlockItem.ts'
 import { Herb1BlockItem } from '../items/blocks/herb/Herb1BlockItem.ts'
 import { LadderBlockItem } from '../items/blocks/ladder/LadderBlockItem.ts'
 import { RopeLadderBlockItem } from '../items/blocks/rope_ladder/RopeLadderBlockItem.ts'
@@ -276,6 +277,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('blue_flower_block', () => new BlueFlowerBlockItem())
   registerItemFactory('red_flower_block', () => new RedFlowerBlockItem())
   registerItemFactory('jungle_fern_block', () => new JungleFernBlockItem())
+  registerItemFactory('cattail_block', () => new CattailBlockItem())
   registerItemFactory('herb_1_block', () => new Herb1BlockItem())
   registerItemFactory('ladder_block', () => new LadderBlockItem())
   registerItemFactory('rope_ladder_block', () => new RopeLadderBlockItem())

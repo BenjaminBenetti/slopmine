@@ -161,4 +161,8 @@ export enum BlockIds {
   MOREL_MUSHROOM = 150,
   RESIN_TAP = 151,
   CAMPFIRE = 152,
+
+  // Jungle expansion
+  CATTAIL = 153,             // waterside reed plant, lower half
+  CATTAIL_TOP = 154,         // waterside reed plant, upper half (seed heads)
 }

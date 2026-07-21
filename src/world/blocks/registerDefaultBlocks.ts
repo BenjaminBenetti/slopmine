@@ -138,6 +138,8 @@ import { BerryBushBlock } from './types/berry_bush/BerryBushBlock.ts'
 import { BerryBushLadenBlock } from './types/berry_bush_berries/BerryBushLadenBlock.ts'
 import { MorelMushroomBlock } from './types/morel_mushroom/MorelMushroomBlock.ts'
 import { CampfireBlock } from './types/campfire/CampfireBlock.ts'
+import { CattailBlock } from './types/cattail/CattailBlock.ts'
+import { CattailTopBlock } from './types/cattail_top/CattailTopBlock.ts'
 import { FallenPineLogXBlock } from './types/fallen_pine_log_x/FallenPineLogXBlock.ts'
 import { FallenPineLogZBlock } from './types/fallen_pine_log_z/FallenPineLogZBlock.ts'
 import { PineStumpBlock } from './types/pine_stump/PineStumpBlock.ts'
@@ -285,6 +287,8 @@ export function registerDefaultBlocks(): void {
   registerBlock(new BerryBushLadenBlock())
   registerBlock(new MorelMushroomBlock())
   registerBlock(new CampfireBlock())
+  registerBlock(new CattailBlock())
+  registerBlock(new CattailTopBlock())
   registerBlock(new FallenPineLogXBlock())
   registerBlock(new FallenPineLogZBlock())
   registerBlock(new PineStumpBlock())
