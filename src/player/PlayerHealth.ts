@@ -12,6 +12,7 @@ export interface IPlayerHealth {
   readonly isInvincible: boolean
 
   takeDamage(amount: number): void
+  takeEnvironmentalDamage(amount: number): void
   heal(amount: number): void
   setHealth(amount: number): void
   reset(): void
@@ -60,6 +61,25 @@ export class PlayerHealth implements IPlayerHealth {
 
     this._currentHealth = Math.max(0, this._currentHealth - amount)
     this._invincibilityTimer = this._invincibilityDuration
+
+    this._onHealthChanged?.(this._currentHealth, this._maxHealth)
+
+    if (this._currentHealth <= 0) {
+      this._onDeath?.()
+    }
+  }
+
+  /**
+   * Apply environmental damage (lava, burning, magma, etc.).
+   * Unlike takeDamage, this bypasses melee invincibility frames and does
+   * not grant any — the caller is responsible for its own damage cadence.
+   */
+  takeEnvironmentalDamage(amount: number): void {
+    if (this.isDead || amount <= 0) {
+      return
+    }
+
+    this._currentHealth = Math.max(0, this._currentHealth - amount)
 
     this._onHealthChanged?.(this._currentHealth, this._maxHealth)
 

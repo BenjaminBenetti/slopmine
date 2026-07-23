@@ -31,6 +31,7 @@ import { seaStarBrewingRecipes } from './SeaStarRecipes.ts'
 import { pineconeRecipes } from './PineconeRecipes.ts'
 import { resinTapRecipes } from './ResinTapRecipes.ts'
 import { morelSmeltingRecipes } from './MorelRecipes.ts'
+import { tntRecipes } from './TntRecipe.ts'
 
 /**
  * Register all default recipes.
@@ -60,6 +61,9 @@ export function registerDefaultRecipes(): void {
     recipeRegistry.register(recipe)
   }
   for (const recipe of torchRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of tntRecipes) {
     recipeRegistry.register(recipe)
   }
   for (const recipe of ladderRecipes) {

@@ -64,6 +64,12 @@ import { SandBlockItem } from '../items/blocks/sand/SandBlockItem.ts'
 import { SandstoneBlockItem } from '../items/blocks/sandstone/SandstoneBlockItem.ts'
 import { CactusBlockItem } from '../items/blocks/cactus/CactusBlockItem.ts'
 import { BasaltBlockItem } from '../items/blocks/basalt/BasaltBlockItem.ts'
+import { ColumnarBasaltBlockItem } from '../items/blocks/columnar_basalt/ColumnarBasaltBlockItem.ts'
+import { ObsidianBlockItem } from '../items/blocks/obsidian/ObsidianBlockItem.ts'
+import { TntBlockItem } from '../items/blocks/tnt/TntBlockItem.ts'
+import { GeyserBlockItem } from '../items/blocks/geyser/GeyserBlockItem.ts'
+import { SmolderingStoneBlockItem } from '../items/blocks/smoldering_stone/SmolderingStoneBlockItem.ts'
+import { CharredLogBlockItem } from '../items/blocks/charred_log/CharredLogBlockItem.ts'
 import { MagmaBlockItem } from '../items/blocks/magma/MagmaBlockItem.ts'
 import { VineBlockItem } from '../items/blocks/vine/VineBlockItem.ts'
 import { ClayBlockItem } from '../items/blocks/clay/ClayBlockItem.ts'
@@ -103,6 +109,7 @@ import { CoastalFernBlockItem } from '../items/blocks/coastal_fern/CoastalFernBl
 
 // Ore/resource items
 import { CoalItem } from '../items/ores/coal/CoalItem.ts'
+import { SulfurItem } from '../items/ores/sulfur/SulfurItem.ts'
 import { IronOreItem } from '../items/ores/iron/IronOreItem.ts'
 import { CopperOreItem } from '../items/ores/copper/CopperOreItem.ts'
 import { GoldOreItem } from '../items/ores/gold/GoldOreItem.ts'
@@ -259,6 +266,12 @@ export function initializeItemRegistry(): void {
   registerItemFactory('sandstone_block', () => new SandstoneBlockItem())
   registerItemFactory('cactus_block', () => new CactusBlockItem())
   registerItemFactory('basalt_block', () => new BasaltBlockItem())
+  registerItemFactory('columnar_basalt_block', () => new ColumnarBasaltBlockItem())
+  registerItemFactory('obsidian_block', () => new ObsidianBlockItem())
+  registerItemFactory('tnt_block', () => new TntBlockItem())
+  registerItemFactory('geyser_block', () => new GeyserBlockItem())
+  registerItemFactory('smoldering_stone_block', () => new SmolderingStoneBlockItem())
+  registerItemFactory('charred_log_block', () => new CharredLogBlockItem())
   registerItemFactory('magma_block', () => new MagmaBlockItem())
   registerItemFactory('vine_block', () => new VineBlockItem())
   registerItemFactory('clay_block', () => new ClayBlockItem())
@@ -302,6 +315,7 @@ export function initializeItemRegistry(): void {
   registerItemFactory('copper_ore', () => new CopperOreItem())
   registerItemFactory('gold_ore', () => new GoldOreItem())
   registerItemFactory('diamond', () => new DiamondItem())
+  registerItemFactory('sulfur', () => new SulfurItem())
 
   // Food items
   registerItemFactory('raw_pork', () => new RawPorkItem())

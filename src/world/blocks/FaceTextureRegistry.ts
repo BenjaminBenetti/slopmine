@@ -146,6 +146,17 @@ export enum TextureId {
   // Jungle expansion
   CATTAIL = 132,                 // cattail-bottom.webp (transparent)
   CATTAIL_TOP = 133,             // cattail-top.webp (transparent)
+
+  // Volcanic expansion
+  OBSIDIAN = 134,                // obsidian.webp
+  SULFUR_ORE = 135,              // sulfur_ore.webp
+  GEYSER = 136,                  // geyser.webp
+  GEYSER_ACTIVE = 137,           // geyser_active.webp
+  CHARRED_LOG = 138,             // charred_log.webp
+  TNT = 139,                     // tnt.webp
+  SMOLDERING_STONE = 140,        // smoldering_stone.webp
+  COLUMNAR_BASALT_SIDE = 141,    // columnar-basalt-side.webp
+  COLUMNAR_BASALT_TOP = 142,     // columnar-basalt-top.webp
 }
 
 // Cache for the face texture map

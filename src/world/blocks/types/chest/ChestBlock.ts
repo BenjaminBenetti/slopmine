@@ -8,6 +8,11 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { ChestBlockItem } from '../../../../items/blocks/chest/ChestBlockItem.ts'
 import { ChestBlockState } from './ChestBlockState.ts'
+import {
+  CHEST_LOOT_RESOLVED_METADATA_BIT,
+  fillCharredCampChestLoot,
+  isNearCharredCampSignature,
+} from './ChestLoot.ts'
 import { BlockStateManager } from '../../../blockstate/BlockStateManager.ts'
 import { deleteBlockStateFromPersistence } from '../../../../persistence/index.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
@@ -125,11 +130,51 @@ export class ChestBlock extends SolidBlock {
 
   /**
    * Called when this block is placed.
-   * Creates a ChestBlockState for this position.
+   * Creates a ChestBlockState for this position and marks worldgen loot as
+   * resolved (a player-placed chest never holds worldgen loot), so the lazy
+   * loot fill in prepareInteractionState can never touch a player's chest.
    */
-  onPlace(_world: IWorld, x: bigint, y: bigint, z: bigint): void {
+  onPlace(world: IWorld, x: bigint, y: bigint, z: bigint): void {
     const position = { x, y, z }
     BlockStateManager.getInstance().setState(position, this.createState(position))
+    const metadata = world.getMetadata?.(x, y, z) ?? 0
+    world.setBlockMetadata?.(x, y, z, metadata | CHEST_LOOT_RESOLVED_METADATA_BIT)
+  }
+
+  /**
+   * Called before the interaction handler reads this chest's state on an
+   * E-interaction. Worldgen-placed chests (charred mining camps) never run
+   * onPlace, so their state is created lazily here; the first interaction
+   * also resolves worldgen loot exactly once:
+   *
+   * - No state yet (fresh-generated chunk): create it.
+   * - Loot not yet resolved (metadata bit clear — never true for a
+   *   player-placed chest, onPlace stamps the bit): if the chest is empty
+   *   AND carries the charred-camp signature (CHARRED_LOG nearby), fill the
+   *   deterministic ore reward; otherwise it resolves to empty.
+   * - Either way, set the resolved bit. setBlockMetadata marks the sub-chunk
+   *   player-modified, so the bit (and thus the no-re-roll guarantee) and the
+   *   filled state both persist across save/load. This also covers the chunk
+   *   that was saved BEFORE the chest's first open: reload creates an empty
+   *   state via onLoad, but the bit is still clear, so the loot fill still
+   *   happens here on first open.
+   */
+  prepareInteractionState(world: IWorld, x: bigint, y: bigint, z: bigint): void {
+    const position = { x, y, z }
+    const manager = BlockStateManager.getInstance()
+    let state = manager.getState<ChestBlockState>(position)
+    if (!state) {
+      state = this.createState(position) as ChestBlockState
+      manager.setState(position, state)
+    }
+
+    const metadata = world.getMetadata?.(x, y, z) ?? 0
+    if ((metadata & CHEST_LOOT_RESOLVED_METADATA_BIT) !== 0) return
+
+    if (!state.hasData() && isNearCharredCampSignature(world, x, y, z)) {
+      fillCharredCampChestLoot(state, x, y, z)
+    }
+    world.setBlockMetadata?.(x, y, z, metadata | CHEST_LOOT_RESOLVED_METADATA_BIT)
   }
 
   /**

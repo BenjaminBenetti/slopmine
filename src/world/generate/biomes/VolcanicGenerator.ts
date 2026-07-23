@@ -3,6 +3,10 @@ import { BiomeGenerator, type BiomeProperties } from '../BiomeGenerator.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { LavaFeature } from '../features/LavaFeature.ts'
+import { GeyserFeature } from '../features/GeyserFeature.ts'
+import { VolcanoConeFeature } from '../features/VolcanoConeFeature.ts'
+import { BasaltColumnsFeature } from '../features/BasaltColumnsFeature.ts'
+import { CharredMiningCampFeature } from '../features/CharredMiningCampFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -25,6 +29,41 @@ export class VolcanicGenerator extends BiomeGenerator {
     frequency: 0.3, // Less common than other biomes
     treeDensity: 0.0, // No vegetation in volcanic biomes
     features: [
+      // Geyser vents scattered on flat basalt spots. Expected vents/chunk =
+      // 1024 * density / gridSize^4 = 1024 * 6 / 4096 = 1.5 pre-rejection;
+      // the ±1-flatness / Y≥240 / bare-basalt / uncarved gates thin that to
+      // roughly 0.3-0.5 per chunk (in-browser census measured the rates).
+      new GeyserFeature({
+        gridSize: 8,
+        density: 6,
+        surfaceBlockId: BlockIds.BASALT,
+        minSurfaceY: 240, // stay above the lava pool level (238)
+      }),
+      // Basalt column clusters (Giant's Causeway style), sprinkled in.
+      // Expected clusters/chunk = 1024 * density / gridSize^4
+      // = 1024 * 150 / 16^4 ≈ 2.34 pre-rejection; the surface band [240, 247]
+      // + relief<=2 flatness gate pass only ~7.6% of sites (measured on real
+      // terrain) → ~0.18/chunk ≈ 1 per 5-6 chunks - Ben's "don't overdo it"
+      // target.
+      new BasaltColumnsFeature({
+        gridSize: 16,
+        density: 150,
+        minSurfaceY: 240, // above lava lakes (238)
+        maxSurfaceY: 247, // below crater peaks (magma-topped above seaLevel+8)
+      }),
+      // Charred mining camp: very rare burnt outpost with a forge, campfire,
+      // charred-log ruins, and a mineable coal/iron/gold supply cache.
+      // Expected camps/chunk = 1024 * density / gridSize^4
+      // = 1024 * 320 / 64^4 ≈ 0.0195 (1 per ~51 chunks) pre-rejection; the
+      // band [238, 250] + relief<=4 gates pass ~26% of sites (measured on
+      // real terrain - the original band 240-247 + relief<=2 passed 3%,
+      // i.e. 1 camp per ~2000 chunks, effectively never) → ~1 per 200 chunks.
+      new CharredMiningCampFeature({
+        gridSize: 64,
+        density: 320,
+        minSurfaceY: 238, // lava-lake level - support fill handles the rest
+        maxSurfaceY: 250, // below crater peaks (magma-topped above seaLevel+8)
+      }),
       // Basalt cliffs/formations
       new CliffFeature({
         frequency: 0.025,
@@ -87,11 +126,37 @@ export class VolcanicGenerator extends BiomeGenerator {
         ySpread: 5,
         replaceableBlocks: [BlockIds.STONE],
       }),
+      // Sulfur veins hug the surface (~222-276) - volcanic gases deposit
+      // sulfur high up. Deliberately shallow (Y 215-265, peak 240) so the
+      // deep band stays reserved for iron/gold/diamond/obsidian rewards.
+      new OreFeature({
+        blockId: BlockIds.SULFUR_ORE,
+        frequency: 14,
+        veinSize: 8,
+        minY: 215,
+        maxY: 265,
+        peakY: 240,
+        ySpread: 15,
+        replaceableBlocks: [BlockIds.STONE, BlockIds.BASALT, BlockIds.MAGMA],
+      }),
       // Lava pools - the signature feature of volcanic biomes
       new LavaFeature({
         frequency: 0.4,
         minDepth: 3,
         lavaLevel: 238,
+      }),
+      // Volcano cones - rare landmark stratovolcanoes with lava calderas.
+      // Runs LAST so the solid cone interior overwrites ores/lava/caves in
+      // its footprint. Expected placements per chunk =
+      // 1024·density/gridSize⁴ = 1024·800/96⁴ ≈ 0.0096 → ~1 cone per
+      // 104 chunks (per-cell chance = 800/96² ≈ 8.7%, 1024/96² ≈ 0.11
+      // cells per chunk).
+      new VolcanoConeFeature({
+        gridSize: 96,
+        density: 800,
+        minHeight: 42,
+        maxHeight: 60,
+        minBaseHeight: 242, // above lava lakes (Y=238) and their shores
       }),
     ],
     caves: {
@@ -111,6 +176,18 @@ export class VolcanicGenerator extends BiomeGenerator {
       floodLevel: 170,            // high lava table - the deep is dangerous
       floodBlockId: BlockIds.LAVA,
       liquidSurfaceGuardY: 240,   // lava lakes at 238 + 2: guards entrance mouths, pipes, and (partially) ravines under lava lakes and shores
+      // Lava-tube mineral lining: cave walls sprinkle sulfur/obsidian, and
+      // rock touching lava (flood lava, lake beds) crusts into obsidian rings.
+      // Sulfur is the shallow reward (Y >= 210 only, near-surface cave runs);
+      // obsidian is the deep reward, so it stays unrestricted.
+      lining: {
+        replaceableBlocks: [BlockIds.STONE, BlockIds.BASALT, BlockIds.MAGMA],
+        wallBlocks: [
+          { blockId: BlockIds.SULFUR_ORE, chance: 0.05, minY: 210 },
+          { blockId: BlockIds.OBSIDIAN, chance: 0.02 },
+        ],
+        lavaContactBlock: { blockId: BlockIds.OBSIDIAN, chance: 0.2 },
+      },
     },
     // No water in volcanic biomes - too hot!
     water: {

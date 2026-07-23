@@ -153,6 +153,15 @@ export interface IBlock {
   onNeighborChange?(world: IWorld, x: bigint, y: bigint, z: bigint, face: BlockFace): void
 
   /**
+   * Called just before the interaction handler reads this block's state on an
+   * E-interaction. Lets stateful blocks repair or lazily create their runtime
+   * state — e.g. worldgen-placed chests, which skip onPlace (worldgen writes
+   * bypass setBlock side effects) and so reach their first interaction with
+   * no BlockState registered.
+   */
+  prepareInteractionState?(world: IWorld, x: bigint, y: bigint, z: bigint): void
+
+  /**
    * Called when this block's scheduled tick fires (see properties.tickInterval).
    * Runs on the main thread with a budget-aware drain, so keep the work small.
    * @returns true to reschedule another tick after tickInterval, false to go

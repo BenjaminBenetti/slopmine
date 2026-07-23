@@ -17,10 +17,7 @@ const BODY_SIZE = 14 * SCALE // ~0.875 blocks
 const BODY_HEIGHT = 12 * SCALE // ~0.75 blocks (squatty)
 
 // Hopping behavior constants (slower than rabbit)
-const HOP_COOLDOWN_MIN = 0.8
-const HOP_COOLDOWN_MAX = 1.5
 const HOP_DIRECTION_VARIANCE = Math.PI / 8 // ±22.5 degrees random variance
-const IDLE_HOP_CHANCE = 0.15 // 15% chance per second to do idle hop
 const HIGH_JUMP_VELOCITY = 10.0 // Higher jump to clear blocks when stuck
 
 // Stuck detection constants
@@ -30,17 +27,91 @@ const STUCK_TIME_THRESHOLD = 0.5 // Seconds of being stuck before high jump
 // Contact damage constants
 const CONTACT_DAMAGE = 2 // 1 heart per contact
 const CONTACT_COOLDOWN = 1.0 // Seconds between damage ticks
-const CONTACT_RANGE = 1.2 // Blocks - proximity for damage
 const CONTACT_KNOCKBACK_HORIZONTAL = 4.0
 const CONTACT_KNOCKBACK_VERTICAL = 2.0
+
+// Splitting constants (large slime death → 2 small slimes)
+const SPLIT_CHILD_COUNT = 2
+const SPLIT_OFFSET_DISTANCE = 0.4 // Horizontal offset from parent position (blocks)
+const SPLIT_IMPULSE_HORIZONTAL = 3.5 // Outward launch speed so children don't stack
+const SPLIT_IMPULSE_VERTICAL = 4.5
+
+/**
+ * Slime size variant. Large slimes split into 2 small slimes on death;
+ * small slimes do not split further.
+ * NOTE: entities are not persisted (mobs are transient, respawned by
+ * EntitySpawner), so size does not need to survive save/load. Both sizes
+ * share the 'magma_slime' type string so the main.ts tracking task and
+ * spawner caps see them uniformly.
+ */
+export type MagmaSlimeSize = 'large' | 'small'
+
+interface IMagmaSlimeSizeStats {
+  meshScale: number
+  hitboxSize: THREE.Vector3
+  maxHealth: number
+  walkSpeed: number
+  jumpVelocity: number
+  hopCooldownMin: number
+  hopCooldownMax: number
+  idleHopChance: number // chance per second to do idle hop
+  contactRange: number // blocks - proximity for damage
+}
+
+const SIZE_STATS: Record<MagmaSlimeSize, IMagmaSlimeSizeStats> = {
+  large: {
+    meshScale: 1.0,
+    hitboxSize: new THREE.Vector3(0.9, 1.0, 0.9),
+    maxHealth: 12,
+    walkSpeed: 2.5, // Slower than rabbit
+    jumpVelocity: 6.0, // Lower hops
+    hopCooldownMin: 0.8,
+    hopCooldownMax: 1.5,
+    idleHopChance: 0.15,
+    contactRange: 1.2,
+  },
+  small: {
+    meshScale: 0.6,
+    hitboxSize: new THREE.Vector3(0.54, 0.6, 0.54),
+    maxHealth: 4,
+    walkSpeed: 3.0, // Zippier than the large slime
+    jumpVelocity: 5.0, // Proportionally lower hops
+    hopCooldownMin: 0.35,
+    hopCooldownMax: 0.7, // Much more frequent hops
+    idleHopChance: 0.3,
+    contactRange: 0.8, // Shorter reach
+  },
+}
+
+/**
+ * Configuration for magma slimes. Defaults to the large size.
+ */
+export interface IMagmaSlimeConfig extends IPeacefulEntityConfig {
+  size?: MagmaSlimeSize
+}
 
 /**
  * A magma slime entity that hops around volcanic biomes.
  * Deals contact damage to players who touch it.
- * Drops magma blocks and coal when killed.
+ * Large slimes drop magma blocks and coal when killed, and split into
+ * 2 small slimes; small slimes drop a single coal and do not split.
  */
 export class MagmaSlimeEntity extends PeacefulEntity {
   readonly type = 'magma_slime'
+
+  /** Size variant - large slimes split into small ones on death */
+  readonly size: MagmaSlimeSize
+
+  // Per-size behavior stats
+  private readonly hopCooldownMin: number
+  private readonly hopCooldownMax: number
+  private readonly idleHopChance: number
+  private readonly contactRange: number
+  private readonly meshScale: number
+
+  // Splitting state
+  private hasSplit = false
+  private childSpawner: ((child: MagmaSlimeEntity) => void) | null = null
 
   // Hopping state
   private hopCooldown = 0
@@ -67,26 +138,39 @@ export class MagmaSlimeEntity extends PeacefulEntity {
   private outerMaterial: THREE.MeshLambertMaterial | null = null
   private innerMaterial: THREE.MeshLambertMaterial | null = null
 
-  constructor(config: IPeacefulEntityConfig) {
+  constructor(config: IMagmaSlimeConfig) {
+    const size = config.size ?? 'large'
+    const stats = SIZE_STATS[size]
+
     super('magma_slime', {
       ...config,
       hasPhysics: true,
-      hitboxSize: new THREE.Vector3(0.9, 1.0, 0.9),
-      walkSpeed: 2.5, // Slower than rabbit
-      jumpVelocity: 6.0, // Lower hops
+      hitboxSize: stats.hitboxSize.clone(),
+      walkSpeed: stats.walkSpeed,
+      jumpVelocity: stats.jumpVelocity,
       wanderMinDistance: 3.0,
       wanderMaxDistance: 6.0,
       wanderMinInterval: 2.0,
       wanderMaxInterval: 5.0,
-      maxHealth: 12,
-      drops: [
-        { createItem: () => new MagmaBlockItem(), minCount: 1, maxCount: 2 },
-        { createItem: () => new CoalItem(), minCount: 1, maxCount: 3 },
-      ],
+      maxHealth: stats.maxHealth,
+      drops:
+        size === 'large'
+          ? [
+              { createItem: () => new MagmaBlockItem(), minCount: 1, maxCount: 2 },
+              { createItem: () => new CoalItem(), minCount: 1, maxCount: 3 },
+            ]
+          : [{ createItem: () => new CoalItem(), minCount: 1, maxCount: 1 }],
     })
 
+    this.size = size
+    this.hopCooldownMin = stats.hopCooldownMin
+    this.hopCooldownMax = stats.hopCooldownMax
+    this.idleHopChance = stats.idleHopChance
+    this.contactRange = stats.contactRange
+    this.meshScale = stats.meshScale
+
     // Start with a random hop cooldown
-    this.hopCooldown = this.randomRange(HOP_COOLDOWN_MIN, HOP_COOLDOWN_MAX)
+    this.hopCooldown = this.randomRange(this.hopCooldownMin, this.hopCooldownMax)
   }
 
   /**
@@ -94,6 +178,15 @@ export class MagmaSlimeEntity extends PeacefulEntity {
    */
   setPlayerDamageCallback(callback: (damage: number, knockback: THREE.Vector3) => void): void {
     this.playerDamageCallback = callback
+  }
+
+  /**
+   * Set the spawner used to add split children to the world.
+   * Wired from main.ts so children go through the EntityManager and are
+   * tracked/updated like any other entity.
+   */
+  setChildSpawner(spawner: (child: MagmaSlimeEntity) => void): void {
+    this.childSpawner = spawner
   }
 
   /**
@@ -189,6 +282,11 @@ export class MagmaSlimeEntity extends PeacefulEntity {
     // Render order for proper transparency
     group.renderOrder = 1
 
+    // Apply size scale to the whole group. The jiggle/stretch animation
+    // scales the outerBody/innerCore children, which multiplies with this
+    // group-level scale, so the emissive glow and animation are unaffected.
+    group.scale.setScalar(this.meshScale)
+
     // Freeze static nodes (crust spots, eyes). The outer body and inner core
     // animate via scale; all materials are translucent/emissive so none merge.
     optimizeEntityMesh(group, {
@@ -212,7 +310,7 @@ export class MagmaSlimeEntity extends PeacefulEntity {
     const dz = this.position.z - this.playerPositionRef.z
     const distSq = dx * dx + dy * dy + dz * dz
 
-    if (distSq < CONTACT_RANGE * CONTACT_RANGE) {
+    if (distSq < this.contactRange * this.contactRange) {
       // Calculate knockback direction (away from slime)
       const knockback = new THREE.Vector3(-dx, 0, -dz)
       if (knockback.lengthSq() > 0) {
@@ -235,6 +333,20 @@ export class MagmaSlimeEntity extends PeacefulEntity {
 
     // Skip hopping logic if dying
     if (this.isDying) {
+      // Large slimes split into small slimes the moment they start dying.
+      // This runs once, after the killing damage event has fully resolved
+      // (children are queued and only enter the world on the next
+      // EntityManager update, so they can't be hit by the same blow).
+      if (!this.hasSplit) {
+        if (this.size !== 'large') {
+          this.hasSplit = true
+        } else if (this.childSpawner) {
+          this.hasSplit = true
+          this.spawnSplitChildren()
+        }
+        // else: spawner not wired yet (4Hz tracking task) — retry next frame;
+        // the 1.5s corpse linger gives it plenty of chances before kill()
+      }
       super.update(deltaTime)
       return
     }
@@ -251,7 +363,7 @@ export class MagmaSlimeEntity extends PeacefulEntity {
 
     // Just landed - reset hop cooldown and apply sticky friction
     if (wasInAir && !this.isInAir) {
-      this.hopCooldown = this.randomRange(HOP_COOLDOWN_MIN, HOP_COOLDOWN_MAX)
+      this.hopCooldown = this.randomRange(this.hopCooldownMin, this.hopCooldownMax)
       // More friction than rabbit (slimes are sticky)
       body.velocity.x *= 0.2
       body.velocity.z *= 0.2
@@ -304,7 +416,7 @@ export class MagmaSlimeEntity extends PeacefulEntity {
         this.performHop(body.velocity.x, body.velocity.z)
       } else {
         // Random idle hop
-        if (Math.random() < IDLE_HOP_CHANCE * deltaTime) {
+        if (Math.random() < this.idleHopChance * deltaTime) {
           const randomAngle = Math.random() * Math.PI * 2
           const hopSpeed = this.walkSpeed * 0.5
           this.performHop(
@@ -348,7 +460,7 @@ export class MagmaSlimeEntity extends PeacefulEntity {
     this.hopDirection.set(hopVelX, 0, hopVelZ)
 
     // Reset cooldown
-    this.hopCooldown = this.randomRange(HOP_COOLDOWN_MIN, HOP_COOLDOWN_MAX)
+    this.hopCooldown = this.randomRange(this.hopCooldownMin, this.hopCooldownMax)
 
     // Update facing direction
     const mesh = this.getMesh()
@@ -358,6 +470,55 @@ export class MagmaSlimeEntity extends PeacefulEntity {
 
     // Trigger jiggle animation
     this.jigglePhase = 0
+  }
+
+  /**
+   * Spawn 2 small magma slimes at this slime's position, with a slight
+   * random horizontal offset and outward impulse so they don't stack.
+   * Only large slimes split; children go through the EntityManager via the
+   * child spawner so they're tracked, updated, and capped like any entity.
+   */
+  private spawnSplitChildren(): void {
+    if (!this.childSpawner) return
+
+    // Roughly opposite directions with random variance
+    const baseAngle = Math.random() * Math.PI * 2
+    for (let i = 0; i < SPLIT_CHILD_COUNT; i++) {
+      const angle =
+        baseAngle + (i * Math.PI * 2) / SPLIT_CHILD_COUNT + (Math.random() - 0.5) * (Math.PI / 3)
+      const dirX = Math.cos(angle)
+      const dirZ = Math.sin(angle)
+
+      const child = new MagmaSlimeEntity({
+        position: new THREE.Vector3(
+          this.position.x + dirX * SPLIT_OFFSET_DISTANCE,
+          this.position.y + 0.25,
+          this.position.z + dirZ * SPLIT_OFFSET_DISTANCE
+        ),
+        size: 'small',
+      })
+
+      // Launch outward so the children scatter instead of stacking
+      const body = child.getPhysicsBody()
+      if (body) {
+        body.velocity.set(
+          dirX * SPLIT_IMPULSE_HORIZONTAL,
+          SPLIT_IMPULSE_VERTICAL,
+          dirZ * SPLIT_IMPULSE_HORIZONTAL
+        )
+      }
+
+      // Hand down player refs immediately; the EntityManager and the
+      // main.ts tracking task will (re)wire these on spawn as well.
+      if (this.playerDamageCallback) {
+        child.setPlayerDamageCallback(this.playerDamageCallback)
+      }
+      if (this.playerPositionRef) {
+        child.updatePlayerPosition(this.playerPositionRef)
+      }
+
+      this.childSpawner(child)
+    }
   }
 
   /**
@@ -375,7 +536,7 @@ export class MagmaSlimeEntity extends PeacefulEntity {
     // Mark that we've tried a high jump
     this.slimeHasTriedHighJump = true
     this.slimeStuckTime = 0
-    this.hopCooldown = this.randomRange(HOP_COOLDOWN_MIN, HOP_COOLDOWN_MAX)
+    this.hopCooldown = this.randomRange(this.hopCooldownMin, this.hopCooldownMax)
 
     // Trigger jiggle animation
     this.jigglePhase = 0
@@ -416,6 +577,7 @@ export class MagmaSlimeEntity extends PeacefulEntity {
     this.innerMaterial = null
     this.playerDamageCallback = null
     this.playerPositionRef = null
+    this.childSpawner = null
     super.dispose()
   }
 }

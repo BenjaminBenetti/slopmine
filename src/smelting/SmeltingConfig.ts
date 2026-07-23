@@ -4,6 +4,7 @@
  */
 export const FUEL_VALUES: Record<string, number> = {
   coal: 8.0, // 8 items per coal
+  sulfur: 12.0, // premium volcanic fuel - burns hotter than coal
   charcoal: 8.0, // 8 items per charcoal (same as coal)
   oak_log_block: 1.5, // 1.5 items per log
   pine_log_block: 1.5, // 1.5 items per log

@@ -53,6 +53,9 @@ import {
   DiamondAxeItem,
 } from './items/tools/index.ts'
 import { BlockTickManager } from './world/blockstate/BlockTickManager.ts'
+import { GeyserSystem } from './world/geyser/GeyserSystem.ts'
+import { SmolderingStoneSystem } from './world/smoldering/SmolderingStoneSystem.ts'
+import { TntSystem } from './world/tnt/TntSystem.ts'
 import { setForgeBlockTickManager } from './world/blocks/types/forge/ForgeBlock.ts'
 import { setApothecaryWorkbenchBlockTickManager } from './world/blocks/types/apothecary_workbench/ApothecaryWorkbenchBlock.ts'
 import { setWoodworkingBenchBlockTickManager } from './world/blocks/types/woodworking_bench/WoodworkingBenchBlock.ts'
@@ -82,12 +85,17 @@ import { BlockStateManager } from './world/blockstate/BlockStateManager.ts'
 import { getBlockStatesToPersist } from './persistence/BlockStateSerializer.ts'
 import { PlayerHealth } from './player/PlayerHealth.ts'
 import { FallDamageTracker } from './player/FallDamageTracker.ts'
+import { EnvironmentalDamage } from './player/EnvironmentalDamage.ts'
 import { createHealthDisplayUI } from './ui/HealthDisplay.ts'
+import { createBurnVignetteUI } from './ui/BurnVignette.ts'
 import { BlockIconGenerator } from './renderer/BlockIconGenerator.ts'
 import { EntityManager, EntitySpawner, DroppedItemEntity } from './entities/index.ts'
 import type { IItem } from './items/Item.ts'
 import { FloatingTextManager } from './ui/floating-text/index.ts'
 import { DiviningParticleManager } from './renderer/particles/DiviningParticleManager.ts'
+import { GeyserParticleManager } from './renderer/particles/GeyserParticleManager.ts'
+import { SmolderingSmokeParticleManager } from './renderer/particles/SmolderingSmokeParticleManager.ts'
+import { ExplosionParticleManager } from './renderer/particles/ExplosionParticleManager.ts'
 import { MagmaSlimeEntity } from './entities/animals/magma_slime/index.ts'
 import { PlayerDamageHandler } from './entities/PlayerDamageHandler.ts'
 
@@ -516,6 +524,16 @@ const playerDamageHandler = new PlayerDamageHandler(
 // Set player damage callback on entity manager so aggressive entities can deal damage
 entityManager.setPlayerDamageCallback(playerDamageHandler.createCallback())
 
+// Environmental damage (lava, burning, hot magma floors) + burn vignette overlay.
+// Uses its own damage cadence (bypasses melee i-frames), flashes the health
+// bar, and never applies knockback.
+const burnVignette = createBurnVignetteUI()
+const environmentalDamage = new EnvironmentalDamage(world, playerBody, (amount) => {
+  if (playerHealth.isDead) return
+  playerHealth.takeEnvironmentalDamage(amount)
+  healthDisplay.flash()
+})
+
 // Set light query for entity dimming based on world light levels (numeric fast path)
 entityManager.setLightQuery((x, y, z) => world.getLightLevelFast(x, y, z))
 
@@ -552,6 +570,10 @@ playerHealth.setOnDeath(() => {
 
     // Reset fall damage tracker to prevent false damage after teleport
     fallDamageTracker.reset()
+
+    // Clear environmental damage state (burning, lava/magma timers)
+    environmentalDamage.reset()
+    burnVignette.setActive(false)
 
     // Reset health to full
     playerHealth.reset()
@@ -996,6 +1018,12 @@ scheduler.createTask({
       playerHealth.takeDamage(damage)
       healthDisplay.flash()
     }
+
+    // Environmental damage (lava contact, burning DoT, hot magma floors)
+    if (!playerHealth.isDead) {
+      environmentalDamage.update(dt)
+    }
+    burnVignette.setActive(environmentalDamage.showBurnEffect)
   },
 })
 
@@ -1029,6 +1057,11 @@ scheduler.registerTask(entitySpawner)
 // stable references on each slime, so this only needs to run occasionally to pick
 // up newly spawned slimes rather than every 60 UPS tick.
 const magmaSlimeDamageCallback = playerDamageHandler.createCallback()
+// Large slimes split into 2 small slimes on death; children are added through
+// the EntityManager so they're tracked/updated/capped like any other entity.
+const magmaSlimeChildSpawner = (child: MagmaSlimeEntity) => {
+  entityManager.addEntity(child)
+}
 const MAGMA_SLIME_TRACK_INTERVAL = 0.25 // seconds (~4Hz)
 let magmaSlimeTrackTimer = MAGMA_SLIME_TRACK_INTERVAL
 scheduler.createTask({
@@ -1043,7 +1076,73 @@ scheduler.createTask({
       const slime = entity as MagmaSlimeEntity
       slime.updatePlayerPosition(playerBody.position)
       slime.setPlayerDamageCallback(magmaSlimeDamageCallback)
+      slime.setChildSpawner(magmaSlimeChildSpawner)
     }
+  },
+})
+
+// Volcanic geyser vents: worldgen blocks never receive scheduled ticks, so a
+// main-thread system scans near the player and drives eruptions (warning
+// light-up, upward blast + light damage, revert). Sweeps are time-sliced
+// internally, so the per-tick cost stays small.
+const geyserSystem = new GeyserSystem(world, playerBody, (amount) => {
+  if (playerHealth.isDead) return
+  playerHealth.takeEnvironmentalDamage(amount)
+  healthDisplay.flash()
+})
+GeyserParticleManager.instance.initialize(renderer.scene)
+geyserSystem.setEruptionEffect((x, y, z) =>
+  GeyserParticleManager.instance.spawnEruption(x, y, z)
+)
+scheduler.createTask({
+  id: 'geyser-system',
+  priority: TaskPriority.NORMAL,
+  update: (dt) => {
+    geyserSystem.update(dt)
+    GeyserParticleManager.instance.update(dt)
+  },
+})
+
+// Smoldering stone smoke: same near-player scan pattern as the geyser
+// system — tracked SMOLDERING_STONE blocks emit slow grey smoke wisps from
+// a rotating subset every few seconds (particle counts are capped).
+const smolderingStoneSystem = new SmolderingStoneSystem(world, playerBody)
+SmolderingSmokeParticleManager.instance.initialize(renderer.scene)
+smolderingStoneSystem.setSmokeEffect((x, y, z) =>
+  SmolderingSmokeParticleManager.instance.spawnWisp(x, y, z)
+)
+scheduler.createTask({
+  id: 'smoldering-stone-system',
+  priority: TaskPriority.NORMAL,
+  update: (dt) => {
+    smolderingStoneSystem.update(dt)
+    SmolderingSmokeParticleManager.instance.update(dt)
+  },
+})
+
+// TNT: E-interact ignites a ~2s fuse, then a radius-4 explosion (blocks
+// destroyed with scattered drops, player damage + knockback, chain ignition).
+const tntSystem = new TntSystem(world, playerBody, (amount) => {
+  if (playerHealth.isDead) return
+  playerHealth.takeEnvironmentalDamage(amount)
+  healthDisplay.flash()
+})
+ExplosionParticleManager.instance.initialize(renderer.scene)
+tntSystem.setExplosionEffect((x, y, z) =>
+  ExplosionParticleManager.instance.spawnExplosion(x, y, z)
+)
+tntSystem.setFuseEffect((x, y, z) =>
+  ExplosionParticleManager.instance.spawnFuseSmoke(x, y, z)
+)
+blockActionRegistry.register(BlockIds.TNT, (x, y, z) =>
+  tntSystem.ignite(Number(x), Number(y), Number(z))
+)
+scheduler.createTask({
+  id: 'tnt-system',
+  priority: TaskPriority.NORMAL,
+  update: (dt) => {
+    tntSystem.update(dt)
+    ExplosionParticleManager.instance.update(dt)
   },
 })
 

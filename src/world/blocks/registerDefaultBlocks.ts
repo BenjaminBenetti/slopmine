@@ -83,6 +83,7 @@ import { SandstoneBlock } from './types/sandstone/SandstoneBlock.ts'
 import { CactusBlock } from './types/cactus/CactusBlock.ts'
 import { VineBlock } from './types/vine/VineBlock.ts'
 import { BasaltBlock } from './types/basalt/BasaltBlock.ts'
+import { ColumnarBasaltBlock } from './types/columnar_basalt/ColumnarBasaltBlock.ts'
 import { MagmaBlock } from './types/magma/MagmaBlock.ts'
 import { MudBlock } from './types/mud/MudBlock.ts'
 import { ClayBlock } from './types/clay/ClayBlock.ts'
@@ -140,6 +141,13 @@ import { MorelMushroomBlock } from './types/morel_mushroom/MorelMushroomBlock.ts
 import { CampfireBlock } from './types/campfire/CampfireBlock.ts'
 import { CattailBlock } from './types/cattail/CattailBlock.ts'
 import { CattailTopBlock } from './types/cattail_top/CattailTopBlock.ts'
+import { ObsidianBlock } from './types/obsidian/ObsidianBlock.ts'
+import { SulfurOreBlock } from './types/sulfur_ore/SulfurOreBlock.ts'
+import { GeyserBlock } from './types/geyser/GeyserBlock.ts'
+import { GeyserActiveBlock } from './types/geyser_active/GeyserActiveBlock.ts'
+import { SmolderingStoneBlock } from './types/smoldering_stone/SmolderingStoneBlock.ts'
+import { CharredLogBlock } from './types/charred_log/CharredLogBlock.ts'
+import { TntBlock } from './types/tnt/TntBlock.ts'
 import { FallenPineLogXBlock } from './types/fallen_pine_log_x/FallenPineLogXBlock.ts'
 import { FallenPineLogZBlock } from './types/fallen_pine_log_z/FallenPineLogZBlock.ts'
 import { PineStumpBlock } from './types/pine_stump/PineStumpBlock.ts'
@@ -214,6 +222,7 @@ export function registerDefaultBlocks(): void {
 
   // Volcanic biome blocks
   registerBlock(new BasaltBlock())
+  registerBlock(new ColumnarBasaltBlock())
   registerBlock(new MagmaBlock())
 
   // Swamp biome blocks
@@ -289,6 +298,13 @@ export function registerDefaultBlocks(): void {
   registerBlock(new CampfireBlock())
   registerBlock(new CattailBlock())
   registerBlock(new CattailTopBlock())
+  registerBlock(new ObsidianBlock())
+  registerBlock(new SulfurOreBlock())
+  registerBlock(new GeyserBlock())
+  registerBlock(new GeyserActiveBlock())
+  registerBlock(new SmolderingStoneBlock())
+  registerBlock(new CharredLogBlock())
+  registerBlock(new TntBlock())
   registerBlock(new FallenPineLogXBlock())
   registerBlock(new FallenPineLogZBlock())
   registerBlock(new PineStumpBlock())

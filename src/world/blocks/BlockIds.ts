@@ -165,4 +165,14 @@ export enum BlockIds {
   // Jungle expansion
   CATTAIL = 153,             // waterside reed plant, lower half
   CATTAIL_TOP = 154,         // waterside reed plant, upper half (seed heads)
+
+  // Volcanic expansion
+  OBSIDIAN = 155,            // very hard volcanic glass, diamond pickaxe only
+  SULFUR_ORE = 156,          // basalt with sulfur deposits, drops sulfur
+  GEYSER = 157,              // dormant basalt vent with dim glowing cracks
+  GEYSER_ACTIVE = 158,       // erupting vent, bright emissive cracks
+  CHARRED_LOG = 159,         // burnt log with ember cracks (charred mining camps)
+  TNT = 160,                 // craftable explosive crate, E-interact to ignite
+  SMOLDERING_STONE = 161,    // dark rock with ember cracks + ash, smokes near player
+  COLUMNAR_BASALT = 162,     // hexagonal basalt column block (Giant's Causeway pillars)
 }

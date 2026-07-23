@@ -120,6 +120,44 @@ export interface EntranceConfig {
   readonly depth: number
 }
 
+/** One candidate lining block with its per-wall-block conversion chance. */
+export interface CaveLiningEntry {
+  readonly blockId: number
+  /** Deterministic per-block conversion probability (0-1). */
+  readonly chance: number
+  /**
+   * Optional world-Y band restriction: the entry only converts blocks at
+   * minY <= worldY <= maxY (either bound may be omitted). Out-of-band the
+   * entry still occupies its slice of the cumulative roll (it just places
+   * nothing), so restricting one entry never shifts the deterministic
+   * placement of the others. Used to keep e.g. sulfur near the surface
+   * while obsidian lines the deep caves.
+   */
+  readonly minY?: number
+  readonly maxY?: number
+}
+
+/**
+ * Optional post-carve cave wall lining (e.g. volcanic obsidian/sulfur).
+ *
+ * Block identities cannot be interpolated, so lining is deliberately NOT part
+ * of the blended CaveParams: the pass runs only in chunks whose PRIMARY biome
+ * declares it, reading this config directly (slight under-lining at biome and
+ * chunk borders is acceptable). Rolls use a coordinate hash of world position
+ * and seed, never Math.random, so results are stable across regeneration.
+ */
+export interface CaveLiningConfig {
+  /** Solid blocks eligible for conversion (already-placed ore veins survive). */
+  readonly replaceableBlocks: readonly number[]
+  /**
+   * Candidates for solid blocks face-adjacent to carved cave air. A single
+   * roll walks the cumulative chances, so entry chances should sum to < 1.
+   */
+  readonly wallBlocks: readonly CaveLiningEntry[]
+  /** Rolled for solid blocks face-adjacent to lava (flood lava, lava lake beds). */
+  readonly lavaContactBlock?: CaveLiningEntry
+}
+
 /**
  * Per-biome cave generation configuration.
  * Attach to BiomeProperties.caves. All fields are plain data (worker-safe).
@@ -151,6 +189,12 @@ export interface CaveConfig {
    * Set to the biome's waterLevel + 2. Default: disabled.
    */
   readonly liquidSurfaceGuardY?: number
+  /**
+   * Optional mineral lining sprinkled on cave walls after carving and
+   * features (see CaveLiningConfig). Non-blended: applied only in chunks
+   * whose primary biome sets it. Default: no lining.
+   */
+  readonly lining?: CaveLiningConfig
 }
 
 /**

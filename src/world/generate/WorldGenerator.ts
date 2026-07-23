@@ -25,15 +25,19 @@ import { RiverbankClayFeature } from './features/RiverbankClayFeature.ts'
 import { CattailFeature } from './features/CattailFeature.ts'
 import { PineTreeFeature } from './features/PineTreeFeature.ts'
 import { GiantConiferFeature } from './features/GiantConiferFeature.ts'
+import { VolcanoConeFeature } from './features/VolcanoConeFeature.ts'
 import { BoulderFeature } from './features/BoulderFeature.ts'
 import { TallFernFeature } from './features/TallFernFeature.ts'
 import { FallenPineLogFeature } from './features/FallenPineLogFeature.ts'
 import { PineStumpFeature } from './features/PineStumpFeature.ts'
 import { BerryBushFeature } from './features/BerryBushFeature.ts'
 import { MorelFeature } from './features/MorelFeature.ts'
+import { GeyserFeature } from './features/GeyserFeature.ts'
 import { BearDenFeature } from './features/BearDenFeature.ts'
 import { AbandonedCabinFeature } from './features/AbandonedCabinFeature.ts'
 import { HuntersCampFeature } from './features/HuntersCampFeature.ts'
+import { BasaltColumnsFeature } from './features/BasaltColumnsFeature.ts'
+import { CharredMiningCampFeature } from './features/CharredMiningCampFeature.ts'
 import type { WaterEdgeEffects } from './features/WaterFeature.ts'
 import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../workers/ChunkGenerationWorker.ts'
 import type { PersistenceManager } from '../../persistence/PersistenceManager.ts'
@@ -233,6 +237,9 @@ export class WorldGenerator {
       if (feature instanceof GiantConiferFeature) {
         return { type: 'giantConifer', settings: feature.settings }
       }
+      if (feature instanceof VolcanoConeFeature) {
+        return { type: 'volcanoCone', settings: feature.settings }
+      }
       if (feature instanceof BoulderFeature) {
         return { type: 'boulder', settings: feature.settings }
       }
@@ -248,6 +255,9 @@ export class WorldGenerator {
       if (feature instanceof BerryBushFeature) {
         return { type: 'berryBush', settings: feature.settings }
       }
+      if (feature instanceof GeyserFeature) {
+        return { type: 'geyser', settings: feature.settings }
+      }
       if (feature instanceof MorelFeature) {
         return { type: 'morel', settings: feature.settings }
       }
@@ -259,6 +269,12 @@ export class WorldGenerator {
       }
       if (feature instanceof HuntersCampFeature) {
         return { type: 'huntersCamp', settings: feature.settings }
+      }
+      if (feature instanceof BasaltColumnsFeature) {
+        return { type: 'basaltColumns', settings: feature.settings }
+      }
+      if (feature instanceof CharredMiningCampFeature) {
+        return { type: 'charredMiningCamp', settings: feature.settings }
       }
       throw new Error(`Unknown feature type: ${feature.constructor.name}`)
     })

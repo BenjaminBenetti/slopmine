@@ -154,6 +154,12 @@ export class BlockInteractionHandler {
     // Check if block has a registered UI
     if (!blockUIRegistry.hasUI(hit.blockId)) return false
 
+    // Let the block repair/lazily create its state first — worldgen-placed
+    // stateful blocks (e.g. camp loot chests) have no state until their
+    // first interaction (worldgen bypasses onPlace, fresh chunks skip onLoad)
+    const block = this.worldManager.getBlock(hit.worldX, hit.worldY, hit.worldZ)
+    block.prepareInteractionState?.(this.worldManager, hit.worldX, hit.worldY, hit.worldZ)
+
     // Get the block state
     const position = { x: hit.worldX, y: hit.worldY, z: hit.worldZ }
     const state = BlockStateManager.getInstance().getState(position)

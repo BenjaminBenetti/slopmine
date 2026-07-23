@@ -133,7 +133,8 @@ export function setMetadataFlipped(metadata: number, flipped: boolean): number {
  * Metadata bit 7: marks a block placed by the player rather than worldgen.
  * Natural-structure blocks (leaves, logs) use this to exempt player builds
  * from decay/collapse rules. Bits 0-4 are facing/3D-rotation/flip (above);
- * bits 5-6 remain free.
+ * bit 6 is CHEST_LOOT_RESOLVED_METADATA_BIT (chest ChestLoot.ts); bit 5
+ * remains free.
  */
 export const PERSISTENT_PLACED_METADATA_BIT = 0b1000_0000
 
