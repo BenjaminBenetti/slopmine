@@ -10,7 +10,7 @@ import { TntBlockItem } from '../../../../items/blocks/tnt/TntBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import tntTexUrl from './assets/tnt.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.TNT, tntTexUrl)
 
 const tntTexture = loadBlockTexture(tntTexUrl)

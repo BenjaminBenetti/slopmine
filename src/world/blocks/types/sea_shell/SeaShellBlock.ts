@@ -10,7 +10,7 @@ import { SeaShellBlockItem } from '../../../../items/blocks/sea_shell/SeaShellBl
 import seaShellTexUrl from './assets/sea-shell.webp'
 
 // Face-map entry only (the block renders via its custom geometry below)
-registerTextureUrl(TextureId.SEA_SHELL, seaShellTexUrl, true)
+registerTextureUrl(TextureId.SEA_SHELL, seaShellTexUrl)
 
 // Colors mirror SeaShellEntity so placed shells match beach shells
 const SHELL_CREAM = 0xf1e3c8

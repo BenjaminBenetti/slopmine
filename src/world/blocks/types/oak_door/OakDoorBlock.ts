@@ -12,7 +12,7 @@ import { doorClosedGeometry } from '../door_shared/DoorGeometry.ts'
 import oakDoorLowerTexUrl from './assets/oak-door-lower.webp'
 import oakPlanksEdgeTexUrl from '../oak_planks/assets/oak-planks.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.OAK_DOOR_LOWER, oakDoorLowerTexUrl)
 
 const oakDoorLowerTexture = loadBlockTexture(oakDoorLowerTexUrl)

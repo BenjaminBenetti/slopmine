@@ -5,69 +5,54 @@ import { createSubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
 import { getBlock } from '../world/blocks/BlockRegistry.ts'
 import type { MeshGroup, GreedyMeshResponse } from '../workers/GreedyMeshWorker.ts'
-import type { IChunkMesh } from './ChunkMesh.ts'
-import { getTextureAtlas } from './TextureAtlas.ts'
+import type { IChunkMesh } from './interfaces/IChunkMesh.ts'
+import { getChunkMaterial, getChunkCutoutDepthMaterial } from './ChunkMaterial.ts'
+import {
+  CHUNK_VERTEX_STRIDE, CHUNK_VERTEX_POSITION_OFFSET, CHUNK_VERTEX_TEX_OFFSET, CHUNK_VERTEX_LIGHT_OFFSET,
+  LIQUID_SIDE_CLIP_SHIFT,
+} from './ChunkVertexFormat.ts'
+import { prepareInstancedBlockMaterial, writeInstanceLight } from './InstancedBlockLight.ts'
 import { getMetadataFacing, getMetadataUses3DRotation, getMetadataFlipped, facingToEuler } from '../world/blocks/BlockFacing.ts'
 
-// Liquid block ID ranges for identifying liquid blocks
-const LIQUID_BLOCK_IDS = new Set([
-  // Water (13-20)
-  13, 14, 15, 16, 17, 18, 19, 20,
-  // Lava (21-28)
-  21, 22, 23, 24, 25, 26, 27, 28,
-  // Swamp water (39-46)
-  39, 40, 41, 42, 43, 44, 45, 46,
-])
-
-// Atlas materials cache (1 opaque + 1 transparent = 2 materials total)
-// Normals are stored per-vertex, so we only need one material per transparency type
-let opaqueAtlasMaterial: THREE.MeshLambertMaterial | null = null
-let transparentAtlasMaterial: THREE.MeshLambertMaterial | null = null
+// Fallback when the block texture array isn't ready (should not happen: it is
+// built before any chunk is meshed)
+let fallbackMaterial: THREE.MeshLambertMaterial | null = null
 
 /**
- * Initialize atlas materials if not already done.
+ * Get the shared chunk material for a greedy mesh group.
  */
-function initAtlasMaterials(): void {
-  const atlas = getTextureAtlas()
-  if (!atlas) {
-    console.warn('TextureAtlas not ready, cannot init atlas materials')
-    return
-  }
-
-  if (!opaqueAtlasMaterial) {
-    opaqueAtlasMaterial = new THREE.MeshLambertMaterial({
-      map: atlas.opaqueTexture,
-      vertexColors: true,
-    })
-  }
-
-  if (!transparentAtlasMaterial && atlas.transparentTexture) {
-    transparentAtlasMaterial = new THREE.MeshLambertMaterial({
-      map: atlas.transparentTexture,
-      vertexColors: true,
-      transparent: true,
-      side: THREE.DoubleSide,
-      alphaTest: 0.5,
-    })
-  }
+function getGreedyMaterial(isCutout: boolean): THREE.Material {
+  const material = getChunkMaterial(isCutout)
+  if (material) return material
+  console.warn('Block texture array not ready, using fallback chunk material')
+  fallbackMaterial ??= new THREE.MeshLambertMaterial({ color: 0xff00ff })
+  return fallbackMaterial
 }
 
 /**
- * Get atlas material based on transparency.
+ * Release a buffer's JS-side array once it is on the GPU. Chunk geometry is
+ * never read back on the CPU (only `.count`, which is kept), so holding the
+ * array would double its memory.
  */
-function getAtlasMaterial(isTransparent: boolean): THREE.Material {
-  initAtlasMaterials()
+function releaseArrayAfterUpload(this: { array: ArrayLike<number> | null }): void {
+  this.array = null
+}
 
-  if (isTransparent && transparentAtlasMaterial) {
-    return transparentAtlasMaterial
-  }
+/** Reusable light → vertex colour scratch. */
+const lightColor = { r: 1, g: 1, b: 1 }
 
-  if (opaqueAtlasMaterial) {
-    return opaqueAtlasMaterial
-  }
-
-  // Fallback: create a basic material
-  return new THREE.MeshLambertMaterial({ color: 0xff00ff, vertexColors: true })
+/**
+ * Liquid vertex colour for a packed light byte (sky << 4 | block): the light
+ * LEVELS as (sky / 15, block / 15, 1). The liquid materials shade them with
+ * the shared world light model at render time (LiquidMaterials), so water
+ * follows daylight, the light floor and warm block light like terrain; white
+ * (icons) means full light.
+ */
+function packedLightToColor(packed: number): typeof lightColor {
+  lightColor.r = (packed >> 4) / 15
+  lightColor.g = (packed & 15) / 15
+  lightColor.b = 1
+  return lightColor
 }
 
 /**
@@ -77,7 +62,6 @@ function getAtlasMaterial(isTransparent: boolean): THREE.Material {
 export class GreedyChunkMesh implements IChunkMesh {
   private readonly meshes: THREE.Mesh[] = []
   private readonly instancedMeshes: Map<BlockId, THREE.InstancedMesh> = new Map()
-  private readonly batchedMeshes: Map<BlockId, THREE.BatchedMesh> = new Map()
   private readonly group: THREE.Group = new THREE.Group()
 
   readonly chunkCoordinate: IChunkCoordinate
@@ -89,24 +73,28 @@ export class GreedyChunkMesh implements IChunkMesh {
     this.subY = subY
     this.subChunkKey = createSubChunkKey(chunkCoordinate.x, chunkCoordinate.z, subY)
 
-    // Chunk meshes are fully static once built (geometry is baked in world
-    // coordinates, transforms stay identity forever). Opt out of the per-frame
-    // matrix recompose/multiply that three.js runs for every scene object, and
-    // skip the subtree during scene.updateMatrixWorld entirely. The one required
-    // world-matrix computation is forced once in addToScene().
+    // Chunk meshes are fully static once built (greedy geometry is local to the
+    // sub-chunk origin, everything else is baked in world coordinates). Opt out
+    // of the per-frame matrix recompose/multiply that three.js runs for every
+    // scene object, and skip the subtree during scene.updateMatrixWorld
+    // entirely. The one required world-matrix computation is forced once in
+    // addToScene().
     this.group.matrixAutoUpdate = false
     this.group.matrixWorldAutoUpdate = false
   }
 
   /**
-   * Set an explicit bounding box/sphere from the known 32-cube sub-chunk bounds
-   * (vertices are baked in world coordinates), so three.js never lazily scans
-   * every vertex via computeBoundingSphere on first render.
+   * Set an explicit bounding box/sphere from the known 32-cube sub-chunk bounds,
+   * so three.js never lazily scans every vertex via computeBoundingSphere on
+   * first render.
+   *
+   * @param local True for geometry in sub-chunk local coordinates (greedy
+   *   meshes, placed at the sub-chunk origin); false for world coordinates.
    */
-  private setStaticChunkBounds(geometry: THREE.BufferGeometry): void {
-    const minX = Number(this.chunkCoordinate.x) * CHUNK_SIZE_X
-    const minY = this.subY * SUB_CHUNK_HEIGHT
-    const minZ = Number(this.chunkCoordinate.z) * CHUNK_SIZE_Z
+  private setStaticChunkBounds(geometry: THREE.BufferGeometry, local: boolean): void {
+    const minX = local ? 0 : Number(this.chunkCoordinate.x) * CHUNK_SIZE_X
+    const minY = local ? 0 : this.subY * SUB_CHUNK_HEIGHT
+    const minZ = local ? 0 : Number(this.chunkCoordinate.z) * CHUNK_SIZE_Z
     const maxX = minX + CHUNK_SIZE_X
     const maxY = minY + SUB_CHUNK_HEIGHT
     const maxZ = minZ + CHUNK_SIZE_Z
@@ -129,15 +117,9 @@ export class GreedyChunkMesh implements IChunkMesh {
    * Build meshes from greedy mesh worker response.
    */
   build(response: GreedyMeshResponse): void {
-    // Build opaque meshes first
-    for (const meshGroup of response.opaqueGroups) {
-      this.buildMeshGroup(meshGroup, false)
-    }
-
-    // Then transparent meshes (rendered after opaque)
-    for (const meshGroup of response.transparentGroups) {
-      this.buildMeshGroup(meshGroup, true)
-    }
+    // Opaque greedy faces first, then alpha-tested (cutout) faces
+    if (response.opaque) this.buildMeshGroup(response.opaque, false)
+    if (response.cutout) this.buildMeshGroup(response.cutout, true)
 
     // Handle non-greedy blocks (torch, etc.) with InstancedMesh fallback
     this.buildNonGreedyBlocks(
@@ -149,39 +131,44 @@ export class GreedyChunkMesh implements IChunkMesh {
   }
 
   /**
-   * Build a mesh from a single mesh group (same texture/face direction).
+   * Build the mesh for one greedy group (packed vertex format, local coords).
    */
-  private buildMeshGroup(meshGroup: MeshGroup, isTransparent: boolean): void {
+  private buildMeshGroup(meshGroup: MeshGroup, isCutout: boolean): void {
     if (meshGroup.vertices.length === 0) return
 
     const geometry = new THREE.BufferGeometry()
 
-    // Vertex data layout: x,y,z,u,v,nx,ny,nz,r,g,b (11 floats per vertex).
-    // Wrap the transferred buffer directly as an interleaved buffer instead of
-    // de-interleaving into 4 fresh Float32Arrays (zero copy, zero loop).
-    const interleaved = new THREE.InterleavedBuffer(meshGroup.vertices, 11)
-    geometry.setAttribute('position', new THREE.InterleavedBufferAttribute(interleaved, 3, 0))
-    geometry.setAttribute('uv', new THREE.InterleavedBufferAttribute(interleaved, 2, 3))
-    geometry.setAttribute('normal', new THREE.InterleavedBufferAttribute(interleaved, 3, 5))
-    geometry.setAttribute('color', new THREE.InterleavedBufferAttribute(interleaved, 3, 8))
-    geometry.setIndex(new THREE.BufferAttribute(meshGroup.indices, 1))
+    // Wrap the transferred bytes directly (zero copy); see ChunkVertexFormat.ts.
+    // `position` is read as 4 bytes (x, y, z, pad) so every attribute is a
+    // 4-component byte format; shaders only use its xyz.
+    const interleaved = new THREE.InterleavedBuffer(meshGroup.vertices, CHUNK_VERTEX_STRIDE)
+    interleaved.onUpload(releaseArrayAfterUpload)
+    geometry.setAttribute('position', new THREE.InterleavedBufferAttribute(interleaved, 4, CHUNK_VERTEX_POSITION_OFFSET))
+    geometry.setAttribute('aTex', new THREE.InterleavedBufferAttribute(interleaved, 4, CHUNK_VERTEX_TEX_OFFSET))
+    geometry.setAttribute('aLight', new THREE.InterleavedBufferAttribute(interleaved, 4, CHUNK_VERTEX_LIGHT_OFFSET))
+    const index = new THREE.BufferAttribute(meshGroup.indices, 1)
+    index.onUpload(releaseArrayAfterUpload)
+    geometry.setIndex(index)
 
     // Set bounds from the known sub-chunk cube instead of a lazy per-vertex scan.
-    this.setStaticChunkBounds(geometry)
+    this.setStaticChunkBounds(geometry, true)
 
-    // Get atlas material based on transparency (normals are per-vertex)
-    const meshMaterial = getAtlasMaterial(isTransparent)
-
-    const mesh = new THREE.Mesh(geometry, meshMaterial)
+    const mesh = new THREE.Mesh(geometry, getGreedyMaterial(isCutout))
     mesh.frustumCulled = true
     mesh.castShadow = true
     mesh.receiveShadow = true
-    mesh.matrixAutoUpdate = false
-
-    // Transparent meshes render after opaque
-    if (isTransparent) {
-      mesh.renderOrder = 1
+    if (isCutout) {
+      mesh.customDepthMaterial = getChunkCutoutDepthMaterial() ?? undefined
     }
+
+    // Local geometry: place at the sub-chunk origin (static, so compose once)
+    mesh.position.set(
+      Number(this.chunkCoordinate.x) * CHUNK_SIZE_X,
+      this.subY * SUB_CHUNK_HEIGHT,
+      Number(this.chunkCoordinate.z) * CHUNK_SIZE_Z
+    )
+    mesh.matrixAutoUpdate = false
+    mesh.updateMatrix()
 
     this.meshes.push(mesh)
     this.group.add(mesh)
@@ -195,7 +182,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     nonGreedyBlocks: Array<[number, Float32Array]>,
     nonGreedyLights: Array<[number, Uint8Array]>,
     nonGreedyMetadata: Array<[number, Uint8Array]>,
-    nonGreedyFaceVisibility: Array<[number, Uint8Array]>
+    nonGreedyFaceVisibility: Array<[number, Uint32Array]>
   ): void {
     const matrix = new THREE.Matrix4()
     const faceVisMap = new Map(nonGreedyFaceVisibility)
@@ -212,7 +199,7 @@ export class GreedyChunkMesh implements IChunkMesh {
       const block = getBlock(blockId)
 
       // Check if this is a liquid block with face visibility data
-      if (LIQUID_BLOCK_IDS.has(blockId) && faceVis) {
+      if (block.properties.isLiquid && faceVis) {
         const material = block.getInstanceMaterial()
         const mat = Array.isArray(material) ? material[0] : material
         this.buildLiquidMesh(blockId, positions, lights, faceVis, material, mat)
@@ -241,12 +228,14 @@ export class GreedyChunkMesh implements IChunkMesh {
    * Build a single merged mesh for liquid blocks with per-face visibility.
    * Emits only visible faces as direct geometry (one draw call per liquid type).
    * Extracts bounding box from block geometry to respect height variations.
+   * Side faces of a height step start at the lower neighbour's surface (the
+   * clip packed into the visibility value, see LIQUID_SIDE_CLIP_SHIFT).
    */
   private buildLiquidMesh(
     blockId: BlockId,
     positions: Float32Array,
     lights: Uint8Array,
-    faceVisibility: Uint8Array,
+    faceVisibility: Uint32Array,
     material: THREE.Material | THREE.Material[],
     mat: THREE.Material | undefined
   ): void {
@@ -259,34 +248,42 @@ export class GreedyChunkMesh implements IChunkMesh {
     blockGeometry.computeBoundingBox()
     const box = blockGeometry.boundingBox!
 
-    // Small inset to prevent z-fighting with adjacent solid blocks
+    // Small inset to prevent z-fighting with adjacent solid blocks. Each face
+    // plane moves inward along its own normal only; in-plane the face spans
+    // the full block, so neighbouring liquid quads share their edges exactly
+    // (an in-plane inset left 0.004-block slits between quads, which showed
+    // the unfogged sky as bright grid lines from underwater).
     // No inset on top face (maxY) to avoid gaps in water surface when viewed from below
     const INSET = 0.002
 
-    // Extract min/max from bounding box with inset (except top face)
-    const minX = box.min.x + INSET, maxX = box.max.x - INSET
-    const minY = box.min.y + INSET, maxY = box.max.y  // No inset on top
-    const minZ = box.min.z + INSET, maxZ = box.max.z - INSET
+    // Full block extents (face edges)
+    const x0 = box.min.x, x1 = box.max.x
+    const y0 = box.min.y, maxY = box.max.y
+    const z0 = box.min.z, z1 = box.max.z
+    // Inset face planes (except top face)
+    const minX = x0 + INSET, maxX = x1 - INSET
+    const minY = y0 + INSET
+    const minZ = z0 + INSET, maxZ = z1 - INSET
 
     // Calculate UV scale for side faces based on height ratio
-    const height = maxY - minY
+    const height = maxY - y0
     const uvHeight = height // Side face UVs scale with height
 
     // Face vertex definitions using actual bounding box dimensions
     // Each face has 4 vertices in CCW winding from outside
     const FACE_VERTS: number[][][] = [
       // TOP (bit 0) - +Y face
-      [[minX, maxY, minZ], [maxX, maxY, minZ], [maxX, maxY, maxZ], [minX, maxY, maxZ]],
+      [[x0, maxY, z0], [x1, maxY, z0], [x1, maxY, z1], [x0, maxY, z1]],
       // BOTTOM (bit 1) - -Y face
-      [[minX, minY, maxZ], [maxX, minY, maxZ], [maxX, minY, minZ], [minX, minY, minZ]],
+      [[x0, minY, z1], [x1, minY, z1], [x1, minY, z0], [x0, minY, z0]],
       // NORTH (bit 2) - -Z face
-      [[maxX, minY, minZ], [minX, minY, minZ], [minX, maxY, minZ], [maxX, maxY, minZ]],
+      [[x1, y0, minZ], [x0, y0, minZ], [x0, maxY, minZ], [x1, maxY, minZ]],
       // SOUTH (bit 3) - +Z face
-      [[minX, minY, maxZ], [maxX, minY, maxZ], [maxX, maxY, maxZ], [minX, maxY, maxZ]],
+      [[x0, y0, maxZ], [x1, y0, maxZ], [x1, maxY, maxZ], [x0, maxY, maxZ]],
       // EAST (bit 4) - +X face
-      [[maxX, minY, maxZ], [maxX, minY, minZ], [maxX, maxY, minZ], [maxX, maxY, maxZ]],
+      [[maxX, y0, z1], [maxX, y0, z0], [maxX, maxY, z0], [maxX, maxY, z1]],
       // WEST (bit 5) - -X face
-      [[minX, minY, minZ], [minX, minY, maxZ], [minX, maxY, maxZ], [minX, maxY, minZ]],
+      [[minX, y0, z0], [minX, y0, z1], [minX, maxY, z1], [minX, maxY, z0]],
     ]
 
     const FACE_NORMALS: number[][] = [
@@ -338,12 +335,8 @@ export class GreedyChunkMesh implements IChunkMesh {
       const py = positions[i * 3 + 1] + 0.5
       const pz = positions[i * 3 + 2] + 0.5
 
-      // Calculate brightness
-      // Full-brightness knee at 11 (must match GreedyMeshWorker)
-      const light = lights[i] ?? 15
-      const minBrightness = 0.02
-      const normalized = Math.min(light, 11) / 11
-      const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
+      // Light colour from the shared curve (packed sky << 4 | block)
+      const color = packedLightToColor(lights[i] ?? 0xF0)
 
       for (let f = 0; f < 6; f++) {
         if (!(pattern & (1 << f))) continue
@@ -352,14 +345,18 @@ export class GreedyChunkMesh implements IChunkMesh {
         const uvs = FACE_UVS[f]
         const norm = FACE_NORMALS[f]
         const baseVert = vertOffset
+        // Side faces: raise the bottom edge (vertices 0 and 1, at y0 / v 0)
+        // to the lower same-liquid neighbour's surface, texture kept aligned
+        const clip = f >= 2 ? ((pattern >>> (LIQUID_SIDE_CLIP_SHIFT + 4 * (f - 2))) & 15) / 8 : 0
 
         // Emit 4 vertices for this face
         for (let v = 0; v < 4; v++) {
           const vi = vertOffset * 3
           const ui = vertOffset * 2
+          const lift = v < 2 ? clip : 0
 
           posArr[vi] = px + verts[v][0]
-          posArr[vi + 1] = py + verts[v][1]
+          posArr[vi + 1] = py + verts[v][1] + lift
           posArr[vi + 2] = pz + verts[v][2]
 
           normArr[vi] = norm[0]
@@ -367,36 +364,48 @@ export class GreedyChunkMesh implements IChunkMesh {
           normArr[vi + 2] = norm[2]
 
           uvArr[ui] = uvs[v][0]
-          uvArr[ui + 1] = uvs[v][1]
+          uvArr[ui + 1] = uvs[v][1] + lift
 
-          colorArr[vi] = brightness
-          colorArr[vi + 1] = brightness
-          colorArr[vi + 2] = brightness
+          colorArr[vi] = color.r
+          colorArr[vi + 1] = color.g
+          colorArr[vi + 2] = color.b
 
           vertOffset++
         }
 
-        // Emit 2 triangles (6 indices)
-        indices.push(
-          baseVert, baseVert + 1, baseVert + 2,
-          baseVert, baseVert + 2, baseVert + 3
-        )
+        // Emit 2 triangles (6 indices). The TOP/BOTTOM vertex lists run
+        // clockwise seen from outside, so wind them reversed: with DoubleSide
+        // three.js flips the shading normal on back faces, and a mis-wound top
+        // would be shaded as if facing down (never sunlit).
+        if (f <= 1) {
+          indices.push(
+            baseVert, baseVert + 2, baseVert + 1,
+            baseVert, baseVert + 3, baseVert + 2
+          )
+        } else {
+          indices.push(
+            baseVert, baseVert + 1, baseVert + 2,
+            baseVert, baseVert + 2, baseVert + 3
+          )
+        }
       }
     }
 
-    // Create geometry
+    // Create geometry (never read back on the CPU: JS copies are freed once uploaded)
     const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
-    geometry.setAttribute('normal', new THREE.BufferAttribute(normArr, 3))
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2))
-    geometry.setAttribute('color', new THREE.BufferAttribute(colorArr, 3))
+    const attribute = (array: Float32Array | Uint16Array | Uint32Array, itemSize: number) =>
+      new THREE.BufferAttribute(array, itemSize).onUpload(releaseArrayAfterUpload)
+    geometry.setAttribute('position', attribute(posArr, 3))
+    geometry.setAttribute('normal', attribute(normArr, 3))
+    geometry.setAttribute('uv', attribute(uvArr, 2))
+    geometry.setAttribute('color', attribute(colorArr, 3))
 
     // Use Uint32Array if needed
     const indexArray = vertOffset > 65535 ? new Uint32Array(indices) : new Uint16Array(indices)
-    geometry.setIndex(new THREE.BufferAttribute(indexArray, 1))
+    geometry.setIndex(attribute(indexArray, 1))
 
     // Set bounds from the known sub-chunk cube instead of a lazy per-vertex scan.
-    this.setStaticChunkBounds(geometry)
+    this.setStaticChunkBounds(geometry, false)
 
     // Create mesh
     const mesh = new THREE.Mesh(geometry, material)
@@ -414,63 +423,6 @@ export class GreedyChunkMesh implements IChunkMesh {
   }
 
   /**
-   * Build a BatchedMesh for blocks requiring per-instance depth sorting
-   */
-  private buildBatchedMesh(
-    blockId: BlockId,
-    geometry: THREE.BufferGeometry,
-    material: THREE.Material | THREE.Material[],
-    positions: Float32Array,
-    lights: Uint8Array,
-    count: number,
-    matrix: THREE.Matrix4
-  ): void {
-    const posAttr = geometry.getAttribute('position')
-    const indexAttr = geometry.getIndex()
-    const vertexCount = posAttr ? posAttr.count : 0
-    const indexCount = indexAttr ? indexAttr.count : vertexCount * 2
-
-    const batchedMesh = new THREE.BatchedMesh(
-      count,
-      vertexCount * count,
-      indexCount * count,
-      Array.isArray(material) ? material[0] : material
-    )
-    batchedMesh.frustumCulled = false  // Disable frustum culling - causes edge artifacts
-    batchedMesh.perObjectFrustumCulled = false  // Disable per-instance culling too
-    batchedMesh.castShadow = true
-    batchedMesh.receiveShadow = true
-    batchedMesh.matrixAutoUpdate = false  // Static: instance transforms are baked
-    batchedMesh.sortObjects = true  // Enable per-instance depth sorting
-    batchedMesh.renderOrder = 2     // Render after alpha-tested transparency
-
-    // Add geometry once
-    const geometryId = batchedMesh.addGeometry(geometry)
-
-    // Add instances
-    for (let j = 0; j < count; j++) {
-      const posIdx = j * 3
-      matrix.setPosition(
-        positions[posIdx] + 0.5,
-        positions[posIdx + 1] + 0.5,
-        positions[posIdx + 2] + 0.5
-      )
-      const instanceId = batchedMesh.addInstance(geometryId)
-      batchedMesh.setMatrixAt(instanceId, matrix)
-
-      // Calculate brightness from light level
-      const light = lights[j] ?? 15
-      const minBrightness = 0.02
-      const normalized = light / 15
-      const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
-      batchedMesh.setColorAt(instanceId, new THREE.Color(brightness, brightness, brightness))
-    }
-
-    this.batchedMeshes.set(blockId, batchedMesh)
-    this.group.add(batchedMesh)
-  }
-
-  /**
    * Build an InstancedMesh for opaque or alpha-tested blocks.
    */
   private buildInstancedMesh(
@@ -484,6 +436,8 @@ export class GreedyChunkMesh implements IChunkMesh {
     matrix: THREE.Matrix4,
     mat: THREE.Material | undefined
   ): void {
+    // instanceColor carries light levels; the material turns them into light
+    prepareInstancedBlockMaterial(material)
     const instancedMesh = new THREE.InstancedMesh(geometry, material, count)
     instancedMesh.frustumCulled = true
     instancedMesh.castShadow = true
@@ -495,7 +449,7 @@ export class GreedyChunkMesh implements IChunkMesh {
       instancedMesh.renderOrder = 1
     }
 
-    const colors = new Float32Array(count * 3)
+    const lightLevels = new Float32Array(count * 3)
     const rotationMatrix = new THREE.Matrix4()
     const positionVector = new THREE.Vector3()
 
@@ -525,18 +479,10 @@ export class GreedyChunkMesh implements IChunkMesh {
 
       instancedMesh.setMatrixAt(j, matrix)
 
-      // Calculate brightness from light level
-      const light = lights[j] ?? 15
-      const minBrightness = 0.02
-      const normalized = light / 15
-      const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
-
-      colors[posIdx] = brightness
-      colors[posIdx + 1] = brightness
-      colors[posIdx + 2] = brightness
+      writeInstanceLight(lightLevels, j, lights[j] ?? 0xF0)
     }
 
-    instancedMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
+    instancedMesh.instanceColor = new THREE.InstancedBufferAttribute(lightLevels, 3)
     instancedMesh.instanceMatrix.needsUpdate = true
 
     this.instancedMeshes.set(blockId, instancedMesh)
@@ -568,58 +514,22 @@ export class GreedyChunkMesh implements IChunkMesh {
   }
 
   /**
-   * Dispose of all GPU resources.
+   * Dispose of all GPU resources. geometry.dispose() frees every attribute
+   * and the index (three's WebGLGeometries), and InstancedMesh.dispose()
+   * frees instanceMatrix / instanceColor (WebGLObjects).
    */
-  dispose(renderer?: THREE.WebGLRenderer): void {
+  dispose(): void {
     for (const mesh of this.meshes) {
-      // Remove buffer attributes from WebGL cache - critical for memory cleanup
-      // Same pattern as InstancedMesh cleanup below
-      if (renderer) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const glAttributes = (renderer as any).attributes
-        if (glAttributes) {
-          const geometry = mesh.geometry
-          const position = geometry.getAttribute('position')
-          const uv = geometry.getAttribute('uv')
-          const normal = geometry.getAttribute('normal')
-          const color = geometry.getAttribute('color')
-          const index = geometry.getIndex()
-          if (position) glAttributes.remove(position)
-          if (uv) glAttributes.remove(uv)
-          if (normal) glAttributes.remove(normal)
-          if (color) glAttributes.remove(color)
-          if (index) glAttributes.remove(index)
-        }
-      }
       mesh.geometry.dispose()
-      // Do NOT dispose mesh.material - it's the shared atlas material
+      // Do NOT dispose mesh.material - chunk and liquid materials are shared
     }
     this.meshes.length = 0
 
     for (const instancedMesh of this.instancedMeshes.values()) {
-      // Remove buffer attributes from WebGL cache - critical for memory cleanup
-      // InstancedMesh instanceMatrix/instanceColor are NOT freed by dispose()
-      if (renderer) {
-        // Access internal WebGL attributes manager to properly free GPU memory
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const glAttributes = (renderer as any).attributes
-        if (glAttributes) {
-          glAttributes.remove(instancedMesh.instanceMatrix)
-          if (instancedMesh.instanceColor) {
-            glAttributes.remove(instancedMesh.instanceColor)
-          }
-        }
-      }
       instancedMesh.dispose()
       // Note: geometry and material are shared from Block definitions
     }
     this.instancedMeshes.clear()
-
-    for (const batchedMesh of this.batchedMeshes.values()) {
-      batchedMesh.dispose()
-      // Note: geometry and material are shared from Block definitions
-    }
-    this.batchedMeshes.clear()
 
     // Clear group children to release references
     this.group.clear()
@@ -629,7 +539,7 @@ export class GreedyChunkMesh implements IChunkMesh {
    * Get the number of mesh objects in this chunk.
    */
   getMeshCount(): number {
-    return this.meshes.length + this.instancedMeshes.size + this.batchedMeshes.size
+    return this.meshes.length + this.instancedMeshes.size
   }
 
   /**

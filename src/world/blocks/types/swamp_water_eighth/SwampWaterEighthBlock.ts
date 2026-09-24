@@ -3,13 +3,11 @@ import type { IBlockProperties, BlockFace, IBlock } from '../../../interfaces/IB
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
-import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
-import swampWaterTexUrl from './assets/swamp-water.webp'
+import { withWhiteVertexColors } from '../../../../renderer/LiquidMaterials.ts'
+import { swampWaterTexUrl, swampWaterMaterial } from '../swamp_water/swampWaterMaterial.ts'
 
-registerTextureUrl(TextureId.SWAMP_WATER_EIGHTH, swampWaterTexUrl, true)
-
-const swampWaterTexture = loadBlockTexture(swampWaterTexUrl)
+registerTextureUrl(TextureId.SWAMP_WATER_EIGHTH, swampWaterTexUrl)
 
 function createGeometry(): THREE.BufferGeometry {
   const height = 0.125
@@ -28,13 +26,7 @@ function createGeometry(): THREE.BufferGeometry {
   return geometry
 }
 
-const geometry = createGeometry()
-const material = new THREE.MeshLambertMaterial({
-  map: swampWaterTexture,
-  transparent: true,
-  opacity: 0.8,
-  side: THREE.DoubleSide,
-})
+const geometry = withWhiteVertexColors(createGeometry())
 
 export class SwampWaterEighthBlock extends TransparentBlock {
   readonly properties: IBlockProperties = {
@@ -61,7 +53,7 @@ export class SwampWaterEighthBlock extends TransparentBlock {
   }
 
   protected getMaterials(): THREE.Material {
-    return material
+    return swampWaterMaterial
   }
 
   isGreedyMeshable(): boolean {

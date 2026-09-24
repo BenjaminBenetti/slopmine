@@ -3,6 +3,14 @@ const STORAGE_KEY = 'slopmine:graphicsSettings'
 export type ResolutionPreset = '720p' | '1080p' | '1440p' | '4k' | 'native'
 export type FramerateLimit = 30 | 60 | 80 | 120 | 240 | 9999
 export type ShadowMapSize = 1024 | 2048 | 4096 | 8192
+/** Far-terrain (LOD) distance in chunks. */
+export type LodDistance = 12 | 16 | 20 | 24 | 32
+
+export const LOD_DISTANCE_OPTIONS: readonly LodDistance[] = [12, 16, 20, 24, 32]
+
+/** Block texture minification: crisp pixel art or smooth (trilinear). */
+export const TEXTURE_FILTERING_OPTIONS = ['crisp', 'smooth'] as const
+export type TextureFiltering = (typeof TEXTURE_FILTERING_OPTIONS)[number]
 
 export interface IGraphicsSettings {
   cullingEnabled: boolean
@@ -10,6 +18,11 @@ export interface IGraphicsSettings {
   framerateLimit: FramerateLimit
   shadowsEnabled: boolean
   shadowMapSize: ShadowMapSize
+  /** Draw low-detail far terrain beyond the full-detail render distance. */
+  lodEnabled: boolean
+  lodDistance: LodDistance
+  /** Block texture minification style (applied by TextureLoader.setTextureFiltering). */
+  textureFiltering: TextureFiltering
 }
 
 const DEFAULT_SETTINGS: IGraphicsSettings = {
@@ -18,6 +31,9 @@ const DEFAULT_SETTINGS: IGraphicsSettings = {
   framerateLimit: 9999,
   shadowsEnabled: false,
   shadowMapSize: 4096,
+  lodEnabled: true,
+  lodDistance: 24,
+  textureFiltering: 'crisp',
 }
 
 export class GraphicsSettings {
@@ -72,12 +88,46 @@ export class GraphicsSettings {
     this.save()
   }
 
+  get lodEnabled(): boolean {
+    return this.settings.lodEnabled
+  }
+
+  set lodEnabled(value: boolean) {
+    this.settings.lodEnabled = value
+    this.save()
+  }
+
+  get lodDistance(): LodDistance {
+    return this.settings.lodDistance
+  }
+
+  set lodDistance(value: LodDistance) {
+    this.settings.lodDistance = value
+    this.save()
+  }
+
+  get textureFiltering(): TextureFiltering {
+    return this.settings.textureFiltering
+  }
+
+  set textureFiltering(value: TextureFiltering) {
+    this.settings.textureFiltering = value
+    this.save()
+  }
+
   private load(): IGraphicsSettings {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
         const parsed = JSON.parse(stored) as Partial<IGraphicsSettings>
-        return { ...DEFAULT_SETTINGS, ...parsed }
+        const settings = { ...DEFAULT_SETTINGS, ...parsed }
+        if (!LOD_DISTANCE_OPTIONS.includes(settings.lodDistance)) {
+          settings.lodDistance = DEFAULT_SETTINGS.lodDistance
+        }
+        if (!TEXTURE_FILTERING_OPTIONS.includes(settings.textureFiltering)) {
+          settings.textureFiltering = DEFAULT_SETTINGS.textureFiltering
+        }
+        return settings
       }
     } catch (e) {
       console.warn('Failed to load graphics settings:', e)

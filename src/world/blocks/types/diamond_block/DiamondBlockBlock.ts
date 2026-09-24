@@ -10,7 +10,7 @@ import { DiamondItem } from '../../../../items/ores/diamond/DiamondItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import diamondBlockTexUrl from './assets/diamond_block.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.DIAMOND_BLOCK, diamondBlockTexUrl)
 
 const diamondBlockTexture = loadBlockTexture(diamondBlockTexUrl)

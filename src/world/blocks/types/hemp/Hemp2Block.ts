@@ -10,8 +10,8 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { HempBlockEntity } from './HempBlockEntity.ts'
 import hemp2TexUrl from './assets/hemp-2.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.HEMP_2, hemp2TexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.HEMP_2, hemp2TexUrl)
 
 const hemp2Texture = loadBlockTexture(hemp2TexUrl)
 

@@ -6,12 +6,15 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
+import { registerEmissiveTexture } from '../../../../renderer/EmissiveTextures.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import { BlueMushroomCapBlockItem } from '../../../../items/blocks/blue_mushroom_cap/BlueMushroomCapBlockItem.ts'
 import blueMushroomCapTexUrl from './assets/blue_mushroom_cap.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.BLUE_MUSHROOM_CAP, blueMushroomCapTexUrl)
+// Emissive: the whole cap is bioluminescent
+registerEmissiveTexture(TextureId.BLUE_MUSHROOM_CAP, { strength: 0.45, threshold: 0.0 })
 
 const blueMushroomCapTexture = loadBlockTexture(blueMushroomCapTexUrl)
 const blueMushroomCapMaterial = new THREE.MeshLambertMaterial({ map: blueMushroomCapTexture })

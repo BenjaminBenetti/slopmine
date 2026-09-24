@@ -9,8 +9,8 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { PineconeItem } from '../../../../items/materials/pinecone/PineconeItem.ts'
 import pineconeTexUrl from './assets/pinecone.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.PINECONE, pineconeTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.PINECONE, pineconeTexUrl)
 
 const pineconeTexture = loadBlockTexture(pineconeTexUrl)
 

@@ -10,7 +10,7 @@ import { SandBlockItem } from '../../../../items/blocks/sand/SandBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import sandTexUrl from './assets/sand.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.SAND, sandTexUrl)
 
 const sandTexture = loadBlockTexture(sandTexUrl)

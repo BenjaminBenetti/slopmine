@@ -10,7 +10,7 @@ import { StoneBlockItem } from '../../../../items/blocks/stone/StoneBlockItem.ts
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import stoneTexUrl from './assets/stone.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.STONE, stoneTexUrl)
 
 const stoneTexture = loadBlockTexture(stoneTexUrl)

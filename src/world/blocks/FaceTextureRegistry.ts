@@ -1,3 +1,5 @@
+import { BlockIds } from './BlockIds.ts'
+
 /**
  * Texture IDs for greedy meshing face grouping.
  * Faces with different texture IDs cannot be merged together.
@@ -249,6 +251,26 @@ export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108,
   110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124,
   126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140,
+])
+
+/**
+ * Greedy block faces (blockId * 6 + face) whose texture is laid a quarter
+ * turn: the texture's vertical axis runs along the face's horizontal (u)
+ * axis instead of up the face (or toward +Z on top/bottom faces). For
+ * textures with a direction, like bark grain, on blocks lying on their side.
+ * Faces: TOP=0, BOTTOM=1, NORTH=2, SOUTH=3, EAST=4, WEST=5.
+ * Their item displays must turn the same faces (quarterTurnedCube in
+ * blocks/QuarterTurnedCube.ts) so the held block matches the world.
+ */
+export const QUARTER_TURN_FACES: ReadonlySet<number> = new Set<number>([
+  // Fallen pine log along X: bark grain along X on top, bottom, north, south
+  BlockIds.FALLEN_PINE_LOG_X * 6 + 0,
+  BlockIds.FALLEN_PINE_LOG_X * 6 + 1,
+  BlockIds.FALLEN_PINE_LOG_X * 6 + 2,
+  BlockIds.FALLEN_PINE_LOG_X * 6 + 3,
+  // Fallen pine log along Z: top/bottom grain already runs along Z; turn the sides
+  BlockIds.FALLEN_PINE_LOG_Z * 6 + 4,
+  BlockIds.FALLEN_PINE_LOG_Z * 6 + 5,
 ])
 
 /**

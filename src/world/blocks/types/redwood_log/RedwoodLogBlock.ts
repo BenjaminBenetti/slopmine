@@ -11,7 +11,7 @@ import { RedwoodLogBlockItem } from '../../../../items/blocks/redwood_log/Redwoo
 import redwoodLogTexUrl from './assets/redwood-log.webp'
 import redwoodLogTopTexUrl from './assets/redwood-log-top.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.REDWOOD_LOG_SIDE, redwoodLogTexUrl)
 registerTextureUrl(TextureId.REDWOOD_LOG_END, redwoodLogTopTexUrl)
 

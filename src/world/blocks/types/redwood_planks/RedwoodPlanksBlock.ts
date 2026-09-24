@@ -10,7 +10,7 @@ import { RedwoodPlanksBlockItem } from '../../../../items/blocks/redwood_planks/
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import redwoodPlanksTexUrl from './assets/redwood-planks.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.REDWOOD_PLANKS, redwoodPlanksTexUrl)
 
 const redwoodPlanksTexture = loadBlockTexture(redwoodPlanksTexUrl)

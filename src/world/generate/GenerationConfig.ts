@@ -24,6 +24,31 @@ export function getLayerForSubChunk(subY: number): 0 | 1 {
   return subY < LAYER_BOUNDARY_SUB_CHUNK ? 0 : 1
 }
 
+/**
+ * Largest selectable full-detail chunk distance. Sub-chunk count grows roughly
+ * with d² × vertical range, so beyond 16 memory and draw objects explode;
+ * longer views come from the LOD far-terrain ring instead.
+ */
+export const MAX_CHUNK_DISTANCE = 16
+
+/**
+ * Cap on the vertical load radius (in sub-chunks). The vertical ellipsoid
+ * radius is ceil(d/2); past d=8 that loads deep underground and high sky
+ * sub-chunks nobody can see from the surface.
+ */
+export const MAX_VERTICAL_CHUNK_DISTANCE = 4
+
+/**
+ * Extra horizontal distance (chunks) before a loaded column unloads. Without
+ * slack, walking back and forth across a chunk border unloads and regenerates
+ * the whole edge ring every crossing.
+ */
+export const UNLOAD_HYSTERESIS_CHUNKS = 1.5
+
+function clampChunkDistance(value: number): number {
+  return Math.max(1, Math.min(MAX_CHUNK_DISTANCE, value))
+}
+
 export interface IGenerationConfig {
   seed: number
   chunkDistance: number
@@ -43,6 +68,8 @@ export class GenerationConfig {
 
   constructor(overrides?: Partial<IGenerationConfig>) {
     const { config, wasStored } = this.load(overrides)
+    // Older saves allowed distances up to 32 - clamp to the current cap
+    config.chunkDistance = clampChunkDistance(config.chunkDistance)
     this.config = config
     if (!wasStored) {
       this.save()
@@ -98,20 +125,24 @@ export class GenerationConfig {
   }
 
   set chunkDistance(value: number) {
-    this.config.chunkDistance = Math.max(1, Math.min(32, value))
+    this.config.chunkDistance = clampChunkDistance(value)
     this.save()
   }
 
+  /**
+   * Horizontal distance (chunks) beyond which loaded columns unload:
+   * the load distance plus hysteresis.
+   */
   getUnloadDistance(): number {
-    return this.config.chunkDistance
+    return this.config.chunkDistance + UNLOAD_HYSTERESIS_CHUNKS
   }
 
   /**
-   * Get the vertical (Y-axis) chunk distance.
-   * This is half of the horizontal distance, rounded up.
+   * Get the vertical (Y-axis) chunk distance: half of the horizontal
+   * distance rounded up, capped at MAX_VERTICAL_CHUNK_DISTANCE.
    */
   getVerticalDistance(): number {
-    return Math.ceil(this.config.chunkDistance / 2)
+    return Math.min(Math.ceil(this.config.chunkDistance / 2), MAX_VERTICAL_CHUNK_DISTANCE)
   }
 
   reset(newSeed?: number): void {

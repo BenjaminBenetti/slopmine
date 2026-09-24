@@ -10,7 +10,7 @@ import { OakFenceGateBlockItem } from '../../../../items/blocks/oak_fence_gate/O
 import { fenceGateClosedGeometry } from '../fence_gate_shared/FenceGateGeometry.ts'
 
 // Shared planks texture - lives in the oak planks block dir (which also
-// registers it with the texture atlas)
+// registers its texture URL)
 import oakPlanksTexUrl from '../oak_planks/assets/oak-planks.webp'
 
 const oakPlanksTexture = loadBlockTexture(oakPlanksTexUrl)

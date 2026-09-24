@@ -10,7 +10,7 @@ import { CactusBlockItem } from '../../../../items/blocks/cactus/CactusBlockItem
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import cactusTexUrl from './assets/cactus.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.CACTUS, cactusTexUrl)
 
 const cactusTexture = loadBlockTexture(cactusTexUrl)

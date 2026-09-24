@@ -11,7 +11,7 @@ import { OakLogBlockItem } from '../../../../items/blocks/oak_log/OakLogBlockIte
 import oakLogTexUrl from './assets/oak-log.webp'
 import oakLogTopTexUrl from './assets/oak-log-top.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.OAK_LOG_SIDE, oakLogTexUrl)
 registerTextureUrl(TextureId.OAK_LOG_END, oakLogTopTexUrl)
 

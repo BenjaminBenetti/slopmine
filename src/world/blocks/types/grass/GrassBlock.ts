@@ -12,7 +12,7 @@ import grassTexUrl from './assets/grass.webp'
 import dirtTexUrl from './assets/dirt.webp'
 import grassDirtTexUrl from './assets/grass-dirt.webp'
 
-// Register textures for atlas (DIRT is registered by DirtBlock)
+// Register textures (DIRT is registered by DirtBlock)
 registerTextureUrl(TextureId.GRASS_TOP, grassTexUrl)
 registerTextureUrl(TextureId.GRASS_SIDE, grassDirtTexUrl)
 

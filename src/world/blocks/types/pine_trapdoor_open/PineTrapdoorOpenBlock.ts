@@ -8,7 +8,7 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import { PineTrapdoorBlockItem } from '../../../../items/blocks/pine_trapdoor/PineTrapdoorBlockItem.ts'
 
-// Shared texture with the closed variant (registered for the atlas there)
+// Shared texture with the closed variant (registered there)
 import pineTrapdoorTexUrl from '../pine_trapdoor/assets/pine-trapdoor.webp'
 
 // Load texture and create this module's material

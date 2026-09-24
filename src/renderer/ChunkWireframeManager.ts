@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import type { IChunkCoordinate, ISubChunkCoordinate } from '../world/interfaces/ICoordinates.ts'
 import { createChunkKey, createSubChunkKey, type ChunkKey, type SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
-import type { IChunkMesh } from './ChunkMesh.ts'
+import type { IChunkMesh } from './interfaces/IChunkMesh.ts'
 import { BIOME_REGION_SIZE } from '../world/generate/biomes/BiomeRegistry.ts'
 
 /**

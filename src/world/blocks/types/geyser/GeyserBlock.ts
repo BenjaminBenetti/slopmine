@@ -10,7 +10,7 @@ import { GeyserBlockItem } from '../../../../items/blocks/geyser/GeyserBlockItem
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import geyserTexUrl from './assets/geyser.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.GEYSER, geyserTexUrl)
 
 const geyserTexture = loadBlockTexture(geyserTexUrl)
@@ -30,7 +30,7 @@ export class GeyserBlock extends SolidBlock {
     isSolid: true,
     isLiquid: false,
     hardness: 2.0,
-    lightLevel: 2, // Dim ember glow from the dormant cracks
+    lightLevel: 4, // Dim ember glow from the dormant vent
     lightBlocking: 15,
     demolitionForceRequired: 1, // Requires pickaxe
     tags: [BlockTags.ROCK],

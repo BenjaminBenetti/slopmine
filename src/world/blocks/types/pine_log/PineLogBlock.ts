@@ -12,7 +12,7 @@ import { PineResinItem } from '../../../../items/materials/pine_resin/PineResinI
 import pineLogTexUrl from './assets/pine-log.webp'
 import pineLogTopTexUrl from './assets/pine-log-top.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.PINE_LOG_SIDE, pineLogTexUrl)
 registerTextureUrl(TextureId.PINE_LOG_END, pineLogTopTexUrl)
 

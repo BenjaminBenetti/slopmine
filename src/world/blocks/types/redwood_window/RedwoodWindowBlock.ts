@@ -11,8 +11,8 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import redwoodWindowTexUrl from './assets/redwood-window.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.REDWOOD_WINDOW, redwoodWindowTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.REDWOOD_WINDOW, redwoodWindowTexUrl)
 
 const redwoodWindowTexture = loadBlockTexture(redwoodWindowTexUrl)
 

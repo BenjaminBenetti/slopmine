@@ -10,8 +10,8 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { HerbBlockEntity } from './HerbBlockEntity.ts'
 import herb2TexUrl from './assets/herb-2.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.HERB_2, herb2TexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.HERB_2, herb2TexUrl)
 
 const herb2Texture = loadBlockTexture(herb2TexUrl)
 

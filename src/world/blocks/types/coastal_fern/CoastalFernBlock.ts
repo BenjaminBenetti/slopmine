@@ -9,8 +9,8 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import coastalFernTexUrl from './assets/coastal-fern.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.COASTAL_FERN, coastalFernTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.COASTAL_FERN, coastalFernTexUrl)
 
 const coastalFernTexture = loadBlockTexture(coastalFernTexUrl)
 

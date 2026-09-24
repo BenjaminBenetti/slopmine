@@ -2,9 +2,9 @@ import type { BlockId } from './IBlock.ts'
 import type { IChunkCoordinate } from './ICoordinates.ts'
 
 /**
- * Interface for chunk data access during generation.
- * Both Chunk and WorkerChunk implement this interface,
- * allowing generation code to work with either.
+ * Interface for whole-column chunk data access in the biome generation API
+ * (BiomeGenerator.generate and friends). The generation worker works on
+ * sub-chunks through ISubChunkData / WorkerSubChunk instead.
  */
 export interface IChunkData {
   readonly coordinate: IChunkCoordinate

@@ -43,6 +43,7 @@ export class OakStairsBlock extends SolidBlock {
     hardness: 1.5,
     lightLevel: 0,
     lightBlocking: 0,
+    blocksVerticalLight: true,
     demolitionForceRequired: 0,
     tags: [BlockTags.WOOD],
   }

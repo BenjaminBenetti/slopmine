@@ -10,7 +10,7 @@ import { MudBlockItem } from '../../../../items/blocks/mud/MudBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import mudTexUrl from './assets/mud.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.MUD, mudTexUrl)
 
 const mudTexture = loadBlockTexture(mudTexUrl)

@@ -6,11 +6,15 @@ import { BlockIds } from '../blocks/BlockIds.ts'
 
 /**
  * SubChunk implementation using Uint16Array for block storage.
- * Each sub-chunk is 32x32x64 blocks (1/16th of a full column).
+ * Each sub-chunk is 32x32x32 blocks (1/16th of a full 512-block column).
  * Memory layout: Y-major for cache-friendly horizontal access.
  */
 export class SubChunk {
   readonly coordinate: ISubChunkCoordinate
+
+  /** Numeric chunk coordinates (hot-path lookups without BigInt). */
+  readonly cx: number
+  readonly cz: number
 
   private _state: ChunkState = ChunkState.UNLOADED
   private _dirty = false
@@ -25,16 +29,75 @@ export class SubChunk {
   skylightValue: number = 15
 
   /**
+   * Sky proof: nothing generated in this chunk column lies above this
+   * sub-chunk (no terrain above it, nothing crossing its top face - see
+   * provesSkyAbove). Unloaded sub-chunks above it are then treated as clear
+   * sky by the light engine. Persisted with the sub-chunk.
+   */
+  skyOpenAbove = false
+
+  /**
+   * Set by the LightEngine once this sub-chunk's light is integrated with the
+   * world. Only light-ready sub-chunks hold light and take part in
+   * propagation; anything else (not generated yet, or a placeholder created by
+   * decoration writes) is unknown and treated as dark/opaque.
+   */
+  lightReady = false
+
+  /** Pending LightEngine queue entries referencing this sub-chunk. */
+  lightQueueRefs = 0
+
+  // ---- Mesh invalidation (see WorldManager mesh-job lifecycle) ----
+  /** Bumped whenever a cell in this sub-chunk's padded (34^3) mesh volume changes. */
+  meshVersion = 0
+  /** meshVersion captured when the in-flight mesh job was sent. */
+  meshJobVersion = -1
+  /** A remesh was requested while a job was in flight. */
+  remeshPending = false
+  /** Held by the LightEngine: padded volume changed, waiting for light to settle. */
+  meshDirty = false
+  /** The pending remesh stems from a player edit (mesh with high priority). */
+  meshDirtyHigh = false
+  /**
+   * Bumped whenever data arrives for this sub-chunk or for any sub-chunk in
+   * its 26-neighbourhood (a load, or re-applied data). A mesh built at an
+   * older data version shows the world as it was before that data existed -
+   * e.g. faces toward a neighbour that was missing are culled - so it is not
+   * current, however recent its light (see WorldManager.onSubChunkMeshAdded).
+   */
+  meshDataVersion = 0
+  /** meshDataVersion captured when the in-flight mesh job was sent. */
+  meshJobDataVersion = -1
+  /** Consecutive failed mesh jobs for unchanged input (see WorldManager.handleMeshJobError). */
+  meshJobErrors = 0
+
+  // ---- Persistence (see WorldManager.saveSubChunkIfChanged) ----
+  /**
+   * Bumped whenever block ids or metadata change: setBlockId, setMetadata,
+   * setBlockData, fill*, and markDataChanged() for direct array writes.
+   */
+  dataVersion = 0
+  /**
+   * dataVersion whose exact content is already in the store (loaded from a
+   * confirmed record, or saved); -1 = none. Together with
+   * persistedSkyOpenAbove it decides whether an unload or autosave has to
+   * write the sub-chunk.
+   */
+  persistedDataVersion = -1
+  /** skyOpenAbove as stored with persistedDataVersion (null = the record has no sky proof). */
+  persistedSkyOpenAbove: boolean | null = null
+
+  /**
    * Block data stored as flat Uint16Array.
-   * Size: 32 * 32 * 64 = 65,536 blocks
-   * Memory: 65,536 * 2 bytes = 128 KB per sub-chunk
+   * Size: 32 * 32 * 32 = 32,768 blocks
+   * Memory: 32,768 * 2 bytes = 64 KB per sub-chunk
    */
   private readonly blocks: Uint16Array
 
   /**
    * Light data stored as flat Uint8Array.
    * Each byte: high nibble = skylight (0-15), low nibble = blocklight (0-15)
-   * Size: 32 * 32 * 64 = 65,536 bytes = 64 KB per sub-chunk
+   * Size: 32 * 32 * 32 = 32,768 bytes = 32 KB per sub-chunk
    */
   private readonly lightData: Uint8Array
 
@@ -42,13 +105,15 @@ export class SubChunk {
    * Block metadata stored as flat Uint8Array.
    * Each byte stores per-block metadata:
    * - Bits 0-1: Horizontal facing (0=NORTH, 1=EAST, 2=SOUTH, 3=WEST)
-   * - Bits 2-7: Reserved for future use
-   * Size: 32 * 32 * 64 = 65,536 bytes = 64 KB per sub-chunk
+   * - Higher bits: 3D rotation, flip, chest-loot and player-placed flags (see BlockFacing.ts)
+   * Size: 32 * 32 * 32 = 32,768 bytes = 32 KB per sub-chunk
    */
   private readonly metadata: Uint8Array
 
   constructor(coordinate: ISubChunkCoordinate) {
     this.coordinate = coordinate
+    this.cx = Number(coordinate.x)
+    this.cz = Number(coordinate.z)
     this.blocks = new Uint16Array(SUB_CHUNK_VOLUME)
     this.lightData = new Uint8Array(SUB_CHUNK_VOLUME)
     this.metadata = new Uint8Array(SUB_CHUNK_VOLUME)
@@ -64,7 +129,7 @@ export class SubChunk {
 
   /**
    * Get the world Y offset for this sub-chunk.
-   * Sub-chunk 0 starts at Y=0, sub-chunk 1 at Y=64, etc.
+   * Sub-chunk 0 starts at Y=0, sub-chunk 1 at Y=32, etc.
    */
   get worldYOffset(): number {
     return this.coordinate.subY * SUB_CHUNK_HEIGHT
@@ -91,6 +156,7 @@ export class SubChunk {
 
     this.blocks[index] = blockId
     this._dirty = true
+    this.dataVersion++
     return true
   }
 
@@ -100,6 +166,23 @@ export class SubChunk {
 
   markDirty(): void {
     this._dirty = true
+  }
+
+  /** Block or metadata arrays were written directly (getBlockData()/getMetadataData()). */
+  markDataChanged(): void {
+    this._dirty = true
+    this.dataVersion++
+  }
+
+  /** Whether the store already holds exactly this data. */
+  isPersistClean(): boolean {
+    return this.persistedDataVersion === this.dataVersion && this.persistedSkyOpenAbove === this.skyOpenAbove
+  }
+
+  /** Record that `version` (with skyOpenAbove) is what the store holds. */
+  markPersisted(version: number, skyOpenAbove: boolean | null): void {
+    this.persistedDataVersion = version
+    this.persistedSkyOpenAbove = skyOpenAbove
   }
 
   isDirty(): boolean {
@@ -165,6 +248,7 @@ export class SubChunk {
       return false
     }
     const index = localToSubChunkIndex(x, y, z)
+    if (this.metadata[index] !== (value & 0xff)) this.dataVersion++
     this.metadata[index] = value
     this._dirty = true
     return true
@@ -229,6 +313,7 @@ export class SubChunk {
   fill(blockId: BlockId): void {
     this.blocks.fill(blockId)
     this._dirty = true
+    this.dataVersion++
   }
 
   /**
@@ -245,6 +330,7 @@ export class SubChunk {
       this.blocks[i] = blockId
     }
     this._dirty = true
+    this.dataVersion++
   }
 
   /**
@@ -326,28 +412,18 @@ export class SubChunk {
   }
 
   /**
-   * Apply bulk data from worker generation result.
+   * Replace all block (and optionally metadata) data, e.g. with a generation
+   * result. Light is owned by the LightEngine and not touched here.
    */
-  applyWorkerData(blocks: Uint16Array, lightData: Uint8Array, metadataData?: Uint8Array): void {
-    if (!this._dirty) {
-      this.blocks.set(blocks)
-      this.lightData.set(lightData)
-      if (metadataData) {
-        this.metadata.set(metadataData)
-      }
+  setBlockData(blocks: Uint16Array, metadataData?: Uint8Array): void {
+    this.blocks.set(blocks)
+    if (metadataData) {
+      this.metadata.set(metadataData)
     } else {
-      // Merge: Keep existing non-air blocks, overwrite air with worker data
-      for (let i = 0; i < SUB_CHUNK_VOLUME; i++) {
-        if (this.blocks[i] === BlockIds.AIR) {
-          this.blocks[i] = blocks[i]
-          this.lightData[i] = lightData[i]
-          if (metadataData) {
-            this.metadata[i] = metadataData[i]
-          }
-        }
-      }
+      this.metadata.fill(0)
     }
     this._dirty = true
+    this.dataVersion++
   }
 
   dispose(): void {

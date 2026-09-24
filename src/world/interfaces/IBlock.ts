@@ -35,6 +35,14 @@ export interface IBlockProperties {
   readonly hardness: number
   readonly lightLevel: number
   readonly lightBlocking: number
+  /**
+   * Light can't pass through this block vertically (up or down), though the
+   * cell itself holds light and passes it sideways - shapes with a full
+   * horizontal face that don't fill their cell: slabs and stairs (Minecraft
+   * stops skylight at their faces). isOpaque must stay false for their face
+   * culling. See lighting/LightTables.ts.
+   */
+  readonly blocksVerticalLight?: boolean
   /** Minimum demolition force required to mine this block (0 = hand-minable) */
   readonly demolitionForceRequired: number
   /** Tags for tool effectiveness matching (e.g., 'stone', 'wood', 'dirt') */

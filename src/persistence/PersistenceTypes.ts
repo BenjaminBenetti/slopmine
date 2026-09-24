@@ -5,12 +5,27 @@
 
 // Binary format constants
 export const MAGIC_NUMBER = 0x534c4f50 // "SLOP" in ASCII
+// Sub-chunk records are written as version 2 - the same layout older builds
+// read (they accept only versions 1 and 2 and treat anything else as "never
+// saved", regenerating the sub-chunk and overwriting the record). What changed
+// since is carried in flags older builds ignore: light is no longer stored
+// (FLAG_HAS_LIGHT_DATA clear; the light engine relights every loaded
+// sub-chunk and ignores light in older saves), and FLAG_HAS_SKY_PROOF marks
+// records whose FLAG_SKY_OPEN_ABOVE holds the generation sky proof. Records
+// written as version 3 by an earlier build of this engine carry the proof
+// without FLAG_HAS_SKY_PROOF and are still read.
 export const PERSISTENCE_VERSION = 2
+/** Highest record version this build reads. */
+export const PERSISTENCE_MAX_READ_VERSION = 3
 export const HEADER_SIZE = 22 // 4 + 2 + 4 + 4 + 4 + 4 bytes (added metadata length)
 
 // Flags for sub-chunk binary format
 export const FLAG_HAS_LIGHT_DATA = 1 << 0
 export const FLAG_HAS_METADATA = 1 << 1
+/** With FLAG_HAS_SKY_PROOF (or version 3): the sub-chunk has no generated terrain above it (SubChunk.skyOpenAbove). */
+export const FLAG_SKY_OPEN_ABOVE = 1 << 2
+/** FLAG_SKY_OPEN_ABOVE is meaningful (records older than the sky proof lack it). */
+export const FLAG_HAS_SKY_PROOF = 1 << 3
 
 /**
  * Serialized inventory slot (item ID + count).
@@ -57,8 +72,14 @@ export interface WorldMetadata {
  */
 export interface PersistedSubChunkData {
   blocks: Uint16Array
-  lightData: Uint8Array
   metadata?: Uint8Array
+  /** Generation sky proof; undefined for saves older than the sky proof. */
+  skyOpenAbove?: boolean
+  /**
+   * True when read from the store; false when served from a save the worker
+   * hasn't confirmed yet (it may still fail, so the data isn't known stored).
+   */
+  confirmed?: boolean
 }
 
 /**
@@ -115,8 +136,8 @@ export type PersistenceWorkerRequest =
       chunkZ: string
       subY: number
       blocks: Uint16Array
-      lightData: Uint8Array
       metadata?: Uint8Array
+      skyOpenAbove: boolean
     }
   | {
       type: 'load-subchunk'
@@ -147,8 +168,8 @@ export type PersistenceWorkerRequest =
         chunkZ: string
         subY: number
         blocks: Uint16Array
-        lightData: Uint8Array
         metadata?: Uint8Array
+        skyOpenAbove: boolean
       }>
     }
   | { type: 'clear-all' }
@@ -167,7 +188,15 @@ export type PersistenceWorkerRequest =
       position: { x: string; y: string; z: string }
     }
 
-// Worker response message types
+/**
+ * Every request is posted with a unique requestId that the worker echoes in
+ * its response (errors included): the main thread pairs them by id, never by
+ * sub-chunk coordinate - a save and a load of the same sub-chunk can be in
+ * flight together.
+ */
+export type PersistenceWorkerEnvelope = PersistenceWorkerRequest & { requestId: number }
+
+// Worker response message types (posted with the request's requestId)
 export type PersistenceWorkerResponse =
   | { type: 'init-complete'; persisted: boolean }
   | { type: 'subchunk-saved'; chunkX: string; chunkZ: string; subY: number }
@@ -177,8 +206,8 @@ export type PersistenceWorkerResponse =
       chunkZ: string
       subY: number
       blocks: Uint16Array
-      lightData: Uint8Array
       metadata?: Uint8Array
+      skyOpenAbove?: boolean
     }
   | { type: 'subchunk-not-found'; chunkX: string; chunkZ: string; subY: number }
   | {

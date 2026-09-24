@@ -10,8 +10,8 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { createTallFernCrossGeometry, TALL_FERN_CROSS_WIDTH } from '../coastal_fern/CoastalFernBlock.ts'
 import coastalFernTopTexUrl from './assets/coastal-fern-top.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.COASTAL_FERN_TOP, coastalFernTopTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.COASTAL_FERN_TOP, coastalFernTopTexUrl)
 
 const coastalFernTopTexture = loadBlockTexture(coastalFernTopTexUrl)
 

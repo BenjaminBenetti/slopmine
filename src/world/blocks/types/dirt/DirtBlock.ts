@@ -10,7 +10,7 @@ import { DirtBlockItem } from '../../../../items/blocks/dirt/DirtBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import dirtTexUrl from './assets/dirt.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.DIRT, dirtTexUrl)
 
 const dirtTexture = loadBlockTexture(dirtTexUrl)

@@ -9,8 +9,8 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import blueFlowerTexUrl from './assets/blue-flower.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.BLUE_FLOWER, blueFlowerTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.BLUE_FLOWER, blueFlowerTexUrl)
 
 const blueFlowerTexture = loadBlockTexture(blueFlowerTexUrl)
 

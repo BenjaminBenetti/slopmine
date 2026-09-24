@@ -24,6 +24,13 @@ export interface IBlockAccessor {
   getBlockId(x: number, y: number, z: number): BlockId
   /** Set block at world coordinates, returns true if changed */
   setBlock(x: number, y: number, z: number, blockId: BlockId): boolean
+  /**
+   * Whether the cell's data is known (loaded). Optional: without it every
+   * cell counts as known. A liquid cell next to unknown data is left alone -
+   * flowing into (or drying up for lack of a feed from) data that isn't
+   * there would be wrong, and would never settle.
+   */
+  isKnown?(x: number, y: number, z: number): boolean
 }
 
 /**
@@ -298,6 +305,13 @@ export function processLiquidBlock(
   return changed
 }
 
+/** A liquid cell's update reads (and writes) only its six face neighbours: are they all known? */
+function hasKnownNeighborhood(accessor: IBlockAccessor, x: number, y: number, z: number): boolean {
+  const a = accessor as Required<IBlockAccessor>
+  return a.isKnown(x, y + 1, z) && a.isKnown(x, y - 1, z) && a.isKnown(x + 1, y, z) &&
+    a.isKnown(x - 1, y, z) && a.isKnown(x, y, z + 1) && a.isKnown(x, y, z - 1)
+}
+
 /**
  * Process all liquid blocks in a column.
  * liquidPositions should be sorted top-to-bottom (descending Y) for proper flow.
@@ -329,6 +343,7 @@ export function processLiquidColumn(
 
     const blockId = accessor.getBlockId(worldX, worldY, worldZ)
     if (isLiquidBlock(blockId)) {
+      if (accessor.isKnown && !hasKnownNeighborhood(accessor, worldX, worldY, worldZ)) continue
       if (processLiquidBlock(accessor, worldX, worldY, worldZ, chunkSize, columnsToRequeue, driedFallingColumns)) {
         anyChanged = true
       }

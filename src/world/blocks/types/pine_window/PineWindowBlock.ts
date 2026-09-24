@@ -11,8 +11,8 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import pineWindowTexUrl from './assets/pine-window.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.PINE_WINDOW, pineWindowTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.PINE_WINDOW, pineWindowTexUrl)
 
 const pineWindowTexture = loadBlockTexture(pineWindowTexUrl)
 

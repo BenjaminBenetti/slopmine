@@ -3,14 +3,12 @@ import type { IBlockProperties, BlockFace, IBlock } from '../../../interfaces/IB
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
-import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
-import lavaTexUrl from './assets/lava.webp'
+import { withWhiteVertexColors } from '../../../../renderer/LiquidMaterials.ts'
+import { lavaTexUrl, lavaMaterial } from '../lava/lavaMaterial.ts'
 
-// Register texture for atlas (marked as transparent)
-registerTextureUrl(TextureId.LAVA_SEVEN_EIGHTH, lavaTexUrl, true)
-
-const lavaTexture = loadBlockTexture(lavaTexUrl)
+// Register texture
+registerTextureUrl(TextureId.LAVA_SEVEN_EIGHTH, lavaTexUrl)
 
 /**
  * Create geometry for 7/8 height lava with corrected UVs.
@@ -47,19 +45,7 @@ function createLavaSevenEighthGeometry(): THREE.BufferGeometry {
   return geometry
 }
 
-const lavaSevenEighthGeometry = createLavaSevenEighthGeometry()
-
-/**
- * Semi-transparent orange material for partial lava with texture.
- */
-const lavaSevenEighthMaterial = new THREE.MeshLambertMaterial({
-  map: lavaTexture,
-  transparent: true,
-  opacity: 0.9,
-  side: THREE.DoubleSide,
-  emissive: new THREE.Color(0xff4400),
-  emissiveIntensity: 0.3,
-})
+const lavaSevenEighthGeometry = withWhiteVertexColors(createLavaSevenEighthGeometry())
 
 /**
  * Lava seven-eighth block - a transparent, non-solid liquid at 7/8 height.
@@ -90,7 +76,7 @@ export class LavaSevenEighthBlock extends TransparentBlock {
   }
 
   protected getMaterials(): THREE.Material {
-    return lavaSevenEighthMaterial
+    return lavaMaterial
   }
 
   /**

@@ -1,312 +1,246 @@
 import * as THREE from 'three'
-import cloudTextureUrl from './assets/cloud.webp'
+import type { BiomeAtmosphere } from './BiomeAtmosphere.ts'
+import { DEFAULT_CLOUD_COVERAGE, SKY_ZENITH_HEX } from './BiomeAtmosphere.ts'
+import { createCloudNoiseTexture } from './cloudNoise.ts'
 
 export interface SkyboxOptions {
   skyRadius?: number
   zenithColor?: THREE.Color
-  horizonColor?: THREE.Color
   sunColor?: THREE.Color
-  sunSize?: number
-  cloudCount?: number
+  /** Fraction of the sky covered by clouds (0-1) until the atmosphere sets it. */
+  cloudCoverage?: number
 }
 
+/** Cloud drift in cloud-texture UV units per second (shape and detail layers). */
+const CLOUD_WIND_SHAPES = new THREE.Vector2(0.0036, 0.0012)
+const CLOUD_WIND_DETAIL = new THREE.Vector2(0.0062, 0.0021)
+
+/**
+ * Sky dome: horizon-to-zenith gradient, sun disc + glow and a drifting cloud
+ * layer, all computed per pixel in a single draw call. Biome atmosphere
+ * (tint, brightness, horizon haze) comes from the shared BiomeAtmosphere, and
+ * the horizon color doubles as the distance-fog color (see getHorizonColor).
+ */
 export class Skybox {
   readonly skyMesh: THREE.Mesh
-  readonly sunMesh: THREE.Mesh
-  readonly cloudGroup: THREE.Group
-  private readonly skyRadius: number
-  /** Local sun direction (before applying camera offset) */
-  private sunDirection = new THREE.Vector3(0, 1, 0)
-  /** Pre-allocated for update() to avoid GC pressure */
-  private readonly tempSunPos = new THREE.Vector3()
-
-  // References for Y-based darkness updates
+  private readonly atmosphere: BiomeAtmosphere
   private readonly skyMaterial: THREE.ShaderMaterial
-  private readonly sunMaterial: THREE.MeshBasicMaterial
-  private readonly sunGlowMaterial: THREE.MeshBasicMaterial
-  private readonly cloudBaseOpacities: number[] = []
+  private readonly cloudTexture: THREE.DataTexture
+
+  /** Current underground darkness factor (0 = open sky, 1 = underground). */
+  private darkness = 0
 
   // Darkness transition thresholds
   private readonly darknessStartY = 180
   private readonly darknessEndY = 150
 
-  // Biome-based skybox modifiers (0-1 range)
-  private biomeBrightness = 1.0
-  private biomeTint = { r: 1.0, g: 1.0, b: 1.0 }
-
-  // Target values for smooth interpolation
-  private targetBiomeBrightness = 1.0
-  private targetBiomeTint = { r: 1.0, g: 1.0, b: 1.0 }
-  private readonly BIOME_BLEND_SPEED = 2.0 // units per second
-
-  constructor(options: SkyboxOptions = {}) {
+  constructor(atmosphere: BiomeAtmosphere, options: SkyboxOptions = {}) {
     const {
       skyRadius = 500,
-      zenithColor = new THREE.Color(0x1e90ff), // Deep blue at top
-      horizonColor = new THREE.Color(0x87ceeb), // Light sky blue at horizon
-      sunColor = new THREE.Color(0xffff80), // Bright yellow-white
-      sunSize = 30,
-      cloudCount = 20,
+      zenithColor = new THREE.Color(SKY_ZENITH_HEX),
+      sunColor = new THREE.Color(1.0, 0.93, 0.8),
+      cloudCoverage = DEFAULT_CLOUD_COVERAGE,
     } = options
 
-    this.skyRadius = skyRadius
+    this.atmosphere = atmosphere
+    this.cloudTexture = createCloudNoiseTexture()
+    this.skyMaterial = this.createSkyMaterial(zenithColor, sunColor, cloudCoverage)
+    this.skyMesh = new THREE.Mesh(new THREE.SphereGeometry(skyRadius, 32, 16), this.skyMaterial)
 
-    // Create sky dome with gradient shader
-    this.skyMesh = this.createSkyDome(zenithColor, horizonColor, skyRadius)
-
-    // Create sun disc
-    this.sunMesh = this.createSunDisc(sunColor, sunSize)
-
-    // Create cloud group
-    this.cloudGroup = this.createClouds(cloudCount, skyRadius * 0.8)
-
-    // Set negative renderOrder so skybox renders first (behind everything)
-    // and disable depth test so it never occludes world geometry
-    const skyRenderOrder = -1000
-    this.skyMesh.renderOrder = skyRenderOrder
-    this.sunMesh.renderOrder = skyRenderOrder + 1
-    this.cloudGroup.renderOrder = skyRenderOrder + 2
-    this.cloudGroup.children.forEach((child) => {
-      child.renderOrder = skyRenderOrder + 2
-    })
-
-    // Store material references for Y-based darkness updates
-    this.skyMaterial = this.skyMesh.material as THREE.ShaderMaterial
-    this.sunMaterial = this.sunMesh.material as THREE.MeshBasicMaterial
-    this.sunGlowMaterial = (this.sunMesh.children[0] as THREE.Mesh)
-      .material as THREE.MeshBasicMaterial
-
-    // Store base cloud opacities
-    this.cloudGroup.children.forEach((child) => {
-      if (child instanceof THREE.Sprite) {
-        this.cloudBaseOpacities.push(child.material.opacity)
-      }
-    })
+    // Render after the world's opaque geometry (renderOrder 0) but before
+    // debug overlays (999+) that skip depth writes; transparent meshes still
+    // blend over it. At the far plane it only shades uncovered pixels.
+    this.skyMesh.renderOrder = 500
+    this.skyMesh.frustumCulled = false
   }
 
-  private createSkyDome(
+  private createSkyMaterial(
     zenithColor: THREE.Color,
-    horizonColor: THREE.Color,
-    radius: number
-  ): THREE.Mesh {
-    const geometry = new THREE.SphereGeometry(radius, 32, 32)
-
-    // Custom shader for gradient from horizon to zenith
-    const material = new THREE.ShaderMaterial({
+    sunColor: THREE.Color,
+    cloudCoverage: number
+  ): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
       uniforms: {
         zenithColor: { value: zenithColor },
-        horizonColor: { value: horizonColor },
+        horizonColor: { value: new THREE.Color() },
+        undergroundColor: { value: new THREE.Color() },
+        skyTint: { value: new THREE.Color(1, 1, 1) },
+        skyBrightness: { value: 1.0 },
         darkness: { value: 0.0 },
-        biomeBrightness: { value: 1.0 },
-        biomeTint: { value: new THREE.Vector3(1.0, 1.0, 1.0) },
+        fogOverrideColor: { value: new THREE.Color() },
+        fogOverride: { value: 0.0 },
+        sunDirection: { value: new THREE.Vector3(0, 1, 0) },
+        sunColor: { value: sunColor },
+        cloudNoise: { value: this.cloudTexture },
+        cloudOffsetShapes: { value: new THREE.Vector2() },
+        cloudOffsetDetail: { value: new THREE.Vector2() },
+        cloudCoverage: { value: cloudCoverage },
+        cloudTint: { value: new THREE.Color(1, 1, 1) },
+        cloudOpacity: { value: 1.0 },
       },
-      vertexShader: `
+      vertexShader: /* glsl */ `
         varying vec3 vLocalPosition;
         void main() {
-          // Use local position so gradient is relative to sphere center (camera), not world origin
+          // Local position: the dome is centered on the camera, so this is the view direction
           vLocalPosition = position;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          // Pin to the far plane: drawn after the terrain, the depth test then
+          // skips every pixel already covered, and no dome radius can clip it.
+          gl_Position.z = gl_Position.w;
         }
       `,
-      fragmentShader: `
+      fragmentShader: /* glsl */ `
         uniform vec3 zenithColor;
         uniform vec3 horizonColor;
+        uniform vec3 undergroundColor;
+        uniform vec3 skyTint;
+        uniform float skyBrightness;
         uniform float darkness;
-        uniform float biomeBrightness;
-        uniform vec3 biomeTint;
+        uniform vec3 fogOverrideColor;
+        uniform float fogOverride;
+        uniform vec3 sunDirection;
+        uniform vec3 sunColor;
+        uniform sampler2D cloudNoise;
+        uniform vec2 cloudOffsetShapes;
+        uniform vec2 cloudOffsetDetail;
+        uniform float cloudCoverage;
+        uniform vec3 cloudTint;
+        uniform float cloudOpacity;
         varying vec3 vLocalPosition;
+        #include <common>
+        #include <dithering_pars_fragment>
+
         void main() {
-          float h = normalize(vLocalPosition).y;
-          // Clamp to 0-1 range (horizon at y=0, zenith at y=1)
-          float t = clamp(h, 0.0, 1.0);
-          // Smooth transition
-          t = pow(t, 0.5);
-          vec3 color = mix(horizonColor, zenithColor, t);
-          // Apply biome tint
-          color *= biomeTint;
-          // Apply biome brightness
-          color *= biomeBrightness;
-          // Apply Y-based darkness factor (underground)
-          color *= (1.0 - darkness);
+          vec3 dir = normalize(vLocalPosition);
+          float h = dir.y;
+
+          // Gradient: horizon color at and below the horizon (matches the fog)
+          vec3 color = mix(horizonColor, zenithColor * skyTint, pow(clamp(h, 0.0, 1.0), 0.5));
+
+          // Sun: broad atmospheric glow, tight halo and a soft-edged disc
+          float sunDot = max(dot(dir, sunDirection), 0.0);
+          color += sunColor * (pow(sunDot, 12.0) * 0.16 + pow(sunDot, 180.0) * 0.55);
+          color += sunColor * 3.0 * smoothstep(0.99885, 0.99925, sunDot);
+
+          // Clouds: a flat deck intersected by the view ray. Large drifting
+          // shapes, eroded at their thin edges by two finer noise layers.
+          if (h > 0.0) {
+            vec2 deck = dir.xz / (h + 0.12);
+            float shapes = texture2D(cloudNoise, deck * 0.22 + cloudOffsetShapes).r;
+            float detail = texture2D(cloudNoise, deck * 1.0 + cloudOffsetDetail).g * 0.65
+                         + texture2D(cloudNoise, deck * 2.3 - cloudOffsetDetail).r * 0.35;
+            float edge = 1.0 - cloudCoverage;
+            float n = shapes - (1.0 - shapes) * detail * 0.4 + 0.10;
+            // Soft edges: a wide coverage ramp, never narrower than ~2 px on
+            // screen (fwidth), so thin parts are translucent wisps rather than
+            // hard cut-outs with a stepped, posterized rim
+            float ramp = 0.18 + 1.5 * fwidth(n);
+            float density = smoothstep(edge - 0.04, edge - 0.04 + ramp, n);
+            // Fade toward the horizon (tiny, aliased features; aerial haze)
+            density *= smoothstep(0.03, 0.28, h) * 0.96 * cloudOpacity;
+            // White thin parts, grey thick bases with a little billow texture;
+            // a silver lining toward the sun, mostly on the thin parts
+            float thick = smoothstep(edge, edge + 0.32, n);
+            vec3 cloudColor = mix(vec3(1.0), vec3(0.70, 0.73, 0.80), thick * (0.8 + 0.2 * detail));
+            cloudColor *= mix(vec3(1.0), skyTint, 0.5);
+            cloudColor += sunColor * pow(sunDot, 8.0) * 0.35 * (1.0 - 0.6 * thick);
+            // Biome cloud colour: grey overcast, dark volcanic ash
+            cloudColor *= cloudTint;
+            color = mix(color, cloudColor, density);
+          }
+
+          color *= skyBrightness;
+          // Underground: fade to the (biome) underground color
+          color = mix(color, undergroundColor, darkness);
+          // Inside a liquid the sky is beyond the (short) liquid fog's far end
+          color = mix(color, fogOverrideColor, fogOverride);
           gl_FragColor = vec4(color, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+          // Sub-LSB noise: smooth, dim gradients (overcast or hazy skies) band
+          // visibly in 8 bits otherwise
+          #include <dithering_fragment>
         }
       `,
       side: THREE.BackSide, // Render inside of sphere
       depthWrite: false,
+      fog: false,
+      dithering: true,
     })
-
-    return new THREE.Mesh(geometry, material)
-  }
-
-  private createSunDisc(color: THREE.Color, size: number): THREE.Mesh {
-    const geometry = new THREE.CircleGeometry(size, 32)
-    const material = new THREE.MeshBasicMaterial({
-      color: color,
-      transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
-    })
-
-    const mesh = new THREE.Mesh(geometry, material)
-    // Add a glow effect with a slightly larger, more transparent circle
-    const glowGeometry = new THREE.CircleGeometry(size * 1.5, 32)
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xffffcc),
-      transparent: true,
-      opacity: 0.3,
-      depthWrite: false,
-    })
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial)
-    glow.position.z = -0.1 // Slightly behind the sun
-    mesh.add(glow)
-
-    return mesh
-  }
-
-  private createClouds(count: number, radius: number): THREE.Group {
-    const group = new THREE.Group()
-
-    // Load cloud texture from asset
-    const textureLoader = new THREE.TextureLoader()
-    const texture = textureLoader.load(cloudTextureUrl)
-    texture.colorSpace = THREE.SRGBColorSpace
-
-    for (let i = 0; i < count; i++) {
-      // Vary opacity per cloud for soft, natural look
-      const baseOpacity = 0.5 + Math.random() * 0.4
-
-      const material = new THREE.SpriteMaterial({
-        map: texture,
-        transparent: true,
-        opacity: baseOpacity,
-        alphaTest: 0.01, // Discard nearly-transparent pixels
-        depthWrite: false,
-      })
-
-      const sprite = new THREE.Sprite(material)
-
-      // Position clouds in upper hemisphere
-      const phi = Math.random() * Math.PI * 0.4 + Math.PI * 0.1
-      const theta = Math.random() * Math.PI * 2
-
-      const x = radius * Math.cos(phi) * Math.cos(theta)
-      const y = radius * Math.sin(phi)
-      const z = radius * Math.cos(phi) * Math.sin(theta)
-
-      sprite.position.set(x, y, z)
-      sprite.scale.set(80 + Math.random() * 60, 30 + Math.random() * 20, 1)
-
-      group.add(sprite)
-    }
-
-    return group
-  }
-
-  /** Update sun direction (normalized) to match directional light */
-  setSunPosition(position: THREE.Vector3): void {
-    this.sunDirection.copy(position).normalize()
   }
 
   /**
-   * Set the biome-based skybox modifiers.
-   * These values will be smoothly interpolated towards.
-   * @param brightness - Brightness multiplier (0-1, default 1)
-   * @param tint - Color tint multiplier (RGB 0-1, default white)
+   * While the distance fog is overridden (camera inside a liquid), show the
+   * override's fog color instead of the sky: everything beyond the liquid
+   * fog's far end is fog, and the sky seen up through a water surface would
+   * otherwise stay bright and unfogged. Null restores the sky.
    */
-  setBiomeModifiers(
-    brightness: number = 1.0,
-    tint: { r: number; g: number; b: number } = { r: 1, g: 1, b: 1 }
-  ): void {
-    this.targetBiomeBrightness = Math.max(0, Math.min(1, brightness))
-    this.targetBiomeTint = {
-      r: Math.max(0, Math.min(1, tint.r)),
-      g: Math.max(0, Math.min(1, tint.g)),
-      b: Math.max(0, Math.min(1, tint.b)),
-    }
+  setFogOverride(color: THREE.Color | null): void {
+    const u = this.skyMaterial.uniforms
+    u.fogOverride.value = color ? 1 : 0
+    if (color) (u.fogOverrideColor.value as THREE.Color).copy(color)
   }
 
-  /** Call each frame to keep skybox centered on the camera */
+  /** Set the sun direction (normalized internally) to match the directional light. */
+  setSunDirection(direction: THREE.Vector3): void {
+    ;(this.skyMaterial.uniforms.sunDirection.value as THREE.Vector3).copy(direction).normalize()
+  }
+
+  /**
+   * The final displayed horizon color (linear): the tinted/hazed horizon with
+   * biome brightness and underground darkness applied - exactly what the dome
+   * shows at and below the horizon, so distance fog blends into the sky.
+   */
+  getHorizonColor(target: THREE.Color): THREE.Color {
+    const a = this.atmosphere
+    return target
+      .copy(a.horizonColor)
+      .multiplyScalar(a.skyBrightness)
+      .lerp(a.undergroundColor, this.darkness)
+  }
+
+  /** Call each frame to keep the dome centered on the camera and apply the atmosphere. */
   update(camera: THREE.Camera, deltaTime: number = 0.016): void {
     const cameraPos = camera.position
-
-    // Move all skybox elements to follow the camera
     this.skyMesh.position.copy(cameraPos)
-    this.cloudGroup.position.copy(cameraPos)
 
-    // Position sun relative to camera (using pre-allocated vector)
-    this.tempSunPos
-      .copy(this.sunDirection)
-      .multiplyScalar(this.skyRadius * 0.95)
-      .add(cameraPos)
-    this.sunMesh.position.copy(this.tempSunPos)
-    // Make sun face the camera
-    this.sunMesh.lookAt(cameraPos)
-
-    // Apply Y-based darkness (dark below darknessEndY, normal above darknessStartY)
-    const y = cameraPos.y
-    const darkness = Math.max(
+    // Y-based darkness (dark below darknessEndY, normal above darknessStartY)
+    this.darkness = Math.max(
       0,
-      Math.min(1, (this.darknessStartY - y) / (this.darknessStartY - this.darknessEndY))
+      Math.min(1, (this.darknessStartY - cameraPos.y) / (this.darknessStartY - this.darknessEndY))
     )
 
-    // Smoothly interpolate biome modifiers towards target values
-    const blendFactor = Math.min(1, this.BIOME_BLEND_SPEED * deltaTime)
-    this.biomeBrightness += (this.targetBiomeBrightness - this.biomeBrightness) * blendFactor
-    this.biomeTint.r += (this.targetBiomeTint.r - this.biomeTint.r) * blendFactor
-    this.biomeTint.g += (this.targetBiomeTint.g - this.biomeTint.g) * blendFactor
-    this.biomeTint.b += (this.targetBiomeTint.b - this.biomeTint.b) * blendFactor
+    const u = this.skyMaterial.uniforms
+    const a = this.atmosphere
+    u.darkness.value = this.darkness
+    u.skyBrightness.value = a.skyBrightness
+    ;(u.skyTint.value as THREE.Color).copy(a.skyTint)
+    ;(u.horizonColor.value as THREE.Color).copy(a.horizonColor)
+    ;(u.undergroundColor.value as THREE.Color).copy(a.undergroundColor)
+    u.cloudCoverage.value = a.cloudCoverage
+    u.cloudOpacity.value = a.cloudOpacity
+    ;(u.cloudTint.value as THREE.Color).copy(a.cloudTint)
 
-    // Update sky shader uniforms
-    this.skyMaterial.uniforms.darkness.value = darkness
-    this.skyMaterial.uniforms.biomeBrightness.value = this.biomeBrightness
-    const tintUniform = this.skyMaterial.uniforms.biomeTint.value as THREE.Vector3
-    tintUniform.set(this.biomeTint.r, this.biomeTint.g, this.biomeTint.b)
-
-    // Update sun opacity (affected by both Y-darkness and biome brightness)
-    const combinedBrightness = (1 - darkness) * this.biomeBrightness
-    this.sunMaterial.opacity = 0.95 * combinedBrightness
-    this.sunGlowMaterial.opacity = 0.3 * combinedBrightness
-    // Apply biome tint to sun (subtle tinting)
-    const avgTint = (this.biomeTint.r + this.biomeTint.g + this.biomeTint.b) / 3
-    this.sunMaterial.color.setRGB(
-      1.0 * (0.7 + 0.3 * this.biomeTint.r),
-      0.95 * (0.7 + 0.3 * this.biomeTint.g),
-      0.5 * (0.7 + 0.3 * avgTint)
-    )
-
-    // Update cloud opacities (affected by both Y-darkness and biome brightness)
-    let i = 0
-    this.cloudGroup.children.forEach((child) => {
-      if (child instanceof THREE.Sprite) {
-        child.material.opacity = this.cloudBaseOpacities[i] * combinedBrightness
-        i++
-      }
-    })
+    // Drift the cloud layers; offsets wrap (the noise tiles) to keep precision
+    const shapes = u.cloudOffsetShapes.value as THREE.Vector2
+    const detail = u.cloudOffsetDetail.value as THREE.Vector2
+    shapes.addScaledVector(CLOUD_WIND_SHAPES, deltaTime)
+    detail.addScaledVector(CLOUD_WIND_DETAIL, deltaTime)
+    shapes.set(shapes.x % 1, shapes.y % 1)
+    detail.set(detail.x % 1, detail.y % 1)
   }
 
   addTo(scene: THREE.Scene): void {
     scene.add(this.skyMesh)
-    scene.add(this.sunMesh)
-    scene.add(this.cloudGroup)
   }
 
   removeFrom(scene: THREE.Scene): void {
     scene.remove(this.skyMesh)
-    scene.remove(this.sunMesh)
-    scene.remove(this.cloudGroup)
   }
 
   dispose(): void {
     this.skyMesh.geometry.dispose()
-    ;(this.skyMesh.material as THREE.Material).dispose()
-    this.sunMesh.geometry.dispose()
-    ;(this.sunMesh.material as THREE.Material).dispose()
-
-    this.cloudGroup.children.forEach((child) => {
-      if (child instanceof THREE.Sprite) {
-        child.material.map?.dispose()
-        child.material.dispose()
-      }
-    })
+    this.skyMaterial.dispose()
+    this.cloudTexture.dispose()
   }
 }

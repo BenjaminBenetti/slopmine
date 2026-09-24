@@ -12,8 +12,8 @@ import { doorClosedGeometry } from '../door_shared/DoorGeometry.ts'
 import redwoodDoorUpperTexUrl from './assets/redwood-door-upper.webp'
 import redwoodPlanksEdgeTexUrl from '../redwood_planks/assets/redwood-planks.webp'
 
-// Register texture for atlas
-registerTextureUrl(TextureId.REDWOOD_DOOR_UPPER, redwoodDoorUpperTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.REDWOOD_DOOR_UPPER, redwoodDoorUpperTexUrl)
 
 const redwoodDoorUpperTexture = loadBlockTexture(redwoodDoorUpperTexUrl)
 const redwoodDoorUpperMaterial = new THREE.MeshLambertMaterial({

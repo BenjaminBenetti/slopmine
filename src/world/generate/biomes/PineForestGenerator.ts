@@ -231,6 +231,8 @@ export class PineForestGenerator extends BiomeGenerator {
     skybox: {
       brightness: 0.95,
       tint: { r: 0.9, g: 0.95, b: 1.0 },  // crisp, slightly cool mountain air
+      fogColor: { r: 0.7, g: 0.79, b: 0.86 }, // cool blue-grey distance
+      lightTint: { r: 0.96, g: 0.98, b: 1.0 },
     },
     entitySpawns: [
       {

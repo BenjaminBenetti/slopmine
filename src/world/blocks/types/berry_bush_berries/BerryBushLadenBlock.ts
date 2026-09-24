@@ -10,8 +10,8 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import berryBushBerriesTexUrl from './assets/berry-bush-berries.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.BERRY_BUSH_BERRIES, berryBushBerriesTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.BERRY_BUSH_BERRIES, berryBushBerriesTexUrl)
 
 const berryBushBerriesTexture = loadBlockTexture(berryBushBerriesTexUrl)
 

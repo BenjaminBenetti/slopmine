@@ -10,7 +10,7 @@ import { CopperOreItem } from '../../../../items/ores/copper/CopperOreItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import copperBlockTexUrl from './assets/copper_block.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.COPPER_BLOCK, copperBlockTexUrl)
 
 const copperBlockTexture = loadBlockTexture(copperBlockTexUrl)

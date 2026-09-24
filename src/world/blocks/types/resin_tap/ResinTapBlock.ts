@@ -12,7 +12,7 @@ import { ResinTapBlockItem } from '../../../../items/blocks/resin_tap/ResinTapBl
 import { PineResinItem } from '../../../../items/materials/pine_resin/PineResinItem.ts'
 import resinTapTexUrl from './assets/resin-tap.webp'
 
-// Register texture for atlas (icon generation / any future greedy use)
+// Register texture (icon generation / any future greedy use)
 registerTextureUrl(TextureId.RESIN_TAP, resinTapTexUrl)
 
 const resinTapTexture = loadBlockTexture(resinTapTexUrl)

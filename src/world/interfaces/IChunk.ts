@@ -15,11 +15,17 @@ export const CHUNK_VOLUME = CHUNK_SIZE_X * CHUNK_SIZE_Z * CHUNK_HEIGHT
 
 /**
  * Sub-chunk dimensions for vertical chunking.
- * Each column is divided into 8 sub-chunks of 128 blocks height.
+ * Each column is divided into 16 sub-chunks of 32 blocks height.
  */
 export const SUB_CHUNK_HEIGHT = 32
 export const SUB_CHUNK_COUNT = 16 // CHUNK_HEIGHT / SUB_CHUNK_HEIGHT
-export const SUB_CHUNK_VOLUME = CHUNK_SIZE_X * CHUNK_SIZE_Z * SUB_CHUNK_HEIGHT // 65,536
+export const SUB_CHUNK_VOLUME = CHUNK_SIZE_X * CHUNK_SIZE_Z * SUB_CHUNK_HEIGHT // 32,768
+
+/** Cells in one horizontal layer of a sub-chunk (the Y stride of y-major indexing). */
+export const SUB_CHUNK_LAYER = CHUNK_SIZE_X * CHUNK_SIZE_Z
+
+/** Index of the first cell of a sub-chunk's top layer (y = SUB_CHUNK_HEIGHT - 1). */
+export const SUB_CHUNK_TOP_ROW_START = (SUB_CHUNK_HEIGHT - 1) * SUB_CHUNK_LAYER
 
 /**
  * Chunk state for lifecycle management.

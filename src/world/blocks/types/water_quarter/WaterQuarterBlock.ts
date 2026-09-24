@@ -3,14 +3,12 @@ import type { IBlockProperties, BlockFace, IBlock } from '../../../interfaces/IB
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
-import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
-import waterTexUrl from './assets/water.webp'
+import { withWhiteVertexColors } from '../../../../renderer/LiquidMaterials.ts'
+import { waterTexUrl, waterMaterial } from '../water/waterMaterial.ts'
 
-// Register texture for atlas (marked as transparent)
-registerTextureUrl(TextureId.WATER_QUARTER, waterTexUrl, true)
-
-const waterTexture = loadBlockTexture(waterTexUrl)
+// Register texture
+registerTextureUrl(TextureId.WATER_QUARTER, waterTexUrl)
 
 /**
  * Create geometry for 1/4 height water with corrected UVs.
@@ -47,17 +45,7 @@ function createWaterQuarterGeometry(): THREE.BufferGeometry {
   return geometry
 }
 
-const waterQuarterGeometry = createWaterQuarterGeometry()
-
-/**
- * Semi-transparent blue material for partial water with texture.
- */
-const waterQuarterMaterial = new THREE.MeshLambertMaterial({
-  map: waterTexture,
-  transparent: true,
-  opacity: 0.75,
-  side: THREE.DoubleSide,
-})
+const waterQuarterGeometry = withWhiteVertexColors(createWaterQuarterGeometry())
 
 /**
  * Water quarter block - a transparent, non-solid liquid at 1/4 height.
@@ -88,7 +76,7 @@ export class WaterQuarterBlock extends TransparentBlock {
   }
 
   protected getMaterials(): THREE.Material {
-    return waterQuarterMaterial
+    return waterMaterial
   }
 
   /**

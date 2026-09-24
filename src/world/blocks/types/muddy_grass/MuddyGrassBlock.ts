@@ -12,7 +12,7 @@ import muddyGrassTopTexUrl from './assets/muddy_grass_top.webp'
 import muddyGrassSideTexUrl from './assets/muddy_grass_side.webp'
 import mudTexUrl from '../mud/assets/mud.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.MUDDY_GRASS_TOP, muddyGrassTopTexUrl)
 registerTextureUrl(TextureId.MUDDY_GRASS_SIDE, muddyGrassSideTexUrl)
 

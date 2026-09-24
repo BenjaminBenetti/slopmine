@@ -8,7 +8,7 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import { RedwoodTrapdoorBlockItem } from '../../../../items/blocks/redwood_trapdoor/RedwoodTrapdoorBlockItem.ts'
 
-// Shared texture with the closed variant (registered for the atlas there)
+// Shared texture with the closed variant (registered there)
 import redwoodTrapdoorTexUrl from '../redwood_trapdoor/assets/redwood-trapdoor.webp'
 
 // Load texture and create this module's material

@@ -6,12 +6,15 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
+import { registerEmissiveTexture } from '../../../../renderer/EmissiveTextures.ts'
 import { MagmaBlockItem } from '../../../../items/blocks/magma/MagmaBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import magmaTexUrl from './assets/magma.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.MAGMA, magmaTexUrl)
+// Emissive: the molten cracks glow
+registerEmissiveTexture(TextureId.MAGMA, { strength: 1.2, threshold: 0.1 })
 
 const magmaTexture = loadBlockTexture(magmaTexUrl)
 const magmaMaterial = new THREE.MeshLambertMaterial({ map: magmaTexture })
@@ -28,7 +31,7 @@ export class MagmaBlock extends SolidBlock {
     isSolid: true,
     isLiquid: false,
     hardness: 1.5,
-    lightLevel: 6, // Emits dim light from the glowing cracks
+    lightLevel: 8, // Molten cracks glow (emissive) and warm the rock around them
     lightBlocking: 15,
     demolitionForceRequired: 1, // Requires pickaxe
     tags: [BlockTags.ROCK],

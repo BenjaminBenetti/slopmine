@@ -10,7 +10,7 @@ import { PinePlanksBlockItem } from '../../../../items/blocks/pine_planks/PinePl
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import pinePlanksTexUrl from './assets/pine-planks.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.PINE_PLANKS, pinePlanksTexUrl)
 
 const pinePlanksTexture = loadBlockTexture(pinePlanksTexUrl)

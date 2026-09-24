@@ -5,6 +5,9 @@ import { createToolMesh } from './meshes/ToolMesh.ts'
 import { createBlockMesh } from './meshes/BlockMesh.ts'
 import { BlockIds } from '../../world/blocks/BlockIds.ts'
 import { isBlockShapedItem, disposeItemDisplayObject } from '../itemdisplay/index.ts'
+import { worldLightTerms } from '../lightCurve.ts'
+import { getWorldDaylight, getWorldLightFloor } from '../worldLightShader.ts'
+import { WORLD_LIGHT_DEFAULTS } from '../WorldLighting.ts'
 
 /**
  * Interface for querying block data for cave detection.
@@ -109,6 +112,8 @@ function isToolItem(item: IItem): boolean {
   )
 }
 
+const scratchLight = new THREE.Color()
+
 /**
  * Renders the currently held item in the player's hand.
  *
@@ -120,9 +125,17 @@ export class HeldItemRenderer {
   private readonly overlayCamera: THREE.PerspectiveCamera
   private readonly mainRenderer: THREE.WebGLRenderer
 
-  // Lighting for the overlay scene
+  // Lighting for the overlay scene: the world rig's lights (WorldLighting),
+  // scaled by the sky light at the player, plus the non-directional block
+  // light + floor (setWorldLight)
   private readonly ambientLight: THREE.AmbientLight
+  private readonly hemisphereLight: THREE.HemisphereLight
   private readonly directionalLight: THREE.DirectionalLight
+  private readonly nonDirectionalLight: THREE.AmbientLight
+  /** World light scratch (see setWorldLight) */
+  private readonly worldLight = { sky: 1, r: 0, g: 0, b: 0 }
+  /** Biome light tint, like WorldLighting.setTint (see setLightTint) */
+  private readonly lightTint = new THREE.Color(1, 1, 1)
 
   private currentMesh: THREE.Object3D | null = null
   private currentItem: IItem | null = null
@@ -183,9 +196,20 @@ export class HeldItemRenderer {
     )
     this.overlayCamera.position.set(0, 0, 0)
 
-    // Initialize lights (assigned in setupLighting)
-    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
-    this.directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+    // Same intensities and colours as the world's light rig (WorldLighting:
+    // cool ambient fill, sky/ground bounce, warm sun), so a held block shades
+    // like the blocks around it; setWorldLight() scales them by world light
+    this.ambientLight = new THREE.AmbientLight(WORLD_LIGHT_DEFAULTS.ambientColor, WORLD_LIGHT_DEFAULTS.ambientIntensity)
+    this.hemisphereLight = new THREE.HemisphereLight(
+      WORLD_LIGHT_DEFAULTS.skyColor,
+      WORLD_LIGHT_DEFAULTS.groundColor,
+      WORLD_LIGHT_DEFAULTS.hemisphereIntensity
+    )
+    this.directionalLight = new THREE.DirectionalLight(WORLD_LIGHT_DEFAULTS.sunColor, WORLD_LIGHT_DEFAULTS.sunIntensity)
+    // Block light + light floor, added like the chunk shader does: at full
+    // strength on every face. Intensity π cancels Lambert's 1/π, so its
+    // colour is exactly the terrain's non-directional term.
+    this.nonDirectionalLight = new THREE.AmbientLight(0x000000, Math.PI)
 
     // Add lighting to overlay scene
     this.setupLighting()
@@ -203,27 +227,42 @@ export class HeldItemRenderer {
    * Uses ambient + directional light for good visibility.
    */
   private setupLighting(): void {
-    // Ambient light for base visibility
+    // Ambient fill and sky/ground bounce (the overlay camera looks down -z
+    // with +y up, so the hemisphere's sky is above the item as in the world)
     this.overlayScene.add(this.ambientLight)
+    this.overlayScene.add(this.hemisphereLight)
+    this.overlayScene.add(this.nonDirectionalLight)
 
-    // Directional light from upper-left-front
-    this.directionalLight.position.set(-1, 1, 1)
+    // Sun from upper-left-front (camera space), like a high morning sun
+    this.directionalLight.position.set(-1, 1.5, 1)
     this.overlayScene.add(this.directionalLight)
   }
 
   /**
-   * Update lighting intensity based on surrounding block light level.
-   * @param level Light level from 0-15 (same as block lighting)
+   * Biome light tint (the atmosphere's lightTint, also applied to the world
+   * lights); takes effect with the next setWorldLight().
    */
-  setLightLevel(level: number): void {
-    // Use same brightness formula as block rendering for visual consistency
-    const minBrightness = 0.02
-    const normalized = level / 15
-    const brightness = minBrightness + Math.pow(normalized, 2.2) * (1 - minBrightness)
+  setLightTint(tint: THREE.Color): void {
+    this.lightTint.copy(tint)
+  }
 
-    // Scale base intensities by brightness
-    this.ambientLight.intensity = 0.6 * brightness
-    this.directionalLight.intensity = 0.8 * brightness
+  /**
+   * Light the held item by the world light around the player exactly as the
+   * chunk shader lights terrain (worldLightTerms): the rig lights scaled by
+   * the sky light (× daylight, × biome tint), plus warm block light and the
+   * light floor as non-directional light - so a held block under a torch
+   * matches the torch-lit wall beside it.
+   * @param packedLight Sky and block light packed as `sky << 4 | block`
+   */
+  setWorldLight(packedLight: number): void {
+    const light = this.worldLight
+    worldLightTerms(packedLight >> 4, packedLight & 15, getWorldDaylight(), light, getWorldLightFloor())
+    scratchLight.copy(this.lightTint).multiplyScalar(light.sky)
+    this.ambientLight.color.set(WORLD_LIGHT_DEFAULTS.ambientColor).multiply(scratchLight)
+    this.hemisphereLight.color.set(WORLD_LIGHT_DEFAULTS.skyColor).multiply(scratchLight)
+    this.hemisphereLight.groundColor.set(WORLD_LIGHT_DEFAULTS.groundColor).multiply(scratchLight)
+    this.directionalLight.color.set(WORLD_LIGHT_DEFAULTS.sunColor).multiply(scratchLight)
+    this.nonDirectionalLight.color.setRGB(light.r, light.g, light.b)
   }
 
   /**

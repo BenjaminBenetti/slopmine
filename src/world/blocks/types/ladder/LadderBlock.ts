@@ -11,8 +11,8 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { getMetadataFacing, BlockFacing } from '../../BlockFacing.ts'
 import ladderTexUrl from './assets/ladder.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.LADDER, ladderTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.LADDER, ladderTexUrl)
 
 const ladderTexture = loadBlockTexture(ladderTexUrl)
 

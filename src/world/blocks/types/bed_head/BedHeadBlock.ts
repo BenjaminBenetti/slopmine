@@ -15,7 +15,7 @@ import { BlockFacing, getMetadataFacing } from '../../BlockFacing.ts'
 import bedHeadTopTexUrl from './assets/bed-head-top.webp'
 import bedWoodTexUrl from './assets/bed-wood.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.BED_HEAD_TOP, bedHeadTopTexUrl)
 registerTextureUrl(TextureId.BED_HEAD_FRONT, bedWoodTexUrl)
 registerTextureUrl(TextureId.BED_SIDE, bedWoodTexUrl)

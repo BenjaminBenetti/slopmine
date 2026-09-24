@@ -14,7 +14,7 @@ import { BlockFacing, getMetadataFacing } from '../../BlockFacing.ts'
 import { DiviningStickBlockEntity } from './DiviningStickBlockEntity.ts'
 import diviningStickTexUrl from './assets/divining-stick.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.DIVINING_STICK, diviningStickTexUrl)
 
 // Load texture

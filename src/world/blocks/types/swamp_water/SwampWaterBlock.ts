@@ -3,26 +3,12 @@ import type { IBlockProperties, BlockFace, IBlock } from '../../../interfaces/IB
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
-import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
-import swampWaterTexUrl from './assets/swamp-water.webp'
+import { liquidCubeGeometry } from '../../../../renderer/LiquidMaterials.ts'
+import { swampWaterTexUrl, swampWaterMaterial } from './swampWaterMaterial.ts'
 
-// Register texture for atlas (marked as transparent)
-registerTextureUrl(TextureId.SWAMP_WATER, swampWaterTexUrl, true)
-
-const swampWaterTexture = loadBlockTexture(swampWaterTexUrl)
-
-/**
- * Semi-transparent murky material for swamp water with texture.
- * depthWrite: true prevents overlapping water fragments from causing artifacts.
- */
-const swampWaterMaterial = new THREE.MeshLambertMaterial({
-  map: swampWaterTexture,
-  transparent: true,
-  opacity: 0.95,
-  side: THREE.DoubleSide,
-  depthWrite: true,
-})
+// Register texture
+registerTextureUrl(TextureId.SWAMP_WATER, swampWaterTexUrl)
 
 /**
  * Swamp water block - a murky transparent liquid.
@@ -46,6 +32,10 @@ export class SwampWaterBlock extends TransparentBlock {
 
   protected get defaultTextureId(): number {
     return TextureId.SWAMP_WATER
+  }
+
+  protected getGeometry(): THREE.BufferGeometry {
+    return liquidCubeGeometry
   }
 
   protected getMaterials(): THREE.Material {

@@ -10,8 +10,8 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { WheatBlockEntity } from './WheatBlockEntity.ts'
 import wheat1TexUrl from './assets/wheat-1.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.WHEAT_1, wheat1TexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.WHEAT_1, wheat1TexUrl)
 
 const wheat1Texture = loadBlockTexture(wheat1TexUrl)
 

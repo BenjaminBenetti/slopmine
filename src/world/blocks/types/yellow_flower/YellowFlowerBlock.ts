@@ -9,8 +9,8 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { YellowFlowerBlockItem } from '../../../../items/blocks/yellow_flower/YellowFlowerBlockItem.ts'
 import yellowFlowerTexUrl from './assets/yellow-flower.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.YELLOW_FLOWER, yellowFlowerTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.YELLOW_FLOWER, yellowFlowerTexUrl)
 
 const yellowFlowerTexture = loadBlockTexture(yellowFlowerTexUrl)
 

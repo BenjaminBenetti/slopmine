@@ -2,8 +2,8 @@ import { BlockItem } from '../../BlockItem.ts'
 
 /**
  * Torch block item for placing torches.
- * Torches emit light level 11 (full source brightness under the light knee);
- * the resin torch (15) is the longer-reaching upgrade.
+ * Torches emit light level 13; the resin torch (15) is the brighter,
+ * longer-reaching upgrade.
  */
 export class TorchBlockItem extends BlockItem {
   readonly id = 'torch_block'

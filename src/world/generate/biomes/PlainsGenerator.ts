@@ -16,6 +16,7 @@ import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
+import type { IDecorationWorld } from '../IDecorationWorld.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
@@ -270,7 +271,7 @@ export class PlainsGenerator extends BiomeGenerator {
 
   override async generateSubChunkDecorations(
     subChunk: ISubChunkData,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     await this.generateTreesForSubChunk(subChunk, world)
   }
@@ -281,7 +282,7 @@ export class PlainsGenerator extends BiomeGenerator {
    */
   private async generateTreesForSubChunk(
     subChunk: ISubChunkData,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     const coord = subChunk.coordinate
     const treeDensity = this.properties.treeDensity
@@ -361,7 +362,7 @@ export class PlainsGenerator extends BiomeGenerator {
    */
   private async generateTrees(
     chunk: Chunk,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     const coord = chunk.coordinate
     const treeDensity = this.properties.treeDensity

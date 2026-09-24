@@ -10,8 +10,8 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { RedwoodLeavesBlockItem } from '../../../../items/blocks/redwood_leaves/RedwoodLeavesBlockItem.ts'
 import redwoodLeavesTexUrl from './assets/redwood-leaves.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.REDWOOD_LEAVES, redwoodLeavesTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.REDWOOD_LEAVES, redwoodLeavesTexUrl)
 
 const redwoodLeavesTexture = loadBlockTexture(redwoodLeavesTexUrl)
 

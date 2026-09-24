@@ -12,7 +12,7 @@ import { RedwoodTrapdoorBlockItem } from '../../../../items/blocks/redwood_trapd
 // Import texture (shared with the open variant)
 import redwoodTrapdoorTexUrl from './assets/redwood-trapdoor.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.REDWOOD_TRAPDOOR, redwoodTrapdoorTexUrl)
 
 // Load texture and create material

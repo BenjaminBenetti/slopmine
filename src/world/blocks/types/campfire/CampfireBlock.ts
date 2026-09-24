@@ -10,7 +10,7 @@ import { StickItem } from '../../../../items/materials/stick/StickItem.ts'
 
 import campfireTexUrl from './assets/campfire.webp'
 
-// Register the atlas texture (placeholder: warm magma-style tile; see manifest)
+// Register the texture (placeholder: warm magma-style tile; see manifest)
 registerTextureUrl(TextureId.CAMPFIRE, campfireTexUrl)
 
 /** Total visual height of the campfire (a low fire pit, walk-through). */
@@ -93,7 +93,7 @@ export class CampfireBlock extends TransparentBlock {
     isSolid: false, // No collision - walk-through like torch
     isLiquid: false,
     hardness: 0.5,
-    lightLevel: 13, // Brighter than a torch (11), dimmer than resin torch (15)
+    lightLevel: 14, // Brighter than a torch (13), dimmer than resin torch (15)
     lightBlocking: 0, // Doesn't block light
     demolitionForceRequired: 0,
     tags: [],

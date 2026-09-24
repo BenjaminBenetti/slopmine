@@ -10,7 +10,7 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { MossBlockItem } from '../../../../items/blocks/moss/MossBlockItem.ts'
 import mossTexUrl from './assets/moss.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.MOSS, mossTexUrl)
 
 const mossTexture = loadBlockTexture(mossTexUrl)

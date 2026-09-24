@@ -9,7 +9,7 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { RedwoodSlabBlockItem } from '../../../../items/blocks/redwood_slab/RedwoodSlabBlockItem.ts'
 
-// Reuse the redwood planks texture (registered in the atlas by the planks block module)
+// Reuse the redwood planks texture (registered by the planks block module)
 import redwoodPlanksTexUrl from '../redwood_planks/assets/redwood-planks.webp'
 
 const redwoodPlanksTexture = loadBlockTexture(redwoodPlanksTexUrl)
@@ -28,6 +28,7 @@ export class RedwoodSlabBlock extends SolidBlock {
     hardness: 1.5,
     lightLevel: 0,
     lightBlocking: 0,
+    blocksVerticalLight: true,
     demolitionForceRequired: 0,
     tags: [BlockTags.WOOD],
   }

@@ -10,7 +10,7 @@ import { GoldOreItem } from '../../../../items/ores/gold/GoldOreItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import goldBlockTexUrl from './assets/gold_block.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.GOLD_BLOCK, goldBlockTexUrl)
 
 const goldBlockTexture = loadBlockTexture(goldBlockTexUrl)

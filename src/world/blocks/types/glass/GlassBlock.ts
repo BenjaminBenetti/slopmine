@@ -10,8 +10,8 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import glassTexUrl from './assets/glass.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.GLASS, glassTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.GLASS, glassTexUrl)
 
 const glassTexture = loadBlockTexture(glassTexUrl)
 

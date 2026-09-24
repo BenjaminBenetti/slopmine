@@ -10,7 +10,7 @@ import { PineFenceGateBlockItem } from '../../../../items/blocks/pine_fence_gate
 import { fenceGateClosedGeometry } from '../fence_gate_shared/FenceGateGeometry.ts'
 
 // Shared planks texture - lives in the pine planks block dir (which also
-// registers it with the texture atlas)
+// registers its texture URL)
 import pinePlanksTexUrl from '../pine_planks/assets/pine-planks.webp'
 
 const pinePlanksTexture = loadBlockTexture(pinePlanksTexUrl)

@@ -12,8 +12,8 @@ import { doorClosedGeometry } from '../door_shared/DoorGeometry.ts'
 import pineDoorUpperTexUrl from './assets/pine-door-upper.webp'
 import pinePlanksEdgeTexUrl from '../pine_planks/assets/pine-planks.webp'
 
-// Register texture for atlas
-registerTextureUrl(TextureId.PINE_DOOR_UPPER, pineDoorUpperTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.PINE_DOOR_UPPER, pineDoorUpperTexUrl)
 
 const pineDoorUpperTexture = loadBlockTexture(pineDoorUpperTexUrl)
 const pineDoorUpperMaterial = new THREE.MeshLambertMaterial({

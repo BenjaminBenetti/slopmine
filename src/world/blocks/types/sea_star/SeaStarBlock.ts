@@ -10,7 +10,7 @@ import { SeaStarBlockItem } from '../../../../items/blocks/sea_star/SeaStarBlock
 import seaStarTexUrl from './assets/sea-star.webp'
 
 // Face-map entry only (the block renders via its custom geometry below)
-registerTextureUrl(TextureId.SEA_STAR, seaStarTexUrl, true)
+registerTextureUrl(TextureId.SEA_STAR, seaStarTexUrl)
 
 // Colors and shape mirror SeaStarEntity; slightly larger pixel scale so the
 // still trophy reads clearly at block distance (same trick as the crab shell)

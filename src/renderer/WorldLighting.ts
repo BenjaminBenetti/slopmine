@@ -3,12 +3,31 @@ import * as THREE from 'three'
 export interface WorldLightingOptions {
   sunIntensity?: number
   ambientIntensity?: number
+  hemisphereIntensity?: number
   sunColor?: number
   ambientColor?: number
+  /** Hemisphere light color from above (sky bounce). */
+  skyColor?: number
+  /** Hemisphere light color from below (ground bounce) - keep it light or sides go murky. */
+  groundColor?: number
   timeOfDay?: number // 0-24 hours
   shadowMapSize?: number // Shadow map resolution
   shadowFrustumSize?: number // Shadow camera frustum size in blocks
 }
+
+/**
+ * The rig's default colours and intensities. Exported so surfaces lit by
+ * their own copy of the rig (the held item's overlay scene) match the world.
+ */
+export const WORLD_LIGHT_DEFAULTS = {
+  sunIntensity: 1.4,
+  ambientIntensity: 0.9,
+  hemisphereIntensity: 0.9,
+  sunColor: 0xfff0dc,
+  ambientColor: 0xf2f5ff,
+  skyColor: 0xcfe0ff,
+  groundColor: 0xb7a27e,
+} as const
 
 export interface ShadowTarget {
   x: number
@@ -16,20 +35,37 @@ export interface ShadowTarget {
   z: number
 }
 
+/**
+ * The world's light rig: a warm directional sun, a cool ambient fill and a
+ * sky/ground hemisphere bounce. With three.js' Lambert (irradiance / π) the
+ * defaults give face brightness factors of roughly: top 0.83, sunward sides
+ * 0.57-0.63, shaded sides 0.43, bottom 0.38 (warm bounce) - enough contrast
+ * to read block shapes without crushing shaded faces.
+ */
 export class WorldLighting {
   readonly sun: THREE.DirectionalLight
   readonly ambient: THREE.AmbientLight
+  readonly hemisphere: THREE.HemisphereLight
 
   private readonly shadowFrustumSize: number
   private readonly sunDistance: number = 150
   private readonly sunDirection: THREE.Vector3 = new THREE.Vector3()
 
+  // Untinted base colors; setTint() multiplies these (biome light tint).
+  private readonly baseSunColor: THREE.Color
+  private readonly baseAmbientColor: THREE.Color
+  private readonly baseSkyColor: THREE.Color
+  private readonly baseGroundColor: THREE.Color
+
   constructor(options: WorldLightingOptions = {}) {
     const {
-      sunIntensity = 2.0,
-      ambientIntensity = 1.0,
-      sunColor = 0xffffff,
-      ambientColor = 0xffffff,
+      sunIntensity = WORLD_LIGHT_DEFAULTS.sunIntensity,
+      ambientIntensity = WORLD_LIGHT_DEFAULTS.ambientIntensity,
+      hemisphereIntensity = WORLD_LIGHT_DEFAULTS.hemisphereIntensity,
+      sunColor = WORLD_LIGHT_DEFAULTS.sunColor,
+      ambientColor = WORLD_LIGHT_DEFAULTS.ambientColor,
+      skyColor = WORLD_LIGHT_DEFAULTS.skyColor,
+      groundColor = WORLD_LIGHT_DEFAULTS.groundColor,
       timeOfDay = 10,
       shadowMapSize = 8192,
       shadowFrustumSize = 128,
@@ -38,6 +74,12 @@ export class WorldLighting {
     this.shadowFrustumSize = shadowFrustumSize
     this.ambient = new THREE.AmbientLight(ambientColor, ambientIntensity)
     this.sun = new THREE.DirectionalLight(sunColor, sunIntensity)
+    this.hemisphere = new THREE.HemisphereLight(skyColor, groundColor, hemisphereIntensity)
+
+    this.baseSunColor = this.sun.color.clone()
+    this.baseAmbientColor = this.ambient.color.clone()
+    this.baseSkyColor = this.hemisphere.color.clone()
+    this.baseGroundColor = this.hemisphere.groundColor.clone()
 
     // Enable shadow casting
     this.sun.castShadow = true
@@ -71,10 +113,27 @@ export class WorldLighting {
     const y = Math.sin(normalizedHour)
     const z = 50 / this.sunDistance // Slight offset for depth
 
-    // Store normalized direction for use in updateShadowTarget
+    // Store normalized direction (10am ≈ 55° elevation); the sky's sun disc
+    // reads it via getSunDirection() so the visible sun matches the shading.
     this.sunDirection.set(x, Math.max(y, 10 / this.sunDistance), z).normalize()
 
     this.sun.position.copy(this.sunDirection).multiplyScalar(this.sunDistance)
+  }
+
+  /** Normalized direction toward the sun (the light travels opposite to it). */
+  getSunDirection(target: THREE.Vector3): THREE.Vector3 {
+    return target.copy(this.sunDirection)
+  }
+
+  /**
+   * Multiply every light's color by a tint (biome atmosphere). Cheap - call
+   * every frame with the eased value.
+   */
+  setTint(tint: THREE.Color): void {
+    this.sun.color.copy(this.baseSunColor).multiply(tint)
+    this.ambient.color.copy(this.baseAmbientColor).multiply(tint)
+    this.hemisphere.color.copy(this.baseSkyColor).multiply(tint)
+    this.hemisphere.groundColor.copy(this.baseGroundColor).multiply(tint)
   }
 
   /**
@@ -86,11 +145,10 @@ export class WorldLighting {
     this.sun.target.position.set(target.x, target.y, target.z)
     this.sun.target.updateMatrixWorld()
 
-    // Update sun position relative to target using stored direction
-    // Use a smaller Y multiplier (0.4) to get a shallower sun angle matching the old look
+    // Keep the sun along the stored direction relative to the target
     this.sun.position.set(
       target.x + this.sunDirection.x * this.sunDistance,
-      target.y + this.sunDirection.y * this.sunDistance * 0.4,
+      target.y + this.sunDirection.y * this.sunDistance,
       target.z + this.sunDirection.z * this.sunDistance
     )
   }
@@ -112,12 +170,14 @@ export class WorldLighting {
 
   addTo(scene: THREE.Scene): void {
     scene.add(this.ambient)
+    scene.add(this.hemisphere)
     scene.add(this.sun)
     scene.add(this.sun.target) // Target must be added to scene for shadows
   }
 
   removeFrom(scene: THREE.Scene): void {
     scene.remove(this.ambient)
+    scene.remove(this.hemisphere)
     scene.remove(this.sun)
     scene.remove(this.sun.target)
   }
@@ -125,5 +185,6 @@ export class WorldLighting {
   dispose(): void {
     this.sun.dispose()
     this.ambient.dispose()
+    this.hemisphere.dispose()
   }
 }

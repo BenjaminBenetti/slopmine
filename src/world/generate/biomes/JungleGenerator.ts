@@ -227,6 +227,14 @@ export class JungleGenerator extends BiomeGenerator {
       heightScale: 10, // Slightly more dramatic than plains
       combineMode: 'add',
     } as TerrainConfig,
+    // Humid: a soft green-grey haze closes in the distance
+    skybox: {
+      brightness: 0.95,
+      tint: { r: 0.94, g: 1.0, b: 0.96 },
+      fogColor: { r: 0.66, g: 0.76, b: 0.7 },
+      fogDensity: 1.35,
+      lightTint: { r: 0.97, g: 1.0, b: 0.96 },
+    },
     entitySpawns: [
       {
         entityType: 'monkey',

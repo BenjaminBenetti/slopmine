@@ -9,13 +9,15 @@ import { BlockRegistry, getBlock } from './blocks/BlockRegistry.ts'
 import { Chunk } from './chunks/Chunk.ts'
 import { BlockIds } from './blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState, SUB_CHUNK_VOLUME, SUB_CHUNK_COUNT } from './interfaces/IChunk.ts'
-import { ChunkMesh, type IChunkMesh } from '../renderer/ChunkMesh.ts'
+import type { IChunkMesh } from '../renderer/interfaces/IChunkMesh.ts'
 import { GreedyChunkMesh } from '../renderer/GreedyChunkMesh.ts'
+import { buildLiquidMeshEntries, type LiquidMeshEntry } from './meshing/LiquidMeshTable.ts'
 import type { SubChunkOpacityCache } from '../renderer/SubChunkOpacityCache.ts'
 import GreedyMeshWorker from '../workers/GreedyMeshWorker.ts?worker'
 import type { GreedyMeshRequest, GreedyMeshResponse, GreedyMeshError } from '../workers/GreedyMeshWorker.ts'
 import { buildFaceTextureMap } from './blocks/FaceTextureRegistry.ts'
-import { buildTextureAtlas, serializeAtlasRegions, type AtlasRegion } from '../renderer/TextureAtlas.ts'
+import { buildBlockTextureArray, serializeTextureLayers, applyBlockTextureAnisotropy } from '../renderer/BlockTextureArray.ts'
+import { buildNeighborShell, type NeighborShell } from './meshing/MeshNeighborShell.ts'
 import { SubChunk } from './chunks/SubChunk.ts'
 import { ChunkColumn } from './chunks/ChunkColumn.ts'
 import { SUB_CHUNK_HEIGHT } from './interfaces/IChunk.ts'
@@ -26,8 +28,11 @@ import type {
   BiomeBlendData,
 } from '../workers/ChunkGenerationWorker.ts'
 import type { OrePosition } from './generate/features/OreFeature.ts'
-import type { WaterEdgeEffects } from './generate/features/WaterFeature.ts'
-import { BackgroundLightingManager } from './lighting/BackgroundLightingManager.ts'
+import { LightEngine, type LightEngineStats, type SubChunkLightInput } from './lighting/LightEngine.ts'
+import { PendingBlockChanges } from './lighting/PendingBlockChanges.ts'
+import { getLightTables } from './lighting/LightTables.ts'
+import { provesSkyAbove, SKY_SEED_SIZE } from './lighting/SubChunkLight.ts'
+import { LAYER_BOUNDARY_SUB_CHUNK } from './generate/GenerationConfig.ts'
 import { BackgroundLiquidPhysicsManager } from './liquid/BackgroundLiquidPhysicsManager.ts'
 import { ScheduledBlockTicks } from './blocktick/ScheduledBlockTicks.ts'
 import type { PersistenceManager, IModifiedChunkProvider } from '../persistence/PersistenceManager.ts'
@@ -36,6 +41,28 @@ import { BlockStateManager } from './blockstate/BlockStateManager.ts'
 import type { IBlockState } from './blockstate/interfaces/IBlockState.ts'
 import type { ITickableBlockState } from './blockstate/interfaces/ITickableBlockState.ts'
 import { deserializeBlockState } from '../persistence/BlockStateSerializer.ts'
+import type { SerializedBlockState } from '../persistence/PersistenceTypes.ts'
+import type { IDecorationWorld } from './generate/IDecorationWorld.ts'
+
+/** BigInt chunk offsets for neighbour lookups, indexed by offset + 1. */
+const NEIGHBOR_OFFSETS: readonly bigint[] = [-1n, 0n, 1n]
+
+/**
+ * How data handed to applySubChunkData relates to the store, which decides
+ * whether unloading the sub-chunk later has to write it (see
+ * SubChunk.persistedDataVersion):
+ * - 'stored': exactly what a confirmed store record holds (skyOpenAbove as
+ *   recorded; undefined = the record predates the sky proof, so it is re-saved)
+ * - 'new': must be saved before it is dropped - this includes freshly
+ *   generated data. (Within one build, untouched worker output that no
+ *   main-thread decoration can be rooted in regenerates byte-identically, but
+ *   the generator changes between builds - GenerationConfig even applies new
+ *   terrain defaults to existing worlds - so skipping its first save would let
+ *   explored, untouched terrain morph next to the saved sub-chunks around it.)
+ */
+export type SubChunkDataOrigin =
+  | { readonly kind: 'stored'; readonly skyOpenAbove: boolean | undefined }
+  | { readonly kind: 'new' }
 
 /**
  * Main world coordinator.
@@ -47,10 +74,10 @@ export class WorldManager implements IModifiedChunkProvider {
   private readonly blockRegistry: BlockRegistry
   private scene: THREE.Scene | null = null
   private renderer: THREE.WebGLRenderer | null = null
-  private readonly chunkMeshes: Map<ChunkKey, ChunkMesh> = new Map()
   private readonly subChunkMeshes: Map<SubChunkKey, GreedyChunkMesh> = new Map()
-  private readonly subChunkMeshAddedCallbacks: Array<(coord: ISubChunkCoordinate) => void> = []
+  private readonly subChunkMeshAddedCallbacks: Array<(coord: ISubChunkCoordinate, current: boolean) => void> = []
   private readonly subChunkMeshRemovedCallbacks: Array<(coord: ISubChunkCoordinate) => void> = []
+  private readonly subChunkMeshStaleCallbacks: Array<(coord: ISubChunkCoordinate) => void> = []
   private readonly orePositionCallbacks: Array<(coord: ISubChunkCoordinate, positions: OrePosition[]) => void> = []
 
   // Web Worker pool for mesh building
@@ -60,17 +87,37 @@ export class WorldManager implements IModifiedChunkProvider {
   // Sets for O(1) queue membership checks (mirrors queues above)
   private readonly prioritySubChunkSet: Set<SubChunk> = new Set()
   private readonly subChunkWorkerSet: Set<SubChunk> = new Set()
+  // Sub-chunks with a mesh job in flight (or its result waiting to be
+  // applied), with that job's id. A remesh requested meanwhile is never
+  // dropped: it sets SubChunk.remeshPending, and the result is also checked
+  // against SubChunk.meshVersion (see processSingleMeshResult).
   private readonly pendingSubChunks: Map<SubChunkKey, SubChunk> = new Map()
-  // Track sub-chunks that need re-meshing after their current worker job finishes
-  // (handles race condition where lighting update arrives while mesh is being built)
-  private readonly pendingRemeshSet: Set<SubChunkKey> = new Set()
+  private readonly pendingMeshJobIds: Map<SubChunkKey, number> = new Map()
+  // Every job still inside a worker, by id -> that worker (including jobs of
+  // sub-chunks unloaded meanwhile). Workers echo the id: a result or error
+  // counts only if its id is its sub-chunk's pending job - an unloaded
+  // sub-chunk's job can never be taken for its reloaded successor's.
+  private readonly meshJobWorkers: Map<number, Worker> = new Map()
+  private meshJobSeq = 0
+  /** Failed mesh jobs are retried this often while the input is unchanged. */
+  private static readonly MAX_MESH_JOB_RETRIES = 2
   private readonly WORKER_COUNT = Math.min(navigator.hardwareConcurrency || 4, 8)
   private readonly MAX_BACKGROUND_MESH_JOBS_PER_FRAME = 2
 
-  // Mesh result throttling to prevent GPU command buffer flooding
+  // Mesh result throttling to prevent GPU command buffer flooding: up to
+  // MAX_MESH_RESULTS_PER_FRAME results, stopping early once the time budget is used.
   private readonly pendingMeshResults: GreedyMeshResponse[] = []
-  private readonly MAX_MESH_RESULTS_PER_FRAME = 4
+  private readonly MAX_MESH_RESULTS_PER_FRAME = 16
+  private readonly MESH_RESULT_BUDGET_MS = 2
   private readonly MESH_QUEUE_WARNING_THRESHOLD = 100
+
+  // Light work setBlock may do synchronously per frame (reset by
+  // processPendingMeshResults): a single edit is normally relit before setBlock
+  // returns, while bulk edits (TNT, tree felling) can't stack up a long frame.
+  // The rest - and all relighting of batched writes (liquid flushes,
+  // decoration writers) - runs in the budgeted lighting task.
+  private static readonly SYNC_LIGHT_BUDGET_MS = 1.5
+  private syncLightMsThisFrame = 0
 
   // Cache of opaque block IDs for worker visibility checks
   private opaqueBlockIds: number[] = []
@@ -82,26 +129,24 @@ export class WorldManager implements IModifiedChunkProvider {
   private blockEntityIdSet: Set<number> = new Set() // ids defining createBlockEntity
   private onLoadOrEntityIdSet: Set<number> = new Set() // ids defining onLoad or createBlockEntity
 
-  // Decoration batching. While a batch is active, setBlock takes a lightweight
-  // path (raw array write only) and defers lighting/meshing until the batch ends,
-  // so structure placement (trees, etc.) pays one lighting + mesh enqueue per
-  // touched sub-chunk instead of the full per-block side-effect cascade.
-  private decorationBatchDepth = 0
-  private readonly decorationTouchedSubChunks: Set<SubChunk> = new Set()
-  private readonly decorationNeighborSubChunks: Set<SubChunk> = new Set()
+  // Decoration writes (see createDecorationWriter) awaiting their relight
+  private readonly decorationChanges = new PendingBlockChanges()
 
   // Face texture map for greedy meshing (built once, sent to workers)
   private faceTextureMapEntries: Array<[number, number]> = []
-  private atlasRegionEntries: Array<[number, AtlasRegion]> = []
+  private textureLayerEntries: Array<[number, number]> = []
   private nonGreedyBlockIds: number[] = []
+  private liquidBlockEntries: LiquidMeshEntry[] = []
   // Track which workers have received the initialization data
   private readonly workersInitialized: Set<number> = new Set()
 
   // Opacity cache for software occlusion culling
   private opacityCache: SubChunkOpacityCache | null = null
 
-  // Background lighting manager for all lighting updates (generation and block changes)
-  private readonly backgroundLightingManager: BackgroundLightingManager
+  // Light engine: owns all light data, relights edits/loads/unloads, and holds
+  // changed sub-chunks until their light has settled before they are remeshed
+  private readonly lightEngine: LightEngine
+  private readonly lightIntegratedCallbacks: Array<(coord: IChunkCoordinate) => void> = []
 
   // Liquid physics manager for water flow simulation (background worker pool)
   private readonly liquidPhysicsManager: BackgroundLiquidPhysicsManager
@@ -115,6 +160,8 @@ export class WorldManager implements IModifiedChunkProvider {
 
   // Persistence manager for saving/loading world data
   private persistenceManager: PersistenceManager | null = null
+  /** Sub-chunk writes issued vs skipped because the store already held the data. */
+  readonly persistStats = { saved: 0, skipped: 0 }
 
   // Entity manager for block entities
   private entityManager: EntityManager | null = null
@@ -122,19 +169,29 @@ export class WorldManager implements IModifiedChunkProvider {
   // Track chunks that have had their block states restored from persistence
   // Prevents duplicate restoration when loading multiple sub-chunks from same chunk
   private readonly restoredBlockStateChunks: Set<ChunkKey> = new Set()
+  // Persisted block-state records that could not be rebuilt when their column
+  // was restored (no live state yet and the record's block name can't create
+  // one - e.g. 'air' records written by older builds while the sub-chunk was
+  // unloaded), keyed "x,y,z". Applied when the block's sub-chunk loads.
+  private readonly pendingPersistedStates: Map<string, SerializedBlockState> = new Map()
 
   // Web Worker pool for chunk generation (terrain, caves, lighting)
   private readonly generationWorkers: Worker[] = []
   private readonly readyGenerationWorkers: Worker[] = [] // Only workers that have initialized
+  // In-flight generation requests by request id (echoed by the worker). Keyed
+  // by id, not by sub-chunk: a sub-chunk can have several requests in flight
+  // (e.g. the old-save sky-proof pass), and each reply must resolve its own.
   private readonly subChunkCallbackMap: Map<
-    string,
+    number,
     {
+      key: SubChunkKey
+      worker: Worker
       resolve: (data: SubChunkGenerationResponse) => void
       reject: (error: Error) => void
       timestamp: number
     }
   > = new Map()
-  private generationWorkerIndex = 0
+  private nextGenerationRequestId = 1
 
   constructor() {
     this.chunkManager = new ChunkManager()
@@ -143,15 +200,11 @@ export class WorldManager implements IModifiedChunkProvider {
     this.updateOpaqueBlockIds()
     this.buildFaceTextureMap()
 
-    // Initialize background lighting manager
-    this.backgroundLightingManager = new BackgroundLightingManager({
-      columnsPerUpdate: 1, // Process 1 column per frame to reduce frame time impact
-      reprocessCooldown: 60000, // Re-check columns every 60 seconds
+    this.lightEngine = new LightEngine({
+      getColumn: (cx, cz) => this.chunkManager.getColumnFast(cx, cz),
+      onSubChunkSettled: (subChunk, highPriority) =>
+        this.queueSubChunkForMeshing(subChunk, highPriority ? 'high' : 'normal'),
     })
-    this.backgroundLightingManager.setCallbacks(
-      (coord) => this.chunkManager.getColumn(coord),
-      (subChunk, priority, forceRequeue) => this.queueSubChunkForMeshing(subChunk, priority, forceRequeue)
-    )
 
     // Initialize liquid physics manager (background worker pool)
     this.liquidPhysicsManager = new BackgroundLiquidPhysicsManager({
@@ -208,19 +261,28 @@ export class WorldManager implements IModifiedChunkProvider {
 
     // Build non-greedy block IDs list
     this.nonGreedyBlockIds = allBlockIds.filter((id) => !getBlock(id).isGreedyMeshable())
+    // Liquid face-rule table (family + level per liquid block, from block properties)
+    this.liquidBlockEntries = buildLiquidMeshEntries(getBlock, allBlockIds)
 
     // Reset per-worker flags so workers get updated map on next request
     this.workersInitialized.clear()
   }
 
   /**
-   * Initialize the texture atlas for reduced draw calls.
-   * Call this after blocks are registered and before rendering.
+   * Build the block texture array sampled by greedy chunk meshes (one layer
+   * per face texture of every greedy-meshable block).
+   * Call this after blocks are registered and before any chunk is meshed.
    */
-  async initializeAtlas(): Promise<void> {
-    await buildTextureAtlas()
-    this.atlasRegionEntries = serializeAtlasRegions()
-    console.log(`Texture atlas built with ${this.atlasRegionEntries.length} regions`)
+  async initializeBlockTextures(): Promise<void> {
+    const nonGreedy = new Set(this.nonGreedyBlockIds)
+    const textureIds = new Set<number>()
+    for (const [key, textureId] of this.faceTextureMapEntries) {
+      if (!nonGreedy.has(Math.floor(key / 6))) textureIds.add(textureId)
+    }
+    await buildBlockTextureArray(textureIds)
+    this.textureLayerEntries = serializeTextureLayers()
+    this.workersInitialized.clear()
+    console.log(`Block texture array built with ${this.textureLayerEntries.length} layers`)
   }
 
   /**
@@ -311,22 +373,36 @@ export class WorldManager implements IModifiedChunkProvider {
   getModifiedSubChunks(): Array<{
     coordinate: ISubChunkCoordinate
     blocks: Uint16Array
-    lightData: Uint8Array
     metadata: Uint8Array
+    skyOpenAbove: boolean
+    markSaved: () => void
   }> {
     const chunks: Array<{
       coordinate: ISubChunkCoordinate
       blocks: Uint16Array
-      lightData: Uint8Array
       metadata: Uint8Array
+      skyOpenAbove: boolean
+      markSaved: () => void
     }> = []
 
+    // Every loaded sub-chunk whose data the store doesn't hold yet (generated
+    // data included - see SubChunkDataOrigin). markSaved records the version
+    // handed out, once the save is confirmed.
     for (const subChunk of this.chunkManager.getLoadedSubChunks()) {
+      if (subChunk.state < ChunkState.LOADED) continue
+      if (subChunk.isPersistClean()) {
+        this.persistStats.skipped++
+        continue
+      }
+      this.persistStats.saved++
+      const version = subChunk.dataVersion
+      const skyOpenAbove = subChunk.skyOpenAbove
       chunks.push({
         coordinate: subChunk.coordinate,
         blocks: subChunk.getBlockData(),
-        lightData: subChunk.getLightData(),
         metadata: subChunk.getMetadataData(),
+        skyOpenAbove,
+        markSaved: () => subChunk.markPersisted(version, skyOpenAbove),
       })
     }
 
@@ -354,12 +430,12 @@ export class WorldManager implements IModifiedChunkProvider {
     const stuckThreshold = 10000 // 10 seconds
     let stuckCount = 0
 
-    for (const [key, callback] of this.subChunkCallbackMap.entries()) {
+    for (const callback of this.subChunkCallbackMap.values()) {
       const age = now - callback.timestamp
       if (age > stuckThreshold) {
         stuckCount++
         if (stuckCount <= 5) {
-          console.warn(`[WorldManager] Stuck generation request: ${key} (${(age / 1000).toFixed(1)}s)`)
+          console.warn(`[WorldManager] Stuck generation request: ${callback.key} (${(age / 1000).toFixed(1)}s)`)
         }
       }
     }
@@ -381,27 +457,30 @@ export class WorldManager implements IModifiedChunkProvider {
     for (let i = 0; i < this.WORKER_COUNT; i++) {
       const worker = new GreedyMeshWorker()
       worker.onmessage = (event: MessageEvent<GreedyMeshResponse | GreedyMeshError>) => {
+        // (The job has left the worker either way)
+        if (event.data.jobId !== undefined) this.meshJobWorkers.delete(event.data.jobId)
         if (event.data.type === 'greedy-mesh-error') {
-          // Clean up the stuck entry so chunk can be re-queued
-          const key = createSubChunkKey(BigInt(event.data.chunkX), BigInt(event.data.chunkZ), event.data.subY)
-          this.pendingSubChunks.delete(key)
-          this.pendingRemeshSet.delete(key)
-          console.warn(`Greedy mesh worker error for chunk ${event.data.chunkX},${event.data.chunkZ} subY=${event.data.subY}:`, event.data.error)
+          this.handleMeshJobError(event.data)
           return
         }
         this.handleSubChunkMeshResult(event.data)
       }
       worker.onerror = (error) => {
         console.error('Greedy mesh worker error:', error)
-        // Save all pending sub-chunks before clearing, then re-queue them
-        // This prevents losing mesh results from other workers that are still processing
-        const toRequeue = Array.from(this.pendingSubChunks.values())
-        this.pendingSubChunks.clear()
-        this.pendingRemeshSet.clear()
-        // Re-queue all pending sub-chunks with high priority
-        for (const subChunk of toRequeue) {
-          this.queueSubChunkForMeshing(subChunk, 'high')
+        // This worker's jobs will never answer: requeue those still wanted.
+        // Jobs on the other workers are untouched - their results still count.
+        for (const [jobId, jobWorker] of Array.from(this.meshJobWorkers)) {
+          if (jobWorker !== worker) continue
+          this.meshJobWorkers.delete(jobId)
+          for (const [key, pendingId] of this.pendingMeshJobIds) {
+            if (pendingId !== jobId) continue
+            const subChunk = this.pendingSubChunks.get(key)
+            this.clearPendingMeshJob(key)
+            if (subChunk) this.queueSubChunkForMeshing(subChunk, 'high')
+            break
+          }
         }
+        this.processSubChunkWorkerQueue()
       }
       this.meshWorkers.push(worker)
     }
@@ -443,6 +522,18 @@ export class WorldManager implements IModifiedChunkProvider {
       if (idx !== -1) {
         this.readyGenerationWorkers.splice(idx, 1)
       }
+      const poolIdx = this.generationWorkers.indexOf(worker)
+      if (poolIdx !== -1) {
+        this.generationWorkers.splice(poolIdx, 1)
+      }
+      // Its in-flight requests will never be answered: fail them (the
+      // generator retries) instead of leaving their sub-chunks generating forever
+      worker.terminate()
+      for (const [requestId, callbacks] of Array.from(this.subChunkCallbackMap)) {
+        if (callbacks.worker !== worker) continue
+        this.subChunkCallbackMap.delete(requestId)
+        callbacks.reject(new Error(`Generation worker ${index} failed`))
+      }
       // Retry creating the worker after a delay (up to 3 attempts)
       if (retryCount < 2) {
         console.log(`[WorldManager] Retrying generation worker ${index} in 500ms...`)
@@ -460,14 +551,16 @@ export class WorldManager implements IModifiedChunkProvider {
   private handleSubChunkGenerationResult(
     result: SubChunkGenerationResponse | SubChunkGenerationError
   ): void {
-    const subChunkKey = createSubChunkKey(BigInt(result.chunkX), BigInt(result.chunkZ), result.subY)
-    const callbacks = this.subChunkCallbackMap.get(subChunkKey)
+    const requestId = result.requestId ?? -1
+    const callbacks = this.subChunkCallbackMap.get(requestId)
 
     if (!callbacks) {
-      console.warn(`[WorldManager] Received generation result for unknown sub-chunk: ${subChunkKey}`)
+      // (e.g. the request was failed when its worker errored)
+      const subChunkKey = createSubChunkKey(BigInt(result.chunkX), BigInt(result.chunkZ), result.subY)
+      console.warn(`[WorldManager] Received generation result for unknown request ${requestId} (${subChunkKey})`)
       return
     }
-    this.subChunkCallbackMap.delete(subChunkKey)
+    this.subChunkCallbackMap.delete(requestId)
 
     if (result.type === 'subchunk-error') {
       callbacks.reject(new Error(result.error))
@@ -488,15 +581,34 @@ export class WorldManager implements IModifiedChunkProvider {
     minWorldY: number,
     maxWorldY: number,
     biomeData: BiomeBlendData
-  ): Promise<{ blocks: Uint16Array; lightData: Uint8Array; metadataData: Uint8Array; orePositions: OrePosition[]; isFullyOpaque: boolean; waterEdgeEffects?: WaterEdgeEffects }> {
+  ): Promise<{
+    blocks: Uint16Array
+    lightData: Uint8Array
+    metadataData: Uint8Array
+    orePositions: OrePosition[]
+    isFullyOpaque: boolean
+    /** Sky proof + the resolved sky seed the worker lit the sub-chunk with (pass to applySubChunkData). */
+    light: SubChunkLightInput
+  }> {
     const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
 
     // Pre-allocate buffers (will be transferred to worker)
     const blocks = new Uint16Array(SUB_CHUNK_VOLUME)
     const lightData = new Uint8Array(SUB_CHUNK_VOLUME)
 
+    // Where direct sky enters the top of this sub-chunk, as currently known
+    // (the worker lights the sub-chunk locally after all features).
+    const skySeed = this.lightEngine.computeSkySeed(
+      Number(coordinate.x),
+      Number(coordinate.z),
+      coordinate.subY,
+      new Uint8Array(SKY_SEED_SIZE)
+    )
+
+    const requestId = this.nextGenerationRequestId++
     const request: SubChunkGenerationRequest = {
       type: 'generate-subchunk',
+      requestId,
       chunkX: Number(coordinate.x),
       chunkZ: Number(coordinate.z),
       subY: coordinate.subY,
@@ -508,10 +620,18 @@ export class WorldManager implements IModifiedChunkProvider {
       biomeData,
       blocks,
       lightData,
+      skySeed,
     }
 
     return new Promise((resolve, reject) => {
-      this.subChunkCallbackMap.set(subChunkKey, {
+      if (this.readyGenerationWorkers.length === 0) {
+        reject(new Error('No generation workers ready'))
+        return
+      }
+      const worker = this.pickGenerationWorker(coordinate)
+      this.subChunkCallbackMap.set(requestId, {
+        key: subChunkKey,
+        worker,
         resolve: (response) => {
           // Emit ore position callbacks
           if (response.orePositions.length > 0) {
@@ -525,22 +645,18 @@ export class WorldManager implements IModifiedChunkProvider {
             metadataData: response.metadataData,
             orePositions: response.orePositions,
             isFullyOpaque: response.isFullyOpaque,
-            waterEdgeEffects: response.waterEdgeEffects,
+            // The worker reports skyOpenAbove and the sky seed its local light
+            // pass used (light and seed always travel together). A response
+            // without them (e.g. an early-out path) gets relit here.
+            light:
+              response.skyOpenAbove !== undefined && response.lightSeed !== undefined
+                ? { skyOpenAbove: response.skyOpenAbove, skySeed: response.lightSeed }
+                : { skyOpenAbove: coordinate.subY >= LAYER_BOUNDARY_SUB_CHUNK && provesSkyAbove(response.blocks, response.hasTerrainAbove) },
           })
         },
         reject,
         timestamp: Date.now(),
       })
-
-      // Round-robin worker selection - only use ready workers
-      if (this.readyGenerationWorkers.length === 0) {
-        reject(new Error('No generation workers ready'))
-        this.subChunkCallbackMap.delete(subChunkKey)
-        return
-      }
-      const worker = this.readyGenerationWorkers[
-        this.generationWorkerIndex++ % this.readyGenerationWorkers.length
-      ]
 
       // Transfer buffers to worker
       worker.postMessage(request, [blocks.buffer, lightData.buffer])
@@ -548,19 +664,101 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Apply worker-generated data to a sub-chunk.
-   * Creates the sub-chunk and ChunkColumn if necessary.
+   * Local light for a sub-chunk loaded from persistence, computed by a
+   * generation worker (the light-only job) instead of on the main thread in
+   * applySubChunkData - persisted loads stream in outside the frame budget.
+   * The sky seed is taken now, like for a generation request; pass the result
+   * as applySubChunkData's lightData + light. Rejects if no worker is ready
+   * or the job fails (apply with null light then: lit on the main thread).
+   * The caller's arrays are copied, never transferred.
+   */
+  lightSavedSubChunkInWorker(
+    coordinate: ISubChunkCoordinate,
+    blocks: Uint16Array,
+    metadata: Uint8Array | undefined,
+    skyOpenAbove: boolean,
+    biomeData: BiomeBlendData
+  ): Promise<{ lightData: Uint8Array; isFullyOpaque: boolean; light: SubChunkLightInput }> {
+    // The proof applySubChunkData will record for these blocks (see there)
+    const proof = coordinate.subY >= LAYER_BOUNDARY_SUB_CHUNK && skyOpenAbove && provesSkyAbove(blocks, false)
+    const skySeed = this.lightEngine.computeSkySeed(Number(coordinate.x), Number(coordinate.z), coordinate.subY, new Uint8Array(SKY_SEED_SIZE))
+    const requestId = this.nextGenerationRequestId++
+    const request: SubChunkGenerationRequest = {
+      type: 'generate-subchunk',
+      requestId,
+      chunkX: Number(coordinate.x),
+      chunkZ: Number(coordinate.z),
+      subY: coordinate.subY,
+      minWorldY: coordinate.subY * SUB_CHUNK_HEIGHT,
+      maxWorldY: coordinate.subY * SUB_CHUNK_HEIGHT + SUB_CHUNK_HEIGHT - 1,
+      seed: 0,
+      seaLevel: 0,
+      terrainThickness: 0,
+      biomeData,
+      blocks: new Uint16Array(blocks),
+      lightData: new Uint8Array(SUB_CHUNK_VOLUME),
+      skySeed,
+      lightOnly: { metadata: metadata ? new Uint8Array(metadata) : new Uint8Array(SUB_CHUNK_VOLUME), skyOpenAbove: proof },
+    }
+    return new Promise((resolve, reject) => {
+      if (this.readyGenerationWorkers.length === 0) {
+        reject(new Error('No generation workers ready'))
+        return
+      }
+      const worker = this.pickGenerationWorker(coordinate)
+      this.subChunkCallbackMap.set(requestId, {
+        key: createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY),
+        worker,
+        resolve: (response) => {
+          if (response.lightSeed === undefined || response.skyOpenAbove === undefined) {
+            reject(new Error('light-only job returned no light'))
+            return
+          }
+          resolve({
+            lightData: response.lightData,
+            isFullyOpaque: response.isFullyOpaque,
+            light: { skyOpenAbove: response.skyOpenAbove, skySeed: response.lightSeed },
+          })
+        },
+        reject,
+        timestamp: Date.now(),
+      })
+      const lightOnly = request.lightOnly!
+      worker.postMessage(request, [request.blocks.buffer, request.lightData.buffer, lightOnly.metadata.buffer])
+    })
+  }
+
+  /**
+   * Generation worker for a request: sticky per column. Each worker caches the
+   * blended height grid of its 64 most recent columns (ColumnHeights), which
+   * every sub-chunk of a column needs; round-robin spread a column's
+   * sub-chunks over all workers (17.8% cache hits over a d=8 load and a walk,
+   * vs 82.7% sticky - about 11% less worker time), with the same load balance.
+   */
+  private pickGenerationWorker(coordinate: ISubChunkCoordinate): Worker {
+    const hash = (Math.imul(Number(coordinate.x), 73856093) ^ Math.imul(Number(coordinate.z), 19349663)) >>> 0
+    return this.readyGenerationWorkers[hash % this.readyGenerationWorkers.length]
+  }
+
+  /**
+   * Apply generated or persisted data to a sub-chunk and integrate it with the
+   * light engine. Creates the sub-chunk and ChunkColumn if necessary.
+   * @param lightData - Light the generation worker computed (used only with light.skySeed)
    * @param isFullyOpaque - Opacity computed in worker (avoids main thread computation)
-   * @param skylightValue - Maximum skylight value for this chunk's biome (0-15)
-   * @param metadata - Block metadata (rotation, etc.) from persistence
+   * @param skylightValue - Maximum skylight value for this sub-chunk's biome (0-15)
+   * @param metadata - Block metadata (rotation, etc.)
+   * @param light - Sky proof and the sky seed lightData was computed with
+   * @param origin - How the data relates to the store (default: must be saved)
    */
   async applySubChunkData(
     coordinate: ISubChunkCoordinate,
     blocks: Uint16Array,
-    lightData: Uint8Array,
+    lightData: Uint8Array | null,
     isFullyOpaque?: boolean,
     skylightValue?: number,
-    metadata?: Uint8Array
+    metadata?: Uint8Array,
+    light?: SubChunkLightInput,
+    origin?: SubChunkDataOrigin
   ): Promise<void> {
     // Get or create the chunk column
     const chunkCoord: IChunkCoordinate = { x: coordinate.x, z: coordinate.z }
@@ -572,17 +770,40 @@ export class WorldManager implements IModifiedChunkProvider {
 
     // Get or create the sub-chunk
     const subChunk = column.getOrCreateSubChunk(coordinate.subY)
+    const alreadyLoaded = subChunk.lightReady
 
-    // Set the biome's skylight value on the sub-chunk (if provided)
-    // Each sub-chunk can have a different skylight value based on its layer/biome
-    if (skylightValue !== undefined) {
-      subChunk.skylightValue = skylightValue
-      // Also update column for backward compatibility (use max of all sub-chunks)
-      column.skylightValue = Math.max(column.skylightValue, skylightValue)
+    // Sky proofs only hold in the surface layer: the whole surface layer lies
+    // above an underground sub-chunk (also neutralises saved underground proofs)
+    const proofAllowed = coordinate.subY >= LAYER_BOUNDARY_SUB_CHUNK
+    let placeholderCells: number[] | null = null
+    if (alreadyLoaded) {
+      // Re-applied (the sub-chunk left and re-entered the view ellipsoid):
+      // keep existing blocks, fill air from the new data, relight what changed.
+      this.mergeIntoLoadedSubChunk(subChunk, blocks, metadata)
+      // (Re-checked against the merged blocks, as on first load below.)
+      if (light) {
+        this.lightEngine.setSkyOpenAbove(subChunk, proofAllowed && light.skyOpenAbove && provesSkyAbove(subChunk.getBlockData(), false))
+      }
+    } else {
+      // Each sub-chunk has its biome layer's skylight cap (e.g. Hell = 0)
+      if (skylightValue !== undefined) {
+        subChunk.skylightValue = skylightValue
+      }
+      // Blocks already written into a placeholder (neighbouring decorations)
+      // win over generated data; they are re-applied after the light is in.
+      if (subChunk.isDirty()) placeholderCells = this.collectPlaceholderCells(subChunk)
+      subChunk.setBlockData(blocks, metadata)
+      if (lightData && light?.skySeed) {
+        subChunk.getLightData().set(lightData)
+      }
+      // (Re-checked against the actual blocks: a persisted player build crossing
+      // the top face voids the generation-time proof.)
+      subChunk.skyOpenAbove = proofAllowed && (light?.skyOpenAbove ?? false) && provesSkyAbove(blocks, false)
+      // What the store holds (or regeneration yields) for this exact data;
+      // placeholder cells restored below count as changes
+      if (origin?.kind === 'stored') subChunk.markPersisted(subChunk.dataVersion, origin.skyOpenAbove ?? null)
+      else subChunk.markPersisted(-1, null)
     }
-
-    // Apply the block, light, and metadata data
-    subChunk.applyWorkerData(blocks, lightData, metadata)
 
     // If this is data loaded from persistence (has metadata), restore block states
     // by calling onLoad() for any blocks that need runtime state restoration
@@ -612,11 +833,122 @@ export class WorldManager implements IModifiedChunkProvider {
     // Mark the sub-chunk as loaded
     subChunk.setState(ChunkState.LOADED)
 
-    // Queue for meshing
-    this.queueSubChunkForMeshing(subChunk)
+    if (!alreadyLoaded) {
+      // Integrate its light with the loaded world. It (and every loaded
+      // neighbour whose padded mesh volume now includes it) is meshed once the
+      // resulting light updates have settled.
+      this.lightEngine.onSubChunkLoaded(subChunk, lightData && light?.skySeed ? light.skySeed : null)
+      // (Over saved data they only fill air: a tree from a freshly generated
+      // neighbour must not replace what the player left there.)
+      if (placeholderCells) this.restorePlaceholderCells(subChunk, placeholderCells, lightData === null)
+      for (const callback of this.lightIntegratedCallbacks) {
+        callback(chunkCoord)
+      }
+    }
 
-    // Queue column for background lighting correction
-    this.backgroundLightingManager.queueColumn(chunkCoord)
+    // Meshes built before this data arrived (its own, and its neighbours' -
+    // they culled faces toward it) are no longer current
+    this.bumpMeshDataVersion(subChunk, !alreadyLoaded)
+
+    // Liquid tracking: the block array was written directly (setBlockData,
+    // merge, placeholder cells) - and liquid next to data that was unknown
+    // until now may flow
+    column.onSubChunkDataReplaced(coordinate.subY)
+    this.liquidPhysicsManager.onColumnDataChanged(coordinate.x, coordinate.z)
+  }
+
+  /**
+   * New data arrived for a sub-chunk: bump its mesh data version and, for a
+   * fresh load, that of every light-ready sub-chunk in its 26-neighbourhood
+   * (their padded mesh volumes now include it). Displayed meshes built from
+   * the older data are reported stale (onSubChunkMeshStale); their remesh is
+   * already queued by the light engine.
+   */
+  private bumpMeshDataVersion(subChunk: SubChunk, withNeighbors: boolean): void {
+    const { x, z, subY } = subChunk.coordinate
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const isSelf = dx === 0 && dy === 0 && dz === 0
+          if (!isSelf && !withNeighbors) continue
+          const sub = isSelf
+            ? subChunk
+            : this.chunkManager.getSubChunk({ x: x + NEIGHBOR_OFFSETS[dx + 1], z: z + NEIGHBOR_OFFSETS[dz + 1], subY: subY + dy })
+          if (!sub?.lightReady) continue
+          sub.meshDataVersion++
+          const key = createSubChunkKey(sub.coordinate.x, sub.coordinate.z, sub.coordinate.subY)
+          if (this.subChunkMeshes.has(key)) {
+            for (const callback of this.subChunkMeshStaleCallbacks) callback(sub.coordinate)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Non-air cells of a placeholder sub-chunk (created by decoration writes
+   * before generation) as flat (index, blockId, metadata) triples, or null.
+   */
+  private collectPlaceholderCells(subChunk: SubChunk): number[] | null {
+    const blocks = subChunk.getBlockData()
+    const metadata = subChunk.getMetadataData()
+    let cells: number[] | null = null
+    for (let i = 0; i < SUB_CHUNK_VOLUME; i++) {
+      if (blocks[i] === BlockIds.AIR) continue
+      if (!cells) cells = []
+      cells.push(i, blocks[i], metadata[i])
+    }
+    return cells
+  }
+
+  /**
+   * Write placeholder cells back over freshly applied data, relighting each
+   * cell whose block changed. With intoAirOnly (saved data) only air cells
+   * take them.
+   */
+  private restorePlaceholderCells(subChunk: SubChunk, cells: number[], intoAirOnly: boolean): void {
+    const blocks = subChunk.getBlockData()
+    const metadata = subChunk.getMetadataData()
+    const baseX = subChunk.cx * CHUNK_SIZE_X
+    const baseY = subChunk.coordinate.subY * SUB_CHUNK_HEIGHT
+    const baseZ = subChunk.cz * CHUNK_SIZE_Z
+    let changed = false
+    for (let c = 0; c < cells.length; c += 3) {
+      const i = cells[c]
+      const id = cells[c + 1]
+      const generatedId = blocks[i]
+      if (intoAirOnly && generatedId !== BlockIds.AIR) continue
+      if (metadata[i] !== cells[c + 2]) changed = true
+      metadata[i] = cells[c + 2]
+      if (generatedId === id) continue
+      blocks[i] = id
+      changed = true
+      this.lightEngine.onBlockChanged(baseX + (i & 31), baseY + (i >> 10), baseZ + ((i >> 5) & 31), generatedId, id)
+    }
+    if (changed) subChunk.markDataChanged()
+  }
+
+  /**
+   * Merge re-applied data into an already loaded sub-chunk: existing non-air
+   * blocks are kept, air cells take the new data, and every filled cell is
+   * relit.
+   */
+  private mergeIntoLoadedSubChunk(subChunk: SubChunk, blocks: Uint16Array, metadata?: Uint8Array): void {
+    const current = subChunk.getBlockData()
+    const currentMetadata = subChunk.getMetadataData()
+    const baseX = subChunk.cx * CHUNK_SIZE_X
+    const baseY = subChunk.coordinate.subY * SUB_CHUNK_HEIGHT
+    const baseZ = subChunk.cz * CHUNK_SIZE_Z
+    let changed = false
+    for (let i = 0; i < SUB_CHUNK_VOLUME; i++) {
+      const id = blocks[i]
+      if (current[i] !== BlockIds.AIR || id === BlockIds.AIR) continue
+      current[i] = id
+      currentMetadata[i] = metadata ? metadata[i] : 0
+      changed = true
+      this.lightEngine.onBlockChanged(baseX + (i & 31), baseY + (i >> 10), baseZ + ((i >> 5) & 31), BlockIds.AIR, id)
+    }
+    if (changed) subChunk.markDataChanged()
   }
 
   /**
@@ -662,6 +994,8 @@ export class WorldManager implements IModifiedChunkProvider {
       if (block.onLoad) {
         block.onLoad(worldAdapter, worldX, worldY, worldZ)
       }
+      // A persisted record parked until this block's sub-chunk loaded
+      if (this.pendingPersistedStates.size > 0) this.applyPendingPersistedState(worldX, worldY, worldZ)
 
       // Create block entity if the block type supports it
       if (this.entityManager && block.createBlockEntity) {
@@ -739,6 +1073,11 @@ export class WorldManager implements IModifiedChunkProvider {
           // State doesn't exist (block wasn't loaded yet, or was broken)
           // Create a new state with the saved data
           const newState = deserializeBlockState(serialized)
+          if (!newState) {
+            // Its block can't be named from the record: keep the data until
+            // the block's sub-chunk loads and onLoad creates the state
+            this.pendingPersistedStates.set(`${serialized.position.x},${serialized.position.y},${serialized.position.z}`, serialized)
+          }
           if (newState) {
             blockStateManager.setState(position, newState)
             // Note: This state won't be registered with BlockTickManager
@@ -752,6 +1091,20 @@ export class WorldManager implements IModifiedChunkProvider {
     } catch (error) {
       console.error(`[WorldManager] Failed to restore block states for chunk ${chunkCoord.x},${chunkCoord.z}:`, error)
     }
+  }
+
+  /**
+   * Fill the state onLoad just created at a position with its parked persisted
+   * record (see pendingPersistedStates), if the state types match.
+   */
+  private applyPendingPersistedState(x: bigint, y: bigint, z: bigint): void {
+    const key = `${x},${y},${z}`
+    const parked = this.pendingPersistedStates.get(key)
+    if (!parked) return
+    const state = BlockStateManager.getInstance().getState<IBlockState>({ x, y, z })
+    if (!state || state.stateType !== parked.stateType) return
+    state.deserialize(parked.data)
+    this.pendingPersistedStates.delete(key)
   }
 
   /**
@@ -800,13 +1153,51 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Get an idle worker (simple round-robin for now).
+   * A worker for the next mesh job, or null while WORKER_COUNT jobs are
+   * pending: the one with the fewest jobs inside it.
    */
   private getIdleWorker(): Worker | null {
-    if (this.pendingSubChunks.size < this.WORKER_COUNT) {
-      return this.meshWorkers[this.pendingSubChunks.size % this.WORKER_COUNT]
+    if (this.pendingSubChunks.size >= this.WORKER_COUNT) return null
+    let best = this.meshWorkers[0]
+    let bestLoad = Infinity
+    for (const worker of this.meshWorkers) {
+      let load = 0
+      for (const jobWorker of this.meshJobWorkers.values()) if (jobWorker === worker) load++
+      if (load < bestLoad) {
+        best = worker
+        bestLoad = load
+      }
     }
-    return null
+    return best
+  }
+
+  /** Forget a sub-chunk's pending mesh job (its result/error will be ignored). */
+  private clearPendingMeshJob(subChunkKey: SubChunkKey): void {
+    this.pendingSubChunks.delete(subChunkKey)
+    this.pendingMeshJobIds.delete(subChunkKey)
+  }
+
+  /**
+   * A mesh job failed in the worker. If it is its sub-chunk's pending job, the
+   * remesh it stood for is not dropped: retried when the input changed since
+   * (remesh requested meanwhile) or a couple of times for the same input (a
+   * mesher bug that always fails the same data must not loop forever).
+   */
+  private handleMeshJobError(error: GreedyMeshError): void {
+    const key = createSubChunkKey(BigInt(error.chunkX), BigInt(error.chunkZ), error.subY)
+    console.warn(`Greedy mesh worker error for chunk ${error.chunkX},${error.chunkZ} subY=${error.subY}:`, error.error)
+    if (this.pendingMeshJobIds.get(key) !== error.jobId) return // an unloaded sub-chunk's or superseded job
+    const subChunk = this.pendingSubChunks.get(key)
+    this.clearPendingMeshJob(key)
+    if (subChunk) {
+      const changed = subChunk.remeshPending || subChunk.meshVersion !== subChunk.meshJobVersion
+      subChunk.remeshPending = false
+      subChunk.meshJobErrors = changed ? 0 : subChunk.meshJobErrors + 1
+      if (subChunk.meshJobErrors <= WorldManager.MAX_MESH_JOB_RETRIES && !subChunk.meshDirty) {
+        this.queueSubChunkForMeshing(subChunk, 'high')
+      }
+    }
+    this.processSubChunkWorkerQueue()
   }
 
   /**
@@ -822,6 +1213,7 @@ export class WorldManager implements IModifiedChunkProvider {
 
       const subChunk = this.prioritySubChunkQueue.shift()!
       this.prioritySubChunkSet.delete(subChunk) // Keep Set in sync
+      if (!subChunk.lightReady) continue // unloaded while queued
       this.sendSubChunkToWorker(subChunk, worker)
     }
 
@@ -833,6 +1225,7 @@ export class WorldManager implements IModifiedChunkProvider {
 
       const subChunk = this.subChunkWorkerQueue.shift()!
       this.subChunkWorkerSet.delete(subChunk) // Keep Set in sync
+      if (!subChunk.lightReady) continue // unloaded while queued
       this.sendSubChunkToWorker(subChunk, worker)
       backgroundJobsSent++
     }
@@ -850,14 +1243,19 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Process pending mesh results with throttling.
+   * Per-frame mesh pump: hands sub-chunks whose light has settled to the mesh
+   * queue (coalescing all of the frame's edits), then applies worker results
+   * with throttling (count cap + time budget) to prevent compositor blocking.
    * Call this once per frame from the update loop.
-   * Limits GPU buffer uploads to prevent compositor blocking.
    */
   processPendingMeshResults(): void {
-    let processed = 0
+    this.syncLightMsThisFrame = 0
+    this.lightEngine.releaseSettled()
 
+    const start = performance.now()
+    let processed = 0
     while (this.pendingMeshResults.length > 0 && processed < this.MAX_MESH_RESULTS_PER_FRAME) {
+      if (processed > 0 && performance.now() - start >= this.MESH_RESULT_BUDGET_MS) break
       const result = this.pendingMeshResults.shift()!
       this.processSingleMeshResult(result)
       processed++
@@ -871,21 +1269,28 @@ export class WorldManager implements IModifiedChunkProvider {
     if (!this.scene) return
 
     const subChunkKey = createSubChunkKey(BigInt(result.chunkX), BigInt(result.chunkZ), result.subY)
-    const subChunk = this.pendingSubChunks.get(subChunkKey)
-    this.pendingSubChunks.delete(subChunkKey)
+    // Only the sub-chunk's pending job counts: a job of an unloaded (maybe
+    // since reloaded) sub-chunk, or one requeued after a worker crash, is
+    // discarded - its data is gone or superseded
+    if (this.pendingMeshJobIds.get(subChunkKey) !== result.jobId) return
 
-    // Check if this sub-chunk needs to be re-meshed with updated data
-    // (happens when lighting update arrived while mesh was being built)
-    if (this.pendingRemeshSet.has(subChunkKey)) {
-      this.pendingRemeshSet.delete(subChunkKey)
-      // Re-queue for meshing with latest light data
-      if (subChunk) {
-        this.queueSubChunkForMeshing(subChunk, 'high')
-      }
-      // Still process this result to show something, but it will be replaced
-    }
+    const subChunk = this.pendingSubChunks.get(subChunkKey)
+    this.clearPendingMeshJob(subChunkKey)
 
     if (!subChunk) return
+    subChunk.meshJobErrors = 0
+
+    // Never drop a remesh: if a request arrived while this job was in flight,
+    // or anything in the padded volume changed since it was sent, mesh again.
+    // (Still show this result meanwhile - it is newer than the current mesh.)
+    // Sub-chunks the light engine still holds are requeued when their light settles.
+    const stale = subChunk.remeshPending || subChunk.meshVersion !== subChunk.meshJobVersion
+    // (Read before the requeue below re-stamps the sub-chunk for the next job.)
+    const current = subChunk.meshJobDataVersion === subChunk.meshDataVersion
+    subChunk.remeshPending = false
+    if (stale && !subChunk.meshDirty) {
+      this.queueSubChunkForMeshing(subChunk, 'high')
+    }
 
     // Defense-in-depth: verify chunk is still loaded before creating mesh
     const chunkCoord: IChunkCoordinate = { x: subChunk.coordinate.x, z: subChunk.coordinate.z }
@@ -903,9 +1308,10 @@ export class WorldManager implements IModifiedChunkProvider {
     greedyMesh.addToScene(this.scene)
     this.subChunkMeshes.set(subChunkKey, greedyMesh)
 
-    // Notify listeners
+    // Notify listeners. The mesh is current only if no data arrived for the
+    // sub-chunk or its neighbours after the job was sent (see meshDataVersion).
     for (const callback of this.subChunkMeshAddedCallbacks) {
-      callback(subChunk.coordinate)
+      callback(subChunk.coordinate, current)
     }
 
     // Process next items in queue
@@ -919,9 +1325,8 @@ export class WorldManager implements IModifiedChunkProvider {
     const coord = subChunk.coordinate
     const subChunkKey = createSubChunkKey(coord.x, coord.z, coord.subY)
 
-    // Get neighbor sub-chunk data for edge visibility checks
-    const neighbors = this.getSubChunkNeighborData(coord)
-    const neighborLights = this.getSubChunkNeighborLightData(coord)
+    // One-block shell of neighbour blocks + light for faces, smooth light and AO
+    const shell = this.getMeshNeighborShell(coord)
 
     // Copy block, light, and metadata data
     const blocksCopy = new Uint16Array(subChunk.getBlockData())
@@ -932,8 +1337,10 @@ export class WorldManager implements IModifiedChunkProvider {
     const workerIndex = this.meshWorkers.indexOf(worker)
     const needsInit = !this.workersInitialized.has(workerIndex)
 
+    const jobId = ++this.meshJobSeq
     const request: GreedyMeshRequest = {
       type: 'greedy-mesh',
+      jobId,
       chunkX: Number(coord.x),
       chunkZ: Number(coord.z),
       subY: coord.subY,
@@ -941,13 +1348,15 @@ export class WorldManager implements IModifiedChunkProvider {
       blocks: blocksCopy,
       lightData: lightCopy,
       metadata: metadataCopy,
-      neighbors,
-      neighborLights,
+      shellBlocks: shell.blocks,
+      shellLight: shell.light,
+      shellPresentMask: shell.presentMask,
       opaqueBlockIds: this.opaqueBlockIds,
-      // Send face texture map and atlas regions on first request to each worker
+      // Send face texture map and texture layers on first request to each worker
       faceTextureMapEntries: needsInit ? this.faceTextureMapEntries : undefined,
-      atlasRegionEntries: needsInit ? this.atlasRegionEntries : undefined,
+      textureLayerEntries: needsInit ? this.textureLayerEntries : undefined,
       nonGreedyBlockIds: needsInit ? this.nonGreedyBlockIds : undefined,
+      liquidBlockEntries: needsInit ? this.liquidBlockEntries : undefined,
     }
 
     // Mark this worker as initialized
@@ -956,274 +1365,73 @@ export class WorldManager implements IModifiedChunkProvider {
     }
 
     this.pendingSubChunks.set(subChunkKey, subChunk)
+    this.pendingMeshJobIds.set(subChunkKey, jobId)
+    this.meshJobWorkers.set(jobId, worker)
+    // Version stamps: the result is stale if the padded volume changes before
+    // it lands, and not current if data arrives meanwhile
+    subChunk.meshJobVersion = subChunk.meshVersion
+    subChunk.meshJobDataVersion = subChunk.meshDataVersion
 
-    // Transfer the copied data plus the freshly extracted neighbor boundary slabs.
-    // The slabs are private copies owned by this call, so transferring (zero-copy)
-    // is safe and avoids structured-cloning them on the main thread.
-    const transfer: Transferable[] = [blocksCopy.buffer, lightCopy.buffer, metadataCopy.buffer]
-    for (const slab of [neighbors.posX, neighbors.negX, neighbors.posZ, neighbors.negZ, neighbors.posY, neighbors.negY]) {
-      if (slab) transfer.push(slab.buffer)
-    }
-    for (const slab of [neighborLights.posX, neighborLights.negX, neighborLights.posZ, neighborLights.negZ, neighborLights.posY, neighborLights.negY]) {
-      if (slab) transfer.push(slab.buffer)
-    }
+    // Transfer the copied data plus the freshly built neighbour shell. All are
+    // private copies owned by this call, so transferring (zero-copy) is safe and
+    // avoids structured-cloning them on the main thread.
+    const transfer: Transferable[] = [
+      blocksCopy.buffer, lightCopy.buffer, metadataCopy.buffer, shell.blocks.buffer, shell.light.buffer,
+    ]
     worker.postMessage(request, transfer)
   }
 
   /**
-   * Get neighbor sub-chunk block data for meshing (6 neighbors).
+   * Mesh-request payload builder: the one-block shell around a sub-chunk that
+   * the greedy mesher needs (6 face slabs, 12 edge lines and 8 corner cells of
+   * block ids AND light from the 26 neighbouring sub-chunks; layout in
+   * world/meshing/MeshNeighborShell.ts).
+   *
+   * `presentMask` has bit (dy + 1) * 9 + (dz + 1) * 3 + (dx + 1) set for each
+   * neighbour whose data was copied. Missing neighbours are never guessed: the
+   * worker culls faces toward a missing face neighbour and reuses the face's
+   * own light for AO/smooth-light samples in missing edge/corner data, so the
+   * sub-chunk must be remeshed once any missing neighbour loads. Above the top
+   * of the world counts as present open sky.
    */
-  private getSubChunkNeighborData(coord: ISubChunkCoordinate): {
-    posX: Uint16Array | null
-    negX: Uint16Array | null
-    posZ: Uint16Array | null
-    negZ: Uint16Array | null
-    posY: Uint16Array | null
-    negY: Uint16Array | null
-  } {
+  private getMeshNeighborShell(coord: ISubChunkCoordinate): NeighborShell {
     const { x, z, subY } = coord
-
-    const posXSub = this.chunkManager.getSubChunk({ x: x + 1n, z, subY })
-    const negXSub = this.chunkManager.getSubChunk({ x: x - 1n, z, subY })
-    const posZSub = this.chunkManager.getSubChunk({ x, z: z + 1n, subY })
-    const negZSub = this.chunkManager.getSubChunk({ x, z: z - 1n, subY })
-
-    // Vertical neighbors (boundary layers only: 32x32 = 1024 elements)
-    let posY: Uint16Array | null = null
-    let negY: Uint16Array | null = null
-
-    if (subY < 15) {
-      const aboveSub = this.chunkManager.getSubChunk({ x, z, subY: subY + 1 })
-      if (aboveSub) {
-        posY = this.extractBoundaryLayer(aboveSub, 0) // y=0 layer of sub-chunk above
-      }
-    }
-
-    if (subY > 0) {
-      const belowSub = this.chunkManager.getSubChunk({ x, z, subY: subY - 1 })
-      if (belowSub) {
-        negY = this.extractBoundaryLayer(belowSub, SUB_CHUNK_HEIGHT - 1) // y=31 layer of sub-chunk below
-      }
-    }
-
-    // Horizontal neighbors: only the single boundary face is read by the worker,
-    // so extract 32x32 slabs (~2KB) instead of cloning the full 64KB arrays.
-    // negX face is the neighbor's x=31 plane; posX its x=0 plane;
-    // negZ its z=31 plane; posZ its z=0 plane.
-    return {
-      posX: posXSub ? this.extractBoundaryLayerX(posXSub, 0) : null,
-      negX: negXSub ? this.extractBoundaryLayerX(negXSub, CHUNK_SIZE_X - 1) : null,
-      posZ: posZSub ? this.extractBoundaryLayerZ(posZSub, 0) : null,
-      negZ: negZSub ? this.extractBoundaryLayerZ(negZSub, CHUNK_SIZE_Z - 1) : null,
-      posY,
-      negY,
-    }
-  }
-
-  /**
-   * Get neighbor sub-chunk light data for meshing.
-   */
-  private getSubChunkNeighborLightData(coord: ISubChunkCoordinate): {
-    posX: Uint8Array | null
-    negX: Uint8Array | null
-    posZ: Uint8Array | null
-    negZ: Uint8Array | null
-    posY: Uint8Array | null
-    negY: Uint8Array | null
-  } {
-    const { x, z, subY } = coord
-
-    const posXSub = this.chunkManager.getSubChunk({ x: x + 1n, z, subY })
-    const negXSub = this.chunkManager.getSubChunk({ x: x - 1n, z, subY })
-    const posZSub = this.chunkManager.getSubChunk({ x, z: z + 1n, subY })
-    const negZSub = this.chunkManager.getSubChunk({ x, z: z - 1n, subY })
-
-    // Vertical neighbors
-    let posY: Uint8Array | null = null
-    let negY: Uint8Array | null = null
-
-    if (subY < 15) {
-      const aboveSub = this.chunkManager.getSubChunk({ x, z, subY: subY + 1 })
-      if (aboveSub) {
-        posY = this.extractLightBoundaryLayer(aboveSub, 0)
-      }
-    }
-
-    if (subY > 0) {
-      const belowSub = this.chunkManager.getSubChunk({ x, z, subY: subY - 1 })
-      if (belowSub) {
-        negY = this.extractLightBoundaryLayer(belowSub, SUB_CHUNK_HEIGHT - 1)
-      }
-    }
-
-    // Horizontal neighbors: extract the single boundary face read by the worker
-    // (mirrors getSubChunkNeighborData) instead of cloning the full light arrays.
-    return {
-      posX: posXSub ? this.extractLightBoundaryLayerX(posXSub, 0) : null,
-      negX: negXSub ? this.extractLightBoundaryLayerX(negXSub, CHUNK_SIZE_X - 1) : null,
-      posZ: posZSub ? this.extractLightBoundaryLayerZ(posZSub, 0) : null,
-      negZ: negZSub ? this.extractLightBoundaryLayerZ(negZSub, CHUNK_SIZE_Z - 1) : null,
-      posY,
-      negY,
-    }
-  }
-
-  /**
-   * Extract a 32x32 boundary layer of blocks from a sub-chunk.
-   */
-  private extractBoundaryLayer(subChunk: SubChunk, y: number): Uint16Array {
-    const layer = new Uint16Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
-    const blocks = subChunk.getBlockData()
-
-    for (let z = 0; z < CHUNK_SIZE_Z; z++) {
-      for (let x = 0; x < CHUNK_SIZE_X; x++) {
-        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
-        const dstIdx = z * CHUNK_SIZE_X + x
-        layer[dstIdx] = blocks[srcIdx]
-      }
-    }
-
-    return layer
-  }
-
-  /**
-   * Extract a 32x32 boundary layer of light data from a sub-chunk.
-   */
-  private extractLightBoundaryLayer(subChunk: SubChunk, y: number): Uint8Array {
-    const layer = new Uint8Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
-    const lightData = subChunk.getLightData()
-
-    for (let z = 0; z < CHUNK_SIZE_Z; z++) {
-      for (let x = 0; x < CHUNK_SIZE_X; x++) {
-        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
-        const dstIdx = z * CHUNK_SIZE_X + x
-        layer[dstIdx] = lightData[srcIdx]
-      }
-    }
-
-    return layer
-  }
-
-  /**
-   * Extract an X-face boundary slab of blocks (fixed x, all y/z) from a sub-chunk.
-   * Layout: index = y * CHUNK_SIZE_Z + z. Worker reads posX/negX with this layout.
-   */
-  private extractBoundaryLayerX(subChunk: SubChunk, x: number): Uint16Array {
-    const slab = new Uint16Array(SUB_CHUNK_HEIGHT * CHUNK_SIZE_Z)
-    const blocks = subChunk.getBlockData()
-
-    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
-      for (let z = 0; z < CHUNK_SIZE_Z; z++) {
-        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
-        slab[y * CHUNK_SIZE_Z + z] = blocks[srcIdx]
-      }
-    }
-
-    return slab
-  }
-
-  /**
-   * Extract a Z-face boundary slab of blocks (fixed z, all y/x) from a sub-chunk.
-   * Layout: index = y * CHUNK_SIZE_X + x. Worker reads posZ/negZ with this layout.
-   */
-  private extractBoundaryLayerZ(subChunk: SubChunk, z: number): Uint16Array {
-    const slab = new Uint16Array(SUB_CHUNK_HEIGHT * CHUNK_SIZE_X)
-    const blocks = subChunk.getBlockData()
-
-    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
-      for (let x = 0; x < CHUNK_SIZE_X; x++) {
-        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
-        slab[y * CHUNK_SIZE_X + x] = blocks[srcIdx]
-      }
-    }
-
-    return slab
-  }
-
-  /**
-   * Extract an X-face boundary slab of light data (fixed x, all y/z) from a sub-chunk.
-   */
-  private extractLightBoundaryLayerX(subChunk: SubChunk, x: number): Uint8Array {
-    const slab = new Uint8Array(SUB_CHUNK_HEIGHT * CHUNK_SIZE_Z)
-    const lightData = subChunk.getLightData()
-
-    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
-      for (let z = 0; z < CHUNK_SIZE_Z; z++) {
-        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
-        slab[y * CHUNK_SIZE_Z + z] = lightData[srcIdx]
-      }
-    }
-
-    return slab
-  }
-
-  /**
-   * Extract a Z-face boundary slab of light data (fixed z, all y/x) from a sub-chunk.
-   */
-  private extractLightBoundaryLayerZ(subChunk: SubChunk, z: number): Uint8Array {
-    const slab = new Uint8Array(SUB_CHUNK_HEIGHT * CHUNK_SIZE_X)
-    const lightData = subChunk.getLightData()
-
-    for (let y = 0; y < SUB_CHUNK_HEIGHT; y++) {
-      for (let x = 0; x < CHUNK_SIZE_X; x++) {
-        const srcIdx = y * CHUNK_SIZE_X * CHUNK_SIZE_Z + z * CHUNK_SIZE_X + x
-        slab[y * CHUNK_SIZE_X + x] = lightData[srcIdx]
-      }
-    }
-
-    return slab
+    return buildNeighborShell(subY, (dx, dy, dz) => {
+      const neighbor = this.chunkManager.getSubChunk({ x: x + NEIGHBOR_OFFSETS[dx + 1], z: z + NEIGHBOR_OFFSETS[dz + 1], subY: subY + dy })
+      // Only light-engine-integrated data counts as present (an unloading
+      // column's sub-chunks are unregistered only after their light is gone)
+      return neighbor?.lightReady ? neighbor : null
+    })
   }
 
   /**
    * Queue a sub-chunk for background meshing via Web Worker.
+   * Requests are never dropped: while a job for the sub-chunk is in flight the
+   * request is remembered and served when that job's result lands.
    * @param subChunk The sub-chunk to mesh
    * @param priority 'high' for player interactions (immediate), 'normal' for background (throttled)
    */
-  queueSubChunkForMeshing(
-    subChunk: SubChunk,
-    priority: 'high' | 'normal' = 'normal',
-    forceRequeue: boolean = false
-  ): void {
+  queueSubChunkForMeshing(subChunk: SubChunk, priority: 'high' | 'normal' = 'normal'): void {
+    // Only sub-chunks integrated with the light engine have final data to mesh
+    if (!subChunk.lightReady) return
+
     const subChunkKey = createSubChunkKey(
       subChunk.coordinate.x,
       subChunk.coordinate.z,
       subChunk.coordinate.subY
     )
 
-    // Handle force requeue - remove from existing queues to re-add with updated data
-    if (forceRequeue) {
-      // Remove from priority queue if present
-      if (this.prioritySubChunkSet.has(subChunk)) {
-        const priorityIdx = this.prioritySubChunkQueue.indexOf(subChunk)
-        if (priorityIdx !== -1) {
-          this.prioritySubChunkQueue.splice(priorityIdx, 1)
-        }
-        this.prioritySubChunkSet.delete(subChunk)
-      }
-      // Remove from normal queue if present
-      if (this.subChunkWorkerSet.has(subChunk)) {
-        const normalIdx = this.subChunkWorkerQueue.indexOf(subChunk)
-        if (normalIdx !== -1) {
-          this.subChunkWorkerQueue.splice(normalIdx, 1)
-        }
-        this.subChunkWorkerSet.delete(subChunk)
-      }
-    }
-
-    // Don't queue if already pending (worker is processing) or in queue
-    // Skip these checks if forceRequeue already removed from queues
     if (this.pendingSubChunks.has(subChunkKey)) {
-      // Sub-chunk is currently being processed by worker
-      if (forceRequeue) {
-        // Mark for re-mesh after worker finishes (handles race where lighting
-        // update arrives while mesh is being built with stale light data)
-        this.pendingRemeshSet.add(subChunkKey)
-      }
+      subChunk.remeshPending = true
       return
     }
-    if (!forceRequeue) {
-      if (this.prioritySubChunkSet.has(subChunk)) return
-      if (this.subChunkWorkerSet.has(subChunk)) return
+    if (this.prioritySubChunkSet.has(subChunk)) return
+    if (this.subChunkWorkerSet.has(subChunk)) {
+      if (priority !== 'high') return
+      // Promote a background request to high priority
+      const normalIdx = this.subChunkWorkerQueue.indexOf(subChunk)
+      if (normalIdx !== -1) this.subChunkWorkerQueue.splice(normalIdx, 1)
+      this.subChunkWorkerSet.delete(subChunk)
     }
 
     if (priority === 'high') {
@@ -1237,49 +1445,34 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Update background systems (lighting correction, etc).
-   * Call this each frame from the main loop.
-   * @param playerX Player world X position for priority lighting
-   * @param playerZ Player world Z position for priority lighting
+   * Process queued light updates for up to budgetMs (one unit of the
+   * budget-aware lighting task). Returns true while work remains.
    */
-  update(playerX: number, playerZ: number): void {
-    this.backgroundLightingManager.setPlayerPosition(playerX, playerZ)
-    this.backgroundLightingManager.update()
+  processLighting(budgetMs: number): boolean {
+    return this.lightEngine.process(budgetMs)
   }
 
   /**
-   * Update the lighting queue (does NOT process columns).
-   * Call this every frame to keep the queue up to date.
+   * Lighting statistics for debug display: queued light-update entries and
+   * sub-chunks waiting for their light to settle before remeshing.
    */
-  updateLightingQueue(playerX: number, playerZ: number): void {
-    this.backgroundLightingManager.setPlayerPosition(playerX, playerZ)
-    this.backgroundLightingManager.updateQueue()
-  }
-
-  /**
-   * Process a single lighting column.
-   * Used by the task scheduler for budget-aware processing.
-   * @returns true if work was done (more may remain), false if no work
-   */
-  processNextLightingColumn(): boolean {
-    return this.backgroundLightingManager.processNextColumn()
-  }
-
-  /**
-   * Check if there is lighting work pending.
-   */
-  hasLightingWorkPending(): boolean {
-    return this.backgroundLightingManager.hasWorkPending()
-  }
-
-  /**
-   * Get background lighting statistics for debug display.
-   */
-  getBackgroundLightingStats(): {
+  getLightingStats(): {
     queued: number
-    processing: number
+    awaitingRemesh: number
   } {
-    return this.backgroundLightingManager.getStats()
+    return {
+      queued: this.lightEngine.queuedEntries,
+      awaitingRemesh: this.lightEngine.dirtySubChunks,
+    }
+  }
+
+  /**
+   * Cumulative light engine counters (main-thread time, work done).
+   * @internal test hook (the Node lighting harness and churn probes read it;
+   * the debug HUD uses getLightingStats).
+   */
+  getLightEngineStats(): Readonly<LightEngineStats> {
+    return this.lightEngine.stats
   }
 
   /**
@@ -1301,10 +1494,17 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Register a callback for when a column starts being lit.
+   * Register a callback for when a sub-chunk's light is integrated into a
+   * column (debug visualization). Returns an unsubscribe function.
    */
-  onColumnLightingStarted(callback: (coord: IChunkCoordinate) => void): () => void {
-    return this.backgroundLightingManager.onLightingStarted(callback)
+  onSubChunkLightIntegrated(callback: (coord: IChunkCoordinate) => void): () => void {
+    this.lightIntegratedCallbacks.push(callback)
+    return () => {
+      const index = this.lightIntegratedCallbacks.indexOf(callback)
+      if (index !== -1) {
+        this.lightIntegratedCallbacks.splice(index, 1)
+      }
+    }
   }
 
   /**
@@ -1340,7 +1540,7 @@ export class WorldManager implements IModifiedChunkProvider {
       }
 
       chunkMesh.removeFromScene(this.scene)
-      chunkMesh.dispose(this.renderer ?? undefined)
+      chunkMesh.dispose()
     }
     this.subChunkMeshes.delete(subChunkKey)
 
@@ -1444,18 +1644,20 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Numeric fast-path variant of getLightLevelAtWorld. See getBlockIdFast.
-   * Returns 15 (full light) when the column is not loaded.
+   * Sky and block light at a position packed as `sky << 4 | block` (the
+   * stored nibble layout), for lighting things drawn outside the chunk meshes
+   * (held item, entities) with lightLevelsToColor. Returns open sky (0xF0)
+   * when the column is not loaded.
    */
-  getLightLevelFast(x: number, y: number, z: number): number {
+  getPackedLightFast(x: number, y: number, z: number): number {
     const bx = Math.floor(x)
     const by = Math.floor(y)
     const bz = Math.floor(z)
     const column = this.chunkManager.getColumnFast(bx >> 5, bz >> 5)
     if (!column) {
-      return 15
+      return 0xF0
     }
-    return column.getLightLevel(bx & 31, by, bz & 31)
+    return (column.getSkylight(bx & 31, by, bz & 31) << 4) | column.getBlocklight(bx & 31, by, bz & 31)
   }
 
   /**
@@ -1503,8 +1705,8 @@ export class WorldManager implements IModifiedChunkProvider {
     }
   }
 
-  // Track pending block changes for bulk updates
-  private readonly pendingBlockChanges: Map<string, { coord: IChunkCoordinate; subY: number; wasRemoval: boolean }> = new Map()
+  // Raw block writes (liquid physics) awaiting a relight in flushBlockChanges()
+  private readonly pendingRawChanges = new PendingBlockChanges()
 
   /**
    * Set block at world coordinates without triggering updates.
@@ -1516,14 +1718,15 @@ export class WorldManager implements IModifiedChunkProvider {
     const chunkCoord = worldToChunk(world)
     const local = worldToLocal(world)
 
-    let column = this.chunkManager.getColumn(chunkCoord)
-    if (!column) {
-      column = this.chunkManager.loadColumn(chunkCoord)
+    // Only into loaded data. Liquid flow computed toward a neighbour that isn't
+    // loaded used to create a column (or placeholder sub-chunk) holding just
+    // that cell, whose contents later overrode the neighbour's saved data.
+    const column = this.chunkManager.getColumn(chunkCoord)
+    if (!column?.getSubChunk(Math.floor(local.y / SUB_CHUNK_HEIGHT))?.lightReady) {
+      return false
     }
 
     const oldBlockId = column.getBlockId(local.x, local.y, local.z)
-    const wasBlockRemoved = blockId === BlockIds.AIR && oldBlockId !== BlockIds.AIR
-
     const changed = column.setBlockId(local.x, local.y, local.z, blockId)
     if (changed) {
       const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
@@ -1533,37 +1736,24 @@ export class WorldManager implements IModifiedChunkProvider {
         this.persistenceManager?.markSubChunkModified(subChunk.coordinate)
       }
 
-      // Track this change for later flushing
-      const key = `${chunkCoord.x},${chunkCoord.z},${subY}`
-      const existing = this.pendingBlockChanges.get(key)
-      if (!existing || wasBlockRemoved) {
-        this.pendingBlockChanges.set(key, { coord: chunkCoord, subY, wasRemoval: wasBlockRemoved || existing?.wasRemoval || false })
-      }
+      // Track the exact cell for the relight at flush time
+      this.pendingRawChanges.record(Number(x), Number(y), Number(z), oldBlockId)
     }
 
     return changed
   }
 
   /**
-   * Flush pending block changes - trigger lighting and meshing updates.
+   * Flush pending block changes - queue the relight of every changed cell
+   * (run by the lighting task; the light engine remeshes whatever the changes
+   * touched once their light has settled).
    * Call this after a batch of setBlockRaw calls.
    */
   flushBlockChanges(): void {
-    for (const [, { coord, subY, wasRemoval }] of this.pendingBlockChanges) {
-      const column = this.chunkManager.getColumn(coord)
-      if (!column) continue
-
-      // Queue lighting update for this subchunk
-      this.backgroundLightingManager.queueBlockChange(
-        column,
-        16, // middle of chunk - lighting will propagate
-        subY * SUB_CHUNK_HEIGHT + 16,
-        16,
-        wasRemoval
-      )
-    }
-
-    this.pendingBlockChanges.clear()
+    if (this.pendingRawChanges.size === 0) return
+    this.pendingRawChanges.drain((x, y, z, oldBlockId) => {
+      this.lightEngine.onBlockChanged(x, y, z, oldBlockId, this.getBlockIdFast(x, y, z))
+    })
   }
 
   /**
@@ -1572,11 +1762,6 @@ export class WorldManager implements IModifiedChunkProvider {
    * Returns true if the block was changed.
    */
   setBlock(x: bigint, y: bigint, z: bigint, blockId: BlockId, metadata?: number): boolean {
-    // Decoration batch fast path: write raw, defer side effects to endDecorationBatch.
-    if (this.decorationBatchDepth > 0) {
-      return this.setBlockDecoration(x, y, z, blockId, metadata)
-    }
-
     const world: IWorldCoordinate = { x, y, z }
     const chunkCoord = worldToChunk(world)
     const local = worldToLocal(world)
@@ -1601,32 +1786,20 @@ export class WorldManager implements IModifiedChunkProvider {
     if (changed) {
       const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
 
-      // Immediately queue mesh rebuild with high priority for responsive feedback
       const subChunk = column.getSubChunk(subY)
       if (subChunk) {
-        // this.queueSubChunkForMeshing(subChunk, 'high') <--- THIS IS THE TREE ISSUE
-
         // Mark as modified by player for persistence
         subChunk.markModifiedByPlayer()
         this.persistenceManager?.markSubChunkModified(subChunk.coordinate)
       }
 
-      // Also queue lighting update - will remesh again with correct lighting
-      this.backgroundLightingManager.queueBlockChange(
-        column,
-        local.x,
-        local.y,
-        local.z,
-        wasBlockRemoved
-      )
-
-      // Mark horizontal neighbor sub-chunks dirty if on chunk edge
-      // Also trigger lighting updates for neighboring columns
-      this.markSubChunkNeighborsDirtyIfEdge(chunkCoord, local.x, local.y, local.z, subY, wasBlockRemoved)
-
-      // Note: Vertical neighbor sub-chunks at Y boundaries are handled by the
-      // lighting worker callback - it marks them as changed so they get remeshed
-      // with correct lighting data (avoiding race condition with stale light)
+      // Relight synchronously (typically well under a millisecond; big
+      // relights and bulk edits continue in the lighting task). Every
+      // sub-chunk whose padded mesh volume changed - including edge/corner
+      // neighbours - is remeshed once the light around it has settled
+      // (released once per frame).
+      this.lightEngine.onBlockChanged(Number(x), Number(y), Number(z), oldBlockId, blockId, true)
+      this.relightWithinFrameBudget()
 
       // Trigger liquid physics for the chunk column containing this block
       const isLiquid = this.isLiquidBlockId(blockId)
@@ -1655,32 +1828,30 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Begin a decoration batch. While active, setBlock writes blocks directly into
-   * sub-chunk arrays without per-block lighting/meshing/persistence side effects.
-   * Nestable / safe under concurrent (interleaved async) decoration passes.
-   * Must be paired with endDecorationBatch().
+   * A writer for one main-thread decoration pass (trees, mushrooms, ...): its
+   * setBlock writes block arrays directly without per-block side effects
+   * (persistence marks, scheduled ticks, block entities, liquid wake-ups,
+   * synchronous relight) and records each cell for one deferred relight;
+   * flush() queues those relights (the light engine remeshes whatever the
+   * writes touched, including edge-adjacent neighbours) - call it when the
+   * pass ends, also on failure.
+   *
+   * An explicit writer instead of a global batch mode: decoration passes
+   * yield across frames, and a global mode made every setBlock in those
+   * frames - the player's edits included - skip its side effects.
    */
-  beginDecorationBatch(): void {
-    this.decorationBatchDepth++
-  }
-
-  /**
-   * End a decoration batch and flush deferred work: one meshing + lighting enqueue
-   * per touched sub-chunk (plus a mesh-only refresh of edge-adjacent neighbors so
-   * cross-chunk face culling stays correct). Flushing on every end (rather than only
-   * at depth 0) keeps writes from being stranded when async batches interleave.
-   */
-  endDecorationBatch(): void {
-    if (this.decorationBatchDepth > 0) {
-      this.decorationBatchDepth--
+  createDecorationWriter(): IDecorationWorld & { flush(): void } {
+    return {
+      getBlockId: (x, y, z) => this.getBlockId(x, y, z),
+      setBlock: (x, y, z, blockId, metadata) => this.setBlockDecoration(x, y, z, blockId, metadata),
+      flush: () => this.flushDecorationBatch(),
     }
-    this.flushDecorationBatch()
   }
 
   /**
-   * Lightweight raw block write used during decoration batches.
-   * Records touched sub-chunks (and edge neighbors) for a single deferred flush.
-   * Does NOT mark chunks player-modified (decorations regenerate deterministically).
+   * Lightweight raw block write used by decoration writers.
+   * Records the cell for a single deferred relight.
+   * Does NOT mark chunks player-modified.
    */
   private setBlockDecoration(x: bigint, y: bigint, z: bigint, blockId: BlockId, metadata?: number): boolean {
     const world: IWorldCoordinate = { x, y, z }
@@ -1692,73 +1863,42 @@ export class WorldManager implements IModifiedChunkProvider {
       column = this.chunkManager.loadColumn(chunkCoord)
     }
 
+    const oldBlockId = column.getBlockId(local.x, local.y, local.z)
     const changed = column.setBlockId(local.x, local.y, local.z, blockId)
     if (metadata !== undefined) {
       column.setMetadata(local.x, local.y, local.z, metadata)
     }
 
     if (changed) {
-      const subY = Math.floor(local.y / SUB_CHUNK_HEIGHT)
-      const subChunk = column.getSubChunk(subY)
-      if (subChunk) {
-        this.decorationTouchedSubChunks.add(subChunk)
-      }
-      // Edge writes need the horizontal neighbor's boundary mesh refreshed (face culling).
-      if (local.x === 0) this.recordDecorationNeighbor(chunkCoord.x - 1n, chunkCoord.z, subY)
-      else if (local.x === CHUNK_SIZE_X - 1) this.recordDecorationNeighbor(chunkCoord.x + 1n, chunkCoord.z, subY)
-      if (local.z === 0) this.recordDecorationNeighbor(chunkCoord.x, chunkCoord.z - 1n, subY)
-      else if (local.z === CHUNK_SIZE_Z - 1) this.recordDecorationNeighbor(chunkCoord.x, chunkCoord.z + 1n, subY)
+      this.decorationChanges.record(Number(x), Number(y), Number(z), oldBlockId)
     }
 
     return changed
   }
 
   /**
-   * Record a horizontal neighbor sub-chunk for a mesh-only refresh at batch end.
+   * Flush deferred decoration work: queue the relight of each written cell
+   * once (run by the lighting task). Writes into not-yet-generated
+   * sub-chunks only affect the sky above loaded data; they are lit when
+   * their sub-chunk loads.
    */
-  private recordDecorationNeighbor(chunkX: bigint, chunkZ: bigint, subY: number): void {
-    const column = this.chunkManager.getColumn({ x: chunkX, z: chunkZ })
-    if (!column) return
-    const subChunk = column.getSubChunk(subY)
-    if (subChunk) {
-      this.decorationNeighborSubChunks.add(subChunk)
-    }
+  private flushDecorationBatch(): void {
+    if (this.decorationChanges.size === 0) return
+    this.decorationChanges.drain((x, y, z, oldBlockId) => {
+      this.lightEngine.onBlockChanged(x, y, z, oldBlockId, this.getBlockIdFast(x, y, z))
+    })
   }
 
   /**
-   * Flush deferred decoration work: mesh + light each touched sub-chunk once,
-   * and mesh-only each edge neighbor that wasn't itself written to.
+   * Process queued light updates now, within what is left of this frame's
+   * synchronous budget (player-edit priority for the sub-chunks it dirties).
    */
-  private flushDecorationBatch(): void {
-    if (this.decorationTouchedSubChunks.size === 0 && this.decorationNeighborSubChunks.size === 0) {
-      return
-    }
-
-    for (const subChunk of this.decorationTouchedSubChunks) {
-      // forceRequeue so the tree data meshes even if a pre-decoration mesh job is
-      // still in flight for this sub-chunk (applySubChunkData queued one earlier).
-      this.queueSubChunkForMeshing(subChunk, 'normal', true)
-      // Full-column relight rather than a single fixed-position queueBlockChange:
-      // the worker's 'update-block-lighting' path propagates only from the one
-      // supplied (x,z) column, so a representative coordinate never blocks skylight
-      // under the tree's actual trunk/leaf blocks. This matters most for canopy that
-      // overhangs into an already-generated neighbor column (that column gets no
-      // applySubChunkData relight of its own). queueColumn recomputes skylight
-      // top-down and dedupes per column, so repeat calls here collapse to one.
-      this.backgroundLightingManager.queueColumn({
-        x: subChunk.coordinate.x,
-        z: subChunk.coordinate.z,
-      })
-    }
-
-    for (const subChunk of this.decorationNeighborSubChunks) {
-      if (!this.decorationTouchedSubChunks.has(subChunk)) {
-        this.queueSubChunkForMeshing(subChunk)
-      }
-    }
-
-    this.decorationTouchedSubChunks.clear()
-    this.decorationNeighborSubChunks.clear()
+  private relightWithinFrameBudget(): void {
+    const budgetMs = WorldManager.SYNC_LIGHT_BUDGET_MS - this.syncLightMsThisFrame
+    if (budgetMs <= 0 || this.lightEngine.isQueueEmpty()) return
+    const start = performance.now()
+    this.lightEngine.process(budgetMs, true)
+    this.syncLightMsThisFrame += performance.now() - start
   }
 
   /**
@@ -1797,11 +1937,9 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Get all chunk meshes for frustum culling.
-   * Includes both legacy full-chunk meshes and sub-chunk meshes.
+   * Get all sub-chunk meshes (frustum/occlusion culling, debug wireframes).
    */
   *getChunkMeshes(): Generator<IChunkMesh> {
-    yield* this.chunkMeshes.values()
     yield* this.subChunkMeshes.values()
   }
 
@@ -1973,55 +2111,44 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Save a sub-chunk that is being unloaded, unless the store already holds
+   * exactly its data (SubChunk.isPersistClean: loaded from a confirmed record
+   * or saved, and not changed since - no edit, liquid flow, decoration or
+   * merged data). Everything else that completed generation is saved.
+   */
+  private saveSubChunkIfChanged(subChunk: SubChunk): void {
+    if (!this.persistenceManager || subChunk.state < ChunkState.LOADED) return
+    if (subChunk.isPersistClean()) {
+      this.persistStats.skipped++
+      return
+    }
+    this.persistStats.saved++
+    this.persistenceManager.saveSubChunk(
+      subChunk.coordinate,
+      subChunk.getBlockData(),
+      subChunk.getMetadataData(),
+      subChunk.skyOpenAbove
+    ).catch(err => console.error('Failed to save sub-chunk on unload:', err))
+  }
+
+  /**
    * Unload a column and remove all its sub-chunk meshes.
-   * Saves all sub-chunks before unloading (terrain gen isn't deterministic).
+   * Saves its sub-chunks first (see saveSubChunkIfChanged).
    */
   unloadChunk(coordinate: IChunkCoordinate): void {
-    // Save all sub-chunks before unloading (fire and forget)
-    // Only save sub-chunks that completed generation (state >= LOADED)
+    // Save its sub-chunks before unloading (fire and forget)
     const column = this.chunkManager.getColumn(coordinate)
-    if (column && this.persistenceManager) {
-      for (let subY = 0; subY < 16; subY++) {
+    if (column) {
+      for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
         const subChunk = column.getSubChunk(subY)
-        if (subChunk && subChunk.state >= ChunkState.LOADED) {
-          this.persistenceManager.saveSubChunk(
-            subChunk.coordinate,
-            subChunk.getBlockData(),
-            subChunk.getLightData(),
-            subChunk.getMetadataData()
-          ).catch(err => console.error('Failed to save sub-chunk on unload:', err))
-        }
+        if (subChunk) this.saveSubChunkIfChanged(subChunk)
       }
     }
 
-    // Clean up all pending mesh state and remove meshes for this column
-    for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
-      const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, subY)
-
-      // Remove from pending subchunks (prevents worker result from creating orphaned mesh)
-      const pendingSubChunk = this.pendingSubChunks.get(subChunkKey)
-      this.pendingSubChunks.delete(subChunkKey)
-
-      // Remove from pending remesh set
-      this.pendingRemeshSet.delete(subChunkKey)
-
-      // Remove from worker queues if present
-      if (pendingSubChunk) {
-        // Priority queue
-        if (this.prioritySubChunkSet.has(pendingSubChunk)) {
-          const idx = this.prioritySubChunkQueue.indexOf(pendingSubChunk)
-          if (idx !== -1) this.prioritySubChunkQueue.splice(idx, 1)
-          this.prioritySubChunkSet.delete(pendingSubChunk)
-        }
-        // Normal queue
-        if (this.subChunkWorkerSet.has(pendingSubChunk)) {
-          const idx = this.subChunkWorkerQueue.indexOf(pendingSubChunk)
-          if (idx !== -1) this.subChunkWorkerQueue.splice(idx, 1)
-          this.subChunkWorkerSet.delete(pendingSubChunk)
-        }
-      }
-
-      this.removeSubChunkMesh(subChunkKey, true) // true = isUnloading, also clears opacity cache
+    // Its light stops being known: remove what it contributed to neighbouring
+    // columns (unknown = dark) and invalidate every mesh that sampled it.
+    if (column) {
+      this.lightEngine.onColumnUnloading(column)
     }
 
     // Filter out any pending mesh results for this column (prevents processing stale results)
@@ -2034,8 +2161,34 @@ export class WorldManager implements IModifiedChunkProvider {
       }
     }
 
-    // Remove from background lighting queue
-    this.backgroundLightingManager.unloadColumn(coordinate)
+    // Clean up all pending mesh state and remove meshes for this column
+    for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
+      const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, subY)
+
+      // Forget its pending job: a result still to come from a worker no longer
+      // matches the key's pending job id and is discarded - never taken for
+      // a reloaded sub-chunk's job
+      this.clearPendingMeshJob(subChunkKey)
+
+      // Remove from worker queues if present
+      const queuedSubChunk = column?.getSubChunk(subY)
+      if (queuedSubChunk) {
+        // Priority queue
+        if (this.prioritySubChunkSet.has(queuedSubChunk)) {
+          const idx = this.prioritySubChunkQueue.indexOf(queuedSubChunk)
+          if (idx !== -1) this.prioritySubChunkQueue.splice(idx, 1)
+          this.prioritySubChunkSet.delete(queuedSubChunk)
+        }
+        // Normal queue
+        if (this.subChunkWorkerSet.has(queuedSubChunk)) {
+          const idx = this.subChunkWorkerQueue.indexOf(queuedSubChunk)
+          if (idx !== -1) this.subChunkWorkerQueue.splice(idx, 1)
+          this.subChunkWorkerSet.delete(queuedSubChunk)
+        }
+      }
+
+      this.removeSubChunkMesh(subChunkKey, true) // true = isUnloading, also clears opacity cache
+    }
 
     // Remove all block entities and dropped items in this chunk
     if (this.entityManager) {
@@ -2048,15 +2201,117 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
+   * Unload a single sub-chunk (its column stays loaded) - e.g. one that left
+   * the vertical view range: save it, take its light out of the world
+   * (unknown = dark, neighbours relit and remeshed), drop its mesh, pending
+   * mesh work and entities. A later load of it comes from persistence.
+   * Returns false if it wasn't loaded.
+   */
+  unloadSubChunk(coordinate: ISubChunkCoordinate): boolean {
+    const column = this.chunkManager.getColumn({ x: coordinate.x, z: coordinate.z })
+    const subChunk = column?.getSubChunk(coordinate.subY)
+    if (!column || !subChunk || !subChunk.lightReady) return false
+
+    // Save it (like unloadChunk)
+    this.saveSubChunkIfChanged(subChunk)
+
+    // Above its column's sky proof an unloaded sub-chunk counts as open sky -
+    // but this one is known to hold sky-stopping blocks (a player's platform
+    // high above the ground). Keep just those cells as a placeholder, which the
+    // sky scans read (like decoration writes above the loaded band), so the
+    // ground below stays in their shadow instead of being lit as open sky.
+    const skyBlockers = coordinate.subY > column.skyProofSubY ? this.collectSkyBlockers(subChunk) : null
+
+    // Out of the column first: the light engine then treats it as unloaded
+    column.removeSubChunk(coordinate.subY)
+    if (skyBlockers) this.writePlaceholderCells(column.getOrCreateSubChunk(coordinate.subY), skyBlockers)
+    this.liquidPhysicsManager.onColumnDataChanged(coordinate.x, coordinate.z)
+    this.chunkManager.unregisterSubChunk(coordinate)
+    this.lightEngine.onSubChunkUnloaded(column, subChunk)
+    subChunk.setState(ChunkState.UNLOADED)
+
+    // Mesh work: a result already back is dropped; a job still in a worker
+    // is discarded when it answers (its id is no longer the key's pending job)
+    const subChunkKey = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
+    const chunkX = Number(coordinate.x)
+    const chunkZ = Number(coordinate.z)
+    for (let i = this.pendingMeshResults.length - 1; i >= 0; i--) {
+      const result = this.pendingMeshResults[i]
+      if (result.chunkX === chunkX && result.chunkZ === chunkZ && result.subY === coordinate.subY) {
+        this.pendingMeshResults.splice(i, 1)
+      }
+    }
+    this.clearPendingMeshJob(subChunkKey)
+    if (this.prioritySubChunkSet.delete(subChunk)) {
+      const idx = this.prioritySubChunkQueue.indexOf(subChunk)
+      if (idx !== -1) this.prioritySubChunkQueue.splice(idx, 1)
+    }
+    if (this.subChunkWorkerSet.delete(subChunk)) {
+      const idx = this.subChunkWorkerQueue.indexOf(subChunk)
+      if (idx !== -1) this.subChunkWorkerQueue.splice(idx, 1)
+    }
+    this.removeSubChunkMesh(subChunkKey, true)
+
+    const minY = coordinate.subY * SUB_CHUNK_HEIGHT
+    this.entityManager?.removeEntitiesInSubChunk(coordinate.x, coordinate.z, minY, minY + SUB_CHUNK_HEIGHT - 1)
+    return true
+  }
+
+  /** Cells of a sub-chunk that stop direct sky, as flat (index, blockId, metadata) triples, or null. */
+  private collectSkyBlockers(subChunk: SubChunk): number[] | null {
+    const opacity = getLightTables().opacity
+    const blocks = subChunk.getBlockData()
+    const metadata = subChunk.getMetadataData()
+    let cells: number[] | null = null
+    for (let i = 0; i < SUB_CHUNK_VOLUME; i++) {
+      if (opacity[blocks[i]] === 0) continue
+      if (!cells) cells = []
+      cells.push(i, blocks[i], metadata[i])
+    }
+    return cells
+  }
+
+  /** Write (index, blockId, metadata) triples into a placeholder sub-chunk (not light-ready). */
+  private writePlaceholderCells(placeholder: SubChunk, cells: number[]): void {
+    const blocks = placeholder.getBlockData()
+    const metadata = placeholder.getMetadataData()
+    for (let c = 0; c < cells.length; c += 3) {
+      blocks[cells[c]] = cells[c + 1]
+      metadata[cells[c]] = cells[c + 2]
+    }
+    placeholder.markDataChanged()
+  }
+
+  /**
    * Register a callback for when a sub-chunk mesh is added to the scene.
+   * `current` is false when data arrived for the sub-chunk or one of its 26
+   * neighbours after the mesh job was sent: the mesh is newer than the one it
+   * replaces, but was built without that data (faces toward a neighbour that
+   * was missing are culled) and a remesh is on its way.
    * Returns an unsubscribe function.
    */
-  onSubChunkMeshAdded(callback: (coord: ISubChunkCoordinate) => void): () => void {
+  onSubChunkMeshAdded(callback: (coord: ISubChunkCoordinate, current: boolean) => void): () => void {
     this.subChunkMeshAddedCallbacks.push(callback)
     return () => {
       const index = this.subChunkMeshAddedCallbacks.indexOf(callback)
       if (index !== -1) {
         this.subChunkMeshAddedCallbacks.splice(index, 1)
+      }
+    }
+  }
+
+  /**
+   * Register a callback for when a displayed sub-chunk mesh stops being
+   * current because data arrived for the sub-chunk or one of its neighbours
+   * (its remesh is queued; onSubChunkMeshAdded follows).
+   * Returns an unsubscribe function.
+   */
+  onSubChunkMeshStale(callback: (coord: ISubChunkCoordinate) => void): () => void {
+    this.subChunkMeshStaleCallbacks.push(callback)
+    return () => {
+      const index = this.subChunkMeshStaleCallbacks.indexOf(callback)
+      if (index !== -1) {
+        this.subChunkMeshStaleCallbacks.splice(index, 1)
       }
     }
   }
@@ -2091,113 +2346,6 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Get all chunk mesh coordinates for initial sync.
-   */
-  getChunkMeshCoordinates(): IChunkCoordinate[] {
-    const coords: IChunkCoordinate[] = []
-    for (const chunkMesh of this.chunkMeshes.values()) {
-      coords.push(chunkMesh.chunkCoordinate)
-    }
-    return coords
-  }
-
-  /**
-   * Mark neighbor sub-chunks dirty if a block change is on the chunk edge.
-   * This queues horizontal neighbor sub-chunks for remeshing.
-   */
-  private markSubChunkNeighborsDirtyIfEdge(
-    chunkCoord: IChunkCoordinate,
-    localX: number,
-    localY: number,
-    localZ: number,
-    subY: number,
-    wasBlockRemoved: boolean
-  ): void {
-    if (localX === 0) {
-      const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x - 1n, z: chunkCoord.z }
-      const neighborColumn = this.chunkManager.getColumn(neighborChunkCoord)
-      if (neighborColumn) {
-        const neighborSubChunk = neighborColumn.getSubChunk(subY)
-        if (neighborSubChunk) {
-          this.queueSubChunkForMeshing(neighborSubChunk)
-        }
-        // Only queue lighting update for neighbor when block is REMOVED
-        // For block placement, cross-chunk lighting is handled by propagateToNeighborsImmediately
-        // Queueing the neighbor here would cause a race condition where the worker
-        // overwrites propagated light with stale data
-        if (wasBlockRemoved) {
-          this.backgroundLightingManager.queueBlockChange(
-            neighborColumn,
-            CHUNK_SIZE_X - 1, // opposite edge
-            localY,
-            localZ,
-            wasBlockRemoved
-          )
-        }
-      }
-    } else if (localX === CHUNK_SIZE_X - 1) {
-      const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x + 1n, z: chunkCoord.z }
-      const neighborColumn = this.chunkManager.getColumn(neighborChunkCoord)
-      if (neighborColumn) {
-        const neighborSubChunk = neighborColumn.getSubChunk(subY)
-        if (neighborSubChunk) {
-          this.queueSubChunkForMeshing(neighborSubChunk)
-        }
-        // Only queue lighting update for neighbor when block is REMOVED
-        if (wasBlockRemoved) {
-          this.backgroundLightingManager.queueBlockChange(
-            neighborColumn,
-            0, // opposite edge
-            localY,
-            localZ,
-            wasBlockRemoved
-          )
-        }
-      }
-    }
-
-    if (localZ === 0) {
-      const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x, z: chunkCoord.z - 1n }
-      const neighborColumn = this.chunkManager.getColumn(neighborChunkCoord)
-      if (neighborColumn) {
-        const neighborSubChunk = neighborColumn.getSubChunk(subY)
-        if (neighborSubChunk) {
-          this.queueSubChunkForMeshing(neighborSubChunk)
-        }
-        // Only queue lighting update for neighbor when block is REMOVED
-        if (wasBlockRemoved) {
-          this.backgroundLightingManager.queueBlockChange(
-            neighborColumn,
-            localX,
-            localY,
-            CHUNK_SIZE_Z - 1, // opposite edge
-            wasBlockRemoved
-          )
-        }
-      }
-    } else if (localZ === CHUNK_SIZE_Z - 1) {
-      const neighborChunkCoord: IChunkCoordinate = { x: chunkCoord.x, z: chunkCoord.z + 1n }
-      const neighborColumn = this.chunkManager.getColumn(neighborChunkCoord)
-      if (neighborColumn) {
-        const neighborSubChunk = neighborColumn.getSubChunk(subY)
-        if (neighborSubChunk) {
-          this.queueSubChunkForMeshing(neighborSubChunk)
-        }
-        // Only queue lighting update for neighbor when block is REMOVED
-        if (wasBlockRemoved) {
-          this.backgroundLightingManager.queueBlockChange(
-            neighborColumn,
-            localX,
-            localY,
-            0, // opposite edge
-            wasBlockRemoved
-          )
-        }
-      }
-    }
-  }
-
-  /**
    * Set the scene for rendering. Call this once before any chunk rendering.
    */
   setScene(scene: THREE.Scene): void {
@@ -2208,7 +2356,24 @@ export class WorldManager implements IModifiedChunkProvider {
    * Set the WebGL renderer for proper GPU resource cleanup.
    */
   setRenderer(renderer: THREE.WebGLRenderer): void {
+    this.renderer?.domElement.removeEventListener('webglcontextlost', this.onContextLost)
     this.renderer = renderer
+    applyBlockTextureAnisotropy(renderer)
+    renderer.domElement.addEventListener('webglcontextlost', this.onContextLost)
+  }
+
+  /**
+   * Chunk geometry keeps no CPU copy once it is on the GPU (GreedyChunkMesh),
+   * so it can't be re-uploaded after the WebGL context is lost: drop every
+   * sub-chunk mesh and rebuild it from the world data. The new meshes upload
+   * once the context is restored.
+   */
+  private onContextLost = (): void => {
+    for (const subChunkKey of Array.from(this.subChunkMeshes.keys())) {
+      this.removeSubChunkMesh(subChunkKey)
+      const subChunk = this.chunkManager.getSubChunk(parseSubChunkKey(subChunkKey))
+      if (subChunk) this.queueSubChunkForMeshing(subChunk)
+    }
   }
 
   /**
@@ -2217,15 +2382,9 @@ export class WorldManager implements IModifiedChunkProvider {
   private clearAllMeshes(): void {
     if (!this.scene) return
 
-    for (const chunkMesh of this.chunkMeshes.values()) {
-      chunkMesh.removeFromScene(this.scene)
-      chunkMesh.dispose(this.renderer ?? undefined)
-    }
-    this.chunkMeshes.clear()
-
     for (const subChunkMesh of this.subChunkMeshes.values()) {
       subChunkMesh.removeFromScene(this.scene)
-      subChunkMesh.dispose(this.renderer ?? undefined)
+      subChunkMesh.dispose()
     }
     this.subChunkMeshes.clear()
   }
@@ -2249,9 +2408,6 @@ export class WorldManager implements IModifiedChunkProvider {
     }
     this.generationWorkers.length = 0
     this.subChunkCallbackMap.clear()
-
-    // Dispose background lighting manager
-    this.backgroundLightingManager.dispose()
 
     // Drop any queued block ticks
     this.scheduledBlockTicks.dispose()

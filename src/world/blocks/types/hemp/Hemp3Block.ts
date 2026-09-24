@@ -10,8 +10,8 @@ import { Hemp1BlockItem } from '../../../../items/blocks/hemp/Hemp1BlockItem.ts'
 import { HempFiberItem } from '../../../../items/materials/hemp_fiber/HempFiberItem.ts'
 import hemp3TexUrl from './assets/hemp-3.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.HEMP_3, hemp3TexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.HEMP_3, hemp3TexUrl)
 
 const hemp3Texture = loadBlockTexture(hemp3TexUrl)
 

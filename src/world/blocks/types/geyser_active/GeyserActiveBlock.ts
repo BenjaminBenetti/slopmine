@@ -6,12 +6,15 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
+import { registerEmissiveTexture } from '../../../../renderer/EmissiveTextures.ts'
 import { GeyserBlockItem } from '../../../../items/blocks/geyser/GeyserBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import geyserActiveTexUrl from './assets/geyser_active.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.GEYSER_ACTIVE, geyserActiveTexUrl)
+// Emissive: the erupting vent blazes
+registerEmissiveTexture(TextureId.GEYSER_ACTIVE, { strength: 1.2, threshold: 0.12 })
 
 const geyserActiveTexture = loadBlockTexture(geyserActiveTexUrl)
 const geyserActiveMaterial = new THREE.MeshLambertMaterial({ map: geyserActiveTexture })

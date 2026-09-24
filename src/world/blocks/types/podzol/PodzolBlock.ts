@@ -10,7 +10,7 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { PodzolBlockItem } from '../../../../items/blocks/podzol/PodzolBlockItem.ts'
 import podzolTexUrl from './assets/podzol.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.PODZOL, podzolTexUrl)
 
 const podzolTexture = loadBlockTexture(podzolTexUrl)

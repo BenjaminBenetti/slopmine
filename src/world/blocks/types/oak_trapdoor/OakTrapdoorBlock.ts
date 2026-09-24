@@ -12,7 +12,7 @@ import { OakTrapdoorBlockItem } from '../../../../items/blocks/oak_trapdoor/OakT
 // Import texture (shared with the open variant)
 import oakTrapdoorTexUrl from './assets/oak-trapdoor.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.OAK_TRAPDOOR, oakTrapdoorTexUrl)
 
 // Load texture and create material

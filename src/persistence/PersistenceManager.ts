@@ -7,6 +7,7 @@ import type { ISubChunkCoordinate } from '../world/interfaces/ICoordinates.ts'
 import { createSubChunkKey, type SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import type {
   PersistenceWorkerRequest,
+  PersistenceWorkerEnvelope,
   PersistenceWorkerResponse,
   SerializedInventory,
   WorldMetadata,
@@ -21,11 +22,16 @@ const AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000
  * Interface for objects that can provide modified sub-chunks for saving.
  */
 export interface IModifiedChunkProvider {
+  /**
+   * Sub-chunks whose data the store doesn't hold yet. markSaved (optional) is
+   * called once the batch holding the entry is confirmed written.
+   */
   getModifiedSubChunks(): Array<{
     coordinate: ISubChunkCoordinate
     blocks: Uint16Array
-    lightData: Uint8Array
     metadata: Uint8Array
+    skyOpenAbove: boolean
+    markSaved?: () => void
   }>
   clearModifiedFlags(): void
 }
@@ -39,8 +45,12 @@ export class PersistenceManager {
   // Tracking modified sub-chunks
   private readonly modifiedSubChunks: Set<SubChunkKey> = new Set()
 
-  // Pending operations (for async request/response)
-  private requestId = 0
+  // Pending requests by id (the worker echoes it in the response). Never by
+  // sub-chunk coordinate: a save and a load of the same sub-chunk are often in
+  // flight together (unload, then the player turns back), and a coordinate-keyed
+  // map let the save's reply answer the load - which then looked like "no saved
+  // data", so the sub-chunk was regenerated and the player's edits were lost.
+  private nextRequestId = 1
   private readonly pendingRequests: Map<
     number,
     {
@@ -49,14 +59,13 @@ export class PersistenceManager {
     }
   > = new Map()
 
-  // Separate tracking for sub-chunk requests by coordinate key
-  // This ensures responses are matched to the correct request even when out-of-order
-  private readonly pendingSubChunkRequests: Map<
+  // Sub-chunk data handed to the worker for saving but not confirmed written
+  // yet (latest per sub-chunk). Loads are answered from here first, so a load
+  // can never return data older than a save issued before it; failed saves
+  // stay here, so their data is still found by the next load.
+  private readonly unconfirmedSaves: Map<
     SubChunkKey,
-    {
-      resolve: (response: PersistenceWorkerResponse) => void
-      reject: (error: Error) => void
-    }
+    { blocks: Uint16Array; metadata: Uint8Array | undefined; skyOpenAbove: boolean }
   > = new Map()
 
   // Cache for existence checks (avoid repeated worker calls)
@@ -98,6 +107,11 @@ export class PersistenceManager {
 
     this.worker.onerror = (error) => {
       console.error('Persistence worker error:', error)
+      // Requests in flight may never be answered: fail them (loads are retried
+      // by the generator; unconfirmed saves stay readable from memory)
+      const pending = Array.from(this.pendingRequests.values())
+      this.pendingRequests.clear()
+      for (const handlers of pending) handlers.reject(new Error('Persistence worker error'))
     }
 
     // Initialize OPFS in worker
@@ -139,105 +153,45 @@ export class PersistenceManager {
         return
       }
 
-      // For sub-chunk operations, track by coordinate key to ensure correct response matching
-      // This fixes a critical bug where concurrent requests could get mismatched responses
-      if (
-        request.type === 'load-subchunk' ||
-        request.type === 'save-subchunk' ||
-        request.type === 'check-subchunk-exists'
-      ) {
-        const key = createSubChunkKey(BigInt(request.chunkX), BigInt(request.chunkZ), request.subY)
-        this.pendingSubChunkRequests.set(key, { resolve, reject })
-      } else {
-        const id = this.requestId++
-        this.pendingRequests.set(id, { resolve, reject })
-      }
+      const requestId = this.nextRequestId++
+      this.pendingRequests.set(requestId, { resolve, reject })
+      const envelope: PersistenceWorkerEnvelope = { ...request, requestId }
 
       // Handle transferable buffers for sub-chunk saves
       if (request.type === 'save-subchunk') {
-        this.worker.postMessage(request, {
-          transfer: [request.blocks.buffer as ArrayBuffer, request.lightData.buffer as ArrayBuffer],
+        this.worker.postMessage(envelope, {
+          transfer: [request.blocks.buffer as ArrayBuffer],
         })
       } else if (request.type === 'batch-save-subchunks') {
         const transfers: ArrayBuffer[] = []
         for (const sc of request.subchunks) {
-          transfers.push(sc.blocks.buffer as ArrayBuffer, sc.lightData.buffer as ArrayBuffer)
+          transfers.push(sc.blocks.buffer as ArrayBuffer)
         }
-        this.worker.postMessage(request, { transfer: transfers })
+        this.worker.postMessage(envelope, { transfer: transfers })
       } else {
-        this.worker.postMessage(request)
+        this.worker.postMessage(envelope)
       }
     })
   }
 
   /**
-   * Handle messages from the worker.
-   * Sub-chunk responses are matched by coordinate to ensure correct request/response pairing.
+   * Handle messages from the worker: each response resolves the request with
+   * the same requestId (error responses included - callers check the type).
    */
-  private handleWorkerMessage(response: PersistenceWorkerResponse): void {
-    // Handle sub-chunk responses by matching on coordinates
-    // This ensures responses go to the correct request even when multiple requests are in flight
-    if (
-      response.type === 'subchunk-loaded' ||
-      response.type === 'subchunk-not-found' ||
-      response.type === 'subchunk-saved' ||
-      response.type === 'subchunk-exists'
-    ) {
-      const key = createSubChunkKey(
-        BigInt(response.chunkX),
-        BigInt(response.chunkZ),
-        response.subY
-      )
-      const handlers = this.pendingSubChunkRequests.get(key)
-      if (handlers) {
-        this.pendingSubChunkRequests.delete(key)
-        handlers.resolve(response)
-        return
-      }
-      // No pending request found for this coordinate - could be stale or duplicate
-      console.warn(`No pending request for sub-chunk response: ${key}`)
+  private handleWorkerMessage(response: PersistenceWorkerResponse & { requestId?: number }): void {
+    const handlers = response.requestId !== undefined ? this.pendingRequests.get(response.requestId) : undefined
+    if (handlers) {
+      this.pendingRequests.delete(response.requestId!)
+      handlers.resolve(response)
       return
     }
 
-    // Handle non-sub-chunk responses (init, inventory, metadata, batch-save, clear-all)
-    // These don't have coordinate keys, so use simple FIFO matching
-    const entries = Array.from(this.pendingRequests.entries())
-
-    for (const [id, handlers] of entries) {
-      const shouldResolve = this.matchesRequest(response)
-      if (shouldResolve) {
-        this.pendingRequests.delete(id)
-        handlers.resolve(response)
-        return
-      }
-    }
-
-    // If no pending request matched, just log (could be unsolicited or duplicate)
+    // No pending request (e.g. failed when the worker errored)
     if (response.type === 'error') {
       console.error('Persistence error:', response.message, 'operation:', response.operation)
+    } else {
+      console.warn(`[PersistenceManager] Unmatched persistence response ${response.type} (request ${response.requestId})`)
     }
-  }
-
-  /**
-   * Check if a response matches a pending non-sub-chunk request type.
-   */
-  private matchesRequest(response: PersistenceWorkerResponse): boolean {
-    // Only match non-sub-chunk response types (sub-chunks are handled separately by coordinate)
-    const nonSubChunkTypes = new Set([
-      'init-complete',
-      'inventory-saved',
-      'inventory-loaded',
-      'metadata-saved',
-      'metadata-loaded',
-      'batch-save-complete',
-      'clear-all-complete',
-      'error',
-      // Block state response types
-      'block-states-saved',
-      'block-states-loaded',
-      'block-state-deleted',
-    ])
-    return nonSubChunkTypes.has(response.type)
   }
 
   /**
@@ -287,13 +241,31 @@ export class PersistenceManager {
    * Waits for initialization if it's in progress.
    */
   async loadSubChunk(coordinate: ISubChunkCoordinate): Promise<PersistedSubChunkData | null> {
-    // Wait for initialization if it's in progress
+    // Wait for initialization if it's in progress (a failed initialization
+    // means no persistence: nothing is saved either, so generate)
     if (!this.initialized && this.initPromise) {
-      await this.initPromise
+      try {
+        await this.initPromise
+      } catch {
+        return null
+      }
     }
 
     if (!this.initialized || !this.worker) {
       return null
+    }
+
+    // A save of this sub-chunk that the worker hasn't confirmed yet is the
+    // newest data there is (read-your-writes)
+    const key = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
+    const unconfirmed = this.unconfirmedSaves.get(key)
+    if (unconfirmed) {
+      return {
+        blocks: new Uint16Array(unconfirmed.blocks),
+        metadata: unconfirmed.metadata ? new Uint8Array(unconfirmed.metadata) : undefined,
+        skyOpenAbove: unconfirmed.skyOpenAbove,
+        confirmed: false,
+      }
     }
 
     const response = await this.sendRequest({
@@ -310,18 +282,23 @@ export class PersistenceManager {
 
       return {
         blocks: response.blocks,
-        lightData: response.lightData,
         metadata: response.metadata,
+        skyOpenAbove: response.skyOpenAbove,
+        confirmed: true,
       }
     }
 
     if (response.type === 'subchunk-not-found') {
       // Mark as not existing in cache
-      const key = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
       this.existenceCache.set(key, false)
+      return null
     }
 
-    return null
+    // A failed read is not "nothing saved": regenerating would replace the
+    // saved data (and save the regenerated data over it on unload). Fail; the
+    // generator retries the load.
+    const reason = response.type === 'error' ? response.message : `unexpected response ${response.type}`
+    throw new Error(`Failed to load sub-chunk ${key}: ${reason}`)
   }
 
   /**
@@ -330,31 +307,44 @@ export class PersistenceManager {
   async saveSubChunk(
     coordinate: ISubChunkCoordinate,
     blocks: Uint16Array,
-    lightData: Uint8Array,
-    metadata?: Uint8Array
+    metadata: Uint8Array | undefined,
+    skyOpenAbove: boolean
   ): Promise<void> {
     if (!this.initialized || !this.worker) {
       return
     }
 
-    // Copy buffers since they'll be transferred
+    // Copy buffers since they'll be transferred (and the caller's arrays live on)
     const blocksCopy = new Uint16Array(blocks)
-    const lightCopy = new Uint8Array(lightData)
     const metadataCopy = metadata ? new Uint8Array(metadata) : undefined
 
-    await this.sendRequest({
+    // Readable by loads until the worker confirms the write
+    const key = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
+    const unconfirmed = {
+      blocks: new Uint16Array(blocksCopy),
+      metadata: metadataCopy ? new Uint8Array(metadataCopy) : undefined,
+      skyOpenAbove,
+    }
+    this.unconfirmedSaves.set(key, unconfirmed)
+    this.existenceCache.set(key, true)
+
+    const response = await this.sendRequest({
       type: 'save-subchunk',
       chunkX: coordinate.x.toString(),
       chunkZ: coordinate.z.toString(),
       subY: coordinate.subY,
       blocks: blocksCopy,
-      lightData: lightCopy,
       metadata: metadataCopy,
+      skyOpenAbove,
     })
+    if (response.type !== 'subchunk-saved') {
+      // Kept in unconfirmedSaves: still served to loads
+      const reason = response.type === 'error' ? response.message : `unexpected response ${response.type}`
+      throw new Error(`Failed to save sub-chunk ${key}: ${reason}`)
+    }
 
-    // Update cache
-    const key = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
-    this.existenceCache.set(key, true)
+    // Written: drop the in-memory copy unless a newer save replaced it
+    if (this.unconfirmedSaves.get(key) === unconfirmed) this.unconfirmedSaves.delete(key)
   }
 
   /**
@@ -382,11 +372,11 @@ export class PersistenceManager {
         chunkZ: mc.coordinate.z.toString(),
         subY: mc.coordinate.subY,
         blocks: new Uint16Array(mc.blocks), // Copy for transfer
-        lightData: new Uint8Array(mc.lightData),
         metadata: new Uint8Array(mc.metadata),
+        skyOpenAbove: mc.skyOpenAbove,
       }))
 
-      await this.sendRequest({
+      const response = await this.sendRequest({
         type: 'batch-save-subchunks',
         subchunks,
       })
@@ -398,7 +388,13 @@ export class PersistenceManager {
         this.modifiedSubChunks.delete(key)
       }
 
-      chunkProvider.clearModifiedFlags()
+      if (response.type === 'batch-save-complete') {
+        // Confirmed written: these versions need no further save
+        for (const mc of modifiedChunks) mc.markSaved?.()
+        chunkProvider.clearModifiedFlags()
+      } else {
+        console.error('Batch sub-chunk save failed:', response.type === 'error' ? response.message : response.type)
+      }
     }
 
     // Save inventory
@@ -644,6 +640,7 @@ export class PersistenceManager {
   clearCache(): void {
     this.existenceCache.clear()
     this.modifiedSubChunks.clear()
+    this.unconfirmedSaves.clear()
   }
 
   /**
@@ -671,7 +668,7 @@ export class PersistenceManager {
     }
 
     this.pendingRequests.clear()
-    this.pendingSubChunkRequests.clear()
+    this.unconfirmedSaves.clear()
     this.existenceCache.clear()
     this.modifiedSubChunks.clear()
     this.initialized = false

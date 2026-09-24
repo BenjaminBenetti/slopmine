@@ -10,8 +10,8 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { PineNeedlesBlockItem } from '../../../../items/blocks/pine_needles/PineNeedlesBlockItem.ts'
 import pineNeedlesTexUrl from './assets/pine-needles.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.PINE_NEEDLES, pineNeedlesTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.PINE_NEEDLES, pineNeedlesTexUrl)
 
 const pineNeedlesTexture = loadBlockTexture(pineNeedlesTexUrl)
 

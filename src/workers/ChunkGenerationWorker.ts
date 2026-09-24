@@ -1,20 +1,21 @@
 /**
  * Web Worker for chunk terrain generation.
- * Handles: terrain, caves, initial skylight, features.
+ * Handles: terrain, caves, features, local light (sky + block, after features).
  * Does NOT handle: actual tree placement (crosses chunk boundaries).
  *
  * Receives biome config from main thread - no duplicated configuration here.
  */
 
-import { WorkerChunk } from './WorkerChunk.ts'
 import { WorkerSubChunk } from './WorkerSubChunk.ts'
+import { ColumnHeights } from './ColumnHeights.ts'
 import { SimplexNoise } from '../world/generate/SimplexNoise.ts'
 import { CaveCarver } from '../world/generate/caves/CaveCarver.ts'
 import { applyCaveWallLining } from '../world/generate/caves/CaveWallLining.ts'
-import { SkylightPropagator } from '../world/lighting/SkylightPropagator.ts'
+import { computeSubChunkLight, provesSkyAbove, resolveSkySeed, SKY_SEED_SIZE } from '../world/lighting/SubChunkLight.ts'
+import { getLightTables } from '../world/lighting/LightTables.ts'
 import { CliffFeature, type CliffFeatureSettings } from '../world/generate/features/CliffFeature.ts'
 import { OreFeature, type OreFeatureSettings, type OrePosition } from '../world/generate/features/OreFeature.ts'
-import { WaterFeature, type WaterEdgeEffects } from '../world/generate/features/WaterFeature.ts'
+import { WaterFeature } from '../world/generate/features/WaterFeature.ts'
 import { OasisFeature, type OasisSettings } from '../world/generate/features/OasisFeature.ts'
 import { LavaFeature, type LavaFeatureConfig } from '../world/generate/features/LavaFeature.ts'
 import { WheatFeature, type WheatFeatureSettings } from '../world/generate/features/WheatFeature.ts'
@@ -44,14 +45,13 @@ import { HuntersCampFeature, type HuntersCampFeatureSettings } from '../world/ge
 import { BasaltColumnsFeature, type BasaltColumnsFeatureSettings } from '../world/generate/features/BasaltColumnsFeature.ts'
 import { CharredMiningCampFeature, type CharredMiningCampFeatureSettings } from '../world/generate/features/CharredMiningCampFeature.ts'
 import { Feature, type FeatureContext } from '../world/generate/features/Feature.ts'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'
-import { localToWorld } from '../world/coordinates/CoordinateUtils.ts'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, SUB_CHUNK_HEIGHT, SUB_CHUNK_VOLUME } from '../world/interfaces/IChunk.ts'
 import { registerDefaultBlocks } from '../world/blocks/registerDefaultBlocks.ts'
-import { getBlock } from '../world/blocks/BlockRegistry.ts'
+import { getBlock, BlockRegistry } from '../world/blocks/BlockRegistry.ts'
 import { evaluateTerrainConfig } from '../world/generate/terrain/NoiseEvaluator.ts'
 import type { TerrainConfig } from '../world/generate/terrain/TerrainConfig.ts'
 import type { WaterSettings, BiomeGenerator } from '../world/generate/BiomeGenerator.ts'
-import { createConstantCaveSampleGetter, type CaveConfig } from '../world/generate/caves/CaveConfig.ts'
+import type { CaveConfig } from '../world/generate/caves/CaveConfig.ts'
 import {
   createCaveSampleGetter,
   BIOME_REGION_SIZE_BLOCKS,
@@ -59,7 +59,20 @@ import {
   smoothstep,
   lerp,
 } from '../world/generate/caves/CaveBlend.ts'
-import type { IGenerationConfig } from '../world/generate/GenerationConfig.ts'
+import { LAYER_BOUNDARY_Y, type IGenerationConfig } from '../world/generate/GenerationConfig.ts'
+import {
+  FULL_GENERATION,
+  SURFACE_ONLY_GENERATION,
+  type SubChunkGenerationOptions,
+} from '../world/generate/SubChunkGenerationOptions.ts'
+import { LodWorkerService } from '../world/lod/LodWorkerService.ts'
+import {
+  LOD_SURFACE_LIQUID,
+  LOD_SURFACE_SOLID,
+  type LodWorkerRequest,
+  type LodTileRequest,
+  type LodErrorResult,
+} from '../world/lod/LodTypes.ts'
 
 // Import biome registry for dynamic biome instantiation
 import { biomeRegistry } from '../world/generate/biomes/BiomeRegistry.ts'
@@ -214,53 +227,10 @@ function getDistanceToBoundary(worldCoord: number): { distance: number; neighbor
   }
 }
 
-/**
- * Get the biome region coordinate for a world position.
- */
-function getRegionCoord(worldCoord: number): number {
-  return Math.floor(worldCoord / BIOME_REGION_SIZE_BLOCKS)
-}
-
-/**
- * Request sent to the chunk generation worker.
- */
-export interface ChunkGenerationRequest {
-  type: 'generate'
-  chunkX: number
-  chunkZ: number
-  seed: number
-  seaLevel: number
-  terrainThickness: number
-  biomeConfig: WorkerBiomeConfig
-  blocks: Uint16Array
-  lightData: Uint8Array
-}
-
-/**
- * Response from the chunk generation worker.
- */
-export interface ChunkGenerationResponse {
-  type: 'generate-result'
-  chunkX: number
-  chunkZ: number
-  blocks: Uint16Array
-  lightData: Uint8Array
-}
-
-/**
- * Error response from worker.
- */
-export interface ChunkGenerationError {
-  type: 'generate-error'
-  chunkX: number
-  chunkZ: number
-  error: string
-}
-
 // ==================== Sub-Chunk Generation Types ====================
 
 /**
- * Request to generate a single sub-chunk (32x32x64).
+ * Request to generate a single sub-chunk (32x32x32).
  */
 export interface SubChunkGenerationRequest {
   type: 'generate-subchunk'
@@ -273,8 +243,24 @@ export interface SubChunkGenerationRequest {
   seaLevel: number
   terrainThickness: number
   biomeData: BiomeBlendData
-  blocks: Uint16Array // 65,536 elements
-  lightData: Uint8Array // 65,536 elements
+  blocks: Uint16Array // 32,768 elements
+  lightData: Uint8Array // 32,768 elements (filled with local light)
+  /**
+   * Per-column sky seed (32x32, z*32+x; see SubChunkLight.ts SKY_SEED_*):
+   * where direct sky enters the top of this sub-chunk as the main thread
+   * currently knows it. Omitted = open where the sub-chunk proves the sky above.
+   */
+  skySeed?: Uint8Array
+  /** Stages to run; defaults to the full pipeline. */
+  options?: SubChunkGenerationOptions
+  /** Echoed in the response/error: pairs replies with requests (several may be in flight per sub-chunk). */
+  requestId?: number
+  /**
+   * Light only (a sub-chunk loaded from persistence): `blocks` holds its saved
+   * data; nothing is generated - the local light pass runs on it with this
+   * metadata and sky proof, off the main thread.
+   */
+  lightOnly?: { metadata: Uint8Array; skyOpenAbove: boolean }
 }
 
 /**
@@ -282,6 +268,8 @@ export interface SubChunkGenerationRequest {
  */
 export interface SubChunkGenerationResponse {
   type: 'subchunk-result'
+  /** The request's requestId. */
+  requestId?: number
   chunkX: number
   chunkZ: number
   subY: number
@@ -289,10 +277,22 @@ export interface SubChunkGenerationResponse {
   lightData: Uint8Array
   metadataData: Uint8Array // Block metadata (facing direction, etc.)
   hasTerrainAbove: boolean // True if terrain extends above this sub-chunk
+  /**
+   * Sky proof (see provesSkyAbove), reported together with the local light in
+   * lightData. Omit it on any path that skips the light pass: the main thread
+   * then relights the sub-chunk itself.
+   */
+  skyOpenAbove?: boolean
+  /**
+   * The resolved 0/1 sky seed (32x32, z*32+x) lightData was computed with.
+   * Sent back rather than re-derived from the request, so light and seed
+   * always belong together (a reply can resolve a newer request for the same
+   * sub-chunk). Omit together with skyOpenAbove on paths without the light pass.
+   */
+  lightSeed?: Uint8Array
   maxSolidY: number // Highest solid block world Y in this sub-chunk (-1 if empty)
   orePositions: OrePosition[] // Debug: positions of all ore blocks placed
   isFullyOpaque: boolean // True if ALL blocks in this sub-chunk are opaque (for occlusion culling)
-  waterEdgeEffects?: WaterEdgeEffects // Which edges have water (for neighbor propagation)
 }
 
 /**
@@ -300,6 +300,8 @@ export interface SubChunkGenerationResponse {
  */
 export interface SubChunkGenerationError {
   type: 'subchunk-error'
+  /** The request's requestId. */
+  requestId?: number
   chunkX: number
   chunkZ: number
   subY: number
@@ -378,21 +380,6 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }
   })
-}
-
-/**
- * Generate terrain height at a world position for a single biome.
- * Uses terrainConfig if available, otherwise falls back to legacy calculation.
- */
-function getHeightAt(
-  noise: SimplexNoise,
-  worldX: number,
-  worldZ: number,
-  seaLevel: number,
-  biomeConfig: WorkerBiomeConfig
-): number {
-  const config = getTerrainConfig(biomeConfig)
-  return Math.floor(evaluateTerrainConfig(noise, config, worldX, worldZ, seaLevel))
 }
 
 /**
@@ -535,6 +522,60 @@ function getCaveCarver(seed: number): CaveCarver {
 }
 
 /**
+ * Terrain noise cached per seed (its permutation tables are seed-derived and
+ * read-only, so one instance serves all requests).
+ */
+let cachedNoise: SimplexNoise | null = null
+let cachedNoiseSeed = 0
+
+function getNoise(seed: number): SimplexNoise {
+  if (!cachedNoise || cachedNoiseSeed !== seed) {
+    cachedNoise = new SimplexNoise(seed)
+    cachedNoiseSeed = seed
+  }
+  return cachedNoise
+}
+
+/**
+ * Recently used column height grids, most recent last. Every sub-chunk of a
+ * column needs the same 32x32 blended heights (plus the same out-of-chunk
+ * probes), so sub-chunks of a column that land on this worker - and all the
+ * sub-chunks of an LOD tile - compute them once.
+ */
+const columnHeightCache = new Map<string, ColumnHeights>()
+const COLUMN_HEIGHT_CACHE_SIZE = 64
+
+function getColumnHeights(
+  chunkX: number,
+  chunkZ: number,
+  seed: number,
+  seaLevel: number,
+  biomeData: BiomeBlendData,
+  noise: SimplexNoise
+): ColumnHeights {
+  // Blended height depends only on world position and the blend biomes
+  const key = `${seed}:${seaLevel}:${chunkX}:${chunkZ}:${biomeData.primary.name}:` +
+    `${biomeData.north?.name}:${biomeData.south?.name}:${biomeData.east?.name}:${biomeData.west?.name}:` +
+    `${biomeData.northeast?.name}:${biomeData.northwest?.name}:${biomeData.southeast?.name}:${biomeData.southwest?.name}`
+  let heights = columnHeightCache.get(key)
+  if (heights) {
+    // Refresh recency
+    columnHeightCache.delete(key)
+    columnHeightCache.set(key, heights)
+    return heights
+  }
+  heights = new ColumnHeights(chunkX * CHUNK_SIZE_X, chunkZ * CHUNK_SIZE_Z, (worldX, worldZ) =>
+    getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
+  )
+  columnHeightCache.set(key, heights)
+  if (columnHeightCache.size > COLUMN_HEIGHT_CACHE_SIZE) {
+    const oldest = columnHeightCache.keys().next().value
+    if (oldest !== undefined) columnHeightCache.delete(oldest)
+  }
+  return heights
+}
+
+/**
  * True if any biome in the blend neighborhood has caves enabled AND the
  * requested Y range can intersect a cave band. Conservative: blended
  * minY/maxY are weighted means, so they can never exceed the min/max of
@@ -560,98 +601,6 @@ function cavesCanAffect(biomeData: BiomeBlendData, minWorldY: number, maxWorldY:
     if (c.caves.maxY > bandHi) bandHi = c.caves.maxY
   }
   return bandLo <= maxWorldY && bandHi >= minWorldY
-}
-
-/**
- * Generate terrain for the chunk using the biome's fillChunk method.
- */
-function generateTerrain(
-  chunk: WorkerChunk,
-  noise: SimplexNoise,
-  seed: number,
-  seaLevel: number,
-  terrainThickness: number,
-  biomeConfig: WorkerBiomeConfig
-): void {
-  const biome = getBiomeGenerator(biomeConfig.name, seed, seaLevel, terrainThickness)
-  const maxY = seaLevel + 100 // Allow for terrain above sea level
-
-  // Height getter that uses the biome's terrain config
-  const getHeight = (worldX: number, worldZ: number) =>
-    getHeightAt(noise, worldX, worldZ, seaLevel, biomeConfig)
-
-  // For full chunks, minY=0 means no Y offset (world Y = local Y)
-  ;(biome as any).fillChunk(chunk, 0, maxY, noise, getHeight)
-}
-
-/**
- * Main chunk generation function.
- */
-async function generateChunk(request: ChunkGenerationRequest): Promise<ChunkGenerationResponse> {
-  const { chunkX, chunkZ, seed, seaLevel, terrainThickness, biomeConfig, blocks, lightData } = request
-
-  // Create WorkerChunk with the provided buffers
-  const chunk = new WorkerChunk(chunkX, chunkZ, blocks, lightData)
-
-  // Create noise generator
-  const noise = new SimplexNoise(seed)
-
-  // Create height getter for caves and features
-  const getHeight = (worldX: number, worldZ: number) =>
-    getHeightAt(noise, worldX, worldZ, seaLevel, biomeConfig)
-
-  // Phase 1: Generate terrain using biome's fillColumn
-  generateTerrain(chunk, noise, seed, seaLevel, terrainThickness, biomeConfig)
-
-  // Phase 2: Carve caves (single biome, no blending on the legacy path)
-  const caves = biomeConfig.caves
-  if (caves?.enabled) {
-    getCaveCarver(seed).carve(chunk, createConstantCaveSampleGetter(caves), getHeight)
-  }
-
-  // Phase 3: Apply features
-  const features = createFeatures(biomeConfig.features)
-  if (features.length > 0) {
-    const workerConfig: IGenerationConfig = {
-      seed,
-      seaLevel,
-      terrainThickness,
-      chunkDistance: 4,
-    }
-
-    // Create a minimal biome properties object for feature context
-    const biomeProperties = {
-      ...biomeConfig,
-      frequency: 1.0, // Not used in worker context
-      features, // Now contains actual Feature instances
-    }
-
-    const featureContext: FeatureContext = {
-      chunk,
-      world: null,
-      noise,
-      config: workerConfig,
-      biomeProperties,
-      getBaseHeightAt: getHeight,
-      frameBudget: undefined,
-    }
-
-    for (const feature of features) {
-      await feature.scan(featureContext)
-    }
-  }
-
-  // Phase 4: Calculate initial skylight (using biome's skylight value)
-  const skylightPropagator = new SkylightPropagator()
-  skylightPropagator.propagate(chunk, biomeConfig.skylightValue)
-
-  return {
-    type: 'generate-result',
-    chunkX,
-    chunkZ,
-    blocks: chunk.getBlockData(),
-    lightData: chunk.getLightData(),
-  }
 }
 
 // ==================== Sub-Chunk Generation ====================
@@ -902,6 +851,8 @@ function generateSubChunkTerrain(
 ): { hasTerrainAbove: boolean; maxSolidY: number } {
   // Get primary biome generator
   const primaryBiome = getBiomeGenerator(biomeData.primary.name, seed, seaLevel, terrainThickness)
+  const chunkWorldX = Number(subChunk.coordinate.x) * CHUNK_SIZE_X
+  const chunkWorldZ = Number(subChunk.coordinate.z) * CHUNK_SIZE_Z
 
   // Fill with primary biome first
   ;(primaryBiome as any).fillChunk(subChunk, minWorldY, maxWorldY, noise, getHeight)
@@ -931,16 +882,11 @@ function generateSubChunkTerrain(
       ;(neighborBiome as any).fillChunk(tempSubChunk, minWorldY, maxWorldY, noise, getHeight)
 
       // Dither-blend: copy secondary blocks based on dither pattern
-      const coord = subChunk.coordinate
       for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
         for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
           // Get world coordinates first (needed for noise-based dither distance)
-          const worldCoord = localToWorld(
-            { x: coord.x, z: coord.z },
-            { x: localX, y: 0, z: localZ }
-          )
-          const worldX = Number(worldCoord.x)
-          const worldZ = Number(worldCoord.z)
+          const worldX = chunkWorldX + localX
+          const worldZ = chunkWorldZ + localZ
 
           // Check if this position should blend with this neighbor
           const neighborInfo = getNeighborAndDistance(biomeData, localX, localZ, worldX, worldZ, seed)
@@ -980,11 +926,7 @@ function generateSubChunkTerrain(
   for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
     for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
       // Check if terrain extends above this sub-chunk
-      const worldCoord = localToWorld(
-        { x: subChunk.coordinate.x, z: subChunk.coordinate.z },
-        { x: localX, y: 0, z: localZ }
-      )
-      const height = getHeight(Number(worldCoord.x), Number(worldCoord.z))
+      const height = getHeight(chunkWorldX + localX, chunkWorldZ + localZ)
       if (height > maxWorldY) {
         hasTerrainAbove = true
       }
@@ -1006,115 +948,56 @@ function generateSubChunkTerrain(
 }
 
 /**
- * Apply provisional skylight to a sub-chunk.
- * Full skylight if above terrain, otherwise needs cross-chunk propagation later.
+ * Generate a single sub-chunk. `options` switches off stages a caller doesn't
+ * need (LOD tiles only need the final surface); the default runs everything.
  */
-function applyProvisionalSkylight(
-  subChunk: WorkerSubChunk,
-  minWorldY: number,
-  maxWorldY: number,
-  skylightValue: number,
-  getHeight: (worldX: number, worldZ: number) => number
-): void {
-  const coord = subChunk.coordinate
-
-  for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
-    for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-      const worldCoord = localToWorld(
-        { x: coord.x, z: coord.z },
-        { x: localX, y: 0, z: localZ }
-      )
-      const worldX = Number(worldCoord.x)
-      const worldZ = Number(worldCoord.z)
-
-      // Use blended height for consistent skylight with terrain
-      const terrainHeight = getHeight(worldX, worldZ)
-
-      // Apply skylight to blocks above terrain within this sub-chunk
-      for (let worldY = maxWorldY; worldY >= minWorldY; worldY--) {
-        const localY = worldY - minWorldY
-        const blockId = subChunk.getBlockId(localX, localY, localZ)
-
-        if (blockId === 0) {
-          // Air block
-          if (worldY > terrainHeight) {
-            // Above terrain - use biome's skylight value
-            subChunk.setSkylight(localX, localY, localZ, skylightValue)
-          } else {
-            // Below terrain (cave) - no skylight for now
-            subChunk.setSkylight(localX, localY, localZ, 0)
-          }
-        } else {
-          // Solid block - no skylight
-          subChunk.setSkylight(localX, localY, localZ, 0)
-        }
-      }
-    }
-  }
-}
-
-/**
- * Generate a single sub-chunk.
- */
-async function generateSubChunk(request: SubChunkGenerationRequest): Promise<SubChunkGenerationResponse> {
-  const { chunkX, chunkZ, subY, minWorldY, maxWorldY, seed, seaLevel, terrainThickness, biomeData, blocks, lightData } = request
+async function generateSubChunk(
+  request: SubChunkGenerationRequest,
+  options: SubChunkGenerationOptions = FULL_GENERATION
+): Promise<SubChunkGenerationResponse> {
+  const { chunkX, chunkZ, subY, minWorldY, maxWorldY, seed, seaLevel, terrainThickness, biomeData, blocks, lightData, skySeed } = request
   const biomeConfig = biomeData.primary
 
   // Create WorkerSubChunk with the provided buffers
   const subChunk = new WorkerSubChunk(chunkX, chunkZ, subY, blocks, lightData)
 
-  // Create noise generator
-  const noise = new SimplexNoise(seed)
+  const noise = getNoise(seed)
 
-  // Memoized blended-height getter shared by terrain, caves, skylight, and
-  // features. Blended height costs up to 4 terrain evaluations per call and
-  // several phases query every column, so cache the chunk's 32x32 columns in
-  // a typed array (NaN = not yet computed) with a Map fallback for the rare
-  // out-of-chunk queries some features make.
+  // Blended-height getter shared by terrain, caves, skylight and features -
+  // and with every other sub-chunk of this column generated by this worker.
   const chunkWorldX = chunkX * CHUNK_SIZE_X
   const chunkWorldZ = chunkZ * CHUNK_SIZE_Z
-  const heightGrid = new Float64Array(CHUNK_SIZE_X * CHUNK_SIZE_Z).fill(NaN)
-  let outOfChunkHeights: Map<string, number> | null = null
-  const getHeight = (worldX: number, worldZ: number): number => {
-    const localX = worldX - chunkWorldX
-    const localZ = worldZ - chunkWorldZ
-    if (localX >= 0 && localX < CHUNK_SIZE_X && localZ >= 0 && localZ < CHUNK_SIZE_Z) {
-      const idx = localZ * CHUNK_SIZE_X + localX
-      let height = heightGrid[idx]
-      if (Number.isNaN(height)) {
-        height = getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
-        heightGrid[idx] = height
-      }
-      return height
-    }
-    if (!outOfChunkHeights) outOfChunkHeights = new Map()
-    const key = worldX + ',' + worldZ
-    let height = outOfChunkHeights.get(key)
-    if (height === undefined) {
-      height = getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
-      outOfChunkHeights.set(key, height)
-    }
-    return height
-  }
+  const heights = getColumnHeights(chunkX, chunkZ, seed, seaLevel, biomeData, noise)
+  const getHeight = (worldX: number, worldZ: number): number => heights.get(worldX, worldZ)
+
+  // All-air early-out: a surface-layer sub-chunk entirely above the blended
+  // height of every column gets nothing from the terrain fill (biomes only
+  // fill at or below the height), biome dithering or cave carving (carving
+  // skips air), so skip those. Water, features and lining still run - tall
+  // structures rooted lower down (giant conifers, mega trees, volcano cones
+  // and their lava calderas) continue up into these sub-chunks.
+  const aboveTerrain = minWorldY >= LAYER_BOUNDARY_Y && minWorldY > heights.getMax()
 
   // Phase 1: Generate terrain within this sub-chunk's Y range (with biome blending)
-  const { hasTerrainAbove, maxSolidY } = generateSubChunkTerrain(
-    subChunk,
-    noise,
-    seed,
-    seaLevel,
-    terrainThickness,
-    minWorldY,
-    maxWorldY,
-    biomeData,
-    getHeight
-  )
+  const { hasTerrainAbove, maxSolidY } = aboveTerrain
+    ? { hasTerrainAbove: false, maxSolidY: -1 }
+    : generateSubChunkTerrain(
+        subChunk,
+        noise,
+        seed,
+        seaLevel,
+        terrainThickness,
+        minWorldY,
+        maxWorldY,
+        biomeData,
+        getHeight
+      )
 
   // Phase 2: Carve caves (only within this Y range, parameters blended
   // per-column across biome borders like terrain height)
   const anyCaves = cavesCanAffect(biomeData, 0, CHUNK_HEIGHT - 1)
   const getCaveSample = anyCaves ? createCaveSampleGetter(biomeData, chunkWorldX, chunkWorldZ) : null
-  if (getCaveSample && cavesCanAffect(biomeData, minWorldY, maxWorldY)) {
+  if (options.caves && !aboveTerrain && getCaveSample && cavesCanAffect(biomeData, minWorldY, maxWorldY)) {
     getCaveCarver(seed).carveSubChunk(subChunk, getCaveSample, getHeight, minWorldY, maxWorldY)
   }
 
@@ -1128,7 +1011,6 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   // Phase 2.5: Apply water to terrain depressions (after caves, before skylight)
   // Water only fills open-air depressions above terrain surface, not caves
   const waterSettings = biomeConfig.water
-  let waterEdgeEffects: WaterEdgeEffects | undefined
   if (waterSettings?.enabled) {
     const waterFeature = new WaterFeature(waterSettings)
     const waterContext: FeatureContext = {
@@ -1147,11 +1029,8 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
       },
       getBaseHeightAt: getHeight,
     }
-    waterEdgeEffects = await waterFeature.scanWithEdgeEffects(waterContext)
+    await waterFeature.scan(waterContext)
   }
-
-  // Phase 3: Apply provisional skylight (uses blended height and biome skylight value)
-  applyProvisionalSkylight(subChunk, minWorldY, maxWorldY, biomeConfig.skylightValue, getHeight)
 
   // Phase 4: Apply all features (uses primary biome)
   const orePositions: OrePosition[] = []
@@ -1201,6 +1080,7 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   // Apply all features
   for (const feature of features) {
     if (feature instanceof OreFeature) {
+      if (!options.ores) continue
       // Special handling for ore: collect positions for main thread
       const oreMinY = feature.settings.minY
       const oreMaxY = feature.settings.maxY
@@ -1221,18 +1101,34 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
   // Phase 4.5: Cave wall lining (primary biome only — block identities don't
   // blend). Runs after carving (flood lava exists) AND after features (lava
   // lakes exist, ore veins are skipped via replaceableBlocks).
-  if (biomeConfig.caves?.enabled && biomeConfig.caves.lining) {
+  if (options.lining && biomeConfig.caves?.enabled && biomeConfig.caves.lining) {
     applyCaveWallLining(subChunk, biomeConfig.caves, seed, chunkWorldX, chunkWorldZ, minWorldY, maxWorldY, getHeight)
   }
 
-  // Phase 5: Compute opacity for occlusion culling (done in worker to avoid main thread work)
+  // Phase 5: Local light, after every block-writing phase: direct sky where
+  // the seed opens the top face, emitters, and propagation within the
+  // sub-chunk. The main thread merges it with loaded neighbours. Runs for
+  // all-air early-out sub-chunks too (features may have written into them;
+  // the main thread trusts worker light only with skyOpenAbove + lightSeed).
+  // Paths without the light pass (LOD tiles) omit both.
+  let skyOpenAbove: boolean | undefined
+  let lightSeed: Uint8Array | undefined
+  if (options.skylight) {
+    // Never below the layer boundary: the whole surface layer lies above Hell,
+    // whatever Hell's own terrain height says (an all-air Hell top row would
+    // otherwise let unloaded surface sub-chunks count as open sky).
+    skyOpenAbove = minWorldY >= LAYER_BOUNDARY_Y && provesSkyAbove(blocks, hasTerrainAbove)
+    lightSeed = resolveSkySeed(skySeed ?? null, skyOpenAbove, new Uint8Array(SKY_SEED_SIZE))
+    computeSubChunkLight(blocks, lightData, lightSeed, biomeConfig.skylightValue, getLightTables(), subChunk.getMetadataData())
+  }
+
+  // Phase 6: Compute opacity for occlusion culling (done in worker to avoid main thread work)
   const blockData = subChunk.getBlockData()
-  let isFullyOpaque = true
-  for (let i = 0; i < blockData.length; i++) {
+  let isFullyOpaque = options.opacity
+  for (let i = 0; isFullyOpaque && i < blockData.length; i++) {
     const block = getBlock(blockData[i])
     if (!block.properties.isOpaque) {
       isFullyOpaque = false
-      break
     }
   }
 
@@ -1245,10 +1141,151 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
     lightData: subChunk.getLightData(),
     metadataData: subChunk.getMetadataData(),
     hasTerrainAbove,
+    skyOpenAbove,
+    lightSeed,
     maxSolidY,
     orePositions,
     isFullyOpaque,
-    waterEdgeEffects,
+  }
+}
+
+/**
+ * Local light for a sub-chunk loaded from persistence (see
+ * SubChunkGenerationRequest.lightOnly): the same pass as Phase 5 of
+ * generateSubChunk, on the saved blocks.
+ */
+function lightSavedSubChunk(request: SubChunkGenerationRequest): SubChunkGenerationResponse {
+  const { blocks, lightData } = request
+  const { metadata, skyOpenAbove } = request.lightOnly!
+  const lightSeed = resolveSkySeed(request.skySeed ?? null, skyOpenAbove, new Uint8Array(SKY_SEED_SIZE))
+  computeSubChunkLight(blocks, lightData, lightSeed, request.biomeData.primary.skylightValue, getLightTables(), metadata)
+  let isFullyOpaque = true
+  for (let i = 0; isFullyOpaque && i < blocks.length; i++) {
+    if (!getBlock(blocks[i]).properties.isOpaque) isFullyOpaque = false
+  }
+  return {
+    type: 'subchunk-result',
+    chunkX: request.chunkX,
+    chunkZ: request.chunkZ,
+    subY: request.subY,
+    blocks,
+    lightData,
+    metadataData: metadata,
+    hasTerrainAbove: false,
+    skyOpenAbove,
+    lightSeed,
+    maxSolidY: -1,
+    orePositions: [],
+    isFullyOpaque,
+  }
+}
+
+// ==================== LOD Far Terrain ====================
+
+/**
+ * LOD state, created on the first LOD message (only the LOD worker pool
+ * receives those; the full-detail pool never pays for it).
+ */
+let lodService: LodWorkerService | null = null
+
+/** Light scratch for LOD generation - skylight is skipped, so nothing reads it. */
+let lodLightScratch: Uint8Array | null = null
+
+function getLodService(): LodWorkerService {
+  if (!lodService) {
+    // LOD surface blocks: greedy-meshed cubes and liquids. Skips cross
+    // billboards (flowers, ferns), torches and other custom geometry.
+    // Liquids are marked separately so the builder finds the bed below.
+    const ids = BlockRegistry.getInstance().getAllBlockIds()
+    const surfaceKind = new Uint8Array(Math.max(...ids) + 1)
+    for (const id of ids) {
+      const block = getBlock(id)
+      if (id === 0) continue
+      if (block.properties.isLiquid) {
+        surfaceKind[id] = LOD_SURFACE_LIQUID
+      } else if (block.isGreedyMeshable()) {
+        surfaceKind[id] = LOD_SURFACE_SOLID
+      }
+    }
+    lodService = new LodWorkerService(
+      surfaceKind,
+      generateLodSubChunk,
+      (request) =>
+        getColumnHeights(
+          request.chunkX,
+          request.chunkZ,
+          request.seed,
+          request.seaLevel,
+          request.biomeData,
+          getNoise(request.seed)
+        ).getMax()
+    )
+  }
+  return lodService
+}
+
+/** Surface-only generation of one sub-chunk of an LOD tile's column. */
+async function generateLodSubChunk(request: LodTileRequest, subY: number, blocks: Uint16Array): Promise<void> {
+  lodLightScratch ??= new Uint8Array(SUB_CHUNK_VOLUME)
+  await generateSubChunk(
+    {
+      type: 'generate-subchunk',
+      chunkX: request.chunkX,
+      chunkZ: request.chunkZ,
+      subY,
+      minWorldY: subY * SUB_CHUNK_HEIGHT,
+      maxWorldY: subY * SUB_CHUNK_HEIGHT + SUB_CHUNK_HEIGHT - 1,
+      seed: request.seed,
+      seaLevel: request.seaLevel,
+      terrainThickness: request.terrainThickness,
+      biomeData: request.biomeData,
+      blocks,
+      lightData: lodLightScratch,
+    },
+    SURFACE_ONLY_GENERATION
+  )
+}
+
+async function handleLodRequest(request: LodWorkerRequest): Promise<void> {
+  switch (request.type) {
+    case 'lod-init':
+      getLodService().init(request)
+      return
+    case 'lod-evict':
+      getLodService().evict(request)
+      return
+    case 'lod-tile':
+      try {
+        self.postMessage(await getLodService().buildTile(request))
+      } catch (error) {
+        const errorResult: LodErrorResult = {
+          type: 'lod-error',
+          request: 'lod-tile',
+          x: request.chunkX,
+          z: request.chunkZ,
+          error: String(error),
+        }
+        self.postMessage(errorResult)
+      }
+      return
+    case 'lod-mesh-region':
+      try {
+        const result = getLodService().meshRegion(request)
+        self.postMessage(result, {
+          transfer: [result.positions.buffer, result.colors.buffer, result.indices.buffer],
+        })
+      } catch (error) {
+        const errorResult: LodErrorResult = {
+          type: 'lod-error',
+          request: 'lod-mesh-region',
+          x: request.regionX,
+          z: request.regionZ,
+          requestId: request.requestId,
+          error: String(error),
+        }
+        self.postMessage(errorResult)
+      }
+      return
   }
 }
 
@@ -1256,47 +1293,43 @@ async function generateSubChunk(request: SubChunkGenerationRequest): Promise<Sub
 self.postMessage({ type: 'worker-ready' })
 
 // Worker message handler
-type WorkerRequest = ChunkGenerationRequest | SubChunkGenerationRequest
+type WorkerRequest = SubChunkGenerationRequest | LodWorkerRequest
+
+function isLodRequest(request: WorkerRequest): request is LodWorkerRequest {
+  return request.type.startsWith('lod-')
+}
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data
 
+  if (isLodRequest(request)) {
+    await handleLodRequest(request)
+    return
+  }
+
+  if (request.type !== 'generate-subchunk') {
+    // Every request type is handled above; fail loudly instead of hanging a caller
+    throw new Error(`ChunkGenerationWorker: unknown request type ${(request as { type: string }).type}`)
+  }
+
   try {
-    if (request.type === 'generate-subchunk') {
-      // Handle sub-chunk generation
-      const result = await generateSubChunk(request)
+    // Sub-chunk generation (or just the light pass for saved data)
+    const result = request.lightOnly ? lightSavedSubChunk(request) : await generateSubChunk(request, request.options)
+    result.requestId = request.requestId
 
-      // Transfer buffers back (zero-copy)
-      self.postMessage(result, {
-        transfer: [result.blocks.buffer, result.lightData.buffer, result.metadataData.buffer],
-      })
-    } else {
-      // Handle full chunk generation (legacy)
-      const result = await generateChunk(request)
-
-      // Transfer buffers back (zero-copy)
-      self.postMessage(result, {
-        transfer: [result.blocks.buffer, result.lightData.buffer],
-      })
-    }
+    // Transfer buffers back (zero-copy)
+    self.postMessage(result, {
+      transfer: [result.blocks.buffer, result.lightData.buffer, result.metadataData.buffer],
+    })
   } catch (error) {
-    if (request.type === 'generate-subchunk') {
-      const errorResponse: SubChunkGenerationError = {
-        type: 'subchunk-error',
-        chunkX: request.chunkX,
-        chunkZ: request.chunkZ,
-        subY: request.subY,
-        error: String(error),
-      }
-      self.postMessage(errorResponse)
-    } else {
-      const errorResponse: ChunkGenerationError = {
-        type: 'generate-error',
-        chunkX: request.chunkX,
-        chunkZ: request.chunkZ,
-        error: String(error),
-      }
-      self.postMessage(errorResponse)
+    const errorResponse: SubChunkGenerationError = {
+      type: 'subchunk-error',
+      requestId: request.requestId,
+      chunkX: request.chunkX,
+      chunkZ: request.chunkZ,
+      subY: request.subY,
+      error: String(error),
     }
+    self.postMessage(errorResponse)
   }
 }

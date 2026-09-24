@@ -7,8 +7,14 @@ import { SubChunkOpacityCache } from './renderer/SubChunkOpacityCache.ts'
 import { WorldLighting } from './renderer/WorldLighting.ts'
 import { Skybox } from './renderer/skybox/Skybox.ts'
 import { BiomeSkyboxManager } from './renderer/skybox/BiomeSkyboxManager.ts'
+import { BiomeAtmosphere } from './renderer/skybox/BiomeAtmosphere.ts'
+import { DistanceFog } from './renderer/DistanceFog.ts'
+import { BlockOutline } from './renderer/BlockOutline.ts'
+import { updateLiquidMaterials, setLiquidReflectionColor } from './renderer/LiquidMaterials.ts'
 import { HeldItemRenderer } from './renderer/helditem/index.ts'
 import { LiquidOverlay } from './renderer/LiquidOverlay.ts'
+import { LodRenderer } from './renderer/lod/LodRenderer.ts'
+import { getTextureUrls } from './renderer/TextureAtlas.ts'
 import {
 	  FirstPersonCameraControls,
 	} from './player/FirstPersonCameraControls.ts'
@@ -16,7 +22,7 @@ import { PlayerState } from './player/PlayerState.ts'
 import { ToolbarInputHandler } from './player/ToolbarInput.ts'
 import { InventoryInputHandler } from './player/InventoryInput.ts'
 import { SettingsInputHandler } from './player/SettingsInput.ts'
-import { BlockInteraction } from './player/BlockInteraction.ts'
+import { BlockInteraction, MAX_REACH_DISTANCE } from './player/BlockInteraction.ts'
 import { BlockPlacement } from './player/BlockPlacement.ts'
 import { ItemConsumption } from './player/ItemConsumption.ts'
 import { createCrosshairUI } from './ui/Crosshair.ts'
@@ -34,10 +40,18 @@ import {
 } from './world/index.ts'
 import { registerDefaultRecipes } from './crafting/index.ts'
 import { WorldGenerator } from './world/generate/index.ts'
+import { LodManager } from './world/lod/LodManager.ts'
+import { buildLodPalette } from './world/lod/LodPalette.ts'
+import { BlockRegistry, getBlock } from './world/blocks/BlockRegistry.ts'
+import { CHUNK_SIZE_X } from './world/interfaces/IChunk.ts'
 import { biomeRegistry, BIOME_REGION_SIZE } from './world/generate/biomes/BiomeRegistry.ts'
 import { LAYER_BOUNDARY_Y } from './world/generate/GenerationConfig.ts'
 import { GraphicsSettings } from './settings/index.ts'
 import * as THREE from 'three'
+import { setTextureFiltering } from './renderer/TextureLoader.ts'
+import { setWorldDaylight, setWorldLightFloor } from './renderer/worldLightShader.ts'
+import { getChunkCutoutDepthMaterial, getChunkMaterial } from './renderer/ChunkMaterial.ts'
+import { warmUpWorldShaders, type WarmupMaterial } from './renderer/ShaderWarmup.ts'
 import {
   PhysicsEngine,
   PhysicsBody,
@@ -163,6 +177,8 @@ const renderer = new Renderer()
 // Graphics settings (persisted to localStorage)
 const graphicsSettings = new GraphicsSettings()
 renderer.setGraphicsSettings(graphicsSettings)
+// Block texture filtering (crisp/smooth), before any block texture is uploaded
+setTextureFiltering(graphicsSettings.textureFiltering)
 
 // Player state (including toolbar/inventory)
 const playerState = new PlayerState(10)
@@ -245,8 +261,12 @@ toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
 const world = new WorldManager()
 const worldGenerator = new WorldGenerator(world)
 
-// Initialize texture atlas for reduced draw calls (must complete before mesh rendering)
-await world.initializeAtlas()
+// Build the block texture array (must complete before mesh rendering)
+await world.initializeBlockTextures()
+
+// LOD far terrain colours: the average of every block texture (decoded in the
+// background the first time Far Terrain is on; LOD meshing starts once it resolves)
+const lodPalette = () => buildLodPalette(getTextureUrls(), BlockRegistry.getInstance().getAllBlockIds(), getBlock)
 
 // Wait for at least one generation worker to be ready before starting chunk generation
 await world.waitForGenerationWorkerReady()
@@ -370,6 +390,13 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
   onChunkDistanceChange: () => {
     // Apply new render distance immediately
     worldGenerator.refreshChunks()
+    // Keep the distance fog hiding the (new) edge of the drawn world
+    syncViewDistance()
+  },
+  onFarTerrainChange: (enabled, distance) => {
+    // LOD ring, fog and far plane follow on the next frame
+    lodManager.setDistance(distance)
+    lodManager.setEnabled(enabled)
   },
   onResolutionChange: (preset) => {
     // Apply new resolution immediately
@@ -387,6 +414,10 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
   onShadowMapSizeChange: (size) => {
     // Apply new shadow map size
     lighting.setShadowMapSize(size)
+  },
+  onTextureFilteringChange: (mode) => {
+    // Re-upload block textures with the new minification filter
+    setTextureFiltering(mode)
   },
   onSave: async () => {
     // Manual save triggered from pause menu
@@ -535,7 +566,7 @@ const environmentalDamage = new EnvironmentalDamage(world, playerBody, (amount) 
 })
 
 // Set light query for entity dimming based on world light levels (numeric fast path)
-entityManager.setLightQuery((x, y, z) => world.getLightLevelFast(x, y, z))
+entityManager.setLightQuery((x, y, z) => world.getPackedLightFast(x, y, z))
 
 // Set block query functions for entities that need world access (e.g., EmberRoach for pillar detection)
 entityManager.setBlockQuery((x, y, z) => world.getBlockIdFast(x, y, z))
@@ -751,8 +782,8 @@ world.onSubChunkMeshRemoved((coord) => {
   wireframeManager.removeSubChunk(coord)
 })
 
-// Highlight wireframes when columns are being lit
-world.onColumnLightingStarted((coord) => {
+// Highlight wireframes when sub-chunk light is integrated into a column
+world.onSubChunkLightIntegrated((coord) => {
   wireframeManager.highlightColumnLighting(coord, 1000)
 })
 
@@ -777,6 +808,59 @@ renderer.setOpacityCache(opacityCache)
 // Connect chunk meshes to renderer for frustum culling
 renderer.setChunkMeshSource(() => world.getChunkMeshes())
 
+// LOD far terrain: low-detail surface from the chunk disk out to the LOD
+// distance (one mesh per 8x8-chunk region), handed off to full detail column
+// by column - a column's full detail shows only once its surface is complete.
+// The one distance fog fades the edge of what is drawn into the sky's horizon.
+const distanceFog = new DistanceFog(renderer.scene)
+const lodRenderer = new LodRenderer(renderer.scene)
+// LOD chunks are lit at their biome's open-sky light level (skylight cap),
+// exactly like the full-detail terrain they stand in for. No surface biome
+// sets a cap today (gloom goes through SkyboxSettings.daylight), so this
+// always yields 15; it is kept for a future capped surface biome.
+const biomeOpenSkyLight = new Map<string, number>()
+lodRenderer.setSkyLightProvider((chunkX, chunkZ) => {
+  const config = worldGenerator.getConfig()
+  const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
+  const biome = biomeRegistry.selectBiomeForLayer(regionX, regionZ, config.seed, 1)
+  let level = biomeOpenSkyLight.get(biome)
+  if (level === undefined) {
+    level = biomeRegistry.get(biome)?.createGenerator(config).getBiomeProperties().skylightValue ?? 15
+    biomeOpenSkyLight.set(biome, level)
+  }
+  return level
+})
+const lodManager = new LodManager(worldGenerator, lodRenderer, {
+  enabled: graphicsSettings.lodEnabled,
+  distance: graphicsSettings.lodDistance,
+  palette: lodPalette,
+})
+world.onSubChunkMeshAdded((coord, current) => lodManager.onSubChunkMeshAdded(coord, current))
+world.onSubChunkMeshRemoved((coord) => lodManager.onSubChunkMeshRemoved(coord))
+world.onSubChunkMeshStale((coord) => lodManager.onSubChunkMeshStale(coord))
+renderer.setChunkVisibilityFilter((chunkMesh) => lodManager.isFullDetailVisible(chunkMesh.chunkCoordinate))
+// LOD geometry frees its JS arrays after upload: rebuild it after a GPU reset
+// (full-detail chunks do the same in WorldManager.setRenderer)
+renderer.renderer.domElement.addEventListener('webglcontextlost', () => lodManager.onContextLost())
+
+// Fog and far plane follow what is drawn: the LOD ring while it is visible -
+// as far as it is built without gaps, so a ring still loading fades into the
+// fog instead of ending in a hard cut - the full-detail disk otherwise (LOD
+// off, camera underground)
+let viewDistanceChunks = 0
+function syncViewDistance(): void {
+  const chunkDistance = worldGenerator.getConfig().chunkDistance
+  const chunks = lodManager.isActive()
+    ? Math.max(chunkDistance, Math.min(lodManager.getDistance(), Math.floor(lodManager.getCoveredDistance())))
+    : chunkDistance
+  if (chunks === viewDistanceChunks) return
+  viewDistanceChunks = chunks
+  const blocks = chunks * CHUNK_SIZE_X
+  distanceFog.setViewDistance(blocks)
+  renderer.setFarPlane(Math.max(1000, blocks * 1.15 + 64))
+}
+syncViewDistance()
+
 
 // Add world lighting (sun at 10am) with settings-based shadow map size
 const lighting = new WorldLighting({
@@ -788,14 +872,24 @@ lighting.addTo(renderer.scene)
 // Apply initial shadow state from settings
 lighting.setShadowsEnabled(graphicsSettings.shadowsEnabled)
 
+// Atmosphere: biome-blended sky/fog/light state shared by the skybox, the
+// distance fog and the world lighting (eased in the 'skybox' task below)
+const atmosphere = new BiomeAtmosphere()
+const sunDirection = lighting.getSunDirection(new THREE.Vector3())
+const fogColor = new THREE.Color()
+
 // Add skybox with sun positioned to match the directional light
-const skybox = new Skybox()
-skybox.setSunPosition(lighting.sun.position)
+const skybox = new Skybox(atmosphere)
+skybox.setSunDirection(sunDirection)
 skybox.addTo(renderer.scene)
+
+// (The distance fog - created with the LOD block above, sized by
+// syncViewDistance() - fades the edge of the drawn world into this sky's
+// horizon color; see the 'skybox' task.)
 
 // Create biome skybox manager for atmospheric effects
 const biomeSkyboxManager = new BiomeSkyboxManager(
-  skybox,
+  atmosphere,
   biomeRegistry,
   worldGenerator.getConfig()
 )
@@ -806,8 +900,8 @@ const heldItemRenderer = new HeldItemRenderer(
   renderer.camera
 )
 
-// Liquid overlay (underwater tint effect with distance fog)
-const liquidOverlay = new LiquidOverlay(renderer.renderer, renderer.scene)
+// Liquid overlay (underwater tint effect; overrides the distance fog while submerged)
+const liquidOverlay = new LiquidOverlay(renderer.renderer, distanceFog)
 
 // Track toolbar selection changes
 let lastSelectedIndex = playerState.inventory.toolbar.selectedIndex
@@ -891,6 +985,11 @@ blockPlacement.setItemConsumption(itemConsumption)
 
 // Block raycaster for E-key interaction
 const blockRaycaster = new BlockRaycaster(world)
+
+// Outline around the block the player is aiming at (own raycaster: the
+// E-key raycaster's hit object is reused and must not change under it)
+const blockOutline = new BlockOutline(renderer.scene, renderer.renderer)
+const outlineRaycaster = new BlockRaycaster(world)
 
 // Block UI interaction handler (E-key to open forge, etc.)
 const blockInteractionHandler = new BlockInteractionHandler({
@@ -1176,12 +1275,44 @@ scheduler.createTask({
 
 scheduler.createTask({
   id: 'skybox',
-  priority: TaskPriority.NORMAL,
+  // Critical (never skipped by the frame budget): cheap, and it drives the
+  // sky, fog, light tint, daylight and light floor every frame - skipped
+  // frames during heavy streaming left the default sky and full daylight on
+  // screen for seconds after loading or crossing a biome border
+  priority: TaskPriority.CRITICAL,
   update: (dt) => {
-    // Update biome-based skybox modifiers
+    // Update biome-based atmosphere target and ease toward it
     biomeSkyboxManager.update(playerBody.position.x, playerBody.position.y, playerBody.position.z)
-    // Update skybox position and apply modifiers
+    atmosphere.update(dt)
+    // Update skybox position and apply modifiers (sun disc follows the light)
+    skybox.setSunDirection(lighting.getSunDirection(sunDirection))
     skybox.update(renderer.camera, dt)
+    // Fog matches the sky's final horizon color; biome tints the world light
+    distanceFog.setColor(skybox.getHorizonColor(fogColor))
+    distanceFog.setDensity(atmosphere.fogDensity)
+    distanceFog.update()
+    // Submerged: the sky is beyond the liquid fog too
+    skybox.setFogOverride(distanceFog.getOverrideColor())
+    lighting.setTint(atmosphere.lightTint)
+    heldItemRenderer.setLightTint(atmosphere.lightTint)
+    setWorldLightFloor(atmosphere.lightFloor)
+    setWorldDaylight(atmosphere.daylight)
+    // Liquids reflect the horizon sky at glancing angles; drift their textures
+    setLiquidReflectionColor(fogColor)
+    updateLiquidMaterials(dt)
+  },
+})
+
+scheduler.createTask({
+  id: 'block-outline',
+  priority: TaskPriority.CRITICAL,
+  update: () => {
+    // Only while playing: like mining and placement, targeting needs pointer
+    // lock (released by the inventory, block UIs and the pause menu)
+    const playing = document.pointerLockElement === renderer.renderer.domElement && !playerHealth.isDead
+    const hit = playing ? outlineRaycaster.castFromCamera(renderer.camera, MAX_REACH_DISTANCE) : null
+    if (hit) blockOutline.show(hit.interactionBox)
+    else blockOutline.hide()
   },
 })
 
@@ -1196,10 +1327,9 @@ scheduler.createTask({
       updateHeldItem()
     }
 
-    // Update held item lighting based on surrounding block light level
+    // Update held item lighting from the sky/block light around the camera
     const camPos = renderer.camera.position
-    const lightLevel = world.getLightLevelFast(camPos.x, camPos.y, camPos.z)
-    heldItemRenderer.setLightLevel(lightLevel)
+    heldItemRenderer.setWorldLight(world.getPackedLightFast(camPos.x, camPos.y, camPos.z))
 
     // Update divining stick cave detection glow
     heldItemRenderer.updateCaveDetection(world, camPos.x, camPos.y, camPos.z)
@@ -1216,19 +1346,15 @@ scheduler.createTask({
   },
 })
 
-scheduler.createTask({
-  id: 'lighting-queue',
-  priority: TaskPriority.NORMAL,
-  update: () =>
-    world.updateLightingQueue(renderer.camera.position.x, renderer.camera.position.z),
-})
-
 // Queue management tasks
 scheduler.createTask({
   id: 'world-generation-queue',
   priority: TaskPriority.NORMAL,
-  update: () =>
-    worldGenerator.updateQueue(renderer.camera.position.x, renderer.camera.position.z, renderer.camera.position.y),
+  update: () => {
+    worldGenerator.updateQueue(renderer.camera.position.x, renderer.camera.position.z, renderer.camera.position.y)
+    // Water flowing across chunk borders into already generated sub-chunks
+    worldGenerator.processFeatureWork()
+  },
 })
 
 // Register NORMAL priority tasks (background work, budget-aware)
@@ -1241,13 +1367,32 @@ scheduler.registerTask(
   })
 )
 
-// Register LOW priority tasks (lowest priority background work, budget-aware)
+// LOD far terrain: follow the camera and dispatch tile/mesh jobs, then apply
+// at most one finished region mesh per frame (spreads GPU uploads)
+scheduler.createTask({
+  id: 'lod-queue',
+  priority: TaskPriority.NORMAL,
+  update: () =>
+    lodManager.update(renderer.camera.position.x, renderer.camera.position.y, renderer.camera.position.z),
+})
 scheduler.registerTask(
   new BudgetAwareTask({
-    id: 'background-lighting',
-    priority: TaskPriority.LOW,
-    maxUnitsPerFrame: 4,
-    doWork: () => world.processNextLightingColumn(),
+    id: 'lod-apply',
+    priority: TaskPriority.NORMAL,
+    maxUnitsPerFrame: 1,
+    doWork: () => lodManager.applyNextMeshResult(),
+  })
+)
+
+// Light engine: drains queued light updates (big relights from edits, sub-chunk
+// loads/unloads) in 0.5ms units within the frame budget. HIGH priority because
+// changed sub-chunks are only remeshed once their light has settled.
+scheduler.registerTask(
+  new BudgetAwareTask({
+    id: 'lighting',
+    priority: TaskPriority.HIGH,
+    maxUnitsPerFrame: 8,
+    doWork: () => world.processLighting(0.5),
   })
 )
 
@@ -1269,6 +1414,23 @@ scheduler.registerTask(
     doWork: () => world.processNextLiquidPhysicsColumn(),
   })
 )
+
+/** Shader warm-up (see warmUpWorldShaders) runs once, when loading is otherwise done. */
+let shaderWarmupStarted = false
+
+/** Shared world materials whose programs are compiled before play starts. */
+function worldWarmupMaterials(): WarmupMaterial[] {
+  const materials: WarmupMaterial[] = []
+  const opaque = getChunkMaterial(false)
+  const cutout = getChunkMaterial(true)
+  if (opaque) materials.push({ material: opaque })
+  if (cutout) materials.push({ material: cutout, customDepthMaterial: getChunkCutoutDepthMaterial() ?? undefined })
+  for (const id of [BlockIds.WATER, BlockIds.SWAMP_WATER, BlockIds.LAVA]) {
+    const material = getBlock(id).getInstanceMaterial()
+    materials.push({ material: Array.isArray(material) ? material[0] : material })
+  }
+  return materials
+}
 
 /**
  * Transition from loading to playing state.
@@ -1296,18 +1458,27 @@ const gameLoop = new GameLoop({
     if (isLoading) {
       // Update world generation from spawn position
       worldGenerator.update(originalSpawnPoint.x, originalSpawnPoint.z, originalSpawnPoint.y)
-      world.update(originalSpawnPoint.x, originalSpawnPoint.z)
+      world.processLighting(8)
 
       // Process mesh results (throttled to prevent GPU flooding)
       world.processPendingMeshResults()
+
+      // Build (and upload) the far terrain while the full-detail disk loads
+      lodManager.update(renderer.camera.position.x, renderer.camera.position.y, renderer.camera.position.z)
+      lodManager.applyNextMeshResult()
 
       // Update loading progress
       const chunksLoaded = worldGenerator.getGeneratedChunkColumnCount()
       loadingScreen.setProgress(chunksLoaded, requiredChunks)
 
-      // Check if we have enough chunks to spawn
-      if (chunksLoaded >= requiredChunks) {
-        finishLoading()
+      // Check if we have enough chunks to spawn; first compile the world
+      // shaders not on screen yet (no link stall the first time leaves or
+      // liquids come into view)
+      if (chunksLoaded >= requiredChunks && !shaderWarmupStarted) {
+        shaderWarmupStarted = true
+        warmUpWorldShaders(renderer.renderer, renderer.scene, renderer.camera, worldWarmupMaterials())
+          .catch((error) => console.warn('World shader warm-up failed', error))
+          .finally(finishLoading)
       }
       return
     }
@@ -1319,6 +1490,9 @@ const gameLoop = new GameLoop({
     world.processPendingMeshResults()
   },
   render() {
+    // LOD handoff and view distance for this frame (after mesh results were applied)
+    lodManager.updateVisibility()
+    syncViewDistance()
     renderer.render()
     const statsVisible = fpsCounter.visible
     // Capture renderer stats after main render but before held item (autoReset clears on next render call).
@@ -1358,7 +1532,7 @@ const gameLoop = new GameLoop({
         miniMapGrid = calculateBiomeMiniMap(playerBody.position.x, playerBody.position.y, playerBody.position.z, worldGenerator.getConfig().seed)
       }
       fpsCounter.setBiomeMiniMap({ grid: miniMapGrid, yaw: cameraControls.getYaw() })
-      fpsCounter.setLightingStats(world.getBackgroundLightingStats())
+      fpsCounter.setLightingStats(world.getLightingStats())
       fpsCounter.setOcclusionStats(renderer.getOcclusionStats())
       if (rendererStats) {
         fpsCounter.setRendererStats(rendererStats)
@@ -1367,6 +1541,19 @@ const gameLoop = new GameLoop({
       fpsCounter.setEntityStats({
         activeCount: entityManager.entityCount,
         pendingRemovalCount: entityManager.pendingRemovalCount,
+      })
+      const lodStats = lodManager.getStats()
+      const lodRenderStats = lodRenderer.getStats()
+      fpsCounter.setFarTerrainStats({
+        enabled: lodStats.enabled,
+        active: lodStats.active,
+        tilesReady: lodStats.tilesReady,
+        tilesDesired: lodStats.tilesDesired,
+        regionsDrawn: lodRenderStats.drawnRegions,
+        regions: lodRenderStats.regions,
+        triangles: lodRenderStats.triangles,
+        handedOffChunks: lodStats.handedOffChunks,
+        heldBackColumns: lodStats.heldBackColumns,
       })
       // Add scheduler stats for debug display (reuse pre-allocated object)
       const schedulerMetrics = scheduler.getMetrics()

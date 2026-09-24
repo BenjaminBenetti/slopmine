@@ -12,7 +12,7 @@ import { doorClosedGeometry } from '../door_shared/DoorGeometry.ts'
 import pineDoorLowerTexUrl from './assets/pine-door-lower.webp'
 import pinePlanksEdgeTexUrl from '../pine_planks/assets/pine-planks.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.PINE_DOOR_LOWER, pineDoorLowerTexUrl)
 
 const pineDoorLowerTexture = loadBlockTexture(pineDoorLowerTexUrl)

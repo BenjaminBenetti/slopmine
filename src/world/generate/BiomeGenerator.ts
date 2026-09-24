@@ -2,13 +2,13 @@ import { TerrainGenerator } from './TerrainGenerator.ts'
 import type { IChunkData } from '../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../WorldManager.ts'
+import type { IDecorationWorld } from './IDecorationWorld.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
 import { localToWorld } from '../coordinates/CoordinateUtils.ts'
 import { FrameBudget } from '../../core/FrameBudget.ts'
 import { Feature, type FeatureContext } from './features/Feature.ts'
 import { CaveCarver } from './caves/CaveCarver.ts'
 import { createConstantCaveSampleGetter, type CaveConfig } from './caves/CaveConfig.ts'
-import { SkylightPropagator } from '../lighting/SkylightPropagator.ts'
 import { evaluateTerrainConfig } from './terrain/NoiseEvaluator.ts'
 import type { TerrainConfig } from './terrain/TerrainConfig.ts'
 import type { SimplexNoise } from './SimplexNoise.ts'
@@ -82,8 +82,10 @@ export interface WaterSettings {
 export type { CaveConfig } from './caves/CaveConfig.ts'
 
 /**
- * Configuration for biome-specific skybox modifications.
- * Used to create atmospheric effects that vary by biome.
+ * Configuration for biome-specific skybox and atmosphere modifications
+ * (sky, distance fog, world light color). Blended across biome borders
+ * around the player by BiomeSkyboxManager. All values are perceptual (sRGB):
+ * a factor of 0.8 scales the displayed color by 0.8.
  */
 export interface SkyboxSettings {
   /**
@@ -99,6 +101,71 @@ export interface SkyboxSettings {
    * Default: { r: 1, g: 1, b: 1 } (no tint)
    */
   readonly tint?: { r: number; g: number; b: number }
+
+  /**
+   * Horizon haze / distance fog color (sRGB, 0-1). Replaces the tinted sky
+   * horizon color, so the sky's horizon band and the fog that distant terrain
+   * fades into always match. `brightness` still applies on top.
+   * Default: the default horizon color multiplied by `tint`.
+   */
+  readonly fogColor?: { r: number; g: number; b: number }
+
+  /**
+   * Aerial haze thickness multiplier (>= 1). 1 = clear air (distant terrain
+   * picks up a light horizon-colored haze, 63% at ~1500 blocks); 2 = hazy
+   * (63% at ~530 blocks). Absolute distances: the far view is tinted and
+   * softened the same way whatever the render distance or LOD ring.
+   * Default: 1
+   */
+  readonly fogDensity?: number
+
+  /**
+   * Fog (and sky) color when the camera is underground, below the sky-darkness
+   * band (sRGB, 0-1). Only meaningful for caves and underground-layer biomes.
+   * Default: black
+   */
+  readonly undergroundFogColor?: { r: number; g: number; b: number }
+
+  /**
+   * Color multiplier for the world's sun, ambient and sky/ground light
+   * (RGB 0-1). Keep it close to white - it colors every lit face.
+   * Default: { r: 1, g: 1, b: 1 } (no tint)
+   */
+  readonly lightTint?: { r: number; g: number; b: number }
+
+  /**
+   * Light floor while the camera is in this biome: the light (linear RGB
+   * multiplier of albedo) that remains where no sky or block light reaches.
+   * Raise it where darkness is ambient rather than a cave (Hell's red glow,
+   * like Minecraft's Nether ambient light).
+   * Default: the cave floor, LIGHT_FLOOR grey (0.025) - caves barely show.
+   */
+  readonly minimumLight?: { r: number; g: number; b: number }
+
+  /**
+   * Sky light brightness while the camera is in this biome (0-1, linear):
+   * overcast biomes dim everything lit by the sky - terrain, far terrain,
+   * water, the held item, mobs - eased smoothly across biome borders, like
+   * weather. Prefer this to a `skylightValue` cap for mood: a cap is baked
+   * per chunk into the light data, so its biome border shows as a hard
+   * 32-block brightness step.
+   * Default: 1
+   */
+  readonly daylight?: number
+
+  /**
+   * The sky's cloud deck while the camera is in this biome, eased across
+   * biome borders like the rest of the atmosphere:
+   * - `coverage`: fraction of the sky covered (0-1). Default 0.42 (fair weather)
+   * - `color`: sRGB multiplier of the cloud colour (grey overcast, dark ash).
+   *   Default white
+   * - `opacity`: cloud density multiplier (0-1). Default 1
+   */
+  readonly clouds?: {
+    readonly coverage?: number
+    readonly color?: { r: number; g: number; b: number }
+    readonly opacity?: number
+  }
 }
 
 export interface BiomeProperties {
@@ -124,9 +191,15 @@ export interface BiomeProperties {
    */
   readonly treeDensity: number
   /**
-   * Controls the maximum skylight level for this biome (0-15).
-   * Default is 15 (full brightness). Lower values create darker, spookier biomes.
-   * This affects the flood-fill lighting algorithm during world generation.
+   * Skylight cap for this biome's sub-chunks (0-15, default 15): stored sky
+   * light in a sub-chunk never exceeds it. Enforced by the generation
+   * worker's local light pass (SubChunkLight) and by the main-thread
+   * LightEngine when light crosses sub-chunk and column borders.
+   *
+   * The cap is baked per 32-block sub-chunk into the light data, so a biome
+   * border shows as a hard 32-block brightness step. Use it only for
+   * underground biomes that must never see the sky (Hell = 0). For a surface
+   * biome's gloom use `SkyboxSettings.daylight` instead, which dims smoothly.
    */
   readonly skylightValue?: number
   /**
@@ -153,7 +226,8 @@ export interface BiomeProperties {
   readonly terrainConfig: TerrainConfig
 
   /**
-   * Optional settings for biome-specific skybox modifications.
+   * Optional settings for biome-specific skybox/atmosphere modifications
+   * (sky tint, horizon fog, world light tint).
    * If not provided, the skybox will use default settings (no modification).
    */
   readonly skybox?: SkyboxSettings
@@ -172,7 +246,6 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   protected abstract readonly properties: BiomeProperties
   protected readonly frameBudget = new FrameBudget()
   private caveCarver: CaveCarver | null = null
-  private readonly skylightPropagator = new SkylightPropagator()
 
   /**
    * Fill a chunk/sub-chunk with terrain blocks. Must be implemented by each biome.
@@ -267,7 +340,7 @@ export abstract class BiomeGenerator extends TerrainGenerator {
    */
   async generateSubChunkDecorations(
     subChunk: ISubChunkData,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     // Default: no-op - override in subclasses
   }
@@ -299,7 +372,6 @@ export abstract class BiomeGenerator extends TerrainGenerator {
   async generate(chunk: IChunkData, world: WorldManager | null): Promise<void> {
     await this.generateTerrain(chunk)
     await this.generateCaves(chunk)
-    this.skylightPropagator.propagate(chunk, this.properties.skylightValue ?? 15)
     await this.generateFeatures(chunk, world)
     await this.generateDecorations(chunk, world)
   }

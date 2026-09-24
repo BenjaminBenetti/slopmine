@@ -18,6 +18,9 @@ import {
   HEADER_SIZE,
   FLAG_HAS_LIGHT_DATA,
   FLAG_HAS_METADATA,
+  FLAG_SKY_OPEN_ABOVE,
+  FLAG_HAS_SKY_PROOF,
+  PERSISTENCE_MAX_READ_VERSION,
 } from '../persistence/PersistenceTypes.ts'
 
 const DB_NAME = 'slopmine'
@@ -111,23 +114,27 @@ async function saveSubChunk(
   chunkZ: string,
   subY: number,
   blocks: Uint16Array,
-  lightData: Uint8Array,
-  metadata?: Uint8Array
+  metadata: Uint8Array | undefined,
+  skyOpenAbove: boolean
 ): Promise<void> {
   const database = await openDatabase()
 
+  // Light is not stored (version 3+): it is recomputed whenever a sub-chunk loads.
   const blockDataLength = blocks.byteLength
-  const lightDataLength = lightData.byteLength
+  const lightDataLength = 0
   const metadataLength = metadata?.byteLength ?? 0
-  const totalSize = HEADER_SIZE + blockDataLength + lightDataLength + metadataLength
+  const totalSize = HEADER_SIZE + blockDataLength + metadataLength
 
   // Create buffer with header + data
   const buffer = new ArrayBuffer(totalSize)
   const view = new DataView(buffer)
 
-  let flags = FLAG_HAS_LIGHT_DATA
+  let flags = FLAG_HAS_SKY_PROOF
   if (metadata) {
     flags |= FLAG_HAS_METADATA
+  }
+  if (skyOpenAbove) {
+    flags |= FLAG_SKY_OPEN_ABOVE
   }
 
   let offset = 0
@@ -148,9 +155,6 @@ async function saveSubChunk(
   new Uint8Array(buffer, offset, blockDataLength).set(blockBytes)
   offset += blockDataLength
 
-  new Uint8Array(buffer, offset, lightDataLength).set(lightData)
-  offset += lightDataLength
-
   if (metadata) {
     new Uint8Array(buffer, offset, metadataLength).set(metadata)
   }
@@ -169,13 +173,14 @@ async function saveSubChunk(
 
 /**
  * Load binary sub-chunk data from IndexedDB.
- * Handles backwards compatibility with version 1 format (no metadata).
+ * Handles backwards compatibility with version 1 (no metadata) and version 2
+ * (stored light, no sky proof). Stored light is skipped: it is always recomputed.
  */
 async function loadSubChunk(
   chunkX: string,
   chunkZ: string,
   subY: number
-): Promise<{ blocks: Uint16Array; lightData: Uint8Array; metadata?: Uint8Array } | null> {
+): Promise<{ blocks: Uint16Array; metadata?: Uint8Array; skyOpenAbove?: boolean } | null> {
   const database = await openDatabase()
 
   return new Promise((resolve, reject) => {
@@ -215,8 +220,8 @@ async function loadSubChunk(
       const version = view.getUint16(offset, true)
       offset += 2
 
-      // Support versions 1 and 2
-      if (version !== 1 && version !== 2) {
+      // Support versions 1-3 (see PERSISTENCE_VERSION)
+      if (version < 1 || version > PERSISTENCE_MAX_READ_VERSION) {
         console.warn(`Unsupported version: ${version}`)
         resolve(null)
         return
@@ -241,13 +246,9 @@ async function loadSubChunk(
       const blocks = new Uint16Array(buffer.slice(offset, offset + blockDataLength))
       offset += blockDataLength
 
-      let lightData: Uint8Array
+      // Light from older saves is skipped (the light engine relights on load)
       if (flags & FLAG_HAS_LIGHT_DATA) {
-        lightData = new Uint8Array(buffer.slice(offset, offset + lightDataLength))
         offset += lightDataLength
-      } else {
-        lightData = new Uint8Array(65536)
-        lightData.fill(0xf0)
       }
 
       // Load metadata if present (version 2+)
@@ -256,7 +257,10 @@ async function loadSubChunk(
         metadata = new Uint8Array(buffer.slice(offset, offset + metadataLength))
       }
 
-      resolve({ blocks, lightData, metadata })
+      // Sky proof: flagged records (and version 3 records of an earlier build)
+      const skyOpenAbove = version >= 3 || (flags & FLAG_HAS_SKY_PROOF) !== 0 ? (flags & FLAG_SKY_OPEN_ABOVE) !== 0 : undefined
+
+      resolve({ blocks, metadata, skyOpenAbove })
     }
 
     request.onerror = () => reject(new Error(`Failed to load chunk: ${request.error?.message}`))
@@ -384,15 +388,15 @@ async function batchSaveSubChunks(
     chunkZ: string
     subY: number
     blocks: Uint16Array
-    lightData: Uint8Array
     metadata?: Uint8Array
+    skyOpenAbove: boolean
   }>
 ): Promise<number> {
   let savedCount = 0
 
   for (const sc of subchunks) {
     try {
-      await saveSubChunk(sc.chunkX, sc.chunkZ, sc.subY, sc.blocks, sc.lightData, sc.metadata)
+      await saveSubChunk(sc.chunkX, sc.chunkZ, sc.subY, sc.blocks, sc.metadata, sc.skyOpenAbove)
       savedCount++
     } catch (error) {
       console.error(
@@ -520,9 +524,23 @@ async function deleteBlockState(position: { x: string; y: string; z: string }): 
   })
 }
 
-// Message handler
-self.onmessage = async (event: MessageEvent<PersistenceWorkerRequest>) => {
+// Messages are handled strictly one after another. The handlers are async
+// (a batch save awaits one put per sub-chunk), and interleaving them let a
+// newer save of a sub-chunk land before an older batch reached it - the batch
+// then wrote the older data over it - and let loads read around saves that
+// were issued before them.
+let messageChain: Promise<void> = Promise.resolve()
+self.onmessage = (event: MessageEvent<PersistenceWorkerRequest & { requestId?: number }>) => {
+  // (A handler failure must not break the chain for every later message.)
+  messageChain = messageChain
+    .then(() => handleMessage(event))
+    .catch((error) => console.error('[PersistenceWorker] Unhandled message failure:', error))
+}
+
+async function handleMessage(event: MessageEvent<PersistenceWorkerRequest & { requestId?: number }>): Promise<void> {
   const request = event.data
+  // Echoed in every response so the main thread can pair them (see PersistenceWorkerEnvelope)
+  const requestId = request.requestId
 
   try {
     let response: PersistenceWorkerResponse
@@ -540,8 +558,8 @@ self.onmessage = async (event: MessageEvent<PersistenceWorkerRequest>) => {
           request.chunkZ,
           request.subY,
           request.blocks,
-          request.lightData,
-          request.metadata
+          request.metadata,
+          request.skyOpenAbove
         )
         response = {
           type: 'subchunk-saved',
@@ -565,14 +583,14 @@ self.onmessage = async (event: MessageEvent<PersistenceWorkerRequest>) => {
             chunkZ: request.chunkZ,
             subY: request.subY,
             blocks: data.blocks,
-            lightData: data.lightData,
             metadata: data.metadata,
+            skyOpenAbove: data.skyOpenAbove,
           }
-          const transfer: ArrayBuffer[] = [data.blocks.buffer as ArrayBuffer, data.lightData.buffer as ArrayBuffer]
+          const transfer: ArrayBuffer[] = [data.blocks.buffer as ArrayBuffer]
           if (data.metadata) {
             transfer.push(data.metadata.buffer as ArrayBuffer)
           }
-          self.postMessage(response, { transfer })
+          self.postMessage({ ...response, requestId }, { transfer })
           return
         } else {
           response = {
@@ -668,7 +686,7 @@ self.onmessage = async (event: MessageEvent<PersistenceWorkerRequest>) => {
         }
     }
 
-    self.postMessage(response)
+    self.postMessage({ ...response, requestId })
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error'
@@ -676,6 +694,7 @@ self.onmessage = async (event: MessageEvent<PersistenceWorkerRequest>) => {
       type: 'error',
       message: errorMessage,
       operation: request.type,
-    } as PersistenceWorkerResponse)
+      requestId,
+    })
   }
 }

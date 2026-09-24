@@ -19,7 +19,7 @@ import forgeFrontTexUrl from './assets/forge-front.webp'
 import forgeSideTexUrl from './assets/forge-side.webp'
 import forgeTopTexUrl from './assets/forge-top.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.FORGE_FRONT, forgeFrontTexUrl)
 registerTextureUrl(TextureId.FORGE_SIDE, forgeSideTexUrl)
 registerTextureUrl(TextureId.FORGE_TOP, forgeTopTexUrl)

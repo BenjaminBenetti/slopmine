@@ -3,14 +3,12 @@ import type { IBlockProperties, BlockFace, IBlock } from '../../../interfaces/IB
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
-import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
-import waterTexUrl from './assets/water.webp'
+import { withWhiteVertexColors } from '../../../../renderer/LiquidMaterials.ts'
+import { waterTexUrl, waterMaterial } from '../water/waterMaterial.ts'
 
-// Register texture for atlas (marked as transparent)
-registerTextureUrl(TextureId.WATER_EIGHTH, waterTexUrl, true)
-
-const waterTexture = loadBlockTexture(waterTexUrl)
+// Register texture
+registerTextureUrl(TextureId.WATER_EIGHTH, waterTexUrl)
 
 /**
  * Create geometry for 1/8 height water with corrected UVs.
@@ -47,18 +45,7 @@ function createWaterEighthGeometry(): THREE.BufferGeometry {
   return geometry
 }
 
-const waterEighthGeometry = createWaterEighthGeometry()
-
-/**
- * Semi-transparent blue material for evaporating water with texture.
- * Slightly more transparent than quarter water to indicate it's disappearing.
- */
-const waterEighthMaterial = new THREE.MeshLambertMaterial({
-  map: waterTexture,
-  transparent: true,
-  opacity: 0.5,
-  side: THREE.DoubleSide,
-})
+const waterEighthGeometry = withWhiteVertexColors(createWaterEighthGeometry())
 
 /**
  * Water eighth block - a transparent, non-solid liquid at 1/8 height.
@@ -91,7 +78,7 @@ export class WaterEighthBlock extends TransparentBlock {
   }
 
   protected getMaterials(): THREE.Material {
-    return waterEighthMaterial
+    return waterMaterial
   }
 
   /**

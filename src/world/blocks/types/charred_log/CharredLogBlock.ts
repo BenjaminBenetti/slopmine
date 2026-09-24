@@ -10,7 +10,7 @@ import { CharredLogBlockItem } from '../../../../items/blocks/charred_log/Charre
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import charredLogTexUrl from './assets/charred_log.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.CHARRED_LOG, charredLogTexUrl)
 
 const charredLogTexture = loadBlockTexture(charredLogTexUrl)

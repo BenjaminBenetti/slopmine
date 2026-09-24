@@ -14,7 +14,7 @@ import { hasToolStats, HAND_STATS } from '../items/interfaces/IToolStats.ts'
 import { FloatingTextManager } from '../ui/floating-text/index.ts'
 
 /** Maximum reach distance for block interaction */
-const MAX_REACH_DISTANCE = 5
+export const MAX_REACH_DISTANCE = 5
 
 /**
  * Tracks the current mining progress.

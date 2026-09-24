@@ -9,6 +9,7 @@ import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
+import type { IDecorationWorld } from '../IDecorationWorld.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
@@ -150,6 +151,14 @@ export class DesertGenerator extends BiomeGenerator {
       heightScale: 12, // Slightly more dramatic than plains
       combineMode: 'add',
     } as TerrainConfig,
+    // Warm, dusty heat haze on the horizon and slightly golden light
+    skybox: {
+      tint: { r: 1.0, g: 0.97, b: 0.93 },
+      fogColor: { r: 0.85, g: 0.8, b: 0.7 },
+      fogDensity: 1.2,
+      lightTint: { r: 1.0, g: 0.98, b: 0.93 },
+      clouds: { coverage: 0.2 }, // dry, mostly clear sky
+    },
     entitySpawns: [
       {
         entityType: 'snake',
@@ -322,7 +331,7 @@ export class DesertGenerator extends BiomeGenerator {
 
   override async generateSubChunkDecorations(
     subChunk: ISubChunkData,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     await this.generateCactiForSubChunk(subChunk, world)
   }
@@ -332,7 +341,7 @@ export class DesertGenerator extends BiomeGenerator {
    */
   private async generateCactiForSubChunk(
     subChunk: ISubChunkData,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     const coord = subChunk.coordinate
     const cactusDensity = this.properties.treeDensity
@@ -414,7 +423,7 @@ export class DesertGenerator extends BiomeGenerator {
    */
   private async generateCacti(
     chunk: Chunk,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     const coord = chunk.coordinate
     const cactusDensity = this.properties.treeDensity
@@ -487,7 +496,7 @@ export class DesertGenerator extends BiomeGenerator {
    * Check if a cactus can be placed at the given location.
    */
   private canPlaceCactus(
-    world: WorldManager,
+    world: IDecorationWorld,
     x: bigint,
     y: bigint,
     z: bigint,
@@ -519,7 +528,7 @@ export class DesertGenerator extends BiomeGenerator {
    * Place a cactus at the given location.
    */
   private placeCactus(
-    world: WorldManager,
+    world: IDecorationWorld,
     x: bigint,
     y: bigint,
     z: bigint,

@@ -10,8 +10,8 @@ import { Wheat1BlockItem } from '../../../../items/blocks/wheat/Wheat1BlockItem.
 import { WheatItem } from '../../../../items/food/wheat/WheatItem.ts'
 import wheat3TexUrl from './assets/wheat-3.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.WHEAT_3, wheat3TexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.WHEAT_3, wheat3TexUrl)
 
 const wheat3Texture = loadBlockTexture(wheat3TexUrl)
 

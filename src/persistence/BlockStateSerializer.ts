@@ -123,6 +123,11 @@ export function getBlockStatesToPersist(
 
   for (const state of states) {
     const block = blockProvider.getBlock(state.position.x, state.position.y, state.position.z)
+    // The live world can't name this state's block (its sub-chunk is unloaded
+    // or not generated yet - states outlive their sub-chunk): keep the last
+    // stored record instead of overwriting it with a name ('air') that can't
+    // rebuild the state on the next load.
+    if (!block.createState) continue
     const serialized = serializeBlockState(state, block)
     if (serialized) {
       result.push(serialized)

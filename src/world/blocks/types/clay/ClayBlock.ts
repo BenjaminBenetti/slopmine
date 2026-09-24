@@ -10,7 +10,7 @@ import { ClayBlockItem } from '../../../../items/blocks/clay/ClayBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import clayTexUrl from './assets/clay.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.CLAY, clayTexUrl)
 
 const clayTexture = loadBlockTexture(clayTexUrl)

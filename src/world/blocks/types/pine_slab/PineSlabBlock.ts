@@ -9,7 +9,7 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { PineSlabBlockItem } from '../../../../items/blocks/pine_slab/PineSlabBlockItem.ts'
 
-// Reuse the pine planks texture (registered in the atlas by the planks block module)
+// Reuse the pine planks texture (registered by the planks block module)
 import pinePlanksTexUrl from '../pine_planks/assets/pine-planks.webp'
 
 const pinePlanksTexture = loadBlockTexture(pinePlanksTexUrl)
@@ -28,6 +28,7 @@ export class PineSlabBlock extends SolidBlock {
     hardness: 1.5,
     lightLevel: 0,
     lightBlocking: 0,
+    blocksVerticalLight: true,
     demolitionForceRequired: 0,
     tags: [BlockTags.WOOD],
   }

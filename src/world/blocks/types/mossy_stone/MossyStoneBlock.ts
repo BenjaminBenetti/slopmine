@@ -10,7 +10,7 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { MossyStoneBlockItem } from '../../../../items/blocks/mossy_stone/MossyStoneBlockItem.ts'
 import mossyStoneTexUrl from './assets/mossy-stone.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.MOSSY_STONE, mossyStoneTexUrl)
 
 const mossyStoneTexture = loadBlockTexture(mossyStoneTexUrl)

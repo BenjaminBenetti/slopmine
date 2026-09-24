@@ -1,14 +1,15 @@
 import * as THREE from 'three'
-import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
+import { BlockFace, type IBlockProperties } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
+import { createQuarterTurnedCube } from '../../QuarterTurnedCube.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { PineLogBlockItem } from '../../../../items/blocks/pine_log/PineLogBlockItem.ts'
 
-// Reuse the pine log textures (registered in the atlas by the pine log block module)
+// Reuse the pine log textures (registered by the pine log block module)
 import pineLogTexUrl from '../pine_log/assets/pine-log.webp'
 import pineLogTopTexUrl from '../pine_log/assets/pine-log-top.webp'
 
@@ -17,6 +18,10 @@ const pineLogTopTexture = loadBlockTexture(pineLogTopTexUrl)
 
 const barkMaterial = new THREE.MeshLambertMaterial({ map: pineLogTexture })
 const ringMaterial = new THREE.MeshLambertMaterial({ map: pineLogTopTexture })
+
+// The bark grain runs along the log: bark on the top, bottom, north and south faces are
+// turned a quarter, like their greedy faces (QUARTER_TURN_FACES)
+const logGeometry = createQuarterTurnedCube([BlockFace.TOP, BlockFace.BOTTOM, BlockFace.NORTH, BlockFace.SOUTH])
 
 /**
  * Fallen pine log lying along the X axis - a worldgen forest-floor decoration.
@@ -41,6 +46,10 @@ export class FallenPineLogXBlock extends SolidBlock {
 
   protected get defaultTextureId(): number {
     return TextureId.PINE_LOG_SIDE
+  }
+
+  protected getGeometry(): THREE.BufferGeometry {
+    return logGeometry
   }
 
   protected getMaterials(): THREE.Material[] {

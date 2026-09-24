@@ -10,7 +10,7 @@ import { ObsidianBlockItem } from '../../../../items/blocks/obsidian/ObsidianBlo
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import obsidianTexUrl from './assets/obsidian.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.OBSIDIAN, obsidianTexUrl)
 
 const obsidianTexture = loadBlockTexture(obsidianTexUrl)

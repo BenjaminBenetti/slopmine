@@ -10,7 +10,7 @@ import { MushroomBlockItem } from '../../../../items/blocks/mushroom/MushroomBlo
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import mushroomTexUrl from './assets/mushroom.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.MUSHROOM, mushroomTexUrl)
 
 const mushroomTexture = loadBlockTexture(mushroomTexUrl)

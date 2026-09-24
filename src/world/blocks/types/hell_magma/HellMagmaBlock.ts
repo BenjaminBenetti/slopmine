@@ -6,12 +6,15 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
+import { registerEmissiveTexture } from '../../../../renderer/EmissiveTextures.ts'
 import { HellMagmaBlockItem } from '../../../../items/blocks/hell_magma/HellMagmaBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import hellMagmaTexUrl from './assets/hell-magma.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.HELL_MAGMA, hellMagmaTexUrl)
+// Emissive: the molten veins glow, the dark cells do not
+registerEmissiveTexture(TextureId.HELL_MAGMA, { strength: 1.0, threshold: 0.2 })
 
 const hellMagmaTexture = loadBlockTexture(hellMagmaTexUrl)
 const hellMagmaMaterial = new THREE.MeshLambertMaterial({ map: hellMagmaTexture })
@@ -29,7 +32,7 @@ export class HellMagmaBlock extends SolidBlock {
     isSolid: true,
     isLiquid: false,
     hardness: 1.5,
-    lightLevel: 6, // Emits dim light from the glowing cracks
+    lightLevel: 8, // Molten veins glow (emissive) and warm the rock around them
     lightBlocking: 15,
     demolitionForceRequired: 1, // Requires pickaxe
     tags: [BlockTags.ROCK],

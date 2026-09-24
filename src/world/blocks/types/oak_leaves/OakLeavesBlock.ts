@@ -10,8 +10,8 @@ import { OakLeavesBlockItem } from '../../../../items/blocks/oak_leaves/OakLeave
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import oakLeavesTexUrl from './assets/oak-leaves.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.OAK_LEAVES, oakLeavesTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.OAK_LEAVES, oakLeavesTexUrl)
 
 const oakLeavesTexture = loadBlockTexture(oakLeavesTexUrl)
 

@@ -6,12 +6,15 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
+import { registerEmissiveTexture } from '../../../../renderer/EmissiveTextures.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import { PurpleMushroomCapBlockItem } from '../../../../items/blocks/purple_mushroom_cap/PurpleMushroomCapBlockItem.ts'
 import purpleMushroomCapTexUrl from './assets/purple_mushroom_cap.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.PURPLE_MUSHROOM_CAP, purpleMushroomCapTexUrl)
+// Emissive: the whole cap glows, brightest in its spots
+registerEmissiveTexture(TextureId.PURPLE_MUSHROOM_CAP, { strength: 0.6, threshold: 0.0 })
 
 const purpleMushroomCapTexture = loadBlockTexture(purpleMushroomCapTexUrl)
 const purpleMushroomCapMaterial = new THREE.MeshLambertMaterial({ map: purpleMushroomCapTexture })

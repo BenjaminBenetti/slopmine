@@ -10,7 +10,7 @@ import { HellRockBlockItem } from '../../../../items/blocks/hell_rock/HellRockBl
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import hellRockTexUrl from './assets/hell-rock.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.HELL_ROCK, hellRockTexUrl)
 
 const hellRockTexture = loadBlockTexture(hellRockTexUrl)

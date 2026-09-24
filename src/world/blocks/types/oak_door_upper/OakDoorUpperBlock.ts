@@ -12,8 +12,8 @@ import { doorClosedGeometry } from '../door_shared/DoorGeometry.ts'
 import oakDoorUpperTexUrl from './assets/oak-door-upper.webp'
 import oakPlanksEdgeTexUrl from '../oak_planks/assets/oak-planks.webp'
 
-// Register texture for atlas
-registerTextureUrl(TextureId.OAK_DOOR_UPPER, oakDoorUpperTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.OAK_DOOR_UPPER, oakDoorUpperTexUrl)
 
 const oakDoorUpperTexture = loadBlockTexture(oakDoorUpperTexUrl)
 const oakDoorUpperMaterial = new THREE.MeshLambertMaterial({

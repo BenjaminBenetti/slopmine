@@ -19,7 +19,7 @@ import apothecaryFrontTexUrl from './assets/apothecary-front.webp'
 import apothecarySideTexUrl from './assets/apothecary-side.webp'
 import apothecaryTopTexUrl from './assets/apothecary-top.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.APOTHECARY_FRONT, apothecaryFrontTexUrl)
 registerTextureUrl(TextureId.APOTHECARY_SIDE, apothecarySideTexUrl)
 registerTextureUrl(TextureId.APOTHECARY_TOP, apothecaryTopTexUrl)

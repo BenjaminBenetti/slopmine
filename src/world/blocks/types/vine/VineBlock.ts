@@ -11,8 +11,8 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { getMetadataFacing, BlockFacing } from '../../BlockFacing.ts'
 import vineTexUrl from './assets/vine.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.VINE, vineTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.VINE, vineTexUrl)
 
 const vineTexture = loadBlockTexture(vineTexUrl)
 

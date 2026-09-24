@@ -19,9 +19,11 @@ Use Google AI Studio at https://aistudio.google.com/prompts/1-PQryQheH_G5HOEB-Aw
 - Don't mention "minecraft" in prompts
 - Generate each texture with appropriate colors and style
 - Download each texture
-- Convert to 64x64 webp at 60% quality:
+- Convert to a 64x64 lossless webp (encode with cwebp, never lossy or ImageMagick webp; see the
+  `generate-texture` skill for the style rules and cut-out steps):
   ```bash
-  convert "downloaded.jpeg" -resize 64x64 -quality 60 output.webp
+  convert "downloaded.png" -filter box -resize 64x64! tmp.png && \
+    cwebp -quiet -lossless -exact -z 9 -metadata none tmp.png -o output.webp
   ```
 
 ### Step 2: Add Block IDs

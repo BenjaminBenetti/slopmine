@@ -1,6 +1,5 @@
 /**
  * Manages liquid physics simulation using a pool of background workers.
- * Follows the same pattern as BackgroundLightingManager.
  */
 
 import type { IChunkCoordinate } from '../interfaces/ICoordinates.ts'
@@ -50,6 +49,10 @@ export class BackgroundLiquidPhysicsManager {
   private readonly columnQueue: ChunkKey[] = []
   private readonly columnQueueSet: Set<ChunkKey> = new Set()
   private readonly lastProcessedTime: Map<ChunkKey, number> = new Map()
+  // Columns whose last pass changed nothing and that saw no change since
+  // (runtime edits, liquid flowing in, sub-chunks loading or unloading around
+  // them): the periodic scan skips them, so settled liquid costs nothing.
+  private readonly settledColumns: Set<ChunkKey> = new Set()
 
   // Stats tracking
   private columnsProcessedSinceLastQuery = 0
@@ -62,6 +65,9 @@ export class BackgroundLiquidPhysicsManager {
   private lastBackgroundScanTime = 0
 
   // Callbacks for world access
+  /** Changes skipped because their cell changed while the job ran (see handleWorkerResult). */
+  private casConflicts = 0
+
   private getColumn: ((coord: IChunkCoordinate) => ChunkColumn | undefined) | null = null
   private setBlockRaw: ((x: bigint, y: bigint, z: bigint, blockId: number) => boolean) | null = null
   private flushBlockChanges: (() => void) | null = null
@@ -147,6 +153,8 @@ export class BackgroundLiquidPhysicsManager {
     if (!this.config.enabled) return
 
     const key = createChunkKey(chunkX, chunkZ)
+    // Something changed in or next to it: not settled any more
+    this.settledColumns.delete(key)
     if (this.columnQueueSet.has(key)) return
 
     this.columnQueue.push(key)
@@ -181,7 +189,21 @@ export class BackgroundLiquidPhysicsManager {
   }
 
   /**
-   * Periodically queue nearby columns for background liquid physics processing.
+   * A sub-chunk of this column loaded or unloaded: liquid next to data that
+   * was unknown (and therefore left alone) may flow now - re-check the column
+   * and its face neighbours on the next scan.
+   */
+  onColumnDataChanged(chunkX: bigint, chunkZ: bigint): void {
+    this.settledColumns.delete(createChunkKey(chunkX, chunkZ))
+    this.settledColumns.delete(createChunkKey(chunkX + 1n, chunkZ))
+    this.settledColumns.delete(createChunkKey(chunkX - 1n, chunkZ))
+    this.settledColumns.delete(createChunkKey(chunkX, chunkZ + 1n))
+    this.settledColumns.delete(createChunkKey(chunkX, chunkZ - 1n))
+  }
+
+  /**
+   * Periodically queue nearby columns for background liquid physics processing
+   * (generated liquid starts settling here; settled columns are skipped).
    */
   updateQueue(): void {
     if (!this.config.enabled) return
@@ -200,8 +222,18 @@ export class BackgroundLiquidPhysicsManager {
       for (let dz = -radius; dz <= radius; dz++) {
         const chunkX = BigInt(this.playerChunkX + dx)
         const chunkZ = BigInt(this.playerChunkZ + dz)
+        if (this.settledColumns.has(createChunkKey(chunkX, chunkZ))) continue
         this.queueColumn(chunkX, chunkZ)
       }
+    }
+
+    // Forget settled marks far away (their columns unload; a reload re-checks)
+    const keep = this.config.maxDistance + 2
+    for (const key of this.settledColumns) {
+      const comma = key.indexOf(',')
+      const dx = Number(key.substring(0, comma)) - this.playerChunkX
+      const dz = Number(key.substring(comma + 1)) - this.playerChunkZ
+      if (dx * dx + dz * dz > keep * keep) this.settledColumns.delete(key)
     }
   }
 
@@ -330,6 +362,7 @@ export class BackgroundLiquidPhysicsManager {
 
     // Skip if no liquids
     if (liquidPositions.length === 0) {
+      this.settledColumns.add(key)
       return true // "Success" - nothing to process
     }
 
@@ -343,11 +376,13 @@ export class BackgroundLiquidPhysicsManager {
       if (subY < SUB_CHUNK_COUNT - 1) subYsNeeded.add(subY + 1)
     }
 
-    // Serialize sub-chunks
+    // Serialize sub-chunks - loaded (light-ready) data only: placeholders hold
+    // just a neighbour's decoration cells, and missing sub-chunks are unknown
+    // (the worker leaves liquid next to unknown data alone)
     const subChunks: LiquidSubChunkData[] = []
     for (const subY of subYsNeeded) {
       const subChunk = column.getSubChunk(subY)
-      if (subChunk) {
+      if (subChunk?.lightReady) {
         subChunks.push({
           subY,
           blocks: new Uint16Array(subChunk.getBlockData()),
@@ -356,6 +391,7 @@ export class BackgroundLiquidPhysicsManager {
     }
 
     if (subChunks.length === 0) {
+      this.settledColumns.add(key)
       return true // No sub-chunks loaded
     }
 
@@ -421,7 +457,7 @@ export class BackgroundLiquidPhysicsManager {
 
     for (const subY of subYsNeeded) {
       const subChunk = neighborColumn.getSubChunk(subY)
-      if (!subChunk) continue
+      if (!subChunk?.lightReady) continue // unknown (see sendColumnToWorker)
 
       const blocks = subChunk.getBlockData()
       let layer: Uint16Array
@@ -471,31 +507,57 @@ export class BackgroundLiquidPhysicsManager {
       return
     }
 
-    if (!column) {
-      // Column was unloaded while processing
+    // Column unloaded while processing (possibly reloaded as a new column
+    // since): the result was computed from data that is gone - drop it
+    if (!column || this.getColumn?.({ x: BigInt(result.chunkX), z: BigInt(result.chunkZ) }) !== column) {
       return
     }
 
     this.columnsProcessedSinceLastQuery++
 
-    // Apply all block changes
+    // Apply the block changes - compare-and-set: the job ran on a snapshot, so
+    // a cell that changed since (a block the player placed or broke, another
+    // column's liquid result) keeps its current block, and the cell's column
+    // is recomputed from fresh data instead.
+    let applied = 0
+    const conflictsBefore = this.casConflicts
     if (result.changes.length > 0 && this.setBlockRaw) {
       for (const change of result.changes) {
-        this.setBlockRaw(BigInt(change.x), BigInt(change.y), BigInt(change.z), change.blockId)
+        const cx = Math.floor(change.x / CHUNK_SIZE_X)
+        const cz = Math.floor(change.z / CHUNK_SIZE_Z)
+        const target = cx === result.chunkX && cz === result.chunkZ ? column : this.getColumn?.({ x: BigInt(cx), z: BigInt(cz) })
+        if (!target || target.getBlockId(change.x - cx * CHUNK_SIZE_X, change.y, change.z - cz * CHUNK_SIZE_Z) !== change.oldBlockId) {
+          this.casConflicts++
+          this.queueColumn(BigInt(cx), BigInt(cz))
+          continue
+        }
+        if (this.setBlockRaw(BigInt(change.x), BigInt(change.y), BigInt(change.z), change.blockId)) applied++
       }
 
       // Flush changes to trigger lighting/meshing
       this.flushBlockChanges?.()
     }
 
-    // Queue neighbor columns that were affected
-    for (const neighbor of result.columnsToRequeue) {
-      this.queueColumn(BigInt(neighbor.chunkX), BigInt(neighbor.chunkZ))
+    // Follow-up passes only for changes that actually landed: a result whose
+    // writes were all refused (their sub-chunk unloaded meanwhile) or skipped
+    // (conflicts requeue their own column above) changed nothing to react to -
+    // requeueing on it kept columns at the load edge cycling forever.
+    // Nothing to do: settled until something changes around it. (Not while it
+    // is queued again - a change since it was sent requeued it.)
+    if (applied === 0 && this.casConflicts === conflictsBefore && !this.columnQueueSet.has(key)) {
+      this.settledColumns.add(key)
     }
 
-    // Re-queue self if changes occurred
-    if (result.anyChanged) {
-      this.queueColumn(BigInt(result.chunkX), BigInt(result.chunkZ))
+    if (applied > 0) {
+      // Queue neighbor columns that were affected
+      for (const neighbor of result.columnsToRequeue) {
+        this.queueColumn(BigInt(neighbor.chunkX), BigInt(neighbor.chunkZ))
+      }
+
+      // Re-queue self if changes occurred
+      if (result.anyChanged) {
+        this.queueColumn(BigInt(result.chunkX), BigInt(result.chunkZ))
+      }
     }
 
     // Clean up old cooldown entries periodically
@@ -518,6 +580,11 @@ export class BackgroundLiquidPhysicsManager {
       columnsProcessed: processed,
       columnsQueued: this.columnQueue.length,
     }
+  }
+
+  /** Cumulative count of liquid changes skipped because their cell changed while the job ran. */
+  getConflictCount(): number {
+    return this.casConflicts
   }
 
   /**
@@ -548,5 +615,6 @@ export class BackgroundLiquidPhysicsManager {
     this.columnQueue.length = 0
     this.columnQueueSet.clear()
     this.lastProcessedTime.clear()
+    this.settledColumns.clear()
   }
 }

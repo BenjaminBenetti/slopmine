@@ -14,7 +14,7 @@ export class ChunkColumn {
 
   /**
    * Array of 16 sub-chunks (indices 0-15).
-   * Sub-chunk 0 covers Y=0-63, sub-chunk 1 covers Y=64-127, etc.
+   * Sub-chunk 0 covers Y=0-31, sub-chunk 1 covers Y=32-63, etc.
    * May be null if the sub-chunk hasn't been generated yet.
    */
   private readonly subChunks: (SubChunk | null)[] = new Array(SUB_CHUNK_COUNT).fill(null)
@@ -29,10 +29,19 @@ export class ChunkColumn {
   private liquidTrackingInitialized = false
 
   /**
-   * Maximum skylight value for this chunk's biome (0-15).
-   * Set during generation based on the biome. Default is 15 (full brightness).
+   * Sky state per (x, z), index z * 32 + x: the lowest world Y from which every
+   * cell up to the world top is known (or proven) sky-clear. Cells at or above
+   * it hold direct skylight. CHUNK_HEIGHT means no direct sky. Maintained by
+   * the LightEngine (see lighting/ColumnSkyState.ts).
    */
-  skylightValue: number = 15
+  readonly skyFloor: Int16Array = new Int16Array(CHUNK_SIZE_X * CHUNK_SIZE_Z).fill(CHUNK_HEIGHT)
+
+  /**
+   * Lowest light-ready sub-chunk index whose generation proof says no terrain
+   * lies above it (SubChunk.skyOpenAbove); unloaded sub-chunks above it count
+   * as clear sky. SUB_CHUNK_COUNT = no proof yet.
+   */
+  skyProofSubY: number = SUB_CHUNK_COUNT
 
   constructor(coordinate: IChunkCoordinate) {
     this.coordinate = coordinate
@@ -66,6 +75,38 @@ export class ChunkColumn {
           }
         }
       }
+    }
+  }
+
+  /**
+   * A sub-chunk's block array was written directly, bypassing setBlockId
+   * (generated or saved data applied, merged into a loaded sub-chunk, or
+   * placeholder cells restored): bring liquid tracking up to date for its Y
+   * range. (Before the first liquid query the lazy full scan covers it.)
+   */
+  onSubChunkDataReplaced(subY: number): void {
+    if (!this.liquidTrackingInitialized) return
+    const layer = CHUNK_SIZE_X * CHUNK_SIZE_Z
+    const lo = subY * SUB_CHUNK_HEIGHT * layer
+    const hi = lo + SUB_CHUNK_HEIGHT * layer
+    for (const encoded of this.liquidBlocks) {
+      if (encoded >= lo && encoded < hi) this.liquidBlocks.delete(encoded)
+    }
+    const subChunk = this.subChunks[subY]
+    if (!subChunk) return
+    // (Encoded positions are worldY * 1024 + z * 32 + x: the sub-chunk's
+    // y-major index offset by its base.)
+    const blockData = subChunk.getBlockData()
+    let lastId = -1
+    let lastLiquid = false
+    for (let i = 0; i < blockData.length; i++) {
+      const id = blockData[i]
+      if (id === BlockIds.AIR) continue
+      if (id !== lastId) {
+        lastId = id
+        lastLiquid = this.isLiquidBlockId(id)
+      }
+      if (lastLiquid) this.liquidBlocks.add(lo + i)
     }
   }
 
@@ -158,7 +199,22 @@ export class ChunkColumn {
   }
 
   /**
-   * Get block ID using world Y coordinate (0-1023).
+   * Remove a sub-chunk (it becomes unloaded; the column stays). Liquid
+   * tracking is rebuilt lazily from the remaining sub-chunks.
+   */
+  removeSubChunk(subY: number): SubChunk | null {
+    if (subY < 0 || subY >= SUB_CHUNK_COUNT) return null
+    const subChunk = this.subChunks[subY]
+    this.subChunks[subY] = null
+    if (subChunk) {
+      this.liquidBlocks.clear()
+      this.liquidTrackingInitialized = false
+    }
+    return subChunk
+  }
+
+  /**
+   * Get block ID using world Y coordinate (0-511).
    */
   getBlockId(x: number, worldY: number, z: number): BlockId {
     if (worldY < 0 || worldY >= CHUNK_HEIGHT) {
@@ -177,7 +233,7 @@ export class ChunkColumn {
   }
 
   /**
-   * Set block ID using world Y coordinate (0-1023).
+   * Set block ID using world Y coordinate (0-511).
    * Returns true if the block was changed.
    */
   setBlockId(x: number, worldY: number, z: number, blockId: BlockId): boolean {
@@ -205,7 +261,7 @@ export class ChunkColumn {
   }
 
   /**
-   * Get block metadata using world Y coordinate (0-1023).
+   * Get block metadata using world Y coordinate (0-511).
    */
   getMetadata(x: number, worldY: number, z: number): number {
     if (worldY < 0 || worldY >= CHUNK_HEIGHT) {
@@ -224,7 +280,7 @@ export class ChunkColumn {
   }
 
   /**
-   * Set block metadata using world Y coordinate (0-1023).
+   * Set block metadata using world Y coordinate (0-511).
    * Returns true if the metadata was set.
    */
   setMetadata(x: number, worldY: number, z: number, value: number): boolean {

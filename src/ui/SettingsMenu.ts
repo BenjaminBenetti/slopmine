@@ -1,6 +1,7 @@
 import { applyUIScale } from './uiScale.ts'
-import type { GenerationConfig } from '../world/generate/GenerationConfig.ts'
-import type { GraphicsSettings, ResolutionPreset, FramerateLimit, ShadowMapSize } from '../settings/index.ts'
+import { MAX_CHUNK_DISTANCE, type GenerationConfig } from '../world/generate/GenerationConfig.ts'
+import { LOD_DISTANCE_OPTIONS, type GraphicsSettings, type ResolutionPreset, type FramerateLimit, type ShadowMapSize, type LodDistance, type TextureFiltering } from '../settings/index.ts'
+import { LOD_MIN_MARGIN_CHUNKS } from '../world/lod/LodTypes.ts'
 
 export type SettingsPage = 'main' | 'config'
 
@@ -9,6 +10,8 @@ export interface SettingsMenuUIOptions {
   onResume?: () => void
   /** Called when chunk distance setting changes */
   onChunkDistanceChange?: (value: number) => void
+  /** Called when the far terrain (LOD) setting changes */
+  onFarTerrainChange?: (enabled: boolean, distance: LodDistance) => void
   /** Called when resolution setting changes */
   onResolutionChange?: (preset: ResolutionPreset) => void
   /** Called when framerate limit setting changes */
@@ -17,6 +20,8 @@ export interface SettingsMenuUIOptions {
   onShadowsEnabledChange?: (enabled: boolean) => void
   /** Called when shadow map size setting changes */
   onShadowMapSizeChange?: (size: ShadowMapSize) => void
+  /** Called when the texture filtering setting changes */
+  onTextureFilteringChange?: (mode: TextureFiltering) => void
   /** Called when the user clicks "Save Game" - returns a promise that resolves when save is complete */
   onSave?: () => Promise<void>
   /** Called when the user confirms "New Game" - should clear saved data and reload */
@@ -273,21 +278,83 @@ export function createSettingsMenuUI(
     const slider = document.createElement('input')
     slider.type = 'range'
     slider.min = '2'
-    slider.max = '32'
+    slider.max = String(MAX_CHUNK_DISTANCE)
     slider.value = String(config.chunkDistance)
     slider.style.width = '100%'
     slider.style.cursor = 'pointer'
+
+    sliderContainer.appendChild(sliderLabel)
+    sliderContainer.appendChild(slider)
+    panel.appendChild(sliderContainer)
+
+    // Far Terrain dropdown: Off, or an LOD distance beyond the render distance
+    const farTerrainContainer = document.createElement('div')
+    farTerrainContainer.style.marginBottom = '1.5rem'
+    farTerrainContainer.style.display = 'flex'
+    farTerrainContainer.style.alignItems = 'center'
+    farTerrainContainer.style.justifyContent = 'space-between'
+
+    const farTerrainLabel = document.createElement('label')
+    farTerrainLabel.textContent = 'Far Terrain'
+    farTerrainLabel.style.fontSize = '0.9rem'
+    farTerrainLabel.htmlFor = 'far-terrain-select'
+
+    const farTerrainSelect = document.createElement('select')
+    farTerrainSelect.id = 'far-terrain-select'
+    farTerrainSelect.style.padding = '0.4rem 0.6rem'
+    farTerrainSelect.style.background = 'rgba(50, 50, 50, 0.9)'
+    farTerrainSelect.style.border = '2px solid rgba(255, 255, 255, 0.3)'
+    farTerrainSelect.style.borderRadius = '4px'
+    farTerrainSelect.style.color = 'rgba(255, 255, 255, 0.9)'
+    farTerrainSelect.style.fontSize = '0.9rem'
+    farTerrainSelect.style.cursor = 'pointer'
+
+    const FAR_TERRAIN_OFF = 'off'
+    const addFarTerrainOption = (value: string, label: string): void => {
+      const option = document.createElement('option')
+      option.value = value
+      option.textContent = label
+      option.style.background = 'rgba(30, 30, 30, 1)'
+      farTerrainSelect.appendChild(option)
+    }
+
+    // Offer only distances beyond the render distance. A stored distance the
+    // render distance has caught up with is shown as the nearest valid one
+    // (LodManager.getDistance applies the same minimum at runtime) but never
+    // overwritten: dragging the render distance up and back down keeps it.
+    const refreshFarTerrainOptions = (): void => {
+      const minDistance = config.chunkDistance + LOD_MIN_MARGIN_CHUNKS
+      const choices = LOD_DISTANCE_OPTIONS.filter((distance) => distance >= minDistance)
+      farTerrainSelect.innerHTML = ''
+      addFarTerrainOption(FAR_TERRAIN_OFF, 'Off')
+      for (const distance of choices) {
+        addFarTerrainOption(String(distance), `${distance} chunks`)
+      }
+      const shownDistance = choices.length > 0 ? Math.max(graphicsSettings.lodDistance, choices[0]) : graphicsSettings.lodDistance
+      farTerrainSelect.value = graphicsSettings.lodEnabled ? String(shownDistance) : FAR_TERRAIN_OFF
+    }
+    refreshFarTerrainOptions()
+
+    farTerrainSelect.addEventListener('change', () => {
+      const value = farTerrainSelect.value
+      graphicsSettings.lodEnabled = value !== FAR_TERRAIN_OFF
+      if (value !== FAR_TERRAIN_OFF) {
+        graphicsSettings.lodDistance = parseInt(value, 10) as LodDistance
+      }
+      options.onFarTerrainChange?.(graphicsSettings.lodEnabled, graphicsSettings.lodDistance)
+    })
+
+    farTerrainContainer.appendChild(farTerrainLabel)
+    farTerrainContainer.appendChild(farTerrainSelect)
+    panel.appendChild(farTerrainContainer)
 
     slider.addEventListener('input', () => {
       const value = parseInt(slider.value, 10)
       valueDisplay.textContent = String(value)
       config.chunkDistance = value
       options.onChunkDistanceChange?.(value)
+      refreshFarTerrainOptions()
     })
-
-    sliderContainer.appendChild(sliderLabel)
-    sliderContainer.appendChild(slider)
-    panel.appendChild(sliderContainer)
 
     // Resolution dropdown
     const resolutionContainer = document.createElement('div')
@@ -339,6 +406,53 @@ export function createSettingsMenuUI(
     resolutionContainer.appendChild(resolutionLabel)
     resolutionContainer.appendChild(resolutionSelect)
     panel.appendChild(resolutionContainer)
+
+    // Texture Filtering dropdown: crisp pixel art or smooth (trilinear)
+    const filteringContainer = document.createElement('div')
+    filteringContainer.style.marginBottom = '1.5rem'
+    filteringContainer.style.display = 'flex'
+    filteringContainer.style.alignItems = 'center'
+    filteringContainer.style.justifyContent = 'space-between'
+
+    const filteringLabel = document.createElement('label')
+    filteringLabel.textContent = 'Texture Filtering'
+    filteringLabel.style.fontSize = '0.9rem'
+    filteringLabel.htmlFor = 'texture-filtering-select'
+
+    const filteringSelect = document.createElement('select')
+    filteringSelect.id = 'texture-filtering-select'
+    filteringSelect.style.padding = '0.4rem 0.6rem'
+    filteringSelect.style.background = 'rgba(50, 50, 50, 0.9)'
+    filteringSelect.style.border = '2px solid rgba(255, 255, 255, 0.3)'
+    filteringSelect.style.borderRadius = '4px'
+    filteringSelect.style.color = 'rgba(255, 255, 255, 0.9)'
+    filteringSelect.style.fontSize = '0.9rem'
+    filteringSelect.style.cursor = 'pointer'
+
+    const filteringOptions: { value: TextureFiltering; label: string }[] = [
+      { value: 'crisp', label: 'Crisp' },
+      { value: 'smooth', label: 'Smooth' },
+    ]
+    for (const opt of filteringOptions) {
+      const option = document.createElement('option')
+      option.value = opt.value
+      option.textContent = opt.label
+      option.style.background = 'rgba(30, 30, 30, 1)'
+      if (opt.value === graphicsSettings.textureFiltering) {
+        option.selected = true
+      }
+      filteringSelect.appendChild(option)
+    }
+
+    filteringSelect.addEventListener('change', () => {
+      const mode = filteringSelect.value as TextureFiltering
+      graphicsSettings.textureFiltering = mode
+      options.onTextureFilteringChange?.(mode)
+    })
+
+    filteringContainer.appendChild(filteringLabel)
+    filteringContainer.appendChild(filteringSelect)
+    panel.appendChild(filteringContainer)
 
     // FPS Limit dropdown
     const fpsContainer = document.createElement('div')

@@ -10,8 +10,8 @@ import { HerbItem } from '../../../../items/materials/herb/HerbItem.ts'
 import { Herb1BlockItem } from '../../../../items/blocks/herb/Herb1BlockItem.ts'
 import herb3TexUrl from './assets/herb-3.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.HERB_3, herb3TexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.HERB_3, herb3TexUrl)
 
 const herb3Texture = loadBlockTexture(herb3TexUrl)
 

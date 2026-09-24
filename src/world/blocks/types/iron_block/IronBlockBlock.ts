@@ -10,7 +10,7 @@ import { IronOreItem } from '../../../../items/ores/iron/IronOreItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import ironBlockTexUrl from './assets/iron_block.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.IRON_BLOCK, ironBlockTexUrl)
 
 const ironBlockTexture = loadBlockTexture(ironBlockTexUrl)

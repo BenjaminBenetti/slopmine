@@ -10,7 +10,7 @@ import { CoalItem } from '../../../../items/ores/coal/CoalItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import coalBlockTexUrl from './assets/coal_block.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.COAL_BLOCK, coalBlockTexUrl)
 
 const coalBlockTexture = loadBlockTexture(coalBlockTexUrl)

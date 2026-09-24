@@ -3,26 +3,12 @@ import type { IBlockProperties, BlockFace, IBlock } from '../../../interfaces/IB
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
-import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
-import waterTexUrl from './assets/water.webp'
+import { liquidCubeGeometry } from '../../../../renderer/LiquidMaterials.ts'
+import { waterTexUrl, waterMaterial } from './waterMaterial.ts'
 
-// Register texture for atlas (marked as transparent)
-registerTextureUrl(TextureId.WATER, waterTexUrl, true)
-
-const waterTexture = loadBlockTexture(waterTexUrl)
-
-/**
- * Semi-transparent blue material for water with texture.
- * depthWrite: true prevents overlapping water fragments from causing artifacts.
- */
-const waterMaterial = new THREE.MeshLambertMaterial({
-  map: waterTexture,
-  transparent: true,
-  opacity: 0.95,
-  side: THREE.DoubleSide,
-  depthWrite: true,
-})
+// Register texture
+registerTextureUrl(TextureId.WATER, waterTexUrl)
 
 /**
  * Water block - a transparent, non-solid liquid.
@@ -46,6 +32,10 @@ export class WaterBlock extends TransparentBlock {
 
   protected get defaultTextureId(): number {
     return TextureId.WATER
+  }
+
+  protected getGeometry(): THREE.BufferGeometry {
+    return liquidCubeGeometry
   }
 
   protected getMaterials(): THREE.Material {

@@ -10,7 +10,7 @@ import { BasaltBlockItem } from '../../../../items/blocks/basalt/BasaltBlockItem
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import basaltTexUrl from './assets/basalt.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.BASALT, basaltTexUrl)
 
 const basaltTexture = loadBlockTexture(basaltTexUrl)

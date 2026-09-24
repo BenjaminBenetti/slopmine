@@ -1,13 +1,22 @@
 import type { WorldManager } from '../WorldManager.ts'
-import type { ISubChunkCoordinate } from '../interfaces/ICoordinates.ts'
+import type { IChunkCoordinate, ISubChunkCoordinate } from '../interfaces/ICoordinates.ts'
 import type { EntitySpawnConfig } from '../../entities/spawning/EntitySpawnConfig.ts'
-import { createSubChunkKey, type SubChunkKey } from '../interfaces/ICoordinates.ts'
-import { worldToChunk, localToWorld } from '../coordinates/CoordinateUtils.ts'
-import { SUB_CHUNK_HEIGHT, SUB_CHUNK_COUNT, CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../interfaces/IChunk.ts'
+import { createSubChunkKey, parseSubChunkKey, type SubChunkKey } from '../interfaces/ICoordinates.ts'
+import { worldToChunk } from '../coordinates/CoordinateUtils.ts'
+import { SUB_CHUNK_HEIGHT, SUB_CHUNK_COUNT, CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_TOP_ROW_START } from '../interfaces/IChunk.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
-import { GenerationConfig, type IGenerationConfig, type BiomeType, getLayerForSubChunk } from './GenerationConfig.ts'
-import type { BiomeGenerator, WaterSettings } from './BiomeGenerator.ts'
+import {
+  GenerationConfig,
+  type IGenerationConfig,
+  type BiomeType,
+  getLayerForSubChunk,
+  LAYER_BOUNDARY_SUB_CHUNK,
+  UNLOAD_HYSTERESIS_CHUNKS,
+} from './GenerationConfig.ts'
+import type { BiomeGenerator } from './BiomeGenerator.ts'
 import { biomeRegistry, BIOME_REGION_SIZE } from './biomes/BiomeRegistry.ts'
+import { BLEND_DISTANCE, BIOME_REGION_SIZE_BLOCKS } from './caves/CaveBlend.ts'
+import { buildGroundBlockLookup, hasOpenColumn } from './OpenColumnScan.ts'
 import { CliffFeature } from './features/CliffFeature.ts'
 import { OreFeature } from './features/OreFeature.ts'
 import { OasisFeature } from './features/OasisFeature.ts'
@@ -38,34 +47,86 @@ import { AbandonedCabinFeature } from './features/AbandonedCabinFeature.ts'
 import { HuntersCampFeature } from './features/HuntersCampFeature.ts'
 import { BasaltColumnsFeature } from './features/BasaltColumnsFeature.ts'
 import { CharredMiningCampFeature } from './features/CharredMiningCampFeature.ts'
-import type { WaterEdgeEffects } from './features/WaterFeature.ts'
 import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../workers/ChunkGenerationWorker.ts'
 import type { PersistenceManager } from '../../persistence/PersistenceManager.ts'
+import type { SubChunkLightInput } from '../lighting/LightEngine.ts'
 
 interface QueuedSubChunk {
   coordinate: ISubChunkCoordinate
   priority: number
 }
 
-/**
- * Types of features that can be reprocessed on existing chunks.
- */
-type FeatureReprocessType = 'water'
+/** World-Y band (inclusive) holding a column's visible surface. */
+export interface SurfaceBand {
+  readonly minY: number
+  readonly maxY: number
+}
 
 /**
- * Direction from which a feature is propagating.
+ * Supplies exact per-column surface bands (e.g. from LOD tile metadata).
+ * Returns null when the column is unknown; the biome-height estimate is used
+ * instead.
  */
-type PropagationDirection = 'fromPosX' | 'fromNegX' | 'fromPosZ' | 'fromNegZ'
+export type SurfaceBandProvider = (chunkX: number, chunkZ: number) => SurfaceBand | null
+
+/** Inclusive sub-chunk index range of a column's surface band. */
+interface SubYRange {
+  readonly lo: number
+  readonly hi: number
+}
+
+/** Player position the load set is centred on. */
+interface LoadCenter {
+  readonly x: bigint
+  readonly z: bigint
+  readonly subY: number
+  /**
+   * Sub-chunk of the ground under the camera (its column's lowest surface)
+   * while the camera is above it, else null. The lower half of the vertical
+   * ellipsoid is also centred there: flying, the camera's ellipsoid no longer
+   * reaches the ground, and pits and cave mouths near the player would show
+   * undrawn depths below the surface bands. (Above the ground the bands
+   * already hold everything there is to see.)
+   */
+  readonly groundSubY: number | null
+}
 
 /**
- * Request to reprocess a feature on an existing sub-chunk.
+ * Surface band estimate margins around the sampled biome heights. Below
+ * covers relief between the sample points; above covers trees and other
+ * surface features.
  */
-interface FeatureReprocessRequest {
-  coordinate: ISubChunkCoordinate
-  featureType: FeatureReprocessType
-  priority: number
-  /** Direction the feature is propagating from (e.g., water flowing in from neighbor) */
-  propagationFrom?: PropagationDirection
+const SURFACE_BAND_ESTIMATE_BELOW = 16
+const SURFACE_BAND_ESTIMATE_ABOVE = 48
+
+/**
+ * Loaded sub-chunks of in-range columns stay resident until they leave the
+ * vertical ellipsoid by this many extra sub-chunks (and lie outside the
+ * surface band); then they are saved and unloaded individually.
+ */
+const VERTICAL_UNLOAD_HYSTERESIS_SUB_CHUNKS = 1
+/**
+ * Depth (sub-chunks) of the half-ellipsoid below the ground under a flying
+ * camera (see LoadCenter.groundSubY): enough for pits and cave mouths near the
+ * player, much cheaper than a full second ellipsoid.
+ */
+const GROUND_ELLIPSOID_DEPTH_SUB_CHUNKS = 3
+/** Sub-chunks unloaded individually per frame at most (each saves and relights its borders). */
+const MAX_SUB_CHUNK_UNLOADS_PER_FRAME = 8
+
+/** The four face-neighbour columns (see getColumnBand). */
+const BAND_NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+
+/** Numeric key of a column (chunk coordinates within +-2^23), for the per-column maps. */
+const COLUMN_KEY_OFFSET = 0x800000
+function columnKey(chunkX: number, chunkZ: number): number {
+  return (chunkX + COLUMN_KEY_OFFSET) * 0x1000000 + (chunkZ + COLUMN_KEY_OFFSET)
+}
+function columnKeyX(key: number): number {
+  return Math.floor(key / 0x1000000) - COLUMN_KEY_OFFSET
+}
+function columnKeyZ(key: number): number {
+  return (key % 0x1000000) - COLUMN_KEY_OFFSET
 }
 
 /**
@@ -94,20 +155,53 @@ export class WorldGenerator {
   private playerChunkX: bigint = 0n
   private playerChunkZ: bigint = 0n
   private playerSubY: number = 0 // Player's sub-chunk Y index (0-15)
+  private playerGroundSubY: number | null = null // see LoadCenter.groundSubY
   private playerWorldY: number = 0 // Player's world Y position
   private initialized: boolean = false
 
   // Persistence manager for loading saved chunks
   private persistenceManager: PersistenceManager | null = null
 
-  // Feature reprocess queue for existing chunks that need features re-applied
-  // Used for cross-chunk propagation (e.g., water flowing into neighbors)
-  private readonly featureReprocessQueue: FeatureReprocessRequest[] = []
-  private readonly featureReprocessing: Set<string> = new Set() // "key:featureType"
+  // Surface band sources: an exact provider (LOD tiles) when set, otherwise
+  // cached biome-height estimates keyed "chunkX,chunkZ".
+  private surfaceBandProvider: SurfaceBandProvider | null = null
+  private readonly surfaceBandEstimates: Map<number, SurfaceBand> = new Map()
+  // Applied sub-chunks with a column that holds no ground block, as subY
+  // bits keyed "chunkX,chunkZ". A band whose bottom sub-chunk is open reaches
+  // down another sub-chunk (see getSurfaceBandFloor).
+  private readonly openSubChunks: Map<number, number> = new Map()
+  // Loaded sub-chunks with a block in their top row (after decorations), as
+  // subY bits keyed "chunkX,chunkZ". The sub-chunk above such a one belongs
+  // to the band: the faces of those blocks need it (see getColumnBand).
+  // Covers what LOD tiles don't know: main-thread decorations (mushroom caps,
+  // trees) reaching above the tile's top.
+  private readonly topRowSubChunks: Map<number, number> = new Map()
+  private groundBlocks: Uint8Array | null = null
 
-  // Pending water propagation - stores edge effects for chunks whose neighbors weren't ready yet
-  // Re-checked periodically to handle race conditions in concurrent chunk generation
-  private readonly pendingWaterPropagation: Map<SubChunkKey, { coordinate: ISubChunkCoordinate; edgeEffects: WaterEdgeEffects }> = new Map()
+  // In-flight jobs whose column was unloaded meanwhile: their results are
+  // discarded even if the column is wanted again by the time they land (see
+  // isResultCurrent) - a result must never re-create an unloaded column.
+  private readonly cancelledSubChunks: Set<SubChunkKey> = new Set()
+
+  // Failed generation attempts per sub-chunk (see retryFailedSubChunk)
+  private static readonly MAX_GENERATION_ATTEMPTS = 3
+  private readonly generationFailures: Map<SubChunkKey, number> = new Map()
+
+  // Resident sub-chunks of in-range columns that left the load set: freed a
+  // few per frame (processSubChunkUnloads), re-checked when their turn comes
+  private readonly subChunksToUnload: Set<SubChunkKey> = new Set()
+
+  // Main-thread decoration passes in progress, per column (columnKey -> count).
+  // Passes yield across frames; a column is never unloaded under one (it
+  // would be saved with half its trees, and the rest of the pass written into
+  // a throwaway placeholder column). Its unload waits in deferredColumnUnloads.
+  private readonly decoratingColumns: Map<number, number> = new Map()
+  private readonly deferredColumnUnloads: Set<number> = new Set()
+
+  // Load lifecycle listeners (LOD column readiness)
+  private readonly subChunkAppliedListeners: Array<(coordinate: ISubChunkCoordinate) => void> = []
+  private readonly columnUnloadedListeners: Array<(coordinate: IChunkCoordinate) => void> = []
+  private readonly subChunkUnloadedListeners: Array<(coordinate: ISubChunkCoordinate) => void> = []
 
   constructor(world: WorldManager, config?: Partial<IGenerationConfig>) {
     this.world = world
@@ -297,7 +391,7 @@ export class WorldGenerator {
    * @param chunkZ - Chunk Z coordinate
    * @param layer - Vertical layer (0 = underground, 1 = surface). Defaults to 1.
    */
-  private getBlendDataForChunk(chunkX: number, chunkZ: number, layer: 0 | 1 = 1): BiomeBlendData {
+  getBlendDataForChunk(chunkX: number, chunkZ: number, layer: 0 | 1 = 1): BiomeBlendData {
     const { localX, localZ } = biomeRegistry.getLocalChunkCoords(chunkX, chunkZ)
     const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
 
@@ -343,8 +437,25 @@ export class WorldGenerator {
   update(playerX: number, playerZ: number, playerY: number = 0): void {
     this.updateQueue(playerX, playerZ, playerY)
     this.processSubChunkQueue()
-    this.retryPendingWaterPropagation()
-    this.processFeatureReprocessQueue()
+    this.processFeatureWork()
+  }
+
+  /**
+   * Per-frame streaming work outside the generation queue: individual
+   * sub-chunk unloads (a few per call). Call once per frame - during gameplay
+   * too (the 'world-generation-queue' task), not only while loading.
+   *
+   * (There is no cross-chunk water pass: the worker's WaterFeature fills every
+   * column whose blended base height lies below the water level, independently
+   * of its neighbours, so lakes are continuous across borders already. A
+   * main-thread pass that "propagated" water into neighbours filled every air
+   * cell above the highest solid block of each target sub-chunk - cave
+   * pockets reaching a sub-chunk's top face were flooded far above the
+   * designed cave flood level. Runtime liquid physics handles real flow.)
+   */
+  processFeatureWork(): void {
+    this.processDeferredColumnUnloads()
+    this.processSubChunkUnloads()
   }
 
   /**
@@ -371,16 +482,19 @@ export class WorldGenerator {
     const subYChanged = clampedPlayerSubY !== this.playerSubY
 
     // Capture the previous center before overwriting - needed for incremental updates.
-    const prevCenter = { x: this.playerChunkX, z: this.playerChunkZ, subY: this.playerSubY }
+    const prevCenter: LoadCenter = { x: this.playerChunkX, z: this.playerChunkZ, subY: this.playerSubY, groundSubY: this.playerGroundSubY }
     const wasInitialized = this.initialized
 
     this.playerChunkX = playerChunk.x
     this.playerChunkZ = playerChunk.z
     this.playerSubY = clampedPlayerSubY
     this.playerWorldY = playerY
+    const ground = this.computeGroundSubY()
+    const groundChanged = ground !== this.playerGroundSubY
+    this.playerGroundSubY = ground
 
     // Update queue on first call or when player moves to new chunk/sub-chunk
-    if (!wasInitialized || chunkChanged || subYChanged) {
+    if (!wasInitialized || chunkChanged || subYChanged || groundChanged) {
       this.initialized = true
       // First initialization does a full rebuild; subsequent crosses update incrementally.
       this.updateSubChunkQueue(wasInitialized ? prevCenter : null)
@@ -431,52 +545,495 @@ export class WorldGenerator {
   }
 
   /**
-   * Unload sub-chunks beyond the unload distance.
-   * Columns are fully unloaded when horizontally too far.
-   * Individual sub-chunks are cleared using ellipsoid distance (Y scaled).
+   * Unload columns that left the load set (with hysteresis), and schedule
+   * resident sub-chunks of the remaining columns that left it for individual
+   * unloading (processSubChunkUnloads).
+   *
+   * A sub-chunk keeps its generated flag while it is resident: clearing it
+   * used to re-queue it on the next vertical move, and regenerating a
+   * resident sub-chunk overwrote its live data (unsaved player edits
+   * included). An individually unloaded sub-chunk is saved first and its
+   * flag cleared, so it comes back from persistence.
    */
   private unloadDistantChunks(): void {
-    const horizontalUnloadDistance = this.config.getUnloadDistance()
-    const verticalUnloadDistance = this.config.getVerticalDistance()
-    const yScale = horizontalUnloadDistance / verticalUnloadDistance
-
+    const center = this.getLoadCenter()
     const loadedColumns = this.world.getLoadedColumns()
 
     for (const column of loadedColumns) {
-      const dx = Number(column.coordinate.x - this.playerChunkX)
-      const dz = Number(column.coordinate.z - this.playerChunkZ)
-      const horizontalDist = Math.sqrt(dx * dx + dz * dz)
-
-      // If horizontally beyond unload distance, unload entire column
-      if (horizontalDist > horizontalUnloadDistance) {
-        this.world.unloadChunk(column.coordinate)
-
-        // Clear all sub-chunk keys for this column
-        for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
-          const subKey = createSubChunkKey(column.coordinate.x, column.coordinate.z, subY)
-          this.generatedSubChunks.delete(subKey)
-          this.generatingSubChunks.delete(subKey)
-          this.pendingWaterPropagation.delete(subKey)
-        }
+      const dx = Number(column.coordinate.x - center.x)
+      const dz = Number(column.coordinate.z - center.z)
+      if (this.isColumnInRange(dx, dz, UNLOAD_HYSTERESIS_CHUNKS)) continue
+      const key = columnKey(Number(column.coordinate.x), Number(column.coordinate.z))
+      if (this.decoratingColumns.has(key)) {
+        this.deferredColumnUnloads.add(key) // after its decoration pass
         continue
       }
+      this.unloadColumn(column.coordinate)
+    }
 
-      // Check each sub-chunk's ellipsoid distance (Y scaled)
+    this.collectUnwantedSubChunks(center)
+
+    // Forget band estimates for columns well outside the load set
+    const keepDistance = this.config.getUnloadDistance() + 1
+    const keepDist2 = keepDistance * keepDistance
+    const centerX = Number(center.x)
+    const centerZ = Number(center.z)
+    for (const key of this.surfaceBandEstimates.keys()) {
+      const dx = columnKeyX(key) - centerX
+      const dz = columnKeyZ(key) - centerZ
+      if (dx * dx + dz * dz > keepDist2) {
+        this.surfaceBandEstimates.delete(key)
+      }
+    }
+  }
+
+  /** Unload a column that left the load set and clear its bookkeeping. */
+  private unloadColumn(coordinate: IChunkCoordinate): void {
+    this.world.unloadChunk(coordinate)
+    this.openSubChunks.delete(columnKey(Number(coordinate.x), Number(coordinate.z)))
+    this.topRowSubChunks.delete(columnKey(Number(coordinate.x), Number(coordinate.z)))
+    this.deferredColumnUnloads.delete(columnKey(Number(coordinate.x), Number(coordinate.z)))
+    for (const listener of this.columnUnloadedListeners) listener(coordinate)
+
+    // Clear sub-chunk bookkeeping for this column. In-flight generation jobs
+    // keep their generating mark (no second request while one is in flight)
+    // but are cancelled: their results are discarded on arrival.
+    for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
+      const subKey = createSubChunkKey(coordinate.x, coordinate.z, subY)
+      this.generatedSubChunks.delete(subKey)
+      if (this.generatingSubChunks.has(subKey)) this.cancelledSubChunks.add(subKey)
+    }
+  }
+
+  /**
+   * Columns whose unload waited for a decoration pass: unload them once no
+   * pass runs there any more, if they are still out of range.
+   */
+  private processDeferredColumnUnloads(): void {
+    if (this.deferredColumnUnloads.size === 0) return
+    const center = this.getLoadCenter()
+    for (const key of Array.from(this.deferredColumnUnloads)) {
+      if (this.decoratingColumns.has(key)) continue
+      this.deferredColumnUnloads.delete(key)
+      const coordinate: IChunkCoordinate = { x: BigInt(columnKeyX(key)), z: BigInt(columnKeyZ(key)) }
+      if (!this.world.getChunkColumn(coordinate)) continue
+      if (this.isColumnInRange(Number(coordinate.x - center.x), Number(coordinate.z - center.z), UNLOAD_HYSTERESIS_CHUNKS)) continue
+      this.unloadColumn(coordinate)
+    }
+  }
+
+  // ==================== Sub-chunk unloading ====================
+
+  /**
+   * Queue the resident sub-chunks of in-range columns that are no longer
+   * retained (e.g. Hell after returning to the surface, sky sub-chunks after
+   * flying high) for individual unloading.
+   */
+  private collectUnwantedSubChunks(center: LoadCenter): void {
+    for (const column of this.world.getLoadedColumns()) {
+      const dx = Number(column.coordinate.x - center.x)
+      const dz = Number(column.coordinate.z - center.z)
+      let band: SubYRange | null | undefined
       for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
-        const dy = subY - this.playerSubY
-        const scaledDy = dy * yScale
+        if (!column.getSubChunk(subY)?.lightReady) continue
+        band ??= this.getColumnBand(Number(column.coordinate.x), Number(column.coordinate.z), center.subY)
+        if (this.isSubChunkRetained(dx, dz, subY, center, band)) continue
+        this.subChunksToUnload.add(createSubChunkKey(column.coordinate.x, column.coordinate.z, subY))
+      }
+    }
+  }
 
-        // Ellipsoid check - Y is scaled so it effectively uses half the distance
-        const ellipsoidDist = Math.sqrt(dx * dx + dz * dz + scaledDy * scaledDy)
-        if (ellipsoidDist > horizontalUnloadDistance) {
-          // Clear generated flag so it can be re-queued when player moves
-          const subKey = createSubChunkKey(column.coordinate.x, column.coordinate.z, subY)
-          this.generatedSubChunks.delete(subKey)
-          this.generatingSubChunks.delete(subKey)
-          this.pendingWaterPropagation.delete(subKey)
+  /**
+   * Whether a loaded sub-chunk stays resident: it is wanted, in its column's
+   * surface band, or inside the vertical ellipsoid widened by the unload
+   * hysteresis (horizontally, as for columns) plus
+   * VERTICAL_UNLOAD_HYSTERESIS_SUB_CHUNKS - so moving back and forth across a
+   * sub-chunk boundary doesn't unload and reload a layer each time.
+   */
+  private isSubChunkRetained(dx: number, dz: number, subY: number, center: LoadCenter, band: SubYRange | null): boolean {
+    if (isInBand(band, subY)) return true
+    if (this.isSubChunkWanted(dx, dz, subY, center, band, 0)) return true
+    const distance = this.config.chunkDistance + UNLOAD_HYSTERESIS_CHUNKS
+    const vertical = this.config.getVerticalDistance() + VERTICAL_UNLOAD_HYSTERESIS_SUB_CHUNKS
+    return this.inEllipsoid(dx, dz, subY - center.subY, distance, vertical) ||
+      (center.groundSubY !== null && subY <= center.groundSubY &&
+        this.inEllipsoid(dx, dz, subY - center.groundSubY, distance, GROUND_ELLIPSOID_DEPTH_SUB_CHUNKS + VERTICAL_UNLOAD_HYSTERESIS_SUB_CHUNKS))
+  }
+
+  /** Inside the ellipsoid of horizontal radius `distance` (chunks) and vertical radius `vertical` (sub-chunks)? */
+  private inEllipsoid(dx: number, dz: number, dy: number, distance: number, vertical: number): boolean {
+    const scaledDy = dy * (distance / vertical)
+    return dx * dx + dz * dz + scaledDy * scaledDy <= distance * distance
+  }
+
+  /** See LoadCenter.groundSubY. */
+  private computeGroundSubY(): number | null {
+    if (this.playerSubY < LAYER_BOUNDARY_SUB_CHUNK) return null
+    const band = this.getSurfaceBand(Number(this.playerChunkX), Number(this.playerChunkZ))
+    const ground = Math.max(LAYER_BOUNDARY_SUB_CHUNK, Math.floor(band.minY / SUB_CHUNK_HEIGHT))
+    return ground < this.playerSubY ? ground : null
+  }
+
+  /**
+   * Unload up to `max` queued sub-chunks that are still not retained (the
+   * player may have come back). Each is saved, taken out of the light engine
+   * and meshes by WorldManager.unloadSubChunk, and loses its generated flag so
+   * it is requested again - from persistence - when wanted. Called every frame
+   * through processFeatureWork().
+   */
+  processSubChunkUnloads(max = MAX_SUB_CHUNK_UNLOADS_PER_FRAME): void {
+    if (this.subChunksToUnload.size === 0) return
+    const center = this.getLoadCenter()
+    let unloaded = 0
+    for (const key of this.subChunksToUnload) {
+      if (unloaded >= max) break
+      this.subChunksToUnload.delete(key)
+      // A job still running for it (its decorations) owns it until done
+      if (this.generatingSubChunks.has(key)) continue
+      const coordinate = parseSubChunkKey(key)
+      const dx = Number(coordinate.x - center.x)
+      const dz = Number(coordinate.z - center.z)
+      if (!this.isColumnInRange(dx, dz, UNLOAD_HYSTERESIS_CHUNKS)) continue // its column goes as a whole
+      const band = this.getColumnBand(Number(coordinate.x), Number(coordinate.z), center.subY)
+      if (this.isSubChunkRetained(dx, dz, coordinate.subY, center, band)) continue
+      if (!this.world.unloadSubChunk(coordinate)) continue
+      unloaded++
+      this.setTopRowBit(Number(coordinate.x), Number(coordinate.z), coordinate.subY, false)
+      this.generatedSubChunks.delete(key)
+      for (const listener of this.subChunkUnloadedListeners) listener(coordinate)
+    }
+  }
+
+  /** Listen for sub-chunks unloaded individually (their column stays). Returns an unsubscribe function. */
+  onSubChunkUnloaded(listener: (coordinate: ISubChunkCoordinate) => void): () => void {
+    this.subChunkUnloadedListeners.push(listener)
+    return () => {
+      const index = this.subChunkUnloadedListeners.indexOf(listener)
+      if (index !== -1) this.subChunkUnloadedListeners.splice(index, 1)
+    }
+  }
+
+  // ==================== Load set ====================
+
+  /**
+   * Set (or clear) the exact surface band source. Columns it has no data for
+   * fall back to the biome-height estimate.
+   */
+  setSurfaceBandProvider(provider: SurfaceBandProvider | null): void {
+    this.surfaceBandProvider = provider
+  }
+
+  /**
+   * Re-evaluate one column's load set after its surface band changed (e.g.
+   * its LOD tile arrived) and queue any newly wanted sub-chunks.
+   */
+  refreshSurfaceBand(chunkX: number, chunkZ: number): void {
+    this.surfaceBandEstimates.delete(columnKey(chunkX, chunkZ))
+    // The player's column: the ground ellipsoid may move (affects every column)
+    if (this.initialized && BigInt(chunkX) === this.playerChunkX && BigInt(chunkZ) === this.playerChunkZ) {
+      const ground = this.computeGroundSubY()
+      if (ground !== this.playerGroundSubY) {
+        const prevCenter = this.getLoadCenter()
+        this.playerGroundSubY = ground
+        this.updateSubChunkQueue(prevCenter)
+        this.unloadDistantChunks()
+      }
+    }
+    this.queueNewlyWanted(chunkX, chunkZ)
+    // Its neighbours' bands reach up to its top too (see getColumnBand)
+    for (const [ox, oz] of BAND_NEIGHBOR_OFFSETS) this.queueNewlyWanted(chunkX + ox, chunkZ + oz)
+  }
+
+  /**
+   * Lowest sub-chunk a column's surface band reaches, starting from the band
+   * bottom `subY`: while that sub-chunk is loaded and has a column holding no
+   * ground block (a ravine or cave mouth, dry or flooded, cutting below it),
+   * the band goes one sub-chunk deeper - otherwise columns outside the
+   * vertical range, which load only their band, would show a hole where the
+   * cut's floor never loads.
+   */
+  getSurfaceBandFloor(chunkX: number, chunkZ: number, subY: number): number {
+    const open = this.openSubChunks.get(columnKey(chunkX, chunkZ))
+    if (open === undefined) return subY
+    let floor = subY
+    while (floor > LAYER_BOUNDARY_SUB_CHUNK && (open & (1 << floor)) !== 0) floor--
+    return floor
+  }
+
+  /** Queue the sub-chunks of one column that are wanted but not loaded, queued or generating. */
+  private queueNewlyWanted(chunkX: number, chunkZ: number): void {
+    if (!this.initialized) return
+
+    const center = this.getLoadCenter()
+    const columnX = BigInt(chunkX)
+    const columnZ = BigInt(chunkZ)
+    const dx = Number(columnX - center.x)
+    const dz = Number(columnZ - center.z)
+    if (!this.isColumnInRange(dx, dz, 0)) return
+
+    const band = this.getColumnBand(chunkX, chunkZ, center.subY)
+    let addedAny = false
+    for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
+      if (!this.isSubChunkWanted(dx, dz, subY, center, band, 0)) continue
+      const key = createSubChunkKey(columnX, columnZ, subY)
+      if (
+        this.generatedSubChunks.has(key) ||
+        this.generatingSubChunks.has(key) ||
+        this.queuedSubChunkKeys.has(key)
+      ) {
+        continue
+      }
+      const subCoord: ISubChunkCoordinate = { x: columnX, z: columnZ, subY }
+      this.subChunkQueue.push({ coordinate: subCoord, priority: this.calculateSubChunkPriority(subCoord, isInBand(band, subY)) })
+      this.queuedSubChunkKeys.add(key)
+      addedAny = true
+    }
+    if (addedAny) {
+      this.subChunkQueue.sort((a, b) => a.priority - b.priority)
+    }
+  }
+
+  /**
+   * Listen for sub-chunks whose generated (or saved) data was just applied to
+   * the world - before main-thread decorations, and before any mesh built
+   * from that data can arrive. Returns an unsubscribe function.
+   */
+  onSubChunkApplied(listener: (coordinate: ISubChunkCoordinate) => void): () => void {
+    this.subChunkAppliedListeners.push(listener)
+    return () => {
+      const index = this.subChunkAppliedListeners.indexOf(listener)
+      if (index !== -1) this.subChunkAppliedListeners.splice(index, 1)
+    }
+  }
+
+  /** Listen for columns unloaded by the load rule. Returns an unsubscribe function. */
+  onColumnUnloaded(listener: (coordinate: IChunkCoordinate) => void): () => void {
+    this.columnUnloadedListeners.push(listener)
+    return () => {
+      const index = this.columnUnloadedListeners.indexOf(listener)
+      if (index !== -1) this.columnUnloadedListeners.splice(index, 1)
+    }
+  }
+
+  /**
+   * A sub-chunk's data was applied: record whether it has open columns (see
+   * getSurfaceBandFloor), load deeper if that lowers its column's band floor,
+   * and tell the listeners. Runs before decorations, which only add blocks.
+   */
+  private onSubChunkDataApplied(coordinate: ISubChunkCoordinate, blocks: Uint16Array): void {
+    if (coordinate.subY >= LAYER_BOUNDARY_SUB_CHUNK) {
+      this.recordTopRow(Number(coordinate.x), Number(coordinate.z), coordinate.subY, blocks)
+    }
+    if (coordinate.subY > LAYER_BOUNDARY_SUB_CHUNK) {
+      this.groundBlocks ??= buildGroundBlockLookup()
+      const chunkX = Number(coordinate.x)
+      const chunkZ = Number(coordinate.z)
+      const key = columnKey(chunkX, chunkZ)
+      const bits = this.openSubChunks.get(key) ?? 0
+      const bit = 1 << coordinate.subY
+      const open = hasOpenColumn(blocks, this.groundBlocks)
+      if (open !== ((bits & bit) !== 0)) {
+        const centerSubY = this.getLoadCenter().subY
+        const before = this.getColumnBand(chunkX, chunkZ, centerSubY)
+        this.openSubChunks.set(key, open ? bits | bit : bits & ~bit)
+        const after = this.getColumnBand(chunkX, chunkZ, centerSubY)
+        if (before && after && after.lo < before.lo) this.queueNewlyWanted(chunkX, chunkZ)
+      }
+    }
+    for (const listener of this.subChunkAppliedListeners) listener(coordinate)
+  }
+
+  /**
+   * Record whether a loaded sub-chunk has a block in its top row, loading the
+   * sub-chunk above it (and the matching layer of the neighbour columns) if
+   * that raises the column's band top.
+   */
+  private recordTopRow(chunkX: number, chunkZ: number, subY: number, blocks: Uint16Array): void {
+    let occupied = false
+    for (let i = SUB_CHUNK_TOP_ROW_START; i < blocks.length; i++) {
+      if (blocks[i] !== BlockIds.AIR) {
+        occupied = true
+        break
+      }
+    }
+    this.setTopRowBit(chunkX, chunkZ, subY, occupied)
+  }
+
+  private setTopRowBit(chunkX: number, chunkZ: number, subY: number, occupied: boolean): void {
+    const key = columnKey(chunkX, chunkZ)
+    const bits = this.topRowSubChunks.get(key) ?? 0
+    const bit = 1 << subY
+    if (occupied === ((bits & bit) !== 0)) return
+    const before = this.getColumnTopY(chunkX, chunkZ)
+    const next = occupied ? bits | bit : bits & ~bit
+    if (next === 0) this.topRowSubChunks.delete(key)
+    else this.topRowSubChunks.set(key, next)
+    if (this.getColumnTopY(chunkX, chunkZ) > before) {
+      this.queueNewlyWanted(chunkX, chunkZ)
+      for (const [ox, oz] of BAND_NEIGHBOR_OFFSETS) this.queueNewlyWanted(chunkX + ox, chunkZ + oz)
+    }
+  }
+
+  /**
+   * After a sub-chunk's decorations ran: they write into it and spill into the
+   * sub-chunks around it - re-check the top rows of the loaded ones.
+   */
+  private recordTopRowsAround(coordinate: ISubChunkCoordinate): void {
+    const chunkX = Number(coordinate.x)
+    const chunkZ = Number(coordinate.z)
+    for (let subY = coordinate.subY; subY <= Math.min(SUB_CHUNK_COUNT - 1, coordinate.subY + 1); subY++) {
+      if (subY < LAYER_BOUNDARY_SUB_CHUNK) continue
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const sub = this.world.getSubChunk({ x: BigInt(chunkX + dx), z: BigInt(chunkZ + dz), subY })
+          if (sub?.lightReady) this.recordTopRow(chunkX + dx, chunkZ + dz, subY, sub.getBlockData())
         }
       }
     }
+  }
+
+  /**
+   * Highest Y whose cell may hold a block of the column's surface: its own
+   * band top, or the top row of its highest loaded sub-chunk that has a block
+   * there (see topRowSubChunks).
+   */
+  private getColumnTopY(chunkX: number, chunkZ: number): number {
+    const bandTop = this.getSurfaceBand(chunkX, chunkZ).maxY
+    const bits = this.topRowSubChunks.get(columnKey(chunkX, chunkZ))
+    if (bits === undefined) return bandTop
+    const highest = 31 - Math.clz32(bits)
+    return Math.max(bandTop, highest * SUB_CHUNK_HEIGHT + SUB_CHUNK_HEIGHT - 1)
+  }
+
+  private getLoadCenter(): LoadCenter {
+    return { x: this.playerChunkX, z: this.playerChunkZ, subY: this.playerSubY, groundSubY: this.playerGroundSubY }
+  }
+
+  /** True if a column at chunk offset (dx, dz) is within load distance + slack. */
+  private isColumnInRange(dx: number, dz: number, slack: number): boolean {
+    const distance = this.config.chunkDistance + slack
+    return dx * dx + dz * dz <= distance * distance
+  }
+
+  /**
+   * The single load rule shared by queueing (slack 0) and unloading (slack =
+   * hysteresis). A sub-chunk is wanted when its column is in horizontal range
+   * AND it lies inside the vertical ellipsoid around the player OR inside the
+   * column's surface band. The band guarantee matters for edge columns: the
+   * ellipsoid narrows to the player's own sub-chunk there, which on uneven
+   * terrain misses the ground entirely.
+   */
+  private isSubChunkWanted(
+    dx: number,
+    dz: number,
+    subY: number,
+    center: LoadCenter,
+    band: SubYRange | null,
+    slack: number
+  ): boolean {
+    const distance = this.config.chunkDistance + slack
+    const maxDist2 = distance * distance
+    const horizontalDist2 = dx * dx + dz * dz
+    if (horizontalDist2 > maxDist2) return false
+
+    // Ellipsoid: Y is scaled so the vertical radius is getVerticalDistance()
+    // (around the camera, and around the ground under it while flying)
+    const yScale = this.config.chunkDistance / this.config.getVerticalDistance()
+    const scaledDy = (subY - center.subY) * yScale
+    if (horizontalDist2 + scaledDy * scaledDy <= maxDist2) return true
+    if (center.groundSubY !== null && subY <= center.groundSubY) {
+      const groundDy = (subY - center.groundSubY) * (this.config.chunkDistance / GROUND_ELLIPSOID_DEPTH_SUB_CHUNKS)
+      if (horizontalDist2 + groundDy * groundDy <= maxDist2) return true
+    }
+
+    return isInBand(band, subY)
+  }
+
+  /**
+   * Sub-chunk range of a column's surface band, or null when the player is in
+   * the underground layer (the surface is out of sight from there).
+   *
+   * The top reaches the sub-chunk holding the air cell above the highest
+   * surface block (getColumnTopY: tile/estimate band, plus decorations seen
+   * in loaded top rows) of the column AND of its four neighbours. The mesher culls
+   * faces toward a missing neighbour sub-chunk, so without the sub-chunk
+   * above a top block in a sub-chunk's top row, or the neighbour column's
+   * sub-chunk beside a cliff that rises above that neighbour's own band, those
+   * faces never appear where only bands load (the disk edge, and everywhere
+   * when flying high) - the terrain shows holes toward the sky.
+   */
+  private getColumnBand(chunkX: number, chunkZ: number, centerSubY: number): SubYRange | null {
+    if (centerSubY < LAYER_BOUNDARY_SUB_CHUNK) return null
+    const band = this.getSurfaceBand(chunkX, chunkZ)
+    const lo = Math.max(LAYER_BOUNDARY_SUB_CHUNK, Math.floor(band.minY / SUB_CHUNK_HEIGHT))
+    let top = this.getColumnTopY(chunkX, chunkZ)
+    for (const [ox, oz] of BAND_NEIGHBOR_OFFSETS) top = Math.max(top, this.getColumnTopY(chunkX + ox, chunkZ + oz))
+    return {
+      lo: this.getSurfaceBandFloor(chunkX, chunkZ, lo),
+      hi: Math.min(SUB_CHUNK_COUNT - 1, Math.floor((top + 1) / SUB_CHUNK_HEIGHT)),
+    }
+  }
+
+  /** A column's own surface band: exact (provider) or estimated. */
+  private getSurfaceBand(chunkX: number, chunkZ: number): SurfaceBand {
+    return this.surfaceBandProvider?.(chunkX, chunkZ) ?? this.estimateSurfaceBand(chunkX, chunkZ)
+  }
+
+  /**
+   * Estimate a column's surface band from the (unblended) biome heights at
+   * its corners and centre. Inside a blend zone the neighbouring region's
+   * biome is sampled too - blended height always lies between the
+   * contributing biomes' heights.
+   */
+  private estimateSurfaceBand(chunkX: number, chunkZ: number): SurfaceBand {
+    const key = columnKey(chunkX, chunkZ)
+    const cached = this.surfaceBandEstimates.get(key)
+    if (cached) return cached
+
+    const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
+    const { localX, localZ } = biomeRegistry.getLocalChunkCoords(chunkX, chunkZ)
+    // Nearest block distance from this chunk to each region edge
+    const toWest = localX * CHUNK_SIZE_X
+    const toEast = BIOME_REGION_SIZE_BLOCKS - (localX + 1) * CHUNK_SIZE_X
+    const toNorth = localZ * CHUNK_SIZE_Z
+    const toSouth = BIOME_REGION_SIZE_BLOCKS - (localZ + 1) * CHUNK_SIZE_Z
+    const offsetsX = [0]
+    const offsetsZ = [0]
+    if (toWest < BLEND_DISTANCE) offsetsX.push(-1)
+    if (toEast < BLEND_DISTANCE) offsetsX.push(1)
+    if (toNorth < BLEND_DISTANCE) offsetsZ.push(-1)
+    if (toSouth < BLEND_DISTANCE) offsetsZ.push(1)
+
+    const biomes = new Set<BiomeType>()
+    for (const ox of offsetsX) {
+      for (const oz of offsetsZ) {
+        biomes.add(biomeRegistry.selectBiomeForLayer(regionX + ox, regionZ + oz, this.config.seed, 1))
+      }
+    }
+
+    const worldX = chunkX * CHUNK_SIZE_X
+    const worldZ = chunkZ * CHUNK_SIZE_Z
+    const last = CHUNK_SIZE_X - 1
+    const samples: ReadonlyArray<readonly [number, number]> = [
+      [0, 0], [last, 0], [0, last], [last, last], [CHUNK_SIZE_X >> 1, CHUNK_SIZE_Z >> 1],
+    ]
+    let minHeight = Infinity
+    let maxHeight = -Infinity
+    for (const biome of biomes) {
+      const generator = this.getGeneratorForBiome(biome)
+      for (const [sx, sz] of samples) {
+        const height = generator.getHeightAt(worldX + sx, worldZ + sz)
+        if (height < minHeight) minHeight = height
+        if (height > maxHeight) maxHeight = height
+      }
+    }
+
+    const band: SurfaceBand = {
+      minY: Math.max(0, minHeight - SURFACE_BAND_ESTIMATE_BELOW),
+      maxY: Math.min(SUB_CHUNK_COUNT * SUB_CHUNK_HEIGHT - 1, maxHeight + SURFACE_BAND_ESTIMATE_ABOVE),
+    }
+    this.surfaceBandEstimates.set(key, band)
+    return band
   }
 
   /**
@@ -541,12 +1098,21 @@ export class WorldGenerator {
 
   /**
    * Calculate 3D priority for a sub-chunk based on distance from player.
-   * Prioritizes sub-chunks near the player's Y position.
+   * Prioritizes sub-chunks near the player's Y position, and surface-band
+   * sub-chunks by horizontal distance alone so every column's visible ground
+   * loads before the rest of the column.
    */
-  private calculateSubChunkPriority(subCoord: ISubChunkCoordinate): number {
+  private calculateSubChunkPriority(subCoord: ISubChunkCoordinate, inSurfaceBand: boolean): number {
     const dx = Number(subCoord.x - this.playerChunkX)
     const dz = Number(subCoord.z - this.playerChunkZ)
-    const dy = subCoord.subY - this.playerSubY
+    if (inSurfaceBand) {
+      return Math.sqrt(dx * dx + dz * dz)
+    }
+    // Nearest of the two ellipsoid centres (camera, ground under it)
+    let dy = subCoord.subY - this.playerSubY
+    if (this.playerGroundSubY !== null && Math.abs(subCoord.subY - this.playerGroundSubY) < Math.abs(dy)) {
+      dy = subCoord.subY - this.playerGroundSubY
+    }
 
     // Weight Y distance slightly more for immediate visibility
     // This ensures sub-chunks at the player's eye level load first
@@ -555,22 +1121,31 @@ export class WorldGenerator {
 
   /**
    * Update the sub-chunk generation queue based on current player position.
-   * Uses an ellipsoid where Y distance is scaled to use half the chunk distance.
+   * Membership follows isSubChunkWanted(): the vertical ellipsoid plus each
+   * column's surface band.
    *
    * When `prevCenter` is null, rebuilds the queue from scratch (first init / config
    * change). Otherwise updates incrementally on a chunk-boundary cross: drops queued
-   * entries that left range, enqueues only the newly-in-range ring (candidates that
-   * were NOT in range at prevCenter), and keeps overlap entries with their existing
+   * entries that left range, enqueues only the newly-wanted ones (candidates that
+   * were NOT wanted at prevCenter), and keeps overlap entries with their existing
    * priorities. This avoids re-scanning + re-keying the whole disk every cross.
    */
-  private updateSubChunkQueue(prevCenter: { x: bigint; z: bigint; subY: number } | null): void {
+  private updateSubChunkQueue(prevCenter: LoadCenter | null): void {
     const horizontalDistance = this.config.chunkDistance
-    const verticalDistance = this.config.getVerticalDistance()
-    const yScale = horizontalDistance / verticalDistance // Scale factor to compress Y
-    const maxDist2 = horizontalDistance * horizontalDistance
-    const centerX = this.playerChunkX
-    const centerZ = this.playerChunkZ
-    const refSubY = this.playerSubY
+    const center = this.getLoadCenter()
+    // Column bands are asked for several times per column in one pass (each
+    // queued entry, current and previous centre): compute each once
+    const bands = new Map<number, SubYRange | null>()
+    const prevBands = new Map<number, SubYRange | null>()
+    const bandOf = (chunkX: number, chunkZ: number, centerSubY: number, memo: Map<number, SubYRange | null>): SubYRange | null => {
+      const key = columnKey(chunkX, chunkZ)
+      let band = memo.get(key)
+      if (band === undefined) {
+        band = this.getColumnBand(chunkX, chunkZ, centerSubY)
+        memo.set(key, band)
+      }
+      return band
+    }
 
     if (prevCenter === null) {
       // Full rebuild.
@@ -578,18 +1153,19 @@ export class WorldGenerator {
       this.queuedSubChunkKeys.clear()
 
       for (const coord of this.spiralCoordinates(horizontalDistance)) {
-        const chunkX = centerX + BigInt(coord.dx)
-        const chunkZ = centerZ + BigInt(coord.dz)
+        if (!this.isColumnInRange(coord.dx, coord.dz, 0)) continue
+        const chunkX = center.x + BigInt(coord.dx)
+        const chunkZ = center.z + BigInt(coord.dz)
+        const band = bandOf(Number(chunkX), Number(chunkZ), center.subY, bands)
 
         for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
-          const scaledDy = (subY - refSubY) * yScale
-          if (coord.dx * coord.dx + coord.dz * coord.dz + scaledDy * scaledDy > maxDist2) continue
+          if (!this.isSubChunkWanted(coord.dx, coord.dz, subY, center, band, 0)) continue
 
           const key = createSubChunkKey(chunkX, chunkZ, subY)
           if (this.generatedSubChunks.has(key) || this.generatingSubChunks.has(key)) continue
 
           const subCoord: ISubChunkCoordinate = { x: chunkX, z: chunkZ, subY }
-          this.subChunkQueue.push({ coordinate: subCoord, priority: this.calculateSubChunkPriority(subCoord) })
+          this.subChunkQueue.push({ coordinate: subCoord, priority: this.calculateSubChunkPriority(subCoord, isInBand(band, subY)) })
           this.queuedSubChunkKeys.add(key)
         }
       }
@@ -599,41 +1175,44 @@ export class WorldGenerator {
     }
 
     // Incremental update.
-    // Step 1: drop queued entries that are no longer in range (keep the rest with priorities).
+    // Step 1: drop queued entries that are no longer wanted (keep the rest with priorities).
     let write = 0
     for (let i = 0; i < this.subChunkQueue.length; i++) {
       const entry = this.subChunkQueue[i]
-      const dx = Number(entry.coordinate.x - centerX)
-      const dz = Number(entry.coordinate.z - centerZ)
-      const scaledDy = (entry.coordinate.subY - refSubY) * yScale
-      if (dx * dx + dz * dz + scaledDy * scaledDy <= maxDist2) {
+      const { x, z, subY } = entry.coordinate
+      const dx = Number(x - center.x)
+      const dz = Number(z - center.z)
+      const band = this.isColumnInRange(dx, dz, 0) ? bandOf(Number(x), Number(z), center.subY, bands) : null
+      if (this.isSubChunkWanted(dx, dz, subY, center, band, 0)) {
         this.subChunkQueue[write++] = entry
       } else {
-        this.queuedSubChunkKeys.delete(
-          createSubChunkKey(entry.coordinate.x, entry.coordinate.z, entry.coordinate.subY)
-        )
+        this.queuedSubChunkKeys.delete(createSubChunkKey(x, z, subY))
       }
     }
     this.subChunkQueue.length = write
 
-    // Step 2: enqueue the newly-in-range ring (in range now, but NOT at prevCenter).
-    const shiftX = Number(centerX - prevCenter.x)
-    const shiftZ = Number(centerZ - prevCenter.z)
+    // Step 2: enqueue the newly-wanted sub-chunks (wanted now, but NOT at prevCenter).
+    const shiftX = Number(center.x - prevCenter.x)
+    const shiftZ = Number(center.z - prevCenter.z)
     let addedAny = false
     for (const coord of this.spiralCoordinates(horizontalDistance)) {
+      if (!this.isColumnInRange(coord.dx, coord.dz, 0)) continue
+      const chunkX = center.x + BigInt(coord.dx)
+      const chunkZ = center.z + BigInt(coord.dz)
+      const band = bandOf(Number(chunkX), Number(chunkZ), center.subY, bands)
+      // Offset of this column from the previous center
+      const pdx = coord.dx + shiftX
+      const pdz = coord.dz + shiftZ
+      const prevBand = this.isColumnInRange(pdx, pdz, 0)
+        ? bandOf(Number(chunkX), Number(chunkZ), prevCenter.subY, prevBands)
+        : null
+
       for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
-        const scaledDy = (subY - refSubY) * yScale
-        // In range now?
-        if (coord.dx * coord.dx + coord.dz * coord.dz + scaledDy * scaledDy > maxDist2) continue
+        if (!this.isSubChunkWanted(coord.dx, coord.dz, subY, center, band, 0)) continue
 
-        // Was it in range at the previous center? If so it's an overlap - already handled.
-        const pdx = coord.dx + shiftX
-        const pdz = coord.dz + shiftZ
-        const pScaledDy = (subY - prevCenter.subY) * yScale
-        if (pdx * pdx + pdz * pdz + pScaledDy * pScaledDy <= maxDist2) continue
+        // Was it wanted at the previous center? If so it's an overlap - already handled.
+        if (this.isSubChunkWanted(pdx, pdz, subY, prevCenter, prevBand, 0)) continue
 
-        const chunkX = centerX + BigInt(coord.dx)
-        const chunkZ = centerZ + BigInt(coord.dz)
         const key = createSubChunkKey(chunkX, chunkZ, subY)
 
         if (
@@ -645,7 +1224,7 @@ export class WorldGenerator {
         }
 
         const subCoord: ISubChunkCoordinate = { x: chunkX, z: chunkZ, subY }
-        this.subChunkQueue.push({ coordinate: subCoord, priority: this.calculateSubChunkPriority(subCoord) })
+        this.subChunkQueue.push({ coordinate: subCoord, priority: this.calculateSubChunkPriority(subCoord, isInBand(band, subY)) })
         this.queuedSubChunkKeys.add(key)
         addedAny = true
       }
@@ -724,6 +1303,8 @@ export class WorldGenerator {
     coordinate: ISubChunkCoordinate,
     key: SubChunkKey
   ): Promise<void> {
+    let failed = false
+    let discarded = false
     try {
       const chunkX = Number(coordinate.x)
       const chunkZ = Number(coordinate.z)
@@ -738,22 +1319,58 @@ export class WorldGenerator {
       if (this.persistenceManager) {
         const savedData = await this.persistenceManager.loadSubChunk(coordinate)
         if (savedData) {
-          // Apply saved data instead of generating
-          // Pass the biome's skylight value for this sub-chunk's layer
+          if (!this.isResultCurrent(coordinate, key)) {
+            discarded = true
+            return
+          }
+          // Saves older than persistence v3 lack the generation sky proof;
+          // regenerate once (data discarded) just to recover it.
+          let skyOpenAbove = savedData.skyOpenAbove
+          if (skyOpenAbove === undefined) {
+            skyOpenAbove = (await this.world.generateSubChunkInWorker(
+              coordinate,
+              this.config.seed,
+              this.config.seaLevel,
+              this.config.terrainThickness,
+              coordinate.subY * SUB_CHUNK_HEIGHT,
+              coordinate.subY * SUB_CHUNK_HEIGHT + SUB_CHUNK_HEIGHT - 1,
+              biomeData
+            )).light.skyOpenAbove
+            if (!this.isResultCurrent(coordinate, key)) {
+              discarded = true
+              return
+            }
+          }
+
+          // Its local light comes from a generation worker (light-only job),
+          // like generated data; if that fails the light engine lights it
+          // on the main thread. Pass the biome's skylight value for this
+          // sub-chunk's layer.
+          let lit: { lightData: Uint8Array | null; isFullyOpaque?: boolean; light: SubChunkLightInput } = { lightData: null, light: { skyOpenAbove } }
+          try {
+            lit = await this.world.lightSavedSubChunkInWorker(coordinate, savedData.blocks, savedData.metadata, skyOpenAbove, biomeData)
+          } catch (error) {
+            console.warn(`[WorldGenerator] Worker light for saved sub-chunk ${key} failed; lighting it here:`, error)
+          }
+          if (!this.isResultCurrent(coordinate, key)) {
+            discarded = true
+            return
+          }
           await this.world.applySubChunkData(
             coordinate,
             savedData.blocks,
-            savedData.lightData,
-            undefined, // isFullyOpaque - will be computed
+            lit.lightData,
+            lit.isFullyOpaque,
             biomeData.primary.skylightValue,
-            savedData.metadata
+            savedData.metadata,
+            lit.light,
+            // Unchanged, it needn't be written again on unload (unless the
+            // record lacks the sky proof, or its save isn't confirmed yet)
+            savedData.confirmed ? { kind: 'stored', skyOpenAbove: savedData.skyOpenAbove } : { kind: 'new' }
           )
+          this.onSubChunkDataApplied(coordinate, savedData.blocks)
           this.generatedSubChunks.add(key)
-
-          // NOTE: We intentionally do NOT propagate water for loaded chunks.
-          // The saved state is authoritative - if water didn't fill an area before saving,
-          // we shouldn't flood it on load. The player may have modified terrain.
-
+          this.generationFailures.delete(key)
           return
         }
       }
@@ -772,453 +1389,119 @@ export class WorldGenerator {
         biomeData
       )
 
+      // The player may have moved away while the worker ran. Drop the result
+      // rather than re-creating a column the unload pass just removed.
+      if (!this.isResultCurrent(coordinate, key)) {
+        discarded = true
+        return
+      }
+
       // Apply results to the sub-chunk (pass worker-computed opacity to avoid main thread work)
       // Pass the biome's skylight value for this sub-chunk's layer
       // Pass metadata for directional blocks (vines, etc.)
+      // Generated data is always saved once (origin 'new'): regeneration
+      // reproduces untouched worker output only while the generator code is
+      // unchanged, and it changes between builds (see SubChunkDataOrigin).
       await this.world.applySubChunkData(
         coordinate,
         workerResult.blocks,
         workerResult.lightData,
         workerResult.isFullyOpaque,
         biomeData.primary.skylightValue,
-        workerResult.metadataData
+        workerResult.metadataData,
+        workerResult.light,
+        { kind: 'new' }
       )
+      this.onSubChunkDataApplied(coordinate, workerResult.blocks)
 
       // Generate decorations (trees, etc) for this sub-chunk using the primary biome.
-      // Wrap in a decoration batch so structure block writes bypass the per-block
-      // setBlock side-effect cascade (one lighting + mesh enqueue per touched sub-chunk).
+      // Through a decoration writer: structure block writes bypass the per-block
+      // setBlock side-effect cascade (one relight + remesh per touched cell),
+      // without affecting other setBlock callers while the pass yields.
       const subChunk = this.world.getSubChunk(coordinate)
       if (subChunk) {
         const biomeType = this.getBiomeForChunk(chunkX, chunkZ, layer)
         const generator = this.getGeneratorForBiome(biomeType)
-        this.world.beginDecorationBatch()
+        const writer = this.world.createDecorationWriter()
+        const decoratingKey = columnKey(chunkX, chunkZ)
+        this.decoratingColumns.set(decoratingKey, (this.decoratingColumns.get(decoratingKey) ?? 0) + 1)
         try {
-          await generator.generateSubChunkDecorations(subChunk, this.world)
+          await generator.generateSubChunkDecorations(subChunk, writer)
         } finally {
-          this.world.endDecorationBatch()
+          writer.flush()
+          const passes = (this.decoratingColumns.get(decoratingKey) ?? 1) - 1
+          if (passes > 0) this.decoratingColumns.set(decoratingKey, passes)
+          else this.decoratingColumns.delete(decoratingKey)
         }
       }
 
-      // Mark as generated BEFORE water propagation checks
-      // (the chunk data is applied, so it's safe to consider it generated)
-      this.generatedSubChunks.add(key)
+      // Blocks the decorations put into top rows raise band tops
+      this.recordTopRowsAround(coordinate)
 
-      // Queue neighboring chunks for water reprocessing if water touches edges
-      if (workerResult.waterEdgeEffects) {
-        this.queueWaterPropagation(coordinate, workerResult.waterEdgeEffects)
+      // Decorations yield to the event loop: the column may have been unloaded
+      // meanwhile. Its data is gone then - don't mark the key generated, or it
+      // would never be requested again when the column comes back.
+      if (this.cancelledSubChunks.has(key)) {
+        discarded = true
+        return
       }
 
-      // Check if existing neighbors have water that should flow INTO this new chunk
-      this.checkNeighborsForWaterPropagation(coordinate)
+      this.generatedSubChunks.add(key)
+      this.generationFailures.delete(key)
     } catch (error) {
       console.error(`Failed to generate sub-chunk ${key}:`, error)
+      failed = true
     } finally {
+      // (In finally: the discard paths return from the try block.)
       this.generatingSubChunks.delete(key)
+      this.cancelledSubChunks.delete(key)
+      if (failed) this.retryFailedSubChunk(coordinate, key)
+      // A discarded job whose column is wanted (again): request it afresh -
+      // its generating mark kept the queue from doing so meanwhile
+      else if (discarded) this.queueNewlyWanted(Number(coordinate.x), Number(coordinate.z))
     }
   }
 
   /**
-   * Queue a feature to be reprocessed on a neighboring sub-chunk.
-   * Only queues if the neighbor exists (was previously generated).
+   * A generation (or persistence load) failed - e.g. its worker crashed. The
+   * sub-chunk is neither loaded nor queued any more, and incremental queue
+   * updates only add newly wanted keys, so without a retry it would stay
+   * missing. Retry after a short, growing delay (workers are recreated after
+   * 500 ms), a few times.
    */
-  private queueFeatureReprocess(
-    coordinate: ISubChunkCoordinate,
-    featureType: FeatureReprocessType,
-    priority: number = 0,
-    propagationFrom?: PropagationDirection
-  ): void {
-    const key = createSubChunkKey(coordinate.x, coordinate.z, coordinate.subY)
-    const reprocessKey = `${key}:${featureType}`
-
-    // Only queue if neighbor exists and isn't already being reprocessed for this feature
-    if (
-      this.generatedSubChunks.has(key) &&
-      !this.featureReprocessing.has(reprocessKey)
-    ) {
-      // Check if sub-chunk actually exists in the world
-      const subChunk = this.world.getSubChunk(coordinate)
-      if (subChunk) {
-        this.featureReprocessQueue.push({
-          coordinate,
-          featureType,
-          priority,
-          propagationFrom,
-        })
-        this.featureReprocessing.add(reprocessKey)
-      }
+  private retryFailedSubChunk(coordinate: ISubChunkCoordinate, key: SubChunkKey): void {
+    const attempts = (this.generationFailures.get(key) ?? 0) + 1
+    this.generationFailures.set(key, attempts)
+    if (attempts > WorldGenerator.MAX_GENERATION_ATTEMPTS) {
+      console.warn(`[WorldGenerator] Giving up on sub-chunk ${key} after ${attempts - 1} failed attempts`)
+      return
     }
+    setTimeout(() => this.queueNewlyWanted(Number(coordinate.x), Number(coordinate.z)), 200 * attempts)
   }
 
   /**
-   * Check if existing neighbor chunks have water on their edges that should flow into this chunk.
-   * Called after a new chunk is generated to handle water from previously-generated neighbors.
+   * Whether a finished generation (or persistence load) job may be applied:
+   * its column was not unloaded while it ran, and it is still wanted.
    */
-  private checkNeighborsForWaterPropagation(coordinate: ISubChunkCoordinate): void {
-    const chunkX = Number(coordinate.x)
-    const chunkZ = Number(coordinate.z)
-    const { subY } = coordinate
-
-    // Get water settings for this chunk's biome
-    const biomeType = this.getBiomeForChunk(chunkX, chunkZ)
-    const biomeConfig = this.getWorkerBiomeConfig(biomeType)
-    const waterSettings = biomeConfig.water as WaterSettings | undefined
-
-    if (!waterSettings?.enabled) return
-
-    const { waterLevel, liquidBlock } = waterSettings
-
-    // Sub-chunk Y bounds
-    const subChunkMinY = subY * SUB_CHUNK_HEIGHT
-    const subChunkMaxY = subChunkMinY + SUB_CHUNK_HEIGHT - 1
-
-    // Skip if water level is below this sub-chunk's range (we are above the water)
-    if (waterLevel < subChunkMinY) return
-
-    // Check each neighbor direction
-    const neighbors: { dx: number; dz: number; ourEdgeX: number | null; ourEdgeZ: number | null; propagationFrom: PropagationDirection }[] = [
-      { dx: -1, dz: 0, ourEdgeX: 0, ourEdgeZ: null, propagationFrom: 'fromNegX' },                    // neighbor at -X, check their +X edge
-      { dx: 1, dz: 0, ourEdgeX: CHUNK_SIZE_X - 1, ourEdgeZ: null, propagationFrom: 'fromPosX' },     // neighbor at +X, check their -X edge
-      { dx: 0, dz: -1, ourEdgeX: null, ourEdgeZ: 0, propagationFrom: 'fromNegZ' },                    // neighbor at -Z, check their +Z edge
-      { dx: 0, dz: 1, ourEdgeX: null, ourEdgeZ: CHUNK_SIZE_Z - 1, propagationFrom: 'fromPosZ' },     // neighbor at +Z, check their -Z edge
-    ]
-
-    for (const { dx, dz, ourEdgeX, ourEdgeZ, propagationFrom } of neighbors) {
-      const neighborCoord: ISubChunkCoordinate = {
-        x: BigInt(chunkX + dx),
-        z: BigInt(chunkZ + dz),
-        subY,
-      }
-      const neighborKey = createSubChunkKey(neighborCoord.x, neighborCoord.z, subY)
-
-      // Only check existing neighbors
-      if (!this.generatedSubChunks.has(neighborKey)) continue
-
-      const neighborSubChunk = this.world.getSubChunk(neighborCoord)
-      if (!neighborSubChunk) continue
-
-      // Check if neighbor has water on the edge facing us
-      // Neighbor's edge is opposite to our edge
-      const neighborEdgeX = ourEdgeX === 0 ? CHUNK_SIZE_X - 1 : ourEdgeX === CHUNK_SIZE_X - 1 ? 0 : null
-      const neighborEdgeZ = ourEdgeZ === 0 ? CHUNK_SIZE_Z - 1 : ourEdgeZ === CHUNK_SIZE_Z - 1 ? 0 : null
-
-      let neighborHasWaterOnEdge = false
-
-      // Scan ALL Y levels where water could exist in this sub-chunk
-      // Water might only exist at lower Y levels if terrain is higher in some places
-      const maxLocalY = Math.min(waterLevel - subChunkMinY, SUB_CHUNK_HEIGHT - 1)
-      const minLocalY = 0
-
-      // Scan the neighbor's edge for water blocks at any Y level
-      if (neighborEdgeX !== null) {
-        // Check along Z axis at fixed X, all Y levels
-        outerLoop: for (let localY = minLocalY; localY <= maxLocalY; localY++) {
-          for (let z = 0; z < CHUNK_SIZE_Z; z++) {
-            const blockId = neighborSubChunk.getBlockId(neighborEdgeX, localY, z)
-            if (blockId === liquidBlock) {
-              neighborHasWaterOnEdge = true
-              break outerLoop
-            }
-          }
-        }
-      } else if (neighborEdgeZ !== null) {
-        // Check along X axis at fixed Z, all Y levels
-        outerLoop: for (let localY = minLocalY; localY <= maxLocalY; localY++) {
-          for (let x = 0; x < CHUNK_SIZE_X; x++) {
-            const blockId = neighborSubChunk.getBlockId(x, localY, neighborEdgeZ)
-            if (blockId === liquidBlock) {
-              neighborHasWaterOnEdge = true
-              break outerLoop
-            }
-          }
-        }
-      }
-
-      // If neighbor has water on their edge, queue ourselves for water propagation
-      if (neighborHasWaterOnEdge) {
-        this.queueFeatureReprocess(coordinate, 'water', 0, propagationFrom)
-      }
-    }
+  private isResultCurrent(coordinate: ISubChunkCoordinate, key: SubChunkKey): boolean {
+    return !this.cancelledSubChunks.has(key) && this.isStillWanted(coordinate)
   }
 
   /**
-   * Retry pending water propagations for chunks whose neighbors weren't ready.
-   * Called each frame to handle race conditions in concurrent chunk generation.
+   * Whether a finished generation job should still be applied: the sub-chunk
+   * is in the load set widened by the unload hysteresis (the same slack the
+   * unload pass uses, so an applied result is never immediately unloaded).
    */
-  private retryPendingWaterPropagation(): void {
-    if (this.pendingWaterPropagation.size === 0) return
-
-    const toRemove: SubChunkKey[] = []
-
-    for (const [key, { coordinate, edgeEffects }] of this.pendingWaterPropagation) {
-      const chunkX = Number(coordinate.x)
-      const chunkZ = Number(coordinate.z)
-      const { subY } = coordinate
-
-      // Check if all neighbors with water edges are now generated
-      let allNeighborsReady = true
-      const neighbors: { dx: number; dz: number; hasWater: boolean; propagationFrom: PropagationDirection }[] = [
-        { dx: -1, dz: 0, hasWater: edgeEffects.hasWaterOnNegX, propagationFrom: 'fromPosX' },
-        { dx: 1, dz: 0, hasWater: edgeEffects.hasWaterOnPosX, propagationFrom: 'fromNegX' },
-        { dx: 0, dz: -1, hasWater: edgeEffects.hasWaterOnNegZ, propagationFrom: 'fromPosZ' },
-        { dx: 0, dz: 1, hasWater: edgeEffects.hasWaterOnPosZ, propagationFrom: 'fromNegZ' },
-      ]
-
-      for (const { dx, dz, hasWater, propagationFrom } of neighbors) {
-        if (!hasWater) continue
-
-        const neighborCoord: ISubChunkCoordinate = {
-          x: BigInt(chunkX + dx),
-          z: BigInt(chunkZ + dz),
-          subY,
-        }
-        const neighborKey = createSubChunkKey(neighborCoord.x, neighborCoord.z, subY)
-
-        if (this.generatedSubChunks.has(neighborKey)) {
-          // Neighbor is now ready - queue for reprocessing
-          this.queueFeatureReprocess(neighborCoord, 'water', 0, propagationFrom)
-        } else if (this.generatingSubChunks.has(neighborKey)) {
-          // Neighbor still generating - keep waiting
-          allNeighborsReady = false
-        }
-        // If neighbor is neither generated nor generating, it's out of range - skip it
-      }
-
-      if (allNeighborsReady) {
-        toRemove.push(key)
-      }
-    }
-
-    // Clean up completed entries
-    for (const key of toRemove) {
-      this.pendingWaterPropagation.delete(key)
-    }
+  private isStillWanted(coordinate: ISubChunkCoordinate): boolean {
+    const center = this.getLoadCenter()
+    const dx = Number(coordinate.x - center.x)
+    const dz = Number(coordinate.z - center.z)
+    if (!this.isColumnInRange(dx, dz, UNLOAD_HYSTERESIS_CHUNKS)) return false
+    const band = this.getColumnBand(Number(coordinate.x), Number(coordinate.z), center.subY)
+    return this.isSubChunkWanted(dx, dz, coordinate.subY, center, band, UNLOAD_HYSTERESIS_CHUNKS)
   }
+}
 
-  /**
-   * Queue neighboring sub-chunks for water reprocessing based on edge effects.
-   * Stores pending propagation if neighbors aren't generated yet.
-   */
-  private queueWaterPropagation(
-    coordinate: ISubChunkCoordinate,
-    edgeEffects: WaterEdgeEffects
-  ): void {
-    const chunkX = Number(coordinate.x)
-    const chunkZ = Number(coordinate.z)
-    const { subY } = coordinate
-    const sourceKey = createSubChunkKey(coordinate.x, coordinate.z, subY)
-
-    // Track if any neighbor wasn't ready
-    let hasUnreadyNeighbor = false
-
-    // Check each direction where water touches the edge
-    // propagationFrom tells the neighbor which edge the water is coming FROM
-    const neighbors: { dx: number; dz: number; hasWater: boolean; propagationFrom: PropagationDirection }[] = [
-      { dx: -1, dz: 0, hasWater: edgeEffects.hasWaterOnNegX, propagationFrom: 'fromPosX' }, // neighbor is at -X, water comes from +X (us)
-      { dx: 1, dz: 0, hasWater: edgeEffects.hasWaterOnPosX, propagationFrom: 'fromNegX' },  // neighbor is at +X, water comes from -X (us)
-      { dx: 0, dz: -1, hasWater: edgeEffects.hasWaterOnNegZ, propagationFrom: 'fromPosZ' }, // neighbor is at -Z, water comes from +Z (us)
-      { dx: 0, dz: 1, hasWater: edgeEffects.hasWaterOnPosZ, propagationFrom: 'fromNegZ' },  // neighbor is at +Z, water comes from -Z (us)
-    ]
-
-    for (const { dx, dz, hasWater, propagationFrom } of neighbors) {
-      if (!hasWater) continue
-
-      const neighborCoord: ISubChunkCoordinate = {
-        x: BigInt(chunkX + dx),
-        z: BigInt(chunkZ + dz),
-        subY,
-      }
-      const neighborKey = createSubChunkKey(neighborCoord.x, neighborCoord.z, subY)
-
-      if (this.generatedSubChunks.has(neighborKey)) {
-        // Neighbor ready - queue immediately
-        this.queueFeatureReprocess(neighborCoord, 'water', 0, propagationFrom)
-      } else if (this.generatingSubChunks.has(neighborKey)) {
-        // Neighbor still generating - mark for retry
-        hasUnreadyNeighbor = true
-      }
-      // If neighbor is neither generated nor generating, it's out of range - skip
-    }
-
-    // Store for retry if any neighbor wasn't ready
-    if (hasUnreadyNeighbor) {
-      this.pendingWaterPropagation.set(sourceKey, { coordinate, edgeEffects })
-    }
-  }
-
-  /**
-   * Process the feature reprocess queue - applies features to existing chunks.
-   * Call this from the game loop after normal chunk generation.
-   */
-  private processFeatureReprocessQueue(): void {
-    // Process up to 2 feature reprocess tasks per frame
-    const maxPerFrame = 2
-    let started = 0
-
-    while (this.featureReprocessQueue.length > 0 && started < maxPerFrame) {
-      const item = this.featureReprocessQueue.shift()
-      if (!item) break
-
-      const key = createSubChunkKey(item.coordinate.x, item.coordinate.z, item.coordinate.subY)
-      const reprocessKey = `${key}:${item.featureType}`
-
-      // Start async reprocessing (fire-and-forget)
-      this.applyFeatureToExistingSubChunk(item.coordinate, item.featureType, item.propagationFrom)
-        .catch((error) => {
-          console.error(`Failed to reprocess ${item.featureType} for ${key}:`, error)
-        })
-        .finally(() => {
-          this.featureReprocessing.delete(reprocessKey)
-        })
-
-      started++
-    }
-  }
-
-  /**
-   * Apply a feature to an existing sub-chunk that was previously generated.
-   * This runs on the main thread since we have access to the chunk data.
-   */
-  private async applyFeatureToExistingSubChunk(
-    coordinate: ISubChunkCoordinate,
-    featureType: FeatureReprocessType,
-    propagationFrom?: PropagationDirection
-  ): Promise<void> {
-    switch (featureType) {
-      case 'water':
-        await this.applyWaterToExistingSubChunk(coordinate, propagationFrom)
-        break
-      // Add more feature types here as needed
-    }
-  }
-
-  /**
-   * Apply water feature to an existing sub-chunk.
-   * When propagationFrom is set, floods water from that specific edge.
-   */
-  private async applyWaterToExistingSubChunk(
-    coordinate: ISubChunkCoordinate,
-    propagationFrom?: PropagationDirection
-  ): Promise<void> {
-    const subChunk = this.world.getSubChunk(coordinate)
-    if (!subChunk) return
-
-    const chunkX = Number(coordinate.x)
-    const chunkZ = Number(coordinate.z)
-
-    // Get the biome and water settings for this chunk
-    const biomeType = this.getBiomeForChunk(chunkX, chunkZ)
-    const biomeConfig = this.getWorkerBiomeConfig(biomeType)
-    const waterSettings = biomeConfig.water as WaterSettings | undefined
-
-    if (!waterSettings?.enabled) return
-
-    const { waterLevel, liquidBlock } = waterSettings
-
-    // Sub-chunk Y bounds
-    const subChunkMinY = coordinate.subY * SUB_CHUNK_HEIGHT
-    const subChunkMaxY = subChunkMinY + SUB_CHUNK_HEIGHT - 1
-
-    // Skip if water level is below this sub-chunk
-    if (waterLevel < subChunkMinY) return
-
-    // Track which edges we place water on
-    const edgeEffects: WaterEdgeEffects = {
-      hasWaterOnNegX: false,
-      hasWaterOnPosX: false,
-      hasWaterOnNegZ: false,
-      hasWaterOnPosZ: false,
-    }
-
-    let placedAnyWater = false
-
-    // Flood fill the entire chunk where terrain is below water level
-    // Water is a connected body - if it enters from one edge, it fills all depressions
-    //
-    // IMPORTANT: We scan actual block data to find terrain height instead of using
-    // generator.getHeightAt(), because the worker uses biome blending which we can't
-    // replicate here. Scanning the actual blocks gives us the true terrain surface.
-    for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
-      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-        // Find the actual terrain height by scanning for the highest solid block
-        // This correctly handles biome blending that occurred during generation
-        let localTerrainY = -1
-        for (let localY = SUB_CHUNK_HEIGHT - 1; localY >= 0; localY--) {
-          const blockId = subChunk.getBlockId(localX, localY, localZ)
-          // Look for solid blocks (not air, not water)
-          if (blockId !== BlockIds.AIR && blockId !== liquidBlock) {
-            localTerrainY = localY
-            break
-          }
-        }
-
-        // If no solid blocks found in this sub-chunk, skip
-        // (terrain might be in a lower sub-chunk)
-        if (localTerrainY === -1) continue
-
-        const worldTerrainHeight = subChunkMinY + localTerrainY
-
-        // Skip if terrain is at or above water level
-        if (worldTerrainHeight >= waterLevel) continue
-
-        // Fill from terrain+1 up to waterLevel
-        const fillStartWorldY = worldTerrainHeight + 1
-        const fillEndWorldY = waterLevel
-
-        // Clamp to sub-chunk range
-        const clampedStartY = Math.max(fillStartWorldY, subChunkMinY)
-        const clampedEndY = Math.min(fillEndWorldY, subChunkMaxY)
-
-        if (clampedStartY > clampedEndY) continue
-
-        // Fill water blocks in this column
-        for (let worldY = clampedStartY; worldY <= clampedEndY; worldY++) {
-          const localY = worldY - subChunkMinY
-          const currentBlock = subChunk.getBlockId(localX, localY, localZ)
-
-          if (currentBlock === BlockIds.AIR) {
-            subChunk.setBlockId(localX, localY, localZ, liquidBlock)
-            placedAnyWater = true
-
-            // Track edge effects
-            if (localX === 0) edgeEffects.hasWaterOnNegX = true
-            if (localX === CHUNK_SIZE_X - 1) edgeEffects.hasWaterOnPosX = true
-            if (localZ === 0) edgeEffects.hasWaterOnNegZ = true
-            if (localZ === CHUNK_SIZE_Z - 1) edgeEffects.hasWaterOnPosZ = true
-          }
-        }
-      }
-    }
-
-    // Queue for remeshing if any water was added
-    if (placedAnyWater) {
-      this.world.queueSubChunkForMeshing(subChunk)
-
-      // Recursively propagate to neighbors if water reached OTHER edges
-      // Don't propagate back to where we came from
-      if (propagationFrom !== 'fromNegX' && edgeEffects.hasWaterOnNegX) {
-        this.queueFeatureReprocess(
-          { x: BigInt(chunkX - 1), z: coordinate.z, subY: coordinate.subY },
-          'water', 0, 'fromPosX'
-        )
-      }
-      if (propagationFrom !== 'fromPosX' && edgeEffects.hasWaterOnPosX) {
-        this.queueFeatureReprocess(
-          { x: BigInt(chunkX + 1), z: coordinate.z, subY: coordinate.subY },
-          'water', 0, 'fromNegX'
-        )
-      }
-      if (propagationFrom !== 'fromNegZ' && edgeEffects.hasWaterOnNegZ) {
-        this.queueFeatureReprocess(
-          { x: coordinate.x, z: BigInt(chunkZ - 1), subY: coordinate.subY },
-          'water', 0, 'fromPosZ'
-        )
-      }
-      if (propagationFrom !== 'fromPosZ' && edgeEffects.hasWaterOnPosZ) {
-        this.queueFeatureReprocess(
-          { x: coordinate.x, z: BigInt(chunkZ + 1), subY: coordinate.subY },
-          'water', 0, 'fromNegZ'
-        )
-      }
-    }
-  }
+function isInBand(band: SubYRange | null, subY: number): boolean {
+  return band !== null && subY >= band.lo && subY <= band.hi
 }

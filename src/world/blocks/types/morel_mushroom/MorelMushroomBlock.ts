@@ -9,8 +9,8 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import morelTexUrl from './assets/morel-mushroom.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.MOREL_MUSHROOM, morelTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.MOREL_MUSHROOM, morelTexUrl)
 
 const morelTexture = loadBlockTexture(morelTexUrl)
 

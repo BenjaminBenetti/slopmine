@@ -176,22 +176,23 @@ types/{block_name}/
 
 **Creating Texture Assets with AI:**
 
-When generating textures using AI image generation tools, transparent blocks (flowers, crops, plants) require special handling:
+Follow the `generate-texture` skill (`.claude/skills/generate-texture/SKILL.md`). It holds the terrain
+style statement, the generation workflow and the post-processing pitfalls. The rules that bite most
+often:
 
-1. **Request transparent backgrounds explicitly** in your prompt:
-   - Include phrases like "on a transparent background", "PNG with alpha transparency"
-   - Example: "Pixel art yellow flower with green stem, cut out on transparent background, 32x32 pixels"
-
-2. **Post-process generated images** to remove backgrounds:
+1. **Transparent blocks** (flowers, plants, leaves): the generator can't paint real transparency, so
+   prompt for a plain WHITE background (never "transparent", which paints a fake checkerboard), cut it
+   out, and keep sprite families at one scale (64x64).
+2. **Encode lossless WebP with `cwebp`, never ImageMagick or lossy WebP:**
    ```bash
-   # Remove white/light backgrounds and convert to webp with transparency
-   convert input.png -fuzz 10% -transparent white -quality 90 output.webp
-   
-   # For complex backgrounds, use flood fill from corners
-   convert input.png -fuzz 15% -fill none -draw "alpha 0,0 floodfill" -quality 90 output.webp
+   convert raw.png -filter box -resize 64x64! tmp.png   # plus any cut-out step
+   cwebp -quiet -lossless -exact -z 9 -metadata none tmp.png -o out.webp
    ```
-
-3. **Verify transparency** before committing - test in-game to ensure cross-billboard geometry displays correctly
+   Lossy WebP smears pixel-art colour edges, and ImageMagick 6 ignores `webp:exact`, writing black
+   under alpha-0 texels (leaf holes then mip to black at distance). Keep the average colour under the
+   holes.
+3. **Check tiling** (seamless on both axes, no hidden 2x2 repeat) and verify in game, including
+   cross-billboard geometry for plants.
 
 ### Creating New Items
 
@@ -235,8 +236,8 @@ Failure to register in both places causes: `Error: Unknown feature type: MyFeatu
 ### Biome Layer System
 
 Biomes are assigned to vertical layers:
-- **Layer 0**: Underground biomes (Y=0-127, sub-chunks 0-1)
-- **Layer 1**: Surface biomes (Y=128-1023, sub-chunks 2-15)
+- **Layer 0**: Underground biomes (Y=0-127, sub-chunks 0-3)
+- **Layer 1**: Surface biomes (Y=128-511, sub-chunks 4-15)
 
 When creating a new biome:
 1. Set `layer: 0` or `layer: 1` in `BiomeProperties`

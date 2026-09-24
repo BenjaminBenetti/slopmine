@@ -10,7 +10,7 @@ import { SulfurItem } from '../../../../items/ores/sulfur/SulfurItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import sulfurOreTexUrl from './assets/sulfur_ore.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.SULFUR_ORE, sulfurOreTexUrl)
 
 const sulfurOreTexture = loadBlockTexture(sulfurOreTexUrl)

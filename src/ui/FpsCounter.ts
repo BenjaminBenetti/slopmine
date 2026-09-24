@@ -11,8 +11,10 @@ export interface FrameMetrics {
 }
 
 export interface LightingStats {
+  /** Light-update entries still queued in the LightEngine. */
   queued: number
-  processing: number
+  /** Sub-chunks whose light changed and that wait for it to settle before remeshing. */
+  awaitingRemesh: number
 }
 
 export interface OcclusionStats {
@@ -47,6 +49,21 @@ export interface EntityStats {
   pendingRemovalCount: number
 }
 
+export interface FarTerrainStats {
+  enabled: boolean
+  /** Drawn right now (enabled and the camera above ground). */
+  active: boolean
+  tilesReady: number
+  tilesDesired: number
+  regionsDrawn: number
+  regions: number
+  triangles: number
+  /** Chunks handed off to full detail (LOD hidden there). */
+  handedOffChunks: number
+  /** Full-detail columns held back until complete. */
+  heldBackColumns: number
+}
+
 export interface BiomeMiniMapData {
   grid: string[][] // 5x5 grid of 3-letter abbreviations (unrotated, north at top)
   yaw: number // Player yaw in radians (0 = north/-Z, positive = counter-clockwise)
@@ -63,6 +80,7 @@ export interface FpsCounterUI {
   setRendererStats(stats: RendererStats): void
   setLiquidPhysicsStats(stats: LiquidPhysicsStats): void
   setEntityStats(stats: EntityStats): void
+  setFarTerrainStats(stats: FarTerrainStats): void
   setBiomeMiniMap(data: BiomeMiniMapData): void
   show(): void
   hide(): void
@@ -150,6 +168,7 @@ export function createFpsCounterUI(
   let liquidPhysicsStats: LiquidPhysicsStats | null = null
   let liquidColumnsProcessedTotal = 0
   let entityStats: EntityStats | null = null
+  let farTerrainStats: FarTerrainStats | null = null
 
   // Change-detection caches so we only touch the DOM when rendered text differs
   let lastStatsHtml = ''
@@ -200,7 +219,7 @@ export function createFpsCounterUI(
           lines.push(`Render: ${renderWidth}x${renderHeight}`)
         }
         if (lightingStats) {
-          lines.push(`Light: ${lightingStats.queued} queued, ${lightingStats.processing} active`)
+          lines.push(`Light: ${lightingStats.queued} queued, ${lightingStats.awaitingRemesh} awaiting remesh`)
         }
         if (occlusionStats && occlusionStats.candidateCount > 0) {
           const cullPercent = Math.round((occlusionStats.occludedCount / occlusionStats.candidateCount) * 100)
@@ -221,6 +240,18 @@ export function createFpsCounterUI(
           // Scene objects count - helps debug updateMatrixWorld performance
           const objColor = rendererStats.sceneObjects < 12000 ? '#00ff00' : rendererStats.sceneObjects < 20000 ? '#ffaa00' : '#ff4444'
           lines.push(`SceneObj: <span style="color:${objColor}">${rendererStats.sceneObjects}</span>`)
+        }
+        if (farTerrainStats) {
+          const lod = farTerrainStats
+          if (!lod.enabled) {
+            lines.push('LOD: off')
+          } else {
+            const tilesColor = lod.tilesReady < lod.tilesDesired ? '#ffaa00' : '#00ff00'
+            const state = lod.active
+              ? `${lod.regionsDrawn}/${lod.regions} regions, ${formatCount(lod.triangles)} tris, ${lod.handedOffChunks} handed off, ${lod.heldBackColumns} held`
+              : 'hidden (below ground)'
+            lines.push(`LOD: <span style="color:${tilesColor}">${lod.tilesReady}/${lod.tilesDesired}</span> tiles, ${state}`)
+          }
         }
         if (liquidPhysicsStats) {
           const columnsPerSec = Math.round((liquidColumnsProcessedTotal / elapsedTime) * 1000)
@@ -278,6 +309,10 @@ export function createFpsCounterUI(
 
     setEntityStats(stats: EntityStats): void {
       entityStats = stats
+    },
+
+    setFarTerrainStats(stats: FarTerrainStats): void {
+      farTerrainStats = stats
     },
 
     setBiomeMiniMap(data: BiomeMiniMapData): void {

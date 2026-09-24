@@ -10,7 +10,7 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { BlueMushroomBlockItem } from '../../../../items/blocks/blue_mushroom/BlueMushroomBlockItem.ts'
 import blueMushroomTexUrl from './assets/blue_mushroom.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.BLUE_MUSHROOM, blueMushroomTexUrl)
 
 const blueMushroomTexture = loadBlockTexture(blueMushroomTexUrl)

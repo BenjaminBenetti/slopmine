@@ -17,6 +17,9 @@ import {
 // Initialize block registry in worker context
 registerDefaultBlocks()
 
+/** What unknown (not loaded) cells read as: solid, so liquid never flows into them. */
+const UNKNOWN_BLOCK = BlockIds.STONE
+
 // Signal that worker is ready
 self.postMessage({ type: 'worker-ready' })
 
@@ -53,6 +56,12 @@ export interface BlockChange {
   y: number // World Y
   z: number // World Z
   blockId: number
+  /**
+   * The cell's id in the snapshot the job was computed from. The main thread
+   * applies the change only if the cell still holds it (compare-and-set): a
+   * block the player placed while the job ran must not be overwritten.
+   */
+  oldBlockId: number
 }
 
 /**
@@ -142,7 +151,28 @@ class WorkerBlockAccessor implements IBlockAccessor {
   }
 
   /**
-   * Get block ID at world coordinates.
+   * Whether a cell's data was sent with the request: the column's own
+   * sub-chunks and the neighbours' edge layers hold only loaded (light-ready)
+   * data; everything else is unknown. (Outside the world counts as known.)
+   */
+  isKnown(worldX: number, worldY: number, worldZ: number): boolean {
+    if (worldY < 0 || worldY >= 512) return true
+    const localX = worldX - this.baseX
+    const localZ = worldZ - this.baseZ
+    const subY = Math.floor(worldY / SUB_CHUNK_HEIGHT)
+    const inX = localX >= 0 && localX < CHUNK_SIZE_X
+    const inZ = localZ >= 0 && localZ < CHUNK_SIZE_Z
+    if (inX && inZ) return this.subChunks.has(subY)
+    if (inZ && localX === CHUNK_SIZE_X) return this.neighborPosX.has(subY)
+    if (inZ && localX === -1) return this.neighborNegX.has(subY)
+    if (inX && localZ === CHUNK_SIZE_Z) return this.neighborPosZ.has(subY)
+    if (inX && localZ === -1) return this.neighborNegZ.has(subY)
+    return false
+  }
+
+  /**
+   * Get block ID at world coordinates. Unknown cells (see isKnown) read as
+   * UNKNOWN_BLOCK, a solid block: nothing flows into them.
    */
   getBlockId(worldX: number, worldY: number, worldZ: number): number {
     // Check pending changes first
@@ -161,7 +191,7 @@ class WorkerBlockAccessor implements IBlockAccessor {
       const subY = Math.floor(worldY / SUB_CHUNK_HEIGHT)
       const localY = worldY % SUB_CHUNK_HEIGHT
       const subChunk = this.subChunks.get(subY)
-      if (!subChunk) return BlockIds.AIR
+      if (!subChunk) return UNKNOWN_BLOCK
 
       const index = localY * CHUNK_SIZE_X * CHUNK_SIZE_Z + localZ * CHUNK_SIZE_X + localX
       return subChunk[index]
@@ -194,7 +224,7 @@ class WorkerBlockAccessor implements IBlockAccessor {
           return layer[layerIndex]
         }
       }
-      return BlockIds.AIR
+      return UNKNOWN_BLOCK
     }
 
     // -X neighbor (localX < 0, i.e. localX == -1)
@@ -206,7 +236,7 @@ class WorkerBlockAccessor implements IBlockAccessor {
           return layer[layerIndex]
         }
       }
-      return BlockIds.AIR
+      return UNKNOWN_BLOCK
     }
 
     // +Z neighbor (localZ >= CHUNK_SIZE_Z)
@@ -219,7 +249,7 @@ class WorkerBlockAccessor implements IBlockAccessor {
           return layer[layerIndex]
         }
       }
-      return BlockIds.AIR
+      return UNKNOWN_BLOCK
     }
 
     // -Z neighbor (localZ < 0)
@@ -231,11 +261,11 @@ class WorkerBlockAccessor implements IBlockAccessor {
           return layer[layerIndex]
         }
       }
-      return BlockIds.AIR
+      return UNKNOWN_BLOCK
     }
 
     // Outside all boundaries
-    return BlockIds.AIR
+    return UNKNOWN_BLOCK
   }
 
   /**
@@ -252,7 +282,9 @@ class WorkerBlockAccessor implements IBlockAccessor {
     if (current === blockId) return false
 
     const key = `${worldX},${worldY},${worldZ}`
-    this.changes.set(key, { x: worldX, y: worldY, z: worldZ, blockId })
+    // (`current` is the snapshot value on the first write of a cell)
+    const prev = this.changes.get(key)
+    this.changes.set(key, { x: worldX, y: worldY, z: worldZ, blockId, oldBlockId: prev ? prev.oldBlockId : current })
 
     // Also update the sub-chunk data so subsequent reads see the change
     // (only for blocks within our column - cross-chunk changes are read from pending)

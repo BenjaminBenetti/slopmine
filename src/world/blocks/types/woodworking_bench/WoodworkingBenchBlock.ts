@@ -19,7 +19,7 @@ import woodworkingBenchFrontTexUrl from './assets/woodworking-bench-front.webp'
 import woodworkingBenchSideTexUrl from './assets/woodworking-bench-side.webp'
 import woodworkingBenchTopTexUrl from './assets/woodworking-bench-top.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.WOODWORKING_BENCH_FRONT, woodworkingBenchFrontTexUrl)
 registerTextureUrl(TextureId.WOODWORKING_BENCH_SIDE, woodworkingBenchSideTexUrl)
 registerTextureUrl(TextureId.WOODWORKING_BENCH_TOP, woodworkingBenchTopTexUrl)

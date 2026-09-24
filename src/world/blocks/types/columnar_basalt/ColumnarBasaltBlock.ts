@@ -11,7 +11,7 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import columnarBasaltSideTexUrl from './assets/columnar-basalt-side.webp'
 import columnarBasaltTopTexUrl from './assets/columnar-basalt-top.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.COLUMNAR_BASALT_SIDE, columnarBasaltSideTexUrl)
 registerTextureUrl(TextureId.COLUMNAR_BASALT_TOP, columnarBasaltTopTexUrl)
 

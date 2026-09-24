@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { IChunkMesh } from './ChunkMesh.ts'
+import type { IChunkMesh } from './interfaces/IChunkMesh.ts'
 import type { SubChunkOpacityCache } from './SubChunkOpacityCache.ts'
 import { parseSubChunkKey, type SubChunkKey } from '../world/interfaces/ICoordinates.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../world/interfaces/IChunk.ts'

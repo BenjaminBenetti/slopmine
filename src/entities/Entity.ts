@@ -4,18 +4,7 @@ import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
 import type { IEntity, EntityId } from './interfaces/IEntity.ts'
 import { EntityState } from './interfaces/IEntity.ts'
 import type { IEntityConfig } from './interfaces/IEntityConfig.ts'
-
-/**
- * Minimum brightness threshold for entity dimming.
- * Matches the value used for block vertex colors.
- */
-const MIN_BRIGHTNESS = 0.02
-
-/**
- * Threshold for skipping redundant brightness updates.
- * If the change is smaller than this, we don't update materials.
- */
-const BRIGHTNESS_UPDATE_THRESHOLD = 0.01
+import { applyObjectWorldLight, setObjectLight, type ObjectLightUniform } from '../renderer/ObjectWorldLight.ts'
 
 /**
  * Counter for generating unique entity IDs.
@@ -54,16 +43,17 @@ export abstract class Entity implements IEntity {
   private physicsBody: IPhysicsBody | null = null
 
   /**
-   * Map of materials registered for light-based dimming.
-   * Stores the original base color of each material.
+   * Materials registered for world lighting, each with its light-level
+   * uniform (see ObjectWorldLight.ts).
    */
-  private baseMaterialColors: Map<THREE.MeshLambertMaterial, THREE.Color> = new Map()
+  private readonly litMaterials: Map<THREE.MeshLambertMaterial, ObjectLightUniform> = new Map()
 
   /**
-   * Current brightness level applied to materials (0-1).
-   * Used to skip redundant updates when brightness hasn't changed significantly.
+   * Packed world light currently applied to the materials (-1 = none yet).
+   * Used to skip redundant uniform updates; daylight and the light floor are
+   * global shader uniforms and need no refresh here.
    */
-  private currentBrightness = 1.0
+  private currentWorldLight = -1
 
   constructor(type: string, config: IEntityConfig) {
     this.id = generateEntityId(type)
@@ -168,44 +158,36 @@ export abstract class Entity implements IEntity {
   }
 
   /**
-   * Register a material for light-based dimming.
-   * Call this from createMesh() for each material that should respond to world light levels.
-   * The material's current color is stored as the base color.
+   * Register a material for world lighting.
+   * Call this from createMesh() for each material that should respond to world
+   * light levels. The material (owned by this entity - never a shared one) is
+   * patched to shade like terrain: the scene lights scaled by the sky light at
+   * the entity, plus warm block light and the light floor (ObjectWorldLight).
+   * Materials that should glow in the dark (eyes) are simply not registered.
    *
    * @param material The MeshLambertMaterial to register
    */
   protected registerMaterialForLighting(material: THREE.MeshLambertMaterial): void {
-    if (!this.baseMaterialColors.has(material)) {
-      this.baseMaterialColors.set(material, material.color.clone())
+    if (!this.litMaterials.has(material)) {
+      this.litMaterials.set(material, applyObjectWorldLight(material))
+      // Apply the current light to the new material on the next update
+      this.currentWorldLight = -1
     }
   }
 
   /**
-   * Update the entity's appearance based on the world light level.
-   * Uses the same brightness formula as voxel blocks.
+   * Update the entity's lighting from the world light at its position, shaded
+   * like the terrain (dim in caves, warm under torches).
    *
-   * @param lightLevel The combined light level (0-15) at the entity's position
+   * @param packedLight Sky and block light packed as `sky << 4 | block`
    */
-  updateLightLevel(lightLevel: number): void {
-    // Calculate brightness using the same formula as block vertex colors
-    // (full-brightness knee at 11, matching GreedyMeshWorker)
-    const normalized = Math.min(lightLevel, 11) / 11
-    const brightness = MIN_BRIGHTNESS + Math.pow(normalized, 2.2) * (1 - MIN_BRIGHTNESS)
-
-    // Skip update if brightness hasn't changed significantly
-    if (Math.abs(brightness - this.currentBrightness) < BRIGHTNESS_UPDATE_THRESHOLD) {
+  updateWorldLight(packedLight: number): void {
+    if (packedLight === this.currentWorldLight) {
       return
     }
-
-    this.currentBrightness = brightness
-
-    // Apply brightness to all registered materials
-    for (const [material, baseColor] of this.baseMaterialColors) {
-      material.color.setRGB(
-        baseColor.r * brightness,
-        baseColor.g * brightness,
-        baseColor.b * brightness
-      )
+    this.currentWorldLight = packedLight
+    for (const uniform of this.litMaterials.values()) {
+      setObjectLight(uniform, packedLight)
     }
   }
 }

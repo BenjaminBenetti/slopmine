@@ -43,7 +43,6 @@ export class CoastalRainforestGenerator extends BiomeGenerator {
     name: 'coastal-rainforest',
     frequency: 0.7,
     treeDensity: 5.0,
-    skylightValue: 13,  // overcast coastal gloom under the canopy
     features: [
       // Same ore distribution as the other surface biomes
       new OreFeature({
@@ -206,6 +205,10 @@ export class CoastalRainforestGenerator extends BiomeGenerator {
     skybox: {
       brightness: 0.82,
       tint: { r: 0.82, g: 0.9, b: 0.92 },  // coastal mist
+      fogColor: { r: 0.8, g: 0.85, b: 0.87 }, // pale sea mist
+      fogDensity: 1.5,
+      lightTint: { r: 0.95, g: 0.97, b: 0.98 },
+      daylight: 0.82, // overcast coastal gloom (the canopy adds its own shade)
     },
     entitySpawns: [
       {

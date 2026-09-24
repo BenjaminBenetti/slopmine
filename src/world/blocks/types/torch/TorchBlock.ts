@@ -41,7 +41,7 @@ export class TorchBlock extends TransparentBlock {
     isSolid: false, // No collision - players can walk through
     isLiquid: false,
     hardness: 0, // Instant break
-    lightLevel: 11, // Full brightness at the source (knee is 11); resin torch (15) carries 4 blocks farther
+    lightLevel: 13, // ~80% of full block light at the source (blockLightShape in lightCurve.ts); campfire (14) and resin torch (15) carry farther
     lightBlocking: 0, // Doesn't block light
     demolitionForceRequired: 0,
     tags: [],

@@ -9,7 +9,7 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { OakSlabBlockItem } from '../../../../items/blocks/oak_slab/OakSlabBlockItem.ts'
 
-// Reuse the oak planks texture (registered in the atlas by the planks block module)
+// Reuse the oak planks texture (registered by the planks block module)
 import oakPlanksTexUrl from '../oak_planks/assets/oak-planks.webp'
 
 const oakPlanksTexture = loadBlockTexture(oakPlanksTexUrl)
@@ -28,6 +28,7 @@ export class OakSlabBlock extends SolidBlock {
     hardness: 1.5,
     lightLevel: 0,
     lightBlocking: 0,
+    blocksVerticalLight: true,
     demolitionForceRequired: 0,
     tags: [BlockTags.WOOD],
   }

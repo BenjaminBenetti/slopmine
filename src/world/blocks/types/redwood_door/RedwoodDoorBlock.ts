@@ -12,7 +12,7 @@ import { doorClosedGeometry } from '../door_shared/DoorGeometry.ts'
 import redwoodDoorLowerTexUrl from './assets/redwood-door-lower.webp'
 import redwoodPlanksEdgeTexUrl from '../redwood_planks/assets/redwood-planks.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.REDWOOD_DOOR_LOWER, redwoodDoorLowerTexUrl)
 
 const redwoodDoorLowerTexture = loadBlockTexture(redwoodDoorLowerTexUrl)

@@ -8,7 +8,7 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { PineLogBlockItem } from '../../../../items/blocks/pine_log/PineLogBlockItem.ts'
 
-// Reuse the pine log textures (registered in the atlas by the pine log block module)
+// Reuse the pine log textures (registered by the pine log block module)
 import pineLogTexUrl from '../pine_log/assets/pine-log.webp'
 import pineLogTopTexUrl from '../pine_log/assets/pine-log-top.webp'
 

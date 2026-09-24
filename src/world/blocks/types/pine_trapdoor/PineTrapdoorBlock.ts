@@ -12,7 +12,7 @@ import { PineTrapdoorBlockItem } from '../../../../items/blocks/pine_trapdoor/Pi
 // Import texture (shared with the open variant)
 import pineTrapdoorTexUrl from './assets/pine-trapdoor.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.PINE_TRAPDOOR, pineTrapdoorTexUrl)
 
 // Load texture and create material

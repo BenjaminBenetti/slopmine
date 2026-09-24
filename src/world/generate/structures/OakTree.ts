@@ -1,4 +1,5 @@
 import type { WorldManager } from '../../WorldManager.ts'
+import type { IDecorationWorld } from '../IDecorationWorld.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 
 export interface TreeParams {
@@ -23,7 +24,7 @@ export class OakTree {
    * @param params - Tree parameters
    */
   static place(
-    world: WorldManager,
+    world: IDecorationWorld,
     baseX: bigint,
     baseY: bigint,
     baseZ: bigint,
@@ -68,7 +69,7 @@ export class OakTree {
    * Ensures sufficient clearance and valid ground.
    */
   static canPlace(
-    world: WorldManager,
+    world: IDecorationWorld,
     baseX: bigint,
     baseY: bigint,
     baseZ: bigint,

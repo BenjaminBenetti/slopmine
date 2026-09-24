@@ -11,8 +11,8 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import oakWindowTexUrl from './assets/oak-window.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.OAK_WINDOW, oakWindowTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.OAK_WINDOW, oakWindowTexUrl)
 
 const oakWindowTexture = loadBlockTexture(oakWindowTexUrl)
 

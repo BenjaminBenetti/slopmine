@@ -66,6 +66,20 @@ export class HellGenerator extends BiomeGenerator {
       combineMode: 'add',
       absoluteHeight: true, // Skip seaLevel for underground biome
     } as TerrainConfig,
+    // The whole layer is underground (sky fully dark): a thick dark-red haze
+    // over the lava sea instead of black fog, and ember-warm face shading.
+    // The haze and the ember glow are tuned together: lit ground near the
+    // player must be at least as bright as the haze it fades into, or the
+    // floor reads as a black void under a glowing red distance (inverted
+    // aerial perspective).
+    skybox: {
+      undergroundFogColor: { r: 0.14, g: 0.035, b: 0.025 },
+      fogDensity: 2.6,
+      lightTint: { r: 1.0, g: 0.88, b: 0.8 },
+      // Ambient ember glow (like the Nether's ambient light, linear): rock
+      // far from lava stays readable as dark crimson, not black silhouettes
+      minimumLight: { r: 0.32, g: 0.15, b: 0.11 },
+    },
     // Magma slimes and skeletons spawn in Hell
     entitySpawns: [
       {

@@ -10,7 +10,7 @@ import { RedwoodFenceGateBlockItem } from '../../../../items/blocks/redwood_fenc
 import { fenceGateClosedGeometry } from '../fence_gate_shared/FenceGateGeometry.ts'
 
 // Shared planks texture - lives in the redwood planks block dir (which also
-// registers it with the texture atlas)
+// registers its texture URL)
 import redwoodPlanksTexUrl from '../redwood_planks/assets/redwood-planks.webp'
 
 const redwoodPlanksTexture = loadBlockTexture(redwoodPlanksTexUrl)

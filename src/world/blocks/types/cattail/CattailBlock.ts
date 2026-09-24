@@ -10,8 +10,8 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { cattailCrossGeometry } from './CattailGeometry.ts'
 import cattailBottomTexUrl from './assets/cattail-bottom.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.CATTAIL, cattailBottomTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.CATTAIL, cattailBottomTexUrl)
 
 const cattailBottomTexture = loadBlockTexture(cattailBottomTexUrl)
 

@@ -23,7 +23,7 @@ import chestFrontTexUrl from './assets/chest-front.webp'
 import chestSideTexUrl from './assets/chest-side.webp'
 import chestTopTexUrl from './assets/chest-top.webp'
 
-// Register textures for atlas
+// Register textures
 registerTextureUrl(TextureId.CHEST_FRONT, chestFrontTexUrl)
 registerTextureUrl(TextureId.CHEST_SIDE, chestSideTexUrl)
 registerTextureUrl(TextureId.CHEST_TOP, chestTopTexUrl)

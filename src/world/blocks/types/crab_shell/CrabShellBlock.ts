@@ -10,7 +10,7 @@ import { CrabShellBlockItem } from '../../../../items/blocks/crab_shell/CrabShel
 import crabShellTexUrl from './assets/crab-shell.webp'
 
 // Face-map entry only (the block renders via its custom geometry below)
-registerTextureUrl(TextureId.CRAB_SHELL, crabShellTexUrl, true)
+registerTextureUrl(TextureId.CRAB_SHELL, crabShellTexUrl)
 
 // Colors and proportions mirror CrabEntity exactly, so the placed shell
 // looks like the crab you caught (minus the animation)

@@ -15,14 +15,14 @@ import {
 } from './PineTreeBuilder.ts'
 import pineSaplingTexUrl from './assets/pine-sapling.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.PINE_SAPLING, pineSaplingTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.PINE_SAPLING, pineSaplingTexUrl)
 
 const pineSaplingTexture = loadBlockTexture(pineSaplingTexUrl)
 
 /**
  * Create cross geometry for the sapling: two diagonal planes intersecting in
- * the center (same construction as the flower blocks), with UVs for the atlas.
+ * the center (same construction as the flower blocks), with UVs spanning the texture.
  * @param height Height of the plant (0.0 to 1.0, where 1.0 = full block)
  * @param width Width factor (0.0 to 1.0, where 1.0 = corner to corner)
  */

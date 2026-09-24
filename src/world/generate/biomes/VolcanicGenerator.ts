@@ -11,6 +11,7 @@ import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
+import type { IDecorationWorld } from '../IDecorationWorld.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
@@ -224,6 +225,11 @@ export class VolcanicGenerator extends BiomeGenerator {
     skybox: {
       brightness: 0.55, // Dark, smoky sky
       tint: { r: 1.0, g: 0.7, b: 0.5 }, // Reddish-orange tint from volcanic ash/glow
+      fogColor: { r: 0.95, g: 0.6, b: 0.4 }, // Orange ash haze (darkened by brightness)
+      fogDensity: 2.0,
+      lightTint: { r: 1.0, g: 0.93, b: 0.85 },
+      // Low, dark ash plumes instead of fair-weather cumulus
+      clouds: { coverage: 0.6, color: { r: 0.35, g: 0.3, b: 0.28 } },
     },
     // Creatures that thrive in the volcanic environment
     entitySpawns: [
@@ -354,7 +360,7 @@ export class VolcanicGenerator extends BiomeGenerator {
 
   override async generateSubChunkDecorations(
     subChunk: ISubChunkData,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     // No vegetation in volcanic biomes
   }

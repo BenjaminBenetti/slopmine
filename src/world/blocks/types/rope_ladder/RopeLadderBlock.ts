@@ -11,8 +11,8 @@ import { TextureId } from '../../FaceTextureRegistry.ts'
 import { getMetadataFacing, BlockFacing } from '../../BlockFacing.ts'
 import ropeLadderTexUrl from './assets/rope_ladder.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.ROPE_LADDER, ropeLadderTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.ROPE_LADDER, ropeLadderTexUrl)
 
 const ropeLadderTexture = loadBlockTexture(ropeLadderTexUrl)
 

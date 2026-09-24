@@ -6,12 +6,15 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
+import { registerEmissiveTexture } from '../../../../renderer/EmissiveTextures.ts'
 import { SmolderingStoneBlockItem } from '../../../../items/blocks/smoldering_stone/SmolderingStoneBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import smolderingStoneTexUrl from './assets/smoldering_stone.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.SMOLDERING_STONE, smolderingStoneTexUrl)
+// Emissive: the ember cracks glow
+registerEmissiveTexture(TextureId.SMOLDERING_STONE, { strength: 1.6, threshold: 0.06 })
 
 const smolderingStoneTexture = loadBlockTexture(smolderingStoneTexUrl)
 const smolderingStoneMaterial = new THREE.MeshLambertMaterial({ map: smolderingStoneTexture })
@@ -31,7 +34,7 @@ export class SmolderingStoneBlock extends SolidBlock {
     isSolid: true,
     isLiquid: false,
     hardness: 1.5,
-    lightLevel: 4, // Ember cracks give off a soft glow
+    lightLevel: 6, // Ember cracks glow (emissive) and give off a soft light
     lightBlocking: 15,
     demolitionForceRequired: 1, // Requires pickaxe
     tags: [BlockTags.ROCK],

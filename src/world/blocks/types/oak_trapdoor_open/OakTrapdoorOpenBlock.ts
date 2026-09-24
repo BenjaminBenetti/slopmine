@@ -8,7 +8,7 @@ import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import { OakTrapdoorBlockItem } from '../../../../items/blocks/oak_trapdoor/OakTrapdoorBlockItem.ts'
 
-// Shared texture with the closed variant (registered for the atlas there)
+// Shared texture with the closed variant (registered there)
 import oakTrapdoorTexUrl from '../oak_trapdoor/assets/oak-trapdoor.webp'
 
 // Load texture and create this module's material

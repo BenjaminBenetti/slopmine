@@ -10,6 +10,7 @@ import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
+import type { IDecorationWorld } from '../IDecorationWorld.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
@@ -145,13 +146,18 @@ export class SwampGenerator extends BiomeGenerator {
       heightScale: 10, // Slightly more variation for water pools
       combineMode: 'add',
     } as TerrainConfig,
-    // Swamp has a darker, murky atmosphere
+    // Swamp has a darker, murky atmosphere: an overcast, olive-grey sky and
+    // haze, and dimmed daylight (eased in while the player is here - not a
+    // per-chunk skylight cap, whose region border was a hard light step)
     skybox: {
-      brightness: 0.6, // 60% brightness for darker sky
-      tint: { r: 0.85, g: 0.9, b: 0.75 }, // Slight greenish-brown tint
+      brightness: 0.7, // darker, overcast sky
+      tint: { r: 0.85, g: 0.9, b: 0.78 }, // Slight greenish-brown tint
+      fogColor: { r: 0.64, g: 0.69, b: 0.62 }, // Grey-green murk (darkened by brightness)
+      fogDensity: 1.2,
+      lightTint: { r: 0.94, g: 0.96, b: 0.88 },
+      daylight: 0.62, // overcast: gloomy but readable
+      clouds: { coverage: 0.65, color: { r: 0.7, g: 0.72, b: 0.68 } }, // grey overcast deck
     },
-    // Reduced skylight for spooky atmosphere (default is 15)
-    skylightValue: 8,
 
     // Entity spawns for swamp biome
     entitySpawns: [
@@ -256,7 +262,7 @@ export class SwampGenerator extends BiomeGenerator {
 
   override async generateSubChunkDecorations(
     subChunk: ISubChunkData,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     await this.generateMushroomsForSubChunk(subChunk, world)
   }
@@ -266,7 +272,7 @@ export class SwampGenerator extends BiomeGenerator {
    */
   private async generateMushroomsForSubChunk(
     subChunk: ISubChunkData,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     const coord = subChunk.coordinate
     const mushroomDensity = this.properties.treeDensity
@@ -335,7 +341,7 @@ export class SwampGenerator extends BiomeGenerator {
    */
   private async generateMushrooms(
     chunk: Chunk,
-    world: WorldManager
+    world: IDecorationWorld
   ): Promise<void> {
     const coord = chunk.coordinate
     const mushroomDensity = this.properties.treeDensity
@@ -396,7 +402,7 @@ export class SwampGenerator extends BiomeGenerator {
    * Basic check for suitable ground.
    */
   private canPlaceMushroom(
-    world: WorldManager,
+    world: IDecorationWorld,
     x: bigint,
     y: bigint,
     z: bigint
@@ -416,7 +422,7 @@ export class SwampGenerator extends BiomeGenerator {
    * Check if there's enough clearance for a mushroom of given height.
    */
   private hasMushroomClearance(
-    world: WorldManager,
+    world: IDecorationWorld,
     x: bigint,
     y: bigint,
     z: bigint,
@@ -449,7 +455,7 @@ export class SwampGenerator extends BiomeGenerator {
    * Randomly selects between regular, blue, and purple mushroom types.
    */
   private placeMushroom(
-    world: WorldManager,
+    world: IDecorationWorld,
     x: bigint,
     y: bigint,
     z: bigint

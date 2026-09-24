@@ -3,28 +3,12 @@ import type { IBlockProperties, BlockFace, IBlock } from '../../../interfaces/IB
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
-import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
-import lavaTexUrl from './assets/lava.webp'
+import { liquidCubeGeometry } from '../../../../renderer/LiquidMaterials.ts'
+import { lavaTexUrl, lavaMaterial } from './lavaMaterial.ts'
 
-// Register texture for atlas (marked as transparent)
-registerTextureUrl(TextureId.LAVA, lavaTexUrl, true)
-
-const lavaTexture = loadBlockTexture(lavaTexUrl)
-
-/**
- * Semi-transparent orange material for lava with texture.
- * depthWrite: true prevents overlapping lava fragments from causing artifacts.
- */
-const lavaMaterial = new THREE.MeshLambertMaterial({
-  map: lavaTexture,
-  transparent: true,
-  opacity: 0.95,
-  side: THREE.DoubleSide,
-  depthWrite: true,
-  emissive: new THREE.Color(0xff4400),
-  emissiveIntensity: 0.3,
-})
+// Register texture
+registerTextureUrl(TextureId.LAVA, lavaTexUrl)
 
 /**
  * Lava block - a transparent, non-solid liquid that emits light.
@@ -48,6 +32,10 @@ export class LavaBlock extends TransparentBlock {
 
   protected get defaultTextureId(): number {
     return TextureId.LAVA
+  }
+
+  protected getGeometry(): THREE.BufferGeometry {
+    return liquidCubeGeometry
   }
 
   protected getMaterials(): THREE.Material {

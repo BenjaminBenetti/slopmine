@@ -61,7 +61,7 @@ export class EntityManager implements ITask {
   private readonly callbacks: Set<IEntityCallbacks> = new Set()
 
   /**
-   * Function to query world light level at a position.
+   * Function to query world light at a position, packed as `sky << 4 | block`.
    * Set via setLightQuery() from main.ts.
    */
   private lightQueryFn: ((x: number, y: number, z: number) => number) | null = null
@@ -97,8 +97,8 @@ export class EntityManager implements ITask {
   /**
    * Per-entity light-query throttle. The world light query is only re-run when
    * an entity crosses into a new block, or after LIGHT_REFRESH_MS to catch
-   * lighting changes around a stationary entity. Brightness output is already
-   * threshold-gated in Entity.updateLightLevel, so this is visually lossless
+   * lighting changes around a stationary entity. Material updates are already
+   * change-gated in Entity.updateWorldLight, so this is visually lossless
    * and avoids a per-entity, per-tick block lookup.
    */
   private readonly lightCache: Map<EntityId, { bx: number; by: number; bz: number; time: number }> = new Map()
@@ -133,8 +133,8 @@ export class EntityManager implements ITask {
   }
 
   /**
-   * Set the function to query world light levels.
-   * Used to dim entities based on the light level at their position.
+   * Set the function to query world light (packed `sky << 4 | block`).
+   * Used to light entities like the terrain at their position.
    */
   setLightQuery(fn: (x: number, y: number, z: number) => number): void {
     this.lightQueryFn = fn
@@ -304,6 +304,32 @@ export class EntityManager implements ITask {
   }
 
   /**
+   * Remove the block entities and dropped items inside one sub-chunk's
+   * world-Y range [minY, maxY] of a chunk (a single sub-chunk was unloaded).
+   */
+  removeEntitiesInSubChunk(chunkX: bigint, chunkZ: bigint, minY: number, maxY: number): void {
+    for (const entity of this.blockEntityIndex.values()) {
+      const y = Number(entity.blockPosition.y)
+      if (entity.chunkCoordinate.x === chunkX && entity.chunkCoordinate.z === chunkZ && y >= minY && y <= maxY) {
+        this.entitiesToRemove.add(entity.id)
+      }
+    }
+    const cx = Number(chunkX)
+    const cz = Number(chunkZ)
+    for (const entity of this.entities.values()) {
+      if (entity.type !== 'dropped_item') continue
+      const y = Math.floor(entity.position.y)
+      if (
+        Math.floor(entity.position.x / CHUNK_SIZE_X) === cx &&
+        Math.floor(entity.position.z / CHUNK_SIZE_Z) === cz &&
+        y >= minY && y <= maxY
+      ) {
+        this.entitiesToRemove.add(entity.id)
+      }
+    }
+  }
+
+  /**
    * Remove all dropped item entities in a specific chunk.
    * Called when a chunk is unloaded, mirroring block entity cleanup.
    */
@@ -412,12 +438,12 @@ export class EntityManager implements ITask {
           bx !== cache.bx || by !== cache.by || bz !== cache.bz ||
           startTime - cache.time >= EntityManager.LIGHT_REFRESH_MS
         ) {
-          const lightLevel = this.lightQueryFn(
+          const packedLight = this.lightQueryFn(
             entity.position.x,
             entity.position.y,
             entity.position.z
           )
-          entity.updateLightLevel(lightLevel)
+          entity.updateWorldLight(packedLight)
           if (cache === undefined) {
             this.lightCache.set(entity.id, { bx, by, bz, time: startTime })
           } else {

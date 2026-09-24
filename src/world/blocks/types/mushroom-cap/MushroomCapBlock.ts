@@ -10,7 +10,7 @@ import { MushroomCapBlockItem } from '../../../../items/blocks/mushroom-cap/Mush
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import mushroomCapTexUrl from './assets/mushroom-cap.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.MUSHROOM_CAP, mushroomCapTexUrl)
 
 const mushroomCapTexture = loadBlockTexture(mushroomCapTexUrl)

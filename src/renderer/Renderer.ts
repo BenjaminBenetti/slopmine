@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { FrustumCuller } from './FrustumCuller.ts'
 import { SoftwareOcclusionCuller, type SoftwareOcclusionStats } from './SoftwareOcclusionCuller.ts'
-import type { IChunkMesh } from './ChunkMesh.ts'
+import type { IChunkMesh } from './interfaces/IChunkMesh.ts'
 import type { SubChunkOpacityCache } from './SubChunkOpacityCache.ts'
 import type { GraphicsSettings, ResolutionPreset } from '../settings/index.ts'
 
@@ -19,6 +19,7 @@ export class Renderer {
   private readonly frustumCuller = new FrustumCuller()
   private readonly softwareOcclusionCuller = new SoftwareOcclusionCuller()
   private chunkMeshSource: (() => Iterable<IChunkMesh>) | null = null
+  private chunkVisibilityFilter: ((chunkMesh: IChunkMesh) => boolean) | null = null
   private opacityCache: SubChunkOpacityCache | null = null
   private graphicsSettings: GraphicsSettings | null = null
   private currentResolutionPreset: ResolutionPreset = 'native'
@@ -38,6 +39,14 @@ export class Renderer {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.renderer.setPixelRatio(window.devicePixelRatio)
+
+    // Output: sRGB, no tone mapping. NeutralToneMapping gives no visible gain
+    // for the pixel-art textures, and three.js applies fog after tone mapping,
+    // so fogged terrain would stop matching the (tone-mapped) sky horizon. The
+    // sky shader includes the tone mapping chunk, so enabling it later only
+    // needs the fog color matched on the CPU.
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace
+    this.renderer.toneMapping = THREE.NoToneMapping
 
     // Enable shadow mapping
     this.renderer.shadowMap.enabled = true
@@ -128,6 +137,25 @@ export class Renderer {
   }
 
   /**
+   * Set a filter applied after culling: chunk meshes it rejects are hidden
+   * for the frame (the LOD handoff holds back full-detail columns until they
+   * are complete). Null removes it.
+   */
+  setChunkVisibilityFilter(filter: ((chunkMesh: IChunkMesh) => boolean) | null): void {
+    this.chunkVisibilityFilter = filter
+  }
+
+  /**
+   * Set the camera far plane (the LOD far terrain extends the view past the
+   * default 1000 blocks).
+   */
+  setFarPlane(far: number): void {
+    if (this.camera.far === far) return
+    this.camera.far = far
+    this.camera.updateProjectionMatrix()
+  }
+
+  /**
    * Set the opacity cache for software occlusion culling.
    */
   setOpacityCache(cache: SubChunkOpacityCache): void {
@@ -179,6 +207,7 @@ export class Renderer {
   render(): void {
     if (this.chunkMeshSource) {
       const doCulling = !this.graphicsSettings || this.graphicsSettings.cullingEnabled
+      const filter = this.chunkVisibilityFilter
       if (doCulling) {
         // Step 1: Frustum culling
         this.frustumCuller.updateVisibility(this.camera, this.chunkMeshSource())
@@ -191,10 +220,18 @@ export class Renderer {
             this.opacityCache
           )
         }
+
+        // Step 3: Visibility filter
+        if (filter) {
+          for (const chunkMesh of this.chunkMeshSource()) {
+            const group = chunkMesh.getGroup()
+            if (group.visible && !filter(chunkMesh)) group.visible = false
+          }
+        }
       } else {
-        // Culling disabled - make all chunks visible
+        // Culling disabled - make all chunks visible (unless filtered)
         for (const chunkMesh of this.chunkMeshSource()) {
-          chunkMesh.getGroup().visible = true
+          chunkMesh.getGroup().visible = filter ? filter(chunkMesh) : true
         }
       }
     }

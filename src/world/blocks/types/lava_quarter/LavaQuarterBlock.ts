@@ -3,14 +3,12 @@ import type { IBlockProperties, BlockFace, IBlock } from '../../../interfaces/IB
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
-import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
-import lavaTexUrl from './assets/lava.webp'
+import { withWhiteVertexColors } from '../../../../renderer/LiquidMaterials.ts'
+import { lavaTexUrl, lavaMaterial } from '../lava/lavaMaterial.ts'
 
-// Register texture for atlas (marked as transparent)
-registerTextureUrl(TextureId.LAVA_QUARTER, lavaTexUrl, true)
-
-const lavaTexture = loadBlockTexture(lavaTexUrl)
+// Register texture
+registerTextureUrl(TextureId.LAVA_QUARTER, lavaTexUrl)
 
 /**
  * Create geometry for 1/4 height lava with corrected UVs.
@@ -43,19 +41,7 @@ function createLavaQuarterGeometry(): THREE.BufferGeometry {
   return geometry
 }
 
-const lavaQuarterGeometry = createLavaQuarterGeometry()
-
-/**
- * Semi-transparent orange material for partial lava with texture.
- */
-const lavaQuarterMaterial = new THREE.MeshLambertMaterial({
-  map: lavaTexture,
-  transparent: true,
-  opacity: 0.65,
-  side: THREE.DoubleSide,
-  emissive: new THREE.Color(0xff4400),
-  emissiveIntensity: 0.1,
-})
+const lavaQuarterGeometry = withWhiteVertexColors(createLavaQuarterGeometry())
 
 /**
  * Lava quarter block - a transparent, non-solid liquid at 1/4 height.
@@ -86,7 +72,7 @@ export class LavaQuarterBlock extends TransparentBlock {
   }
 
   protected getMaterials(): THREE.Material {
-    return lavaQuarterMaterial
+    return lavaMaterial
   }
 
   isGreedyMeshable(): boolean {

@@ -10,7 +10,7 @@ import { OakPlanksBlockItem } from '../../../../items/blocks/oak_planks/OakPlank
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import oakPlanksTexUrl from './assets/oak-planks.webp'
 
-// Register texture for atlas
+// Register texture
 registerTextureUrl(TextureId.OAK_PLANKS, oakPlanksTexUrl)
 
 const oakPlanksTexture = loadBlockTexture(oakPlanksTexUrl)

@@ -9,8 +9,8 @@ import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import jungleFernTexUrl from './assets/jungle-fern.webp'
 
-// Register texture for atlas (transparent)
-registerTextureUrl(TextureId.JUNGLE_FERN, jungleFernTexUrl, true)
+// Register texture
+registerTextureUrl(TextureId.JUNGLE_FERN, jungleFernTexUrl)
 
 const jungleFernTexture = loadBlockTexture(jungleFernTexUrl)
 
