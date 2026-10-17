@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { Entity } from '../../Entity.ts'
 import type { DamageSource } from '../../../player/DamageModifiers.ts'
+import { playSound } from '../../../audio/SoundHooks.ts'
 
 /**
  * A patch of the Pyre Tyrant's fire on the arena floor. Three optional
@@ -175,6 +176,7 @@ export class FirePatchEntity extends Entity {
   }
 
   private erupt(): void {
+    playSound('proj.fire.hit', this.position)
     // Molten rock thrown up by the guardian's sorcery: 'magic' - neither
     // armour nor fire resistance stops it, only stepping out of the ring
     if (this.eruptDamage > 0 && this.isPlayerInside(2.5)) {

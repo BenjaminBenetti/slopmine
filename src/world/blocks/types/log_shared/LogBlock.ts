@@ -2,6 +2,7 @@ import type { IWorld } from '../../../interfaces/IBlock.ts'
 import { SolidBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { PERSISTENT_PLACED_METADATA_BIT } from '../../BlockFacing.ts'
+import { playSound } from '../../../../audio/SoundHooks.ts'
 
 /**
  * Seconds between support checks (declare as `tickInterval` in subclass
@@ -79,6 +80,16 @@ export abstract class LogBlock extends SolidBlock {
     if (!cluster) return false
 
     // Timber! Break every log in the cluster, scattering its drops.
+    let sx = 0
+    let sy = 0
+    let sz = 0
+    for (const [dx, dy, dz] of cluster) {
+      sx += dx
+      sy += dy
+      sz += dz
+    }
+    const n = Math.max(1, cluster.length)
+    playSound('tree.fall', { x: Number(x) + sx / n + 0.5, y: Number(y) + sy / n + 0.5, z: Number(z) + sz / n + 0.5 })
     for (const [dx, dy, dz] of cluster) {
       const bx = x + BigInt(dx)
       const by = y + BigInt(dy)

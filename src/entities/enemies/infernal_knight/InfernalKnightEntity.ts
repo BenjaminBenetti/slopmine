@@ -81,6 +81,8 @@ export class InfernalKnightEntity extends AggressiveEntity {
   // Animation
   private walkPhase = Math.random() * Math.PI * 2
   private shieldFlash = 0
+  /** The player's latest hit struck the shield (IEntity; impact sound). */
+  lastHitBlocked = false
   private legs: THREE.Object3D[] = []
   private maceArm: THREE.Object3D | null = null
   private shieldArm: THREE.Object3D | null = null
@@ -146,7 +148,8 @@ export class InfernalKnightEntity extends AggressiveEntity {
 
   onPlayerInteract(playerPosition: THREE.Vector3, isLeftClick: boolean, heldItem: IItem | null): boolean {
     if (!isLeftClick || !this.isAlive || this._isDying) return false
-    if (!this.blocks(playerPosition)) return super.onPlayerInteract(playerPosition, isLeftClick, heldItem)
+    this.lastHitBlocked = this.blocks(playerPosition)
+    if (!this.lastHitBlocked) return super.onPlayerInteract(playerPosition, isLeftClick, heldItem)
 
     // Shield block: a sliver of the damage, no knockback, no stagger
     this.health -= getPlayerAttackDamage(heldItem) * SHIELD_DAMAGE_FACTOR

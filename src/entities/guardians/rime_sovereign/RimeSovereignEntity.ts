@@ -4,6 +4,7 @@ import { StatusEffectIds } from '../../../player/effects/StatusEffects.ts'
 import { IceRevenantEntity } from '../../enemies/ice_revenant/IceRevenantEntity.ts'
 import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 import { buildRimeSovereignModel, type RimeSovereignModel } from './RimeSovereignModel.ts'
+import { playSound } from '../../../audio/SoundHooks.ts'
 
 /** Frost nova reach (blocks): step out of the telegraphed ring to dodge it. */
 const NOVA_RADIUS = 7
@@ -88,7 +89,10 @@ export class RimeSovereignEntity extends GuardianEntity {
 
   /** Ice armour: hits land, but only for a fraction of their damage. */
   override applyDamage(amount: number, from?: THREE.Vector3): boolean {
-    return super.applyDamage(this.armored ? amount * ARMOR_DAMAGE_FACTOR : amount, from)
+    const dealt = super.applyDamage(this.armored ? amount * ARMOR_DAMAGE_FACTOR : amount, from)
+    // Blows on the armour ring off ice, not flesh
+    if (this.armored) this.lastHitBlocked = true
+    return dealt
   }
 
   protected defineAttacks(): GuardianAttack[] {
@@ -109,6 +113,7 @@ export class RimeSovereignEntity extends GuardianEntity {
       {
         id: 'frost_nova', cooldown: 11, initialCooldown: 6, windup: 1.4, recovery: 0.8, maxRange: NOVA_RADIUS,
         execute: () => {
+          playSound('magic.frost', this.position)
           if (this.areaStrike(this.position, NOVA_RADIUS, 11, { knockback: 9, source: 'magic' })) {
             this.applyEffectToPlayer(StatusEffectIds.SLOWNESS, 5, 2)
           }

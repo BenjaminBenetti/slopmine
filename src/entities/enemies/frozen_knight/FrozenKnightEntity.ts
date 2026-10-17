@@ -51,6 +51,8 @@ export class FrozenKnightEntity extends AggressiveEntity {
   private windupTimer = -1
   private swingTimer = -1
   private blockFlash = 0
+  /** The player's latest hit struck the shield (IEntity; impact sound). */
+  lastHitBlocked = false
   private playerPos: THREE.Vector3 | null = null
 
   private torso: THREE.Group | null = null
@@ -214,6 +216,7 @@ export class FrozenKnightEntity extends AggressiveEntity {
   override onPlayerInteract(playerPosition: THREE.Vector3, isLeftClick: boolean, heldItem: IItem | null): boolean {
     if (!isLeftClick || !this.isAlive || this._isDying) return false
     const blocked = this.isGuarding && this.isInFront(playerPosition)
+    this.lastHitBlocked = blocked
     if (!blocked) return super.onPlayerInteract(playerPosition, isLeftClick, heldItem)
     // Pre-pay the blocked share so the base hit (same damage, computed now)
     // nets BLOCKED_DAMAGE of it

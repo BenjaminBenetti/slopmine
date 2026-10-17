@@ -64,6 +64,8 @@ export class CrystalSentinelEntity extends AggressiveEntity {
   private bashHit = false
   private time = Math.random() * 10
   private shieldFlash = 0
+  /** The player's latest hit struck the tower shield (IEntity; impact sound). */
+  lastHitBlocked = false
 
   private playerRef: THREE.Vector3 | null = null
   private damageFn: ((damage: number, knockback: THREE.Vector3, source?: DamageSource) => void) | null = null
@@ -531,6 +533,7 @@ export class CrystalSentinelEntity extends AggressiveEntity {
     const d = Math.hypot(dx, dz)
     const front = d > 1e-3 && (dx * Math.sin(this.facing) + dz * Math.cos(this.facing)) / d > SHIELD_COVER_COS
     const shieldUp = this.action === null || this.action === 'dormant'
+    this.lastHitBlocked = front && shieldUp
     if (front && shieldUp) {
       damage *= SHIELD_DAMAGE_SHARE
       this.shieldFlash = 1

@@ -13,6 +13,7 @@ import { createItemFromId } from '../../persistence/ItemRegistry.ts'
 import { createEquipmentPanelUI } from '../../ui/EquipmentPanel.ts'
 import { createArmorDisplayUI } from '../../ui/ArmorDisplay.ts'
 import { showPlayerNotice } from '../../ui/PlayerNotice.ts'
+import { playSound } from '../../audio/SoundHooks.ts'
 
 /** Player-data key of worn armor + the Infernal Heart max-health bonus. */
 export const EQUIPMENT_DATA_KEY = 'equipment'
@@ -99,6 +100,7 @@ export function setupArmorSystem(options: ArmorSystemOptions): ArmorSystem {
     toolbar.setStack(index, previous ? { item: previous, count: 1 } : null)
     toolbarUI.syncFromState(toolbar.slots)
     showPlayerNotice(`Equipped ${stack.item.displayName}`, 1400)
+    playSound('item.equip')
   })
 
   // Persistence: load first, then contribute (never save an empty set over

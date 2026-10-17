@@ -12,6 +12,7 @@ import { JOURNAL_CHAPTERS } from './milestones.ts'
 import { ProgressionManager } from './ProgressionManager.ts'
 import { createJournalUI, type JournalUI } from './JournalUI.ts'
 import { createJournalHud } from './JournalHud.ts'
+import { playSound } from '../audio/SoundHooks.ts'
 
 /**
  * Wires the Journal: progression tracking, completion toasts, the journal
@@ -152,6 +153,7 @@ export function setupProgression(options: ProgressionSetupOptions): ProgressionS
     if (journal.isOpen) return
     openedFromGameplay = document.pointerLockElement === domElement
     journal.open()
+    playSound('ui.open')
     if (openedFromGameplay) {
       cameraControls.setInputEnabled(false)
       // The settings handler sees the open journal (ModalOverlays) and
@@ -163,6 +165,7 @@ export function setupProgression(options: ProgressionSetupOptions): ProgressionS
   const closeJournal = (): void => {
     if (!journal.isOpen) return
     journal.close()
+    playSound('ui.close')
     // Opened over the inventory / a block UI: back to it. From gameplay:
     // back to the game (called from a key or click handler, so pointer lock
     // may be requested)
@@ -239,9 +242,15 @@ export function setupProgression(options: ProgressionSetupOptions): ProgressionS
   }
 
   // --- Notifications -------------------------------------------------------------
+  // The last milestone of a chapter completes the chapter in the same call:
+  // then only the chapter fanfare plays (the two chimes would clash)
+  let chapterChimeAt = -Infinity
   manager.onMilestoneCompleted(({ milestone, chapter, silent }) => {
     scheduleSave()
     if (silent) return
+    queueMicrotask(() => {
+      if (performance.now() - chapterChimeAt > 100) playSound('ui.milestone')
+    })
     showToast({
       caption: `Journal · ${chapter.title}`,
       title: milestone.title,
@@ -252,6 +261,8 @@ export function setupProgression(options: ProgressionSetupOptions): ProgressionS
     hud.flash()
   })
   manager.onChapterCompleted((chapter) => {
+    chapterChimeAt = performance.now()
+    playSound('ui.chapter')
     const next = manager.getNextGoal()
     showToast({
       caption: 'Chapter complete',

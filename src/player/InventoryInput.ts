@@ -10,6 +10,7 @@ import { createRecipeBookUI, type RecipeBookUI } from '../ui/RecipeBookUI.ts'
 import { createItemFromId } from '../persistence/ItemRegistry.ts'
 import type { IRecipe } from '../crafting/RecipeRegistry.ts'
 import { gameEvents } from '../events/GameEvents.ts'
+import { playSound } from '../audio/SoundHooks.ts'
 
 export interface InventoryInput {
   /** The crafting panel root element, for hiding when block UIs are open */
@@ -267,6 +268,7 @@ export class InventoryInputHandler implements InventoryInput {
   private openInventory(): void {
     this.inventoryUI.open()
     this.cameraControls.setInputEnabled(false)
+    playSound('ui.open')
 
     // Sync UI state and enable drag-drop
     this.syncUI()
@@ -288,6 +290,7 @@ export class InventoryInputHandler implements InventoryInput {
 
     this.inventoryUI.close()
     this.cameraControls.setInputEnabled(true)
+    playSound('ui.close')
 
     // Re-acquire pointer lock so the mouse returns to controlling
     // the camera once the inventory is closed. This must be called

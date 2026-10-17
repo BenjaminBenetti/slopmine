@@ -135,6 +135,13 @@ export class ItemConsumption {
   }
 
   /**
+   * Id of the item being consumed, or null.
+   */
+  getConsumingItemId(): string | null {
+    return this.isConsuming() ? this.consumingItemId : null
+  }
+
+  /**
    * Get the current consumption progress (0.0 to 1.0).
    */
   getConsumptionProgress(): number {

@@ -13,7 +13,8 @@ import { calculateMiningDamage, describeRequiredTool } from './MiningDamage.ts'
 import { hasToolStats, HAND_STATS } from '../items/interfaces/IToolStats.ts'
 import { FloatingTextManager } from '../ui/floating-text/index.ts'
 import { gameEvents } from '../events/GameEvents.ts'
-import { isPlayerAttackReady, registerPlayerAttack } from '../combat/PlayerAttack.ts'
+import { getPlayerAttackCharge, isPlayerAttackReady, registerPlayerAttack } from '../combat/PlayerAttack.ts'
+import { playBlockSound, playSound } from '../audio/SoundHooks.ts'
 
 /** Maximum reach distance for block interaction */
 export const MAX_REACH_DISTANCE = 5
@@ -30,7 +31,12 @@ interface IMiningProgress {
   requiredTime: number
   /** Interaction box in world space (for overlay sizing) */
   interactionBox: THREE.Box3
+  /** Seconds until the next strike sound. */
+  strikeTimer: number
 }
+
+/** Mining strike cadence (seconds between hit sounds). */
+const MINING_STRIKE_INTERVAL = 0.25
 
 /**
  * Configuration for block interaction.
@@ -251,6 +257,7 @@ export class BlockInteraction {
       progress: 0,
       requiredTime: miningResult.miningTime,
       interactionBox: hit.interactionBox.clone(),
+      strikeTimer: 0,
     }
 
     // Show overlay matching the block's interaction box
@@ -269,6 +276,7 @@ export class BlockInteraction {
     if (key === this.lastRefusedKey && now - this.lastRefusedAt < 2) return
     this.lastRefusedKey = key
     this.lastRefusedAt = now
+    playSound('ui.refused')
 
     // Between the hit point and the camera, so it is not buried in the block
     const position = this.rayOrigin.clone().sub(hit.point)
@@ -290,6 +298,14 @@ export class BlockInteraction {
 
     // Increase progress based on time
     this.currentMining.progress += deltaTime / this.currentMining.requiredTime
+
+    // Strike sound on a steady cadence (the first one as the swing starts)
+    this.currentMining.strikeTimer -= deltaTime
+    if (this.currentMining.strikeTimer <= 0 && this.currentMining.progress < 1.0) {
+      this.currentMining.strikeTimer = MINING_STRIKE_INTERVAL
+      const { worldX, worldY, worldZ, blockId } = this.currentMining
+      playBlockSound(blockId, 'hit', { x: Number(worldX) + 0.5, y: Number(worldY) + 0.5, z: Number(worldZ) + 0.5 })
+    }
 
     // Update visual overlay matching the block's interaction box
     this.miningOverlay.showBox(
@@ -493,11 +509,23 @@ export class BlockInteraction {
     const heldItem = this.playerState.inventory.toolbar.getItem(selectedIndex)
 
     const wasDown = !entity.isAlive || entity.isDying === true
+    const charge = getPlayerAttackCharge(heldItem)
 
     // Call entity interaction hook (it takes its damage from
     // getPlayerAttackDamage), then restart the attack cooldown
     entity.onPlayerInteract?.(this.rayOrigin, true, heldItem)
     registerPlayerAttack(heldItem)
+
+    gameEvents.emit({
+      type: 'entity-hit',
+      entityType: entity.type,
+      x: entity.position.x,
+      y: entity.position.y,
+      z: entity.position.z,
+      charge,
+      killed: !wasDown && (!entity.isAlive || !!entity.isDying),
+      blocked: entity.lastHitBlocked === true,
+    })
 
     if (!wasDown && (!entity.isAlive || entity.isDying) && entity.countsAsKill !== false) {
       gameEvents.emit({

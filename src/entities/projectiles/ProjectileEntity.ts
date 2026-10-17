@@ -5,6 +5,18 @@ import type { DamageSource } from '../../player/DamageModifiers.ts'
 import { playerEffects, type StatusEffectId } from '../../player/effects/StatusEffects.ts'
 import { PLAYER_HEIGHT, PLAYER_WIDTH } from '../../physics/constants.ts'
 import { ProjectileVisual, presetHitRadius, type ProjectilePreset } from './ProjectilePresets.ts'
+import { playSound } from '../../audio/SoundHooks.ts'
+import type { SoundId } from '../../audio/SoundLibrary.ts'
+
+/** Launch and impact sounds per preset (custom meshes are magic bolts). */
+const PROJECTILE_SOUNDS: Record<ProjectilePreset | 'custom', [launch: SoundId, impact: SoundId]> = {
+  fireball: ['proj.fire', 'proj.fire.hit'],
+  bone_shard: ['proj.bone', 'proj.hit'],
+  ice_shard: ['proj.ice', 'proj.shatter'],
+  crystal_shard: ['proj.crystal', 'proj.shatter'],
+  spore_glob: ['proj.spore', 'proj.splat'],
+  custom: ['proj.magic', 'proj.hit'],
+}
 
 /** A status effect a projectile applies to the player it hits. */
 export interface ProjectileHitEffect {
@@ -90,6 +102,7 @@ export class ProjectileEntity extends Entity {
   readonly homing: number
 
   private age = 0
+  private launched = false
   private readonly options: ProjectileOptions
   private readonly visual: ProjectileVisual | null
   private readonly customMesh: THREE.Object3D | null
@@ -165,6 +178,11 @@ export class ProjectileEntity extends Entity {
     if (!this.isAlive) return
     const velocity = this.velocity!
 
+    if (!this.launched) {
+      this.launched = true
+      playSound(this.sounds()[0], this.position)
+    }
+
     this.age += deltaTime
     if (this.age >= this.lifetime) {
       this.options.onExpire?.(this)
@@ -186,6 +204,7 @@ export class ProjectileEntity extends Entity {
         const by = Math.floor(this.position.y)
         const bz = Math.floor(this.position.z)
         if (this.solidQuery(bx, by, bz)) {
+          playSound(this.sounds()[1], this.position)
           this.options.onHitBlock?.(this, bx, by, bz)
           this.kill()
           return
@@ -193,6 +212,7 @@ export class ProjectileEntity extends Entity {
       }
 
       if (this.hitsPlayer()) {
+        playSound(this.sounds()[1], this.position)
         this.hitPlayer(velocity)
         this.kill()
         return
@@ -241,6 +261,10 @@ export class ProjectileEntity extends Entity {
     const dy = this.position.y - cy
     const dz = this.position.z - cz
     return dx * dx + dy * dy + dz * dz <= this.radius * this.radius
+  }
+
+  private sounds(): [SoundId, SoundId] {
+    return PROJECTILE_SOUNDS[this.options.mesh ? 'custom' : (this.options.preset ?? 'fireball')]
   }
 
   private hitPlayer(velocity: THREE.Vector3): void {

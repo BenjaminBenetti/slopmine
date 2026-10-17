@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { BlockIds } from '../world/blocks/BlockIds.ts'
+import { playSound } from '../audio/SoundHooks.ts'
 import type { EntityId, IEntity } from '../entities/interfaces/IEntity.ts'
 import { EntityState } from '../entities/interfaces/IEntity.ts'
 import {
@@ -187,6 +188,7 @@ export class GarrisonSpawnerSystem {
       if (deps.addEntity(member)) record.members.push(member)
     }
     record.phase = 'fielded'
+    if (record.members.length > 0) playSound('spawner.wake', { x: record.x + 0.5, y: record.y + 0.5, z: record.z + 0.5 })
   }
 
   /** A standable cell (solid below, 2 non-solid above) around the spawner for this slot. */

@@ -217,7 +217,11 @@ export class ForgeBlockState implements ITickableBlockState {
     // Add result to output
     const result = recipe.createResult()
     let remaining = recipe.resultCount
-    gameEvents.emit({ type: 'item-crafted', itemId: result.id, count: recipe.resultCount, station: 'forge' })
+    gameEvents.emit({ type: 'item-crafted', itemId: result.id, count: recipe.resultCount, station: 'forge',
+      x: Number(this.position.x),
+      y: Number(this.position.y),
+      z: Number(this.position.z),
+    })
 
     // First try to add to existing stacks
     for (let i = 0; i < this.outputSlots.length && remaining > 0; i++) {

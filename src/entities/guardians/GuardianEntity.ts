@@ -88,6 +88,7 @@ import { createItemFromId } from '../../persistence/ItemRegistry.ts'
 import { ProjectileEntity, type ProjectileOptions } from '../projectiles/ProjectileEntity.ts'
 import { getDungeonServices } from '../../dungeons/DungeonServices.ts'
 import type { BossBarTarget } from '../../ui/BossBar.ts'
+import { playSound } from '../../audio/SoundHooks.ts'
 
 /** How a guardian moves. */
 export type GuardianMovement = 'ground' | 'flying' | 'stationary'
@@ -308,6 +309,8 @@ export abstract class GuardianEntity extends AggressiveEntity implements BossBar
   private readonly flashMaterials: Array<{ material: THREE.MeshLambertMaterial; base: THREE.Color }> = []
   /** 1 right after a hit, fading to 0 - usable in updateAnimations. */
   protected hurtFlash = 0
+  /** The latest hit was turned aside (invulnerable, warded, shielded) - IEntity; impact sound. */
+  lastHitBlocked = false
   /** Colour of the flash currently fading out (hurt red, or a blocked-hit grey) */
   private readonly flashColor = new THREE.Color()
 
@@ -602,6 +605,7 @@ export abstract class GuardianEntity extends AggressiveEntity implements BossBar
       const toPlayer = Math.atan2(player.x - this.position.x, player.z - this.position.z)
       if (Math.abs(angleDelta(this.facing, toPlayer)) > arc / 2) return false
     }
+    playSound('player.swing', this.position, { pitch: 0.6, volume: 1.5 })
     this.damagePlayer(
       options.damage ?? this.attackDamage,
       options.knockback ?? this.attackKnockbackHorizontal,
@@ -625,6 +629,8 @@ export abstract class GuardianEntity extends AggressiveEntity implements BossBar
   ): boolean {
     const player = this.playerRef
     if (!player) return false
+    // Physical slams thud; sorcery ('magic': novas, eruptions) brings its own sound
+    if ((options.source ?? 'melee') !== 'magic') playSound('magic.slam', center)
     const dx = player.x - center.x
     const dz = player.z - center.z
     if (dx * dx + dz * dz > radius * radius) return false
@@ -942,6 +948,7 @@ export abstract class GuardianEntity extends AggressiveEntity implements BossBar
   applyDamage(amount: number, from?: THREE.Vector3): boolean {
     if (!this.isAlive || this._isDying || this.dismissed) return false
     if (!this.engaged) this.engage()
+    this.lastHitBlocked = this.isInvulnerable
     if (this.isInvulnerable) {
       this.onBlockedHit()
       return false
@@ -1127,6 +1134,7 @@ export abstract class GuardianEntity extends AggressiveEntity implements BossBar
     this.engaged = true
     this.outsideTimer = 0
     engagedGuardians.add(this)
+    playSound('boss.engage')
     // Each fight opens with the attacks' initial cooldowns
     for (const attack of this.getAttacks()) {
       const initial = attack.initialCooldown ?? 0
@@ -1211,6 +1219,7 @@ export abstract class GuardianEntity extends AggressiveEntity implements BossBar
     while (this._phase < target) {
       const previous = this._phase
       this._phase++
+      playSound('boss.phase', this.position)
       if (this.phaseTransitionTime > 0) {
         this.cancelAttack()
         this.transitionTimer = this.phaseTransitionTime
@@ -1313,6 +1322,8 @@ export abstract class GuardianEntity extends AggressiveEntity implements BossBar
     this.stage = 'windup'
     this.stageTime = 0
     this.attackCooldowns.set(attack.id, attack.cooldown)
+    // A long telegraph gets an audible charge-up
+    if ((attack.windup ?? 0.6) >= 0.8) playSound('magic.windup', this.position)
     attack.onStart?.()
   }
 

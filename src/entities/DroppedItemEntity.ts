@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { Entity } from './Entity.ts'
+import { gameEvents } from '../events/GameEvents.ts'
 import type { IItem } from '../items/Item.ts'
 import {
   getBlockForItem,
@@ -232,6 +233,9 @@ export class DroppedItemEntity extends Entity {
     if (distSq <= PICKUP_RADIUS * PICKUP_RADIUS) {
       if (this.collectCooldown <= 0) {
         const leftover = this.onCollect(this.item, this.count)
+        if (leftover < this.count) {
+          gameEvents.emit({ type: 'item-picked-up', itemId: this.item.id, count: this.count - Math.max(0, leftover) })
+        }
         if (leftover <= 0) {
           this.kill()
           return

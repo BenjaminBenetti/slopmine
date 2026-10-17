@@ -29,12 +29,27 @@ export type GameEvent =
   | { type: 'block-placed'; blockId: number; blockName: string; x: number; y: number; z: number }
   /** Items entered the player's inventory (pickups, drops, crafts, loot...). */
   | { type: 'item-added'; itemId: string; count: number }
-  /** A crafting station produced an item for the player. */
-  | { type: 'item-crafted'; itemId: string; count: number; station: CraftStation }
+  /**
+   * A crafting station produced an item for the player. World stations that
+   * finish on their own (forge, apothecary) include their block position.
+   */
+  | { type: 'item-crafted'; itemId: string; count: number; station: CraftStation; x?: number; y?: number; z?: number }
+  /** The player picked a dropped item up off the ground (`count` = what fit). */
+  | { type: 'item-picked-up'; itemId: string; count: number }
   /** The player finished eating/drinking a consumable. */
   | { type: 'item-consumed'; itemId: string }
+  /**
+   * The player's melee hit landed on an entity (`charge` 0-1; `killed` when it
+   * took it down; `blocked` when a shield or ward turned it aside).
+   */
+  | { type: 'entity-hit'; entityType: string; x: number; y: number; z: number; charge: number; killed: boolean; blocked: boolean }
   /** The player's hit killed an entity. */
   | { type: 'entity-killed'; entityType: string; x: number; y: number; z: number }
+  /**
+   * The player took damage. `environmental` = lava, burning, hot floors,
+   * poison and other ticks without invincibility frames.
+   */
+  | { type: 'player-hurt'; amount: number; environmental: boolean }
   /** The camera moved into a different biome region (or layer). */
   | { type: 'biome-entered'; biome: string; layer: 0 | 1 }
   /** The player died. */

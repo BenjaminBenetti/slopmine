@@ -268,7 +268,11 @@ export class ApothecaryWorkbenchState implements ITickableBlockState {
     // Add result to output
     const result = recipe.createResult()
     const resultCount = recipe.resultCount
-    gameEvents.emit({ type: 'item-crafted', itemId: result.id, count: resultCount, station: 'apothecary' })
+    gameEvents.emit({ type: 'item-crafted', itemId: result.id, count: resultCount, station: 'apothecary',
+      x: Number(this.position.x),
+      y: Number(this.position.y),
+      z: Number(this.position.z),
+    })
 
     if (!this.outputSlot) {
       this.outputSlot = { item: result, count: resultCount }

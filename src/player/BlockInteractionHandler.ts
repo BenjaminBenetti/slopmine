@@ -12,6 +12,7 @@ import { blockUIRegistry } from '../ui/blockui/BlockUIRegistry.ts'
 import { blockActionRegistry } from '../ui/blockui/BlockActionRegistry.ts'
 import { BlockStateManager } from '../world/blockstate/BlockStateManager.ts'
 import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandler.ts'
+import { playBlockUiSound, playSound } from '../audio/SoundHooks.ts'
 
 const MAX_INTERACTION_DISTANCE = 5
 
@@ -141,13 +142,19 @@ export class BlockInteractionHandler {
     if (blockActionRegistry.hasAction(hit.blockId)) {
       // Get metadata from world manager
       const metadata = this.worldManager.getBlockMetadata(hit.worldX, hit.worldY, hit.worldZ)
-      blockActionRegistry.executeAction(
+      const acted = blockActionRegistry.executeAction(
         hit.blockId,
         hit.worldX,
         hit.worldY,
         hit.worldZ,
         metadata
       )
+      // Doors, fence gates and trapdoors: closed blocks open, `_open` blocks close
+      const name = hit.block.properties.name
+      if (acted && (name.includes('door') || name.includes('gate'))) {
+        const position = { x: Number(hit.worldX) + 0.5, y: Number(hit.worldY) + 0.5, z: Number(hit.worldZ) + 0.5 }
+        playSound(name.endsWith('_open') ? 'door.close' : 'door.open', position)
+      }
       return true
     }
 
@@ -195,6 +202,7 @@ export class BlockInteractionHandler {
 
     // Open the block UI
     this.currentBlockUI.open()
+    playBlockUiSound(this.currentHit!.blockId, true, this.blockUiSoundPosition())
 
     // Create drag-drop handler for block UI
     this.blockUIDragDrop = createDragDropHandler({
@@ -260,6 +268,7 @@ export class BlockInteractionHandler {
       this.currentBlockUI.destroy()
       this.currentBlockUI = null
     }
+    if (this.currentHit) playBlockUiSound(this.currentHit.blockId, false, this.blockUiSoundPosition())
     this.currentHit = null
 
     // Block UIs may hand items to the player on close (bench ingredients,
@@ -280,6 +289,11 @@ export class BlockInteractionHandler {
     if (document.pointerLockElement !== this.domElement) {
       this.domElement.requestPointerLock()
     }
+  }
+
+  private blockUiSoundPosition(): { x: number; y: number; z: number } | null {
+    const hit = this.currentHit
+    return hit ? { x: Number(hit.worldX) + 0.5, y: Number(hit.worldY) + 0.5, z: Number(hit.worldZ) + 0.5 } : null
   }
 
   /**

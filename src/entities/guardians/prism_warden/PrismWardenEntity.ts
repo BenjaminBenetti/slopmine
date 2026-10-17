@@ -6,6 +6,7 @@ import { PrismFocusEntity } from './PrismFocusEntity.ts'
 import {
   buildPrismWardenModel, WARDEN_CORE_Y, WARDEN_CORE_Z, type PrismWardenParts,
 } from './PrismWardenModel.ts'
+import { playSound } from '../../../audio/SoundHooks.ts'
 
 export const PRISM_WARDEN_ID = 'prism_warden'
 export const PRISM_WARDEN_NAME = 'The Prism Warden'
@@ -442,6 +443,7 @@ export class PrismWardenEntity extends GuardianEntity {
       if (this.spawnMinion(focus)) this.foci.push(focus)
     }
     this.wasShielded = this.foci.length > 0
+    if (this.wasShielded) playSound('magic.shield', this.position)
   }
 
   protected onPhaseChanged(phase: number): void {
@@ -469,13 +471,16 @@ export class PrismWardenEntity extends GuardianEntity {
   /** Player hits: the shield turns most of the damage aside; a staggered Warden takes extra. */
   applyDamage(amount: number, from?: THREE.Vector3): boolean {
     let scaled = amount
-    if (this.isShielded()) {
+    const shielded = this.isShielded()
+    if (shielded) {
       scaled = amount * SHIELD_DAMAGE_SHARE
       this.shieldFlash = 1
     } else if (this.staggerTimer > 0) {
       scaled = amount * STAGGER_DAMAGE_BONUS
     }
-    return super.applyDamage(scaled, from)
+    const dealt = super.applyDamage(scaled, from)
+    if (shielded) this.lastHitBlocked = true
+    return dealt
   }
 
   protected updateCombat(deltaTime: number): void {
@@ -488,6 +493,7 @@ export class PrismWardenEntity extends GuardianEntity {
       this.cancelAttack()
       this.staggerTimer = STAGGER_TIME
       this.shieldFlash = 1
+      playSound('magic.shield.break', this.position)
     }
     if (this.staggerTimer > 0) {
       this.staggerTimer = Math.max(0, this.staggerTimer - deltaTime)

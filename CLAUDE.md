@@ -53,9 +53,9 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
    tasks): chest loot tables, the 'status-effects' and 'biome-entry-events' tasks, then
    `setupProgression`, `setupBoneMeal`/`setupSlimeBounce`, `setupPlayerCombat`, `setupHellforge`,
    `setupArmorSystem`, `setupAlchemy` (must come after 'skybox': ember sight post-adjusts the light
-   floor it sets), `setupDungeons`, and one `setup<Biome>()` per Hell biome (castle tier loot tables,
-   garrisons, guardian, procedural locator). A new system exposes a `setupX(deps)` in its own
-   module; keep main.ts edits to the call
+   floor it sets), `setupDungeons`, one `setup<Biome>()` per Hell biome (castle tier loot tables,
+   garrisons, guardian, procedural locator), and last `setupAudio` (sound - see `src/audio/`).
+   A new system exposes a `setupX(deps)` in its own module; keep main.ts edits to the call
 
 ### System Interaction Diagram
 
@@ -79,7 +79,7 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
         ├─► CRITICAL: Camera, Physics, Mining, Atmosphere ('skybox'), Block Outline, Liquid Overlay,
         │             status effects + behaviours, combat cooldown, journal, biome-entry events,
         │             boss bar / Sigil Compass / dungeon-entered probe ('dungeons-hud'),
-        │             guardian + garrison spawners ('dungeons')
+        │             guardian + garrison spawners ('dungeons'), sound ('audio')
         ├─► HIGH: Lighting (LightEngine queue)
         ├─► NORMAL: World Gen (+ feature work / sub-chunk unloads), LOD queue/apply, block systems,
         │           entities (EntityManager)
@@ -87,6 +87,8 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
 
 GAMEPLAY: systems talk through gameEvents (src/events/) - emitters never know the journal,
 dungeon tracker or other listeners; player damage flows through applyDamageModifiers().
+SOUND: gameEvents listeners + SoundHooks calls ──► SoundBank (AudioSynthWorker renders every
+sound - no audio files) ──► AudioEngine buses; MusicDirector / AmbienceController in 'audio'.
 
 WORLD PIPELINE:
 WorldGenerator ──► ChunkGenerationWorker ──► WorldManager ──► LightEngine
@@ -117,7 +119,8 @@ The core module provides the game loop infrastructure and frame budget managemen
 - `CRITICAL` (0): Always runs - physics, input, controls, and cheap per-frame visual state
   (atmosphere/sky/fog/daylight, block outline, underwater overlay - skipped frames showed stale sky),
   plus cheap gameplay clocks/polls: 'status-effects', 'alchemy-effects', 'player-combat',
-  'progression', 'slime-bounce', 'biome-entry-events', 'dungeons-hud', 'dungeons' (spawners). NORMAL
+  'progression', 'slime-bounce', 'biome-entry-events', 'dungeons-hud', 'dungeons' (spawners),
+  'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
   tasks registered late starve for long stretches while the world streams, so anything the player must see promptly
   (a timer, a toast, a boss bar) goes here - and stays cheap (poll at 1-2 Hz inside the task)
 - `HIGH` (1): Can defer briefly - the budgeted light queue ('lighting')
@@ -837,6 +840,7 @@ Off-main-thread computation for heavy operations.
 - `LiquidPhysicsWorker.ts` - Liquid flow simulation (via `BackgroundLiquidPhysicsManager`)
 - `SoftwareOcclusionWorker.ts` - CPU depth buffer rasterization
 - `PersistenceWorker.ts` - IndexedDB save/load operations (every message carries an echoed `requestId`, handled strictly in order)
+- `AudioSynthWorker.ts` - Renders sound recipes and reverb impulses (`src/audio/synth/`); echoed `requestId`, transferred buffers; `AudioSynthClient` keeps ≤ 2 in flight from a priority queue
 - `WorkerSubChunk.ts` - Lightweight sub-chunk data for workers
 
 **Communication Pattern:**
@@ -1045,9 +1049,12 @@ direct call.
 | `block-mined` | blockId, blockName, x/y/z, toolId | `BlockInteraction.completeMining` (after drops spawn, before the block becomes air) |
 | `block-placed` | blockId, blockName, x/y/z | `BlockPlacement` |
 | `item-added` | itemId, count (what fit) | `PlayerState.addItemCounted` (pickups, crafts, chest takes...) |
-| `item-crafted` | itemId, count, station | `InventoryInput` ('hand'), `ForgeBlockState`, `ApothecaryWorkbenchState`, `WoodworkingBenchUI`, `HellforgeUI` |
+| `item-crafted` | itemId, count, station, x/y/z? (world stations: forge, apothecary) | `InventoryInput` ('hand'), `ForgeBlockState`, `ApothecaryWorkbenchState`, `WoodworkingBenchUI`, `HellforgeUI` |
+| `item-picked-up` | itemId, count (what fit) | `DroppedItemEntity` collect (ground pickups only) |
 | `item-consumed` | itemId | `ItemConsumption` (also for the reusable Return Idol) |
+| `entity-hit` | entityType, x/y/z, charge, killed, blocked | `BlockInteraction.hitEntity`: every player melee hit (charge read before the hit restarts the clock; `blocked` = the entity's `lastHitBlocked`) |
 | `entity-killed` | entityType, x/y/z | `BlockInteraction.hitEntity`: only when the player's hit took it down and `entity.countsAsKill !== false` |
+| `player-hurt` | amount, environmental | `PlayerHealth.takeDamage` (accepted hit) / `takeEnvironmentalDamage` (lava, burning, poison, TNT, geyser ticks) |
 | `biome-entered` | biome, layer | main.ts 'biome-entry-events' (2 Hz; region biome + layer by feet Y vs `LAYER_BOUNDARY_Y` 128) |
 | `player-died` | - | main.ts death callback |
 | `dungeon-entered` | dungeonId, biome, x/y/z | `DungeonTracker` (once per dungeon per session) |
@@ -1495,6 +1502,80 @@ once-guarded `getDrops()`. Entity `type` strings are matched by journal mileston
 
 ---
 
+### `src/audio/` - Sound (effects, ambience, music)
+
+Every sound is procedural: recipes in `synth/` render samples in `AudioSynthWorker` at startup or
+first use - there are no audio files. The mix is deliberately quiet (a layer under the game, never
+on top of it): keep new sounds at or below comparable existing ones. Voicing rules from play
+feedback: block sounds stay out of the bass (breaks crumble, high-passed at 170 Hz, 24 dB/oct);
+struck materials (wood, bone, armour, crystal) use many short random modes (`addDenseModes`) so
+they knock instead of ringing at one pitch - a clean tuned partial reads as "bing/bong"; the
+player's hurt is a voiced cry, not a thump.
+
+- `setupAudio.ts` - wiring, called last in main.ts's wiring block: engine, bank, music, ambience,
+  `PlayerSoundTracker`; the gameEvents listeners (block mined/placed, `entity-hit`, `player-hurt`,
+  `item-picked-up`, crafts, consumes, effects, dungeon/guardian moments); the CRITICAL 'audio' task
+  (listener from the camera every frame; muffle/reverb/ambience 4 Hz; music 2 Hz; castle probe
+  1 Hz; creature idle calls polled at 2 Hz, ≥ 2.5 s apart, ≤ 24 blocks, guardians only while engaged)
+- `AudioEngine.ts` - ONE AudioContext (suspended until the first gesture and while the tab is
+  hidden); buses sfx / ui / ambience / music with the user's volumes (slider² curve); underwater
+  muffle (low-pass on sfx + ambience); environment reverb send (open air 0.05 → cavern ~0.4); music
+  hall reverb; a gentle master limiter. A ConvolverNode impulse must be rendered at the context's
+  sample rate
+- `SoundLibrary.ts` - THE mix: sound id → recipe, variants, bus, `loudness` (target short-term dBFS
+  before the buses, `measureLoudnessDb`), pitch/level jitter, `maxVoices`, `minInterval` (volleys,
+  cascades), positional `ref`/`range`, `preload`. Every rendered variant is gain-corrected to its
+  target (and capped at 15 dB peak over it, so bass thumps never eat headroom), so levels live
+  here, never in recipes. Reference: footstep -35, mining hit -30, break -26, melee impact -26, UI
+  tick -34/-35, player hurt -22, explosion -19. Music sits around -38 dBFS RMS at its default
+  volume. Ids: named (`ui.open`, `hit.armor`, `proj.fire`...),
+  `block.<material>.<hit|break|place|step>`, `voice.<archetype>.<hurt|death|idle>`
+- `SoundBank.ts` - buffers (effects at 32 kHz) and playback: variant rotation, jitter, voice caps
+  (48 total), spatialization computed when a sound starts (full level within `ref`, inverse
+  distance, faded to silence at `range`, stereo pan capped at 0.75, low-pass beyond 14 blocks). A
+  sound not rendered yet renders URGENT and plays if it lands within 150 ms
+- `SoundHooks.ts` - the hook game code calls for feedback only audio needs: `playSound(id, pos?)`,
+  `playBlockSound(blockId, action, pos)`, `playEntitySound(type, kind, pos)`, `playBlockUiSound`;
+  a no-op until setupAudio registers (workers, tests), so block classes may call it. Gameplay facts
+  go on gameEvents instead
+- `BlockSoundMaterials.ts` - block → one of 15 materials (stone, wood, soil, grass, sand, gravel,
+  snow, leaves, glass, crystal, metal, ice, bone, soft, cloth) from name keywords, then tags, with an
+  override table: a new block needs nothing unless it sounds wrong
+- `EntityVoices.ts` - entity type → voice archetype (`synth/creatureVoices.ts`) + pitch, idle
+  interval, boss flag, and `hit` / `shield` material: a melee hit plays `hit.<material>` (flesh,
+  bone, armor, shield, crystal, ghost, soft, shell, wood, ice, stone - what the blow lands on) plus
+  the creature's `hurt` reaction; a blocked hit (`IEntity.lastHitBlocked`, set by shielded knights,
+  the crystal sentinel and warded/armoured guardians while handling the hit) plays its `shield`
+  material and no cry. A type missing here is silent (hits sound as flesh). An archetype's voices
+  render when such an entity first enters the world (EntityManager callback)
+- `PlayerSoundTracker.ts` - polled player sounds: footsteps (stride 2.2 + 0.1·speed blocks, material
+  underfoot, corners probed at edges), jump, landing (impact > 4 b/s; the heavy thud only when
+  `calculateFallDamage` > 0 and not onto slime), ladders,
+  splash/swim/lava, eat/drink cadence, Return Idol channel (cut on cancel), hotbar tick, respawn chime
+- `AmbienceController.ts` - looping beds (22.05 kHz, -31 dBFS at weight 1) crossfaded by
+  environment: surface wind (sky light × altitude) vs cave hollowness, a bed mix per Hell biome,
+  underwater; sparse positioned details (birds in vegetated biomes, swamp frogs, cave drips, lava
+  pops, bone chimes, spore puffs, crystal pings, ice creaks)
+- `music/` - generative score, mostly silence. `MusicMoods.ts` (meadow / drift / dusk on the
+  surface, cave, one per Hell biome, dungeon, boss: scale, tempo, progressions, instruments, pad,
+  pacing), `Composer.ts` (pure + seeded: pad intro, two motifs re-anchored to each chord, harmony
+  styles, pulses, a tonic ending), `MusicPlayer.ts` (struck notes from samples rendered every 3
+  semitones at 24 kHz, pads/drones as live oscillators, 1.6 s lookahead; any BaseAudioContext, so a
+  piece renders offline), `MusicDirector.ts` (first piece 20-40 s in, then the mood's rest; a family
+  change - surface ↔ a Hell biome - fades out; castle mood within 56 blocks of an anchor; boss mood
+  at once while a guardian within 48 blocks is engaged; death silences it)
+- `synth/` - pure DSP (`dsp.ts`: seeded noise, biquads, modal resonators, dense random modes,
+  grains, envelopes) and
+  recipes: `blockSounds.ts`, `sfxRecipes.ts`, `creatureVoices.ts`, `instruments.ts` (notes + reverb
+  impulses), `ambience.ts`; `recipes.ts` maps ids → renderers and measures loudness. They run in
+  Node (`node --experimental-transform-types`) for analysis
+- `AudioSettings.ts` - master / music / effects / ambience 0-100 (defaults 100 / 60 / 100 / 60),
+  `localStorage['slopmine:audioSettings']`, the pause menu's Audio page
+
+**A new sound:** recipe in `synth/` + entry in `SOUND_DEFS`, triggered by a gameEvents listener in
+setupAudio (gameplay facts) or a SoundHooks call (feedback only audio cares about). A new mob: an
+`EntityVoices` entry. A new block that sounds wrong: a keyword or override in BlockSoundMaterials.
+
 ### `src/ui/` - User Interface
 
 DOM-based overlays rendered above the WebGL canvas.
@@ -1560,6 +1641,9 @@ User-configurable graphics options with localStorage persistence.
 | textureFiltering | string | 'crisp' | crisp (`NearestMipmapLinear`, pixel art), smooth (trilinear); applied live via `setTextureFiltering` |
 
 **Persistence:** Auto-saves to `localStorage['slopmine:graphicsSettings']` on every change.
+
+Volumes are `AudioSettings` (`src/audio/`, `localStorage['slopmine:audioSettings']`), edited on the
+pause menu's Audio page (`audioSettings` option of `createSettingsMenuUI`).
 
 Render Distance (`chunkDistance`, 1-16 in the config, the slider offers 2-16; default 8) lives in the world config
 (`localStorage['slopmine:worldConfig']`, `GenerationConfig`), not in GraphicsSettings; the Far Terrain
@@ -1648,7 +1732,7 @@ Use lightweight data classes in workers (e.g., `WorkerSubChunk` instead of `SubC
 - Use async/await for asynchronous operations (especially in workers)
 - Transfer ArrayBuffer ownership between main thread and workers for zero-copy performance
 - Data classes (items, mobs) that need a runtime system call a small hook module the system
-  registers itself with at startup (`ReturnIdolHooks`, `CrystalEntityHooks`, `DungeonServices`) -
+  registers itself with at startup (`ReturnIdolHooks`, `CrystalEntityHooks`, `DungeonServices`, `SoundHooks`) -
   every use tolerates the hook being unset (tests, workers)
 
 ### Performance Patterns

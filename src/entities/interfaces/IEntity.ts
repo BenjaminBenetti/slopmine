@@ -125,6 +125,13 @@ export interface IEntity {
   readonly countsAsKill?: boolean
 
   /**
+   * True when the player's latest hit was turned aside by a shield or ward
+   * (set by the entity while handling the hit; read right after it - the
+   * impact sound strikes the shield instead of the body). Absent = never blocks.
+   */
+  readonly lastHitBlocked?: boolean
+
+  /**
    * Entities this one put into the world itself (a slime's split children,
    * a shardling's fragments), so an owner that tracks it (a guardian's
    * minion) can clear them along with it.

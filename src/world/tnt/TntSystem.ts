@@ -2,6 +2,7 @@ import type { WorldManager } from '../WorldManager.ts'
 import type { PhysicsBody } from '../../physics/PhysicsBody.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
 import { getBlock } from '../blocks/BlockRegistry.ts'
+import { playSound } from '../../audio/SoundHooks.ts'
 
 /** Seconds between E-interact ignition and detonation. */
 const FUSE_DURATION = 2.0
@@ -94,6 +95,7 @@ export class TntSystem {
     if (this.primed.has(key)) return false
 
     this.primed.set(key, { x, y, z, timer: fuseSeconds, smokeTimer: 0 })
+    playSound('tnt.fuse', { x: x + 0.5, y: y + 0.5, z: z + 0.5 })
     return true
   }
 
@@ -131,6 +133,7 @@ export class TntSystem {
     const centerZ = z + 0.5
 
     this.explosionEffect?.(centerX, centerY, centerZ)
+    playSound('explosion', { x: centerX, y: centerY, z: centerZ })
     this.destroyBlocks(x, y, z)
     this.damagePlayer(centerX, centerY, centerZ)
   }

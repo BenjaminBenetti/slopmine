@@ -3,6 +3,7 @@ import type { IItemStack, IToolbarState, IInventoryGridState } from '../player/P
 import type { ICraftingState } from '../crafting/CraftingState.ts'
 import { renderStackInSlot } from './SlotRenderer.ts'
 import { UI_SCALE } from './uiScale.ts'
+import { playSound } from '../audio/SoundHooks.ts'
 
 export interface DragDropSlotInfo {
   element: HTMLDivElement
@@ -568,6 +569,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     if (!stack) return
 
     event.preventDefault()
+    playSound('ui.pick')
 
     // Hide tooltip when starting to drag
     hideTooltip()
@@ -660,14 +662,17 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     if (targetSlot && (targetSlot.container !== dragSource.container || targetSlot.index !== dragSource.index)) {
       // Valid target - perform drop with merge logic
       performDrop(dragSource, targetSlot, draggedStack)
+      playSound('ui.drop')
     } else if (!targetSlot && !isOverPanel(event.clientX, event.clientY) && onDropOutside?.(draggedStack)) {
       // Released over the game world and the stack was thrown out (a panel
       // without a slot under the cursor, e.g. the Hellforge's recipe list,
       // returns the stack instead)
       onStateChanged?.()
+      playSound('player.swing')
     } else {
       // Dropped on same slot or throw not handled - return items to source
       returnToSource(dragSource, draggedStack)
+      playSound('ui.drop', null, { volume: 0.6 })
     }
 
     // Cleanup

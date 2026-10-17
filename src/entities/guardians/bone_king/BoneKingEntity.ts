@@ -6,6 +6,7 @@ import { StatusEffectIds } from '../../../player/effects/StatusEffects.ts'
 import { getPlayerAttackCharge } from '../../../combat/PlayerAttack.ts'
 import type { IItem } from '../../../items/Item.ts'
 import { buildBoneKingModel, BONE_SHIELD_SHARDS, type BoneKingModel } from './BoneKingModel.ts'
+import { playSound } from '../../../audio/SoundHooks.ts'
 
 /** Guardian id (DESIGN §11) and spawner index (DESIGN §7). */
 export const BONE_KING_ID = 'bone_king'
@@ -218,6 +219,7 @@ export class BoneKingEntity extends GuardianEntity {
   // ---------------------------------------------------------------------------
 
   private raiseShield(): void {
+    playSound('magic.shield', this.position, { pitch: 0.8 })
     this.shieldShards = BONE_SHIELD_SHARDS
     this.shieldTimer = SHIELD_DURATION
     this.shieldContactTimer = SHIELD_CONTACT_INTERVAL
@@ -259,12 +261,14 @@ export class BoneKingEntity extends GuardianEntity {
       const dealt = super.applyDamage(amount * SHIELD_DAMAGE_TAKEN, from)
       if (dealt && this.shieldShards > 0 && this.incomingHitCharge >= SHIELD_BREAK_CHARGE) {
         this.shieldShards--
+        playSound(this.shieldShards === 0 ? 'magic.shield.break' : 'proj.shatter', this.position)
         if (this.shieldShards === 0) {
           this.shieldTimer = 0
           this.exposedTimer = EXPOSED_TIME
         }
         this.syncShieldMesh()
       }
+      this.lastHitBlocked = true
       return dealt
     }
     const multiplier = this.exposedTimer > 0 ? EXPOSED_DAMAGE_TAKEN : 1

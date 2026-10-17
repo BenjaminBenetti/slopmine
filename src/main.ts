@@ -152,6 +152,10 @@ import { setupCrystalAbyss } from './crystal/setupCrystalAbyss.ts'
 // Hell: Cocytus
 import { setupCocytus } from './cocytus/setupCocytus.ts'
 
+// Sound
+import { AudioSettings } from './audio/AudioSettings.ts'
+import { setupAudio } from './audio/setupAudio.ts'
+
 // Initialize world system
 registerDefaultBlocks()
 registerDefaultRecipes()
@@ -221,6 +225,8 @@ const graphicsSettings = new GraphicsSettings()
 renderer.setGraphicsSettings(graphicsSettings)
 // Block texture filtering (crisp/smooth), before any block texture is uploaded
 setTextureFiltering(graphicsSettings.textureFiltering)
+// Volume settings (persisted to localStorage; the audio system starts near the end)
+const audioSettings = new AudioSettings()
 
 // Player state (including toolbar/inventory)
 const playerState = new PlayerState(10)
@@ -437,6 +443,7 @@ requiredChunks = Math.floor(totalChunks * 0.25)
 
 // Settings menu UI (settingsInput is created later after gameLoop)
 const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSettings, document.body, {
+  audioSettings,
   onResume: () => {
     // Request pointer lock to resume game - this triggers the pointerLockChange
     // handler which will close the settings menu
@@ -1649,6 +1656,31 @@ setupCrystalAbyss({ entityManager })
 
 // Hell: Cocytus
 setupCocytus()
+
+// Sound: procedural effects, ambience and generative music (see src/audio)
+setupAudio({
+  scheduler,
+  settings: audioSettings,
+  camera: renderer.camera,
+  player: {
+    body: playerBody,
+    getBlockId: (x, y, z) => world.getBlockIdFast(x, y, z),
+    isConsuming: () => itemConsumption.isConsuming(),
+    getConsumptionProgress: () => itemConsumption.getConsumptionProgress(),
+    getConsumingItemId: () => itemConsumption.getConsumingItemId(),
+    getConsumingItemTags: () => {
+      const toolbar = playerState.inventory.toolbar
+      return toolbar.getStack(toolbar.selectedIndex)?.item.tags ?? []
+    },
+    getSelectedHotbarIndex: () => playerState.inventory.toolbar.selectedIndex,
+    isDead: () => playerHealth.isDead,
+  },
+  getSkyLight: (x, y, z) => world.getPackedLightFast(x, y, z) >> 4,
+  entityManager,
+  isBurning: () => environmentalDamage.isInLava || environmentalDamage.isBurning,
+  getSeed: () => worldGenerator.getConfig().seed,
+  isLoading: () => isLoading,
+})
 
 /** Shader warm-up (see warmUpWorldShaders) runs once, when loading is otherwise done. */
 let shaderWarmupStarted = false

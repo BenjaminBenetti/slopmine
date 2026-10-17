@@ -2,8 +2,10 @@ import { applyUIScale } from './uiScale.ts'
 import { MAX_CHUNK_DISTANCE, type GenerationConfig } from '../world/generate/GenerationConfig.ts'
 import { LOD_DISTANCE_OPTIONS, type GraphicsSettings, type ResolutionPreset, type FramerateLimit, type ShadowMapSize, type LodDistance, type TextureFiltering } from '../settings/index.ts'
 import { LOD_MIN_MARGIN_CHUNKS } from '../world/lod/LodTypes.ts'
+import type { AudioSettingKey, AudioSettings } from '../audio/AudioSettings.ts'
+import { playSound } from '../audio/SoundHooks.ts'
 
-export type SettingsPage = 'main' | 'config'
+export type SettingsPage = 'main' | 'config' | 'audio'
 
 export interface SettingsMenuUIOptions {
   /** Called when the user clicks "Resume Game" */
@@ -26,6 +28,8 @@ export interface SettingsMenuUIOptions {
   onSave?: () => Promise<void>
   /** Called when the user confirms "New Game" - should clear saved data and reload */
   onNewGame?: () => Promise<void>
+  /** Volume sliders (Audio page); the page is hidden without it */
+  audioSettings?: AudioSettings
 }
 
 export interface SettingsMenuUI {
@@ -103,7 +107,10 @@ export function createSettingsMenuUI(
       button.style.background = 'rgba(50, 50, 50, 0.9)'
       button.style.borderColor = 'rgba(255, 255, 255, 0.3)'
     })
-    button.addEventListener('click', onClick)
+    button.addEventListener('click', () => {
+      playSound('ui.click')
+      onClick()
+    })
 
     return button
   }
@@ -175,6 +182,13 @@ export function createSettingsMenuUI(
       renderConfigPage()
     })
     panel.appendChild(settingsBtn)
+
+    if (options.audioSettings) {
+      const audioBtn = createButton('Audio', () => {
+        renderAudioPage()
+      })
+      panel.appendChild(audioBtn)
+    }
 
     const resumeBtn = createButton('Resume Game', () => {
       api.close()
@@ -618,6 +632,73 @@ export function createSettingsMenuUI(
     shadowQualityContainer.appendChild(shadowQualityLabel)
     shadowQualityContainer.appendChild(shadowQualitySelect)
     panel.appendChild(shadowQualityContainer)
+
+    const backBtn = createButton('Back', () => {
+      renderMainMenu()
+    })
+    panel.appendChild(backBtn)
+  }
+
+  const renderAudioPage = (): void => {
+    const audio = options.audioSettings
+    if (!audio) return
+    panel.innerHTML = ''
+    currentPage = 'audio'
+
+    const title = document.createElement('h2')
+    title.textContent = 'Audio'
+    title.style.margin = '0 0 1.5rem 0'
+    title.style.fontSize = '1.5rem'
+    title.style.fontWeight = '600'
+    title.style.textAlign = 'center'
+    panel.appendChild(title)
+
+    const volumes: Array<[AudioSettingKey, string]> = [
+      ['master', 'Master Volume'],
+      ['music', 'Music'],
+      ['effects', 'Sound Effects'],
+      ['ambience', 'Ambience'],
+    ]
+    for (const [key, label] of volumes) {
+      const container = document.createElement('div')
+      container.style.marginBottom = '1.5rem'
+
+      const sliderLabel = document.createElement('label')
+      sliderLabel.style.display = 'flex'
+      sliderLabel.style.justifyContent = 'space-between'
+      sliderLabel.style.marginBottom = '0.5rem'
+      sliderLabel.style.fontSize = '0.9rem'
+
+      const labelText = document.createElement('span')
+      labelText.textContent = label
+
+      const valueDisplay = document.createElement('span')
+      valueDisplay.textContent = `${audio.get(key)}%`
+      valueDisplay.style.color = 'rgba(255, 255, 255, 0.7)'
+
+      sliderLabel.appendChild(labelText)
+      sliderLabel.appendChild(valueDisplay)
+
+      const slider = document.createElement('input')
+      slider.type = 'range'
+      slider.min = '0'
+      slider.max = '100'
+      slider.step = '5'
+      slider.value = String(audio.get(key))
+      slider.style.width = '100%'
+      slider.style.cursor = 'pointer'
+      slider.addEventListener('input', () => {
+        const value = parseInt(slider.value, 10)
+        valueDisplay.textContent = `${value}%`
+        audio.set(key, value)
+      })
+      // A tick on release previews the new effects level
+      slider.addEventListener('change', () => playSound('ui.click'))
+
+      container.appendChild(sliderLabel)
+      container.appendChild(slider)
+      panel.appendChild(container)
+    }
 
     const backBtn = createButton('Back', () => {
       renderMainMenu()

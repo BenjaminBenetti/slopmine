@@ -4,6 +4,7 @@ import type { IPlayerState } from '../player/PlayerState.ts'
 import { BlockRaycaster } from '../player/BlockRaycaster.ts'
 import { MAX_REACH_DISTANCE } from '../player/BlockInteraction.ts'
 import { BlockIds } from '../world/blocks/BlockIds.ts'
+import { playSound } from '../audio/SoundHooks.ts'
 
 /**
  * Bone meal: right-click a growing crop with bone meal in hand to grow it one
@@ -53,6 +54,7 @@ export function setupBoneMeal(options: BoneMealOptions): () => void {
     if (next === undefined) return
 
     world.setBlock(hit.worldX, hit.worldY, hit.worldZ, next)
+    playSound('item.bonemeal', { x: Number(hit.worldX) + 0.5, y: Number(hit.worldY) + 0.5, z: Number(hit.worldZ) + 0.5 })
     if (stack.count <= 1) {
       toolbar.clearSlot(toolbar.selectedIndex)
     } else {

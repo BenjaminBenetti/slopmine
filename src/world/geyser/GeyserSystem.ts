@@ -1,6 +1,7 @@
 import type { WorldManager } from '../WorldManager.ts'
 import type { PhysicsBody } from '../../physics/PhysicsBody.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
+import { playSound } from '../../audio/SoundHooks.ts'
 
 /** How often a fresh scan sweep for nearby geysers begins (seconds). */
 const SCAN_INTERVAL = 2.0
@@ -188,6 +189,7 @@ export class GeyserSystem {
             )
             geyser.phase = 'warning'
             geyser.timer = WARNING_DURATION
+            playSound('geyser.warn', { x: geyser.x + 0.5, y: geyser.y + 1, z: geyser.z + 0.5 })
           }
           break
 
@@ -202,6 +204,7 @@ export class GeyserSystem {
             geyser.timer = BURST_DURATION
             geyser.damaged = false
             this.eruptionEffect?.(geyser.x + 0.5, geyser.y + 1, geyser.z + 0.5)
+            playSound('geyser.burst', { x: geyser.x + 0.5, y: geyser.y + 1, z: geyser.z + 0.5 })
           }
           break
 

@@ -2,6 +2,7 @@ import type { IWorld } from '../../../interfaces/IBlock.ts'
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { PERSISTENT_PLACED_METADATA_BIT } from '../../BlockFacing.ts'
+import { playBlockSound } from '../../../../audio/SoundHooks.ts'
 
 /**
  * Seconds between decay checks (declare as `tickInterval` in subclass
@@ -70,6 +71,7 @@ export abstract class LeafBlock extends TransparentBlock {
 
     if (this.isLogReachable(world, x, y, z)) return false
 
+    playBlockSound(this.properties.id, 'break', { x: Number(x) + 0.5, y: Number(y) + 0.5, z: Number(z) + 0.5 }, { volume: 0.35 })
     world.setBlock(x, y, z, BlockIds.AIR)
     return false
   }

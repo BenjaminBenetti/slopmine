@@ -1,4 +1,5 @@
 import { INVINCIBILITY_DURATION } from '../physics/constants.ts'
+import { gameEvents } from '../events/GameEvents.ts'
 
 export interface PlayerHealthConfig {
   maxHealth?: number
@@ -78,6 +79,7 @@ export class PlayerHealth implements IPlayerHealth {
     this._currentHealth = Math.max(0, this._currentHealth - amount)
     this._invincibilityTimer = this._invincibilityDuration
 
+    gameEvents.emit({ type: 'player-hurt', amount, environmental: false })
     this._onHealthChanged?.(this._currentHealth, this._maxHealth)
 
     if (this._currentHealth <= 0) {
@@ -97,6 +99,7 @@ export class PlayerHealth implements IPlayerHealth {
 
     this._currentHealth = Math.max(0, this._currentHealth - amount)
 
+    gameEvents.emit({ type: 'player-hurt', amount, environmental: true })
     this._onHealthChanged?.(this._currentHealth, this._maxHealth)
 
     if (this._currentHealth <= 0) {
