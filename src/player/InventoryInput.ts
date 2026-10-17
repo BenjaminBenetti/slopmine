@@ -3,12 +3,13 @@ import type { InventoryUI } from '../ui/Inventory.ts'
 import type { ToolbarUI } from '../ui/Toolbar.ts'
 import type { IInventoryGridState, IPlayerState, IToolbarState } from './PlayerState.ts'
 import type { CameraControls } from './FirstPersonCameraControls.ts'
-import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandler.ts'
+import { createDragDropHandler, type DragDropExtraContainer, type DragDropHandler } from '../ui/DragDropHandler.ts'
 import { CraftingState } from '../crafting/CraftingState.ts'
 import { createCraftingPanelUI, type CraftingPanelUI, type CraftBatch } from '../ui/CraftingPanel.ts'
 import { createRecipeBookUI, type RecipeBookUI } from '../ui/RecipeBookUI.ts'
 import { createItemFromId } from '../persistence/ItemRegistry.ts'
 import type { IRecipe } from '../crafting/RecipeRegistry.ts'
+import { gameEvents } from '../events/GameEvents.ts'
 
 export interface InventoryInput {
   /** The crafting panel root element, for hiding when block UIs are open */
@@ -23,6 +24,11 @@ export interface InventoryInput {
   readonly isOpen: boolean
   /** Toggle the inventory open/closed (called by BlockInteractionHandler on 'E') */
   toggleInventory(): void
+  /**
+   * Add an extra drag/drop slot container to the inventory overlay (worn
+   * armor). Its root is hidden while a block UI owns the overlay.
+   */
+  addDragDropContainer(container: DragDropExtraContainer): void
   dispose(): void
 }
 
@@ -48,6 +54,7 @@ export class InventoryInputHandler implements InventoryInput {
   private readonly craftingState: CraftingState
   private readonly craftingPanel: CraftingPanelUI
   private readonly recipeBook: RecipeBookUI
+  private readonly extraContainers: DragDropExtraContainer[] = []
 
   private pointerLocked = false
   private blockUIActive = false
@@ -86,6 +93,10 @@ export class InventoryInputHandler implements InventoryInput {
   /** Set block UI active state */
   setBlockUIActive(active: boolean): void {
     this.blockUIActive = active
+    // Extra containers (armor) only work with the player's own drag-drop
+    for (const container of this.extraContainers) {
+      container.root.style.display = active ? 'none' : ''
+    }
     if (active) {
       // Disable our drag-drop when block UI takes over
       this.dragDrop.disable()
@@ -192,7 +203,13 @@ export class InventoryInputHandler implements InventoryInput {
 
       const leftover = this.playerState.addItemCounted(result.item, result.count)
       crafted++
-      if (leftover > 0) break // inventory full - stop batching
+      gameEvents.emit({ type: 'item-crafted', itemId: result.item.id, count: result.count, station: 'hand' })
+      if (leftover > 0) {
+        // Inventory full: what didn't fit is thrown out of the player (never
+        // lost, like the Hellforge's overflow) - and batching stops
+        this.throwStackHandler?.(result.item, leftover)
+        break
+      }
     }
 
     if (crafted > 0) {
@@ -204,7 +221,9 @@ export class InventoryInputHandler implements InventoryInput {
     for (let i = 0; i < this.craftingState.slots.length; i++) {
       const stack = this.craftingState.getStack(i)
       if (stack) {
-        this.playerState.addItem(stack.item, stack.count)
+        // What doesn't fit a full inventory is thrown out, never dropped silently
+        const leftover = this.playerState.addItemCounted(stack.item, stack.count)
+        if (leftover > 0) this.throwStackHandler?.(stack.item, leftover)
         this.craftingState.clearSlot(i)
       }
     }
@@ -230,6 +249,11 @@ export class InventoryInputHandler implements InventoryInput {
       event.preventDefault()
       this.closeInventory()
     }
+  }
+
+  addDragDropContainer(container: DragDropExtraContainer): void {
+    this.extraContainers.push(container)
+    this.dragDrop.addContainer(container)
   }
 
   toggleInventory(): void {

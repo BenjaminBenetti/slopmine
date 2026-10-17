@@ -9,9 +9,11 @@ import type { IItem } from '../items/Item.ts'
 import { BlockRaycaster, type IBlockRaycastHit } from './BlockRaycaster.ts'
 import { MiningOverlay } from '../renderer/MiningOverlay.ts'
 import { BlockIds } from '../world/blocks/BlockIds.ts'
-import { calculateMiningDamage } from './MiningDamage.ts'
+import { calculateMiningDamage, describeRequiredTool } from './MiningDamage.ts'
 import { hasToolStats, HAND_STATS } from '../items/interfaces/IToolStats.ts'
 import { FloatingTextManager } from '../ui/floating-text/index.ts'
+import { gameEvents } from '../events/GameEvents.ts'
+import { isPlayerAttackReady, registerPlayerAttack } from '../combat/PlayerAttack.ts'
 
 /** Maximum reach distance for block interaction */
 export const MAX_REACH_DISTANCE = 5
@@ -61,6 +63,12 @@ export class BlockInteraction {
   private hasHitEntityThisClick = false
   private currentMining: IMiningProgress | null = null
 
+  /** Last block refused for lack of tool force (throttles the "Needs a ..." hint) */
+  private lastRefusedKey = ''
+  private lastRefusedAt = -Infinity
+  /** Game time (s), for the hint throttle (matches the hint's own lifetime clock) */
+  private gameTime = 0
+
   // Pre-allocated vectors for entity hit detection
   private readonly rayOrigin = new THREE.Vector3()
   private readonly rayDirection = new THREE.Vector3()
@@ -95,6 +103,7 @@ export class BlockInteraction {
    * @param deltaTime - Time since last frame in seconds
    */
   update(deltaTime: number): void {
+    this.gameTime += deltaTime
     if (!this.isMouseDown) {
       return
     }
@@ -116,16 +125,19 @@ export class BlockInteraction {
     const blockHit = this.raycaster.castFromCamera(this.camera, this.maxReachDistance)
 
     // Determine what to interact with (closer target wins)
-    // Only hit entity once per click (not continuously while held)
-    if (entityHit && !this.hasHitEntityThisClick) {
+    if (entityHit) {
       const entityDist = entityHit.distance
       const blockDist = blockHit?.distance ?? Infinity
 
       if (entityDist < blockDist) {
-        // Hit entity - instant interaction, no mining progress
+        // Entity in front - never mine the block behind it. A click hits
+        // once; holding the button hits again whenever the attack is fully
+        // charged (see src/combat/PlayerAttack.ts)
         this.cancelMining()
-        this.hitEntity(entityHit.entity)
-        this.hasHitEntityThisClick = true
+        if (!this.hasHitEntityThisClick || isPlayerAttackReady(this.getHeldItem())) {
+          this.hitEntity(entityHit.entity)
+          this.hasHitEntityThisClick = true
+        }
         return
       }
     }
@@ -224,9 +236,10 @@ export class BlockInteraction {
     // Calculate mining result based on tool vs block
     const miningResult = calculateMiningDamage(hit.block, toolStats)
 
-    // Cannot mine this block with current tool
+    // Cannot mine this block with current tool: say which tool it needs
     if (!miningResult.canMine) {
       this.currentMining = null
+      this.showMiningRefused(hit)
       return
     }
 
@@ -242,6 +255,34 @@ export class BlockInteraction {
 
     // Show overlay matching the block's interaction box
     this.miningOverlay.showBox(this.currentMining.interactionBox, 0)
+  }
+
+  /**
+   * Floating "Needs a stone pickaxe" hint in front of a block the held tool
+   * cannot mine. startMining() retries every frame while the button is held,
+   * so the hint repeats at most every 2 s (game time) per block - after the
+   * previous one has faded.
+   */
+  private showMiningRefused(hit: IBlockRaycastHit): void {
+    const now = this.gameTime
+    const key = `${hit.worldX},${hit.worldY},${hit.worldZ}`
+    if (key === this.lastRefusedKey && now - this.lastRefusedAt < 2) return
+    this.lastRefusedKey = key
+    this.lastRefusedAt = now
+
+    // Between the hit point and the camera, so it is not buried in the block
+    const position = this.rayOrigin.clone().sub(hit.point)
+    const length = position.length()
+    position.multiplyScalar(length > 0 ? Math.min(0.8, length * 0.5) / length : 0).add(hit.point)
+    position.y += 0.25
+    FloatingTextManager.instance.spawn({
+      text: describeRequiredTool(hit.block),
+      position,
+      mode: 'floating',
+      duration: 1.6,
+      floatSpeed: 0.25,
+      scale: 0.55,
+    })
   }
 
   private updateMining(deltaTime: number): void {
@@ -319,6 +360,19 @@ export class BlockInteraction {
       this.onItemsCollected?.()
     }
 
+    const heldForEvent = this.playerState.inventory.toolbar.getItem(
+      this.playerState.inventory.toolbar.selectedIndex
+    )
+    gameEvents.emit({
+      type: 'block-mined',
+      blockId: block.properties.id,
+      blockName: block.properties.name,
+      x: Number(worldX),
+      y: Number(worldY),
+      z: Number(worldZ),
+      toolId: heldForEvent?.id ?? null,
+    })
+
     // Remove block entity if it exists (before onBreak hook)
     this.worldManager.removeBlockEntityAt(worldX, worldY, worldZ)
 
@@ -382,6 +436,11 @@ export class BlockInteraction {
     }
   }
 
+  private getHeldItem(): IItem | null {
+    const toolbar = this.playerState.inventory.toolbar
+    return toolbar.getItem(toolbar.selectedIndex)
+  }
+
   /**
    * Check for entity hit using ray-AABB intersection.
    * Returns the closest entity hit within reach distance.
@@ -433,8 +492,22 @@ export class BlockInteraction {
     const selectedIndex = this.playerState.inventory.toolbar.selectedIndex
     const heldItem = this.playerState.inventory.toolbar.getItem(selectedIndex)
 
-    // Call entity interaction hook
+    const wasDown = !entity.isAlive || entity.isDying === true
+
+    // Call entity interaction hook (it takes its damage from
+    // getPlayerAttackDamage), then restart the attack cooldown
     entity.onPlayerInteract?.(this.rayOrigin, true, heldItem)
+    registerPlayerAttack(heldItem)
+
+    if (!wasDown && (!entity.isAlive || entity.isDying) && entity.countsAsKill !== false) {
+      gameEvents.emit({
+        type: 'entity-killed',
+        entityType: entity.type,
+        x: entity.position.x,
+        y: entity.position.y,
+        z: entity.position.z,
+      })
+    }
 
     // Check if entity died (or is dying) and collect drops
     // We check isDying because the entity plays a death animation before isAlive becomes false

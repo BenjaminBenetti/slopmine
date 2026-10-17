@@ -1,0 +1,8 @@
+export { SwordItem } from './sword/SwordItem.ts'
+export { WoodSwordItem } from './sword/WoodSwordItem.ts'
+export { StoneSwordItem } from './sword/StoneSwordItem.ts'
+export { IronSwordItem } from './sword/IronSwordItem.ts'
+export { SteelSwordItem } from './sword/SteelSwordItem.ts'
+export { DiamondSwordItem } from './sword/DiamondSwordItem.ts'
+export { InferniumSwordItem } from './sword/InferniumSwordItem.ts'
+export { HellbaneSwordItem } from './sword/HellbaneSwordItem.ts'

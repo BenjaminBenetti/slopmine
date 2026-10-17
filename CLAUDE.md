@@ -49,6 +49,13 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
    columns exist AND `warmUpWorldShaders` (ShaderWarmup.ts) has compiled the shared chunk
    (opaque, leaf cutout + its shadow depth) and liquid programs, so first sight of leaves or
    water never stalls on a program link; add new shared world materials to `worldWarmupMaterials`
+9. **Gameplay wiring** (the "Depth expansion wiring" block near the end of main.ts, after the core
+   tasks): chest loot tables, the 'status-effects' and 'biome-entry-events' tasks, then
+   `setupProgression`, `setupBoneMeal`/`setupSlimeBounce`, `setupPlayerCombat`, `setupHellforge`,
+   `setupArmorSystem`, `setupAlchemy` (must come after 'skybox': ember sight post-adjusts the light
+   floor it sets), `setupDungeons`, and one `setup<Biome>()` per Hell biome (castle tier loot tables,
+   garrisons, guardian, procedural locator). A new system exposes a `setupX(deps)` in its own
+   module; keep main.ts edits to the call
 
 ### System Interaction Diagram
 
@@ -69,10 +76,17 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
         │                     ├─► Held Item Overlay
         │                     └─► Liquid (underwater) Overlay
         │
-        ├─► CRITICAL: Camera, Physics, Mining, Atmosphere ('skybox'), Block Outline, Liquid Overlay
+        ├─► CRITICAL: Camera, Physics, Mining, Atmosphere ('skybox'), Block Outline, Liquid Overlay,
+        │             status effects + behaviours, combat cooldown, journal, biome-entry events,
+        │             boss bar / Sigil Compass / dungeon-entered probe ('dungeons-hud'),
+        │             guardian + garrison spawners ('dungeons')
         ├─► HIGH: Lighting (LightEngine queue)
-        ├─► NORMAL: World Gen (+ feature work / sub-chunk unloads), LOD queue/apply, block systems
-        └─► LOW: Liquid Physics
+        ├─► NORMAL: World Gen (+ feature work / sub-chunk unloads), LOD queue/apply, block systems,
+        │           entities (EntityManager)
+        └─► LOW: Liquid Physics, entity spawning (EntitySpawner)
+
+GAMEPLAY: systems talk through gameEvents (src/events/) - emitters never know the journal,
+dungeon tracker or other listeners; player damage flows through applyDamageModifiers().
 
 WORLD PIPELINE:
 WorldGenerator ──► ChunkGenerationWorker ──► WorldManager ──► LightEngine
@@ -101,10 +115,14 @@ The core module provides the game loop infrastructure and frame budget managemen
 
 **Task Priority Levels:**
 - `CRITICAL` (0): Always runs - physics, input, controls, and cheap per-frame visual state
-  (atmosphere/sky/fog/daylight, block outline, underwater overlay - skipped frames showed stale sky)
+  (atmosphere/sky/fog/daylight, block outline, underwater overlay - skipped frames showed stale sky),
+  plus cheap gameplay clocks/polls: 'status-effects', 'alchemy-effects', 'player-combat',
+  'progression', 'slime-bounce', 'biome-entry-events', 'dungeons-hud', 'dungeons' (spawners). NORMAL
+  tasks registered late starve for long stretches while the world streams, so anything the player must see promptly
+  (a timer, a toast, a boss bar) goes here - and stays cheap (poll at 1-2 Hz inside the task)
 - `HIGH` (1): Can defer briefly - the budgeted light queue ('lighting')
-- `NORMAL` (2): Background work - world generation, LOD tiles/meshes, block systems
-- `LOW` (3): Lowest priority - liquid physics
+- `NORMAL` (2): Background work - world generation, LOD tiles/meshes, block systems, entities
+- `LOW` (3): Lowest priority - liquid physics, mob spawning (`EntitySpawner`)
 
 **Frame Budget Algorithm:**
 - Rolling average frame time with 10% adaptation rate
@@ -136,7 +154,7 @@ Three.js-based rendering with optimized voxel mesh handling.
 - `WorldLighting.ts` - Warm directional sun (fixed 10am, `getSunDirection()`), cool hemisphere/ambient fill, biome light tint (`setTint`), shadows (PCF soft)
 - `skybox/Skybox.ts` - Colour-managed sky dome shader (gradient, sun disc/halo, drifting noise clouds); `fog: false`, pinned to the far plane, renderOrder 500 (drawn after world geometry); `getHorizonColor()` is the fog colour
 - `skybox/BiomeAtmosphere.ts` / `BiomeSkyboxManager.ts` - Per-biome sky/fog/light state (`SkyboxSettings` in `BiomeProperties`: colours in sRGB, light multipliers linear), blended across biome borders and eased (see Atmosphere below)
-- `DistanceFog.ts` - Owns the scene's ONE persistent `THREE.Fog` (never swapped - that recompiles every material): spherical edge fade + absolute aerial haze (1500 blocks in clear air ÷ biome `fogDensity`^1.5), so the long (LOD) view gets depth and hazy biomes tint rather than erase it; `setViewDistance(blocks)` (applies immediately), `setColor`, `setDensity`, `setOverride` (underwater: haze + far)
+- `DistanceFog.ts` - Owns the scene's ONE persistent `THREE.Fog` (never swapped - that recompiles every material): spherical edge fade + absolute aerial haze (1500 blocks in clear air ÷ biome `fogDensity`^1.5), so the long (LOD) view gets depth and hazy biomes tint rather than erase it, + the cavern ceiling haze (smoke under the Hell ceiling, density 0.12/block at Y 140 falling off over 8 blocks, none above it - shader constants, integrated along each view ray; the ceiling straight up is ~62% haze); `setViewDistance(blocks)` (applies immediately), `setColor`, `setDensity`, `setOverride` (underwater: haze + far)
 - `LiquidMaterials.ts` - One shared animated material per liquid family (water, swamp water, lava): liquid vertex colours carry light LEVELS `(sky/15, block/15, 1)` shaded with the world light model at render time (white = full light for icons), texture drift, sun glitter + Fresnel horizon reflection
 - `LiquidOverlay.ts` - Full-screen tint while the camera is inside a liquid; underwater fog is a
   `DistanceFog.setOverride()` on the same fog object (never a fog swap). Water and swamp-water
@@ -147,8 +165,9 @@ Three.js-based rendering with optimized voxel mesh handling.
   interaction box; its own `BlockRaycaster` in the CRITICAL 'block-outline' task, gated like
   mining (pointer locked and player alive - hidden while inventory/menus are open)
 - `lod/LodRenderer.ts` / `lod/LodMaterial.ts` - Far-terrain region meshes (see LOD Far Terrain below)
-- `helditem/HeldItemRenderer.ts` - First-person held item with bob/swing animations; lit by the world
-  light model (`setWorldLight(packedLight)`) and the biome light tint (`setLightTint`)
+- `helditem/HeldItemRenderer.ts` - First-person held item with bob/swing animations (`playAttackSwing()`:
+  one full swing per melee hit); lit by the world light model (`setWorldLight(packedLight)`) and the
+  biome light tint (`setLightTint`)
 - `MiningOverlay.ts` - Block mining progress visualization
 
 **Rendering Pipeline (per frame, `render()` in main.ts):**
@@ -195,18 +214,22 @@ across biome borders) and pushes it to the sky dome, `DistanceFog` (colour =
 colour, and the daylight/light-floor uniforms.
 - `SkyboxSettings` (in `BiomeProperties`). Authored in sRGB (perceptual): `brightness` and the
   colours `tint`, `fogColor`, `undergroundFogColor`, `lightTint`, `clouds.color`. Linear: `minimumLight`
-  (light floor as an RGB multiplier of albedo, e.g. Hell's red ember glow (0.32, 0.15, 0.11)) and
+  (light floor as an RGB multiplier of albedo, e.g. the Molten Wastes' red ember glow (0.33, 0.15, 0.1),
+  the Ossuary's pale green (0.3, 0.37, 0.31)) and
   `daylight` (0-1 overcast dimming - swamp 0.62, coastal rainforest 0.82). Scalars: `fogDensity` (≥ 1,
   shortens the absolute haze distance), `clouds.coverage` (default 0.42) and `clouds.opacity` (swamp
   grey overcast 0.65, volcanic dark ash 0.6, desert 0.2). Use `daylight` for a biome's gloom, NOT a
   `skylightValue` cap (caps are baked per sub-chunk and draw hard 32-block light steps at region
-  borders; Hell uses cap 0).
+  borders; every Hell biome uses cap 0).
 - `DistanceFog` owns THE fog; `setViewDistance` is called only by `syncViewDistance()` (the drawn
   LOD ring's reach × 32 while LOD is drawn, else `chunkDistance` × 32), so fog and far plane always agree.
   The global `fog_vertex` override makes fog spherical (true distance, not view depth - no fog-free
   screen edges at 100° FOV); the `fog_fragment` override reinterprets `THREE.Fog`: `far` = edge
-  fade (0.6·far → far), `near` = exponential aerial haze distance. Every fogged material shares
-  these patches; keep `fog: true` on world materials.
+  fade (0.6·far → far), `near` = exponential aerial haze distance; a third layer, the cavern
+  ceiling haze, needs the fragment's world height (`vFogRise`, added to `fog_pars_*`), so any
+  custom shader with fog must include three's `fog_pars_vertex`/`fog_vertex` (with `mvPosition`
+  in view space) as well as the fragment chunks. Every fogged material shares these patches; keep
+  `fog: true` on world materials.
 - Sky materials have `fog: false`; the dome is pinned to the far plane, dithered against banding,
   and includes three's colour-space chunk (colour-managed). Any future opaque object that does not
   write depth must draw after it (renderOrder > 500).
@@ -251,6 +274,7 @@ Core voxel data storage, chunk lifecycle, and world coordination.
 - `blockstate/BlockStateManager.ts` - Per-block persistent state (chests, forges)
 - `blockstate/BlockTickManager.ts` - Frame-based block state updates
 - `blocktick/ScheduledBlockTicks.ts` - Slow interval-based block ticks (leaf decay)
+- `loot/ChestLootRegistry.ts` - Worldgen chest loot tables (see Chest loot under `src/dungeons/`)
 
 **Chunk Architecture:**
 ```
@@ -324,6 +348,23 @@ dark; light is never persisted (recomputed on load).
   is unchanged, and it changes between builds. Placeholder cells (a neighbour's decorations written before a sub-chunk
   loaded) only fill air when it loads from persistence. `setBlockRaw` (liquid physics) writes only
   into loaded sub-chunks; liquid results for an unloaded column are dropped.
+- Player saves (`saveAll`: manual, 5-min autosave, `beforeunload`) post every request before the
+  first await (on unload nothing after an await runs) and write the inventory and all keyed player
+  data in ONE transaction (items move between inventory and worn armor). main.ts saves nothing until
+  the stored inventory + metadata were read (`savedPlayerStateLoaded`; a failed read never sets it),
+  and `loadInventory`/`loadMetadata`/`loadPlayerData` THROW on a failed read. New Game's
+  `clearAll()` closes writes for good (`writesClosed`: a debounced journal save or an unload save
+  would carry the old world into the new one). An emptied chest/forge state saves a `removed`
+  record that deletes its stored one (else the next load refilled a looted chest -
+  `markBlockStateRestored` tracks which states have a record).
+- Keyed player data: `persistenceManager.registerPlayerDataContributor(key, () => data)` (collected
+  on every save, `structuredClone`d; return `undefined` to skip) and `await
+  loadPlayerData<T>(key)` (null = never saved) after `initialize()`; `savePlayerData(key, data)` saves
+  out of cycle. Stored in the player store as `data:<key>`. Keys: `progression` (journal),
+  `equipment` (worn armor, max-health bonus, current health), `alchemy` (Return Idol cooldown),
+  `dungeons` (cleared dungeon keys). RULE: load first, then contribute (or contribute `undefined`
+  until loaded) - a contributor registered before its load writes defaults over the save; on a
+  failed load contribute nothing this session. Version the data and tolerate missing fields.
 - Mesh jobs: a sub-chunk is remeshed whenever any cell of its padded 34³ volume (itself + the
   1-block shell) changes block id or light, and when any of its 26 neighbours loads or unloads.
   `queueSubChunkForMeshing` never drops a request (a request during an in-flight job is kept) and
@@ -347,13 +388,33 @@ Block type definitions using flyweight pattern (stateless singletons).
 
 **Key Files:**
 - `Block.ts` - Abstract base classes: `Block`, `SolidBlock`, `TransparentBlock`
-- `BlockIds.ts` - Enum of all block IDs (0=AIR, 1-162 for blocks)
+- `BlockIds.ts` - Enum of all block IDs (0=AIR; 1-162 base game, 163 slime, 170-171 guardian
+  spawners, 172 garrison spawner, 180 Hellforge, 200-223 Molten Wastes, 230-252 Ossuary, 260-285
+  Ember Grove, 290-318 Crystal Abyss, 320-349 Cocytus - each Hell range includes its castle kit's
+  blocks; highest 349). Shared registration files are grouped by header comments per feature area
+  (`// Hell: Cocytus`) - add new entries to their area's group
 - `BlockRegistry.ts` - Singleton registry mapping IDs to block instances
 - `FaceTextureRegistry.ts` - Maps block+face to TextureId for greedy meshing. Greedy side faces
   read un-mirrored from outside, like three's `BoxGeometry` used by item displays; faces listed in
   `QUARTER_TURN_FACES` get their texture turned a quarter (e.g. bark grain along a fallen log) -
   give the block's display geometry the same turn (`QuarterTurnedCube.ts`)
 - `registerDefaultBlocks.ts` - Registers every default block at startup (main thread and each worker)
+- `tags/BlockTags.ts` - `ROCK`, `WOOD`, `SOIL`, `LEAVES`, `LIQUID_SOURCE`, `CLIMBABLE`; the mining
+  tool-type rule reads them (see Mining under `src/player/`)
+
+**Greedy vs instanced:** a block is greedy-meshed unless `block.isGreedyMeshable()` returns false
+(custom geometry: plants, torches, braziers, prism clusters, icicles, the Hellforge...). WorldManager
+derives the mesh worker's non-greedy list and the texture-array contents from that method;
+`NON_GREEDY_BLOCK_IDS` in FaceTextureRegistry is only the worker's pre-init default and is
+incomplete - don't rely on it.
+**Texture-layer budget:** every distinct greedy face texture costs one `BlockTextureArray` layer;
+the limit is 255 (`CHUNK_MAX_TEXTURE_LAYER`, building throws above it; layer 0 = missing texture).
+150 are used (54 base game, 96 expansion - the boot log's `Block texture array built with N layers`
+counts them, layer 0 excluded). TextureId values may exceed 255 (layers are compacted),
+so reuse one texture across faces/blocks where it reads fine (crafted infernal bricks, sanctum tile
+and the crystal cores share their source block's layers). Non-greedy blocks cost no layer.
+**Placement:** a `BlockItem`'s declared `blockName` wins over the `<block name>_block` id convention
+(`infernal_bricks_block` places the force-2 `crafted_infernal_bricks`, never the force-6 bastion wall).
 
 **Block Structure:**
 ```
@@ -385,13 +446,20 @@ post-processing pitfalls. Rules that bite most often:
 **Block Types:**
 - **Solid**: Stone, Dirt, Grass, Oak Log, Ore blocks
 - **Transparent**: Glass, leaves (alpha cutout), Water / Lava / Swamp Water (8 levels each + a falling variant; see Liquids under `src/renderer/`)
-- **Special**: Torch (custom geometry, light emission), Forge (stateful, UI)
+- **Special**: Torch (custom geometry, light emission), Forge (stateful, UI), Hellforge (UI), guardian
+  and garrison spawners (block entities, see `src/dungeons/`)
 
 **Light emitters:** `lightLevel` lights the cells AROUND a block (Minecraft rules, −1 per step);
 the block's own faces are lit by its neighbours' lower light. A block that should visibly glow
 (magma, ember veins, bioluminescent caps) also registers its face texture with
 `registerEmissiveTexture()` (`src/renderer/EmissiveTextures.ts`): hot texels above the threshold
 become emissive in the chunk shader. Torch 13, campfire 14, resin torch 15; magma/hell magma 8.
+Hell lighting comes from emitters (no skylight): crystal lamp, frost lantern, infernal/rime braziers
+15, soul lantern 14, spore sac 13, soul torch, frost crystal and prism crystal 11, other ores and
+crystals 3-7; castle lights: hanging frost lantern 15, ember/prism lanterns 14, soul candelabra and
+glow bulb 12, glowing sap and prism pedestal 9, grave candles 8, magma bricks and rime glyph 6. A
+large emitting mass emits from its shell only: `CrystalCoreFeature` turns buried crystal cells into
+non-emitting `*_core` twins (same texture layer), keeping light work bounded.
 
 **Key Methods:**
 - `getTextureForFace(face)` - Returns TextureId (texture-array layer lookup for greedy blocks)
@@ -486,6 +554,12 @@ band* (the sub-chunks holding its surface, from the LOD tile or a biome-height e
 one sub-chunk while an applied sub-chunk has an open column - ravines, cave mouths, flooded cuts).
 While the camera is above the ground under it, a half-ellipsoid of depth 3 sub-chunks also hangs
 below that ground (`LoadCenter.groundSubY`), so pits and cave mouths near a flying player load.
+While the camera is in the Hell cavern (`LoadCenter.cavern`: entered below the ceiling at
+`HELL_CEILING_Y` 140, left only above the ceiling's sub-chunk, Y ≥ 160 - hysteresis) every
+in-range column wants the whole cavern - sub-chunks 0-3 plus 4 (the ceiling) - and no surface
+band: the floor (dungeons, chasms), pillars and ceiling are in view across the whole disk (d=8:
+985 cavern sub-chunks, +14-23% over the ellipsoid alone depending on camera height); back on the
+surface they unload like any other.
 A band's top reaches the sub-chunk holding the air cell above the highest block of the column AND
 of its four neighbours (including decorations seen in loaded top rows) - the mesher culls faces
 toward missing sub-chunks, so cliff sides and top faces at band edges need them.
@@ -513,7 +587,9 @@ skip terrain fill and carving (all-air early-out) but still run water, features 
 2. Generate base terrain with biome blending
 3. Carve caves from the density field (cheese caverns + spaghetti tunnels + ravines)
 4. Fill water depressions
-5. Apply features (ores, cliffs)
+5. Apply features (ores, cliffs), cave wall lining, then the Hell ceiling band (`HellCeiling.ts`:
+   the surface fill's bottom 4 layers, Y 140-143, generate as dark basalt - pale stone lit by a
+   Hell biome's light floor read as a bright slab overhead)
 6. Compute local light (after all block writes; merged with neighbours by the LightEngine)
 7. Place decorations (trees) on main thread
 
@@ -563,19 +639,69 @@ narrow bell curve.
 
 **Biomes:**
 - **Layer 1 (Surface, Y=128-511)**: Plains, Grassy Hills, Desert, Volcanic, Jungle, Swamp, Pine Forest, Coastal Rainforest
-- **Layer 0 (Underground, Y=0-127)**: Hell
+- **Layer 0 (the Hell layer, Y=0-127)**: Molten Wastes, The Ossuary, Ember Grove, Crystal Abyss, Cocytus
 
 **Biome Layer System:**
 Biomes are assigned to vertical layers:
 - **Layer 0**: Underground biomes (Y=0-127, sub-chunks 0-3)
 - **Layer 1**: Surface biomes (Y=128-511, sub-chunks 4-15)
 
+Each layer picks its biome per 512×512-block region (`BIOME_REGION_SIZE` 16 chunks) with
+`selectBiomeForLayer(rx, rz, seed, layer)` (frequency-weighted, in registration order) and blends
+borders the same way (heights, dithered fill). Display names: `BIOME_DISPLAY_NAMES` /
+`getBiomeDisplayName` (`biomes/BiomeDisplayNames.ts`).
+
+**The Hell layer:** every layer-0 biome has `frequency` 1.0 (20 % of regions each), `skylightValue: 0`,
+`terrainConfig.absoluteHeight: true`, no `caves`, no trees and no LOD. Floors sit around Y 30-70
+under open air up to the basalt ceiling (Y 140); landmarks reach up into it. Each biome is
+recognisable by its atmosphere colour, has a resource found nowhere else and one dungeon type:
+
+| `BiomeType` (map) | Display name | Identity | Unique resources (block → item → use) | Dungeon / guardian (index) |
+|-------------------|--------------|----------|---------------------------------------|----------------------------|
+| `hell` (HEL) | Molten Wastes | lava sea at Y 46, terraced hell-rock badlands, mesas, great pillars, obsidian crusts; red/orange | `infernium_ore` → `raw_infernium` → `infernium_ingot` (forge; tier 6); magma cream → fire resistance; ember roach wings → slow falling | Infernal Bastion / Pyre Tyrant (1) |
+| `ossuary` (OSS) | The Ossuary | bone-ash dunes over ossified rock, colossal fossils, bone spires; bone-white + soul green | `soul_vein` → `soul_shard` (hellbane helmet/axe, soul torches); ectoplasm → regeneration; bone blocks | Catacombs / Bone King (2) |
+| `ember-grove` (EMB) | Ember Grove | crimson mycelium floor, giant glowing fungi, drifting spores; crimson + teal | `emberwood_stem` (planks, sticks, fuel); `glowcap` → ember sight, food | Sporeheart Hive / Sporemother (3) |
+| `crystal-abyss` (CRY) | Crystal Abyss | black abyssal-stone terraces and chasms, crystal spires, geodes, floating islands; violet/magenta | `prism_crystal` (+ clusters) → `prism_shard` (strength, hellbane pickaxe, crystal lamps) | Prism Sanctum / Prism Warden (4) |
+| `cocytus` (COC) | Cocytus | frozen lake (solid `BLACK_ICE` at Y 46, no liquid), rimestone shores, ice spires, frozen lavafalls, entombed figures; icy blue | `rime_crystal_ore` → `rime_crystal` (iceskin, hellbane boots, frost lanterns) | Frozen Citadel / Rime Sovereign (5) |
+
+Code per biome: generator `biomes/<Name>Generator.ts` (`HellGenerator.ts` for the Molten Wastes);
+worker terrain + features in `molten/` + `features/{HellPillar,InferniumOre}Feature.ts`,
+`features/ossuary/`, `features/embergrove/`, `crystal/` + `features/crystal/`, `cocytus/` +
+`features/{FrozenLake,IceSpire,FrozenLavafall,FrostCrystal}Feature.ts`; the castle kit in
+`dungeons/kits/<molten|ossuary|embergrove|crystal|cocytus>/`; main-thread wiring (tier loot tables,
+garrisons, guardian, locator) in `src/molten/`, `src/ossuary/`, `src/embergrove/`, `src/crystal/`,
+`src/cocytus/`. Dungeons are rare: ONE procedural castle candidate per 512×512 region of its biome
+(chance 0.85, anchored in the region's interior - see `src/world/generate/dungeons/`), so the
+Sigil Compass is how players find them.
+
 When creating a new biome:
 1. Set `layer: 0` or `layer: 1` in `BiomeProperties`
 2. Register in `BiomeRegistry.ts` with the correct layer
-3. Add biome type to `BiomeType` union in `GenerationConfig.ts`
-
-The biome mini-map HUD automatically shows biomes for the player's current layer.
+3. Add biome type to `BiomeType` union in `GenerationConfig.ts` and a `BIOME_DISPLAY_NAMES` entry
+4. The biome mini-map HUD (player's current layer) shows the first 3 letters of the `BiomeType` id,
+   uppercased (`getBiomeAbbreviation` in main.ts) - keep that prefix unique within the layer
+5. `fillChunk(chunk, minY, maxY, noise, getHeightAt)` must use the PASSED `getHeightAt` (blended in
+   the worker), never `this.getHeightAt` (unblended: cliffs at every region border)
+6. Layer 0 also: `frequency` 1.0, `skylightValue: 0` (gloom comes from the atmosphere),
+   `terrainConfig.absoluteHeight: true`, a `skybox` with `undergroundFogColor`, `fogDensity`,
+   `lightTint` and `minimumLight` (the biome's ambient colour), and `entitySpawns` without
+   `searchFromSky`, `minY`/`maxY` inside the cavern
+7. Features run only for the chunk's PRIMARY biome: world-anchor every extended placement grid and
+   veto placements whose footprint crosses into another biome region (`context.getBiomeNameAt`
+   probes - `isFootprintInBiome` in `features/ossuary/ossuaryHash.ts`, `staysInOneRegion` in
+   `features/embergrove/regionGuards.ts`; a structure spanning two regions gets two different
+   blended base heights). Landmark features keep clear of the biome's castle through its kit's
+   pure keep-out query (`isNearFrozenCitadel`, `isNearPrismSanctum`, `isNearCatacombsPrecinct`,
+   `findHiveFootprintsNear`, HellPillar's `avoidInfernalBastions`)
+8. A dungeon is a castle kit (see `src/world/generate/dungeons/`): kit + worker-safe config constant
+   in `dungeons/kits/<biome>/` (imported from `kits/index.ts`); `new ProceduralDungeonFeature(config)`
+   in the biome's features (already worker-registered - no new feature type; features listed after
+   it can still write into the castle); a boss module calling
+   `ctx.guardian(x, y, z, index)`, garrison rooms calling `ctx.garrison` with the biome's index range,
+   `lootTierBlocks` (four blocks only the kit places). Main thread, one `setup<Biome>()` called from
+   main.ts: tier loot tables, `registerGarrison`s (dungeon-only mobs), `registerGuardian` (guardian
+   entity + its sigil item, dropped ×2), `registerProceduralDungeonLocator` with the SAME config
+   constant
 
 **CRITICAL: Feature Registration for Workers**
 
@@ -606,6 +732,7 @@ case 'myFeature':
 ```
 
 Failure to register in both places causes: `Error: Unknown feature type: MyFeature`
+(A new castle kit needs none of this: every kit reuses the registered `proceduralDungeon` type.)
 
 ---
 
@@ -772,14 +899,25 @@ Player state, controls, and block interactions.
 
 **Key Files:**
 - `PlayerState.ts` - Inventory (toolbar + grid), item management
-- `FirstPersonCameraControls.ts` - WASD movement, mouse look, flying mode
+- `FirstPersonCameraControls.ts` - WASD movement, mouse look, flying mode; `addSpeedModifier()`
+  (walking-speed multipliers, e.g. Frostbite, Rootbound; flying unaffected)
 - `BlockRaycaster.ts` - DDA voxel raycasting for block targeting
 - `BlockInteraction.ts` - Left-click mining with progress tracking
 - `BlockPlacement.ts` - Right-click block placement with collision check
 - `BlockInteractionHandler.ts` - E-key block UI interaction (forge, etc.)
-- `MiningDamage.ts` - Tool effectiveness calculations
+- `MiningDamage.ts` - Tool effectiveness, mining force and the tool-type rule (below)
 - `ToolbarInput.ts` - Hotbar selection (1-9, 0, mouse wheel)
-- `InventoryInput.ts` - Inventory overlay open/close mechanics (toggled via E in BlockInteractionHandler)
+- `InventoryInput.ts` - Inventory overlay open/close mechanics (toggled via E in BlockInteractionHandler);
+  `addDragDropContainer()` adds extra slot containers (worn armor) to its drag-drop
+- `PlayerHealth.ts` - 40 HP base + `maxHealthBonus` (Infernal Hearts; `setMaxHealthBonus` clamps
+  current health, never heals); 1 s i-frames (`INVINCIBILITY_DURATION`)
+- `DamageModifiers.ts` - THE player damage pipeline (see below)
+- `ItemConsumption.ts` - Hold right-click to use an `IConsumable`: `canConsume` gates the start (once
+  per press), `canContinueUse` every tick, `consumedOnUse: false` keeps the stack (Return Idol);
+  emits `item-consumed`
+- `EnvironmentalDamage.ts` - Lava, post-lava burning, hot floors ('fire' source);
+  `setFireImmunityQuery` (fire resistance never ignites the burn or shows its vignette)
+- `effects/`, `equipment/`, `returnidol/` - Status effects, worn armor, Return Idol (sections below)
 
 **Controls:**
 | Key | Action |
@@ -791,14 +929,36 @@ Player state, controls, and block interactions.
 | 1-9, 0 | Select hotbar slot |
 | Mouse Wheel | Cycle hotbar |
 | E | Interact with targeted block, else toggle inventory; closes any open overlay |
-| Left Click | Mine block (hold) |
-| Right Click | Place block |
+| J | Journal (also from the inventory sidebar); J / E / Esc close it |
+| Left Click | Mine block (hold); attack an entity in front (held: re-hits whenever fully charged) |
+| Right Click | Place block; held armor: wear it (swaps the worn piece); bone meal on a crop/bush: grow one stage |
+| Right Click (hold) | Consume food / potion / Infernal Heart; channel the Return Idol (3 s) |
 
 **Mining Formula:**
 ```
 blockHP = hardness × 5.0
 miningTime = blockHP / (toolDamage × tagMultiplier)
 ```
+
+**Mining force** (`MiningDamage.ts`): a block mines only if the tool's effective `demolitionForce`
+(= its tier) ≥ the block's `demolitionForceRequired`; otherwise a floating "Needs an iron pickaxe"
+hint (`describeRequiredTool`, throttled to once per 2 s per block).
+
+| Force | Tool tier | Blocks |
+|-------|-----------|--------|
+| 0 | hand | soils, ash, plants, wood (incl. emberwood), lamps, torches, slime |
+| 1 | wood | stone, basalt, hell rock, coal + copper ore, ossified rock, bone, rimestone, ice, chest, forge |
+| 2 | stone | iron + sulfur ore, abyssal stone family, black ice, frozen magma, crafted infernal bricks, heavy castle decor (anvil, crypt altar, reliquary, statues, pedestals) |
+| 3 | iron | gold + diamond ore, Hellforge, spire/rose crystal, crypt/rime grates |
+| 4 | steel | - |
+| 5 | diamond | obsidian; every Hell resource (`infernium_ore`, `soul_vein`, `prism_crystal` + clusters, `rime_crystal_ore`) |
+| 6 | infernium | castle structure, hardness 35-200: every kit's walls, floors, pillars, stairs/slabs, bars, roof tiles, crystal glass (ROCK; the hive's root, membrane, brood comb, gill wall, root pillar and lattice are WOOD: infernium axe), rime brazier, guardian and garrison spawners - players enter through the gate until tier 6; decor, lights and timber stay 0-3 |
+| 7 | hellbane | - |
+
+**TOOL-TYPE RULE:** for blocks of force ≥ 2 only a tool with a damage multiplier for one of the
+block's tags counts (pickaxe ROCK, axe WOOD, shovel SOIL); any other tool counts as force 1
+(`getEffectiveDemolitionForce`). So every block with force ≥ 2 MUST carry a matching tag, or no tool
+can mine it.
 
 ---
 
@@ -810,24 +970,34 @@ Items and tools with tag-based classification.
 ```
 items/
 ├── Item.ts                 # Base class (IItem interface)
-├── interfaces/IToolStats.ts
-├── tags/ItemTags.ts        # WOOD, STONE, METAL, ORE, FUEL, BAR
+├── interfaces/             # IToolStats, IWeaponStats (swords), IConsumable (use gates, consumedOnUse)
+├── tags/ItemTags.ts        # WOOD, STONE, METAL, ORE, FUEL, BAR, COAL, LOG, PLANK, HIDE
 ├── blocks/                 # Block drop items
-├── ores/                   # Raw ore items
-├── bars/                   # Smelted metal bars
+├── ores/, bars/            # Raw ores (incl. raw_infernium), smelted bars (incl. infernium_ingot)
+├── materials/              # Mob/biome drops, sigils (ember/bone/spore/prism/rime)
+├── food/, potions/         # Consumables (potions: see Alchemy)
+├── consumables/            # infernal_heart
+├── magic/                  # return_idol, sigil_compass
+├── armor/                  # ArmorItem, ArmorTiers, TieredArmorItem (7 tiers × 4 slots)
+├── weapons/sword/          # SwordItem + 7 tiers (weaponStats)
 └── tools/
     ├── ToolItem.ts         # Base tool class (maxStackSize=1)
-    ├── pickaxe/            # 5 tiers
-    ├── shovel/             # 5 tiers
-    └── axe/                # 5 tiers
+    ├── pickaxe/            # 7 tiers
+    ├── shovel/             # 7 tiers
+    └── axe/                # 7 tiers
 ```
 
-**Tool Tiers:** Wood → Stone → Iron → Steel → Diamond
+**Tool Tiers:** Wood → Stone → Iron → Steel → Diamond → Infernium → Hellbane (tier = `demolitionForce`
+1-7; infernium and hellbane tools, swords and armor are forged at the Hellforge)
+
+`ItemTags.HIDE` marks the hides that make leather armor (wolf/bear pelt, alligator leather, komodo
+scales). Recipe ingredients may name a tag (`{ tag, count }`) instead of an item id.
 
 **Tool Stats:**
 - `demolitionForce` - Minimum force to mine blocks
 - `damage` - Base damage per second
-- `damageMultipliers` - Tag-based bonuses (pickaxe → stone, axe → wood)
+- `damageMultipliers` - Tag-based bonuses (pickaxe → ROCK, axe → WOOD, shovel → SOIL); also decides
+  the tool-type rule. Combat stats never come from tool stats (see `src/combat/`)
 
 **CRITICAL: Item Registry**
 
@@ -847,6 +1017,481 @@ registerItemFactory('my_new_block', () => new MyNewBlockItem())
 ```
 
 The item ID passed to `registerItemFactory()` must exactly match the `id` property of the item class.
+A module may register a batch through a helper that receives `registerItemFactory` (e.g.
+`items/cocytus/registerCocytusItems.ts`, avoiding a circular import). Systems refer to another
+area's items by string id - `createItemFromId('<id>')` (main thread only) or recipe ingredients
+`{ itemId, count }` - never by importing their classes. Item ids are persisted, matched by the
+journal and by loot tables: never rename one.
+
+**No path may delete items:** what a full inventory can't take is thrown out of the player
+(`throwStackFromPlayer` in main.ts: a `DroppedItemEntity` thrown along the view, inert until the
+player has left its attraction radius once) - hand-crafting and woodworking-bench results and
+returned ingredients, the Hellforge's results (`dropOverflow`); a chest/bench whose contents don't
+fit stays unbroken; drag-drop swaps and half-stack drops never overwrite a stack, and a stack
+released over a panel is never thrown. New crafting/transfer code follows the same rule.
+
+---
+
+### `src/events/` - Gameplay Event Bus
+
+`GameEvents.ts`: one typed bus, `gameEvents.on(type, fn)` / `onAny(fn)` (both return an unsubscribe)
+and `emit(event)`. Synchronous; a throwing listener is logged and never breaks the emitter or the
+other listeners. Systems that react to the player (journal, dungeon tracker, combat reset) listen
+here and never reach into the emitting system; add a variant to the `GameEvent` union rather than a
+direct call.
+
+| Event | Fields | Emitted by |
+|-------|--------|------------|
+| `block-mined` | blockId, blockName, x/y/z, toolId | `BlockInteraction.completeMining` (after drops spawn, before the block becomes air) |
+| `block-placed` | blockId, blockName, x/y/z | `BlockPlacement` |
+| `item-added` | itemId, count (what fit) | `PlayerState.addItemCounted` (pickups, crafts, chest takes...) |
+| `item-crafted` | itemId, count, station | `InventoryInput` ('hand'), `ForgeBlockState`, `ApothecaryWorkbenchState`, `WoodworkingBenchUI`, `HellforgeUI` |
+| `item-consumed` | itemId | `ItemConsumption` (also for the reusable Return Idol) |
+| `entity-killed` | entityType, x/y/z | `BlockInteraction.hitEntity`: only when the player's hit took it down and `entity.countsAsKill !== false` |
+| `biome-entered` | biome, layer | main.ts 'biome-entry-events' (2 Hz; region biome + layer by feet Y vs `LAYER_BOUNDARY_Y` 128) |
+| `player-died` | - | main.ts death callback |
+| `dungeon-entered` | dungeonId, biome, x/y/z | `DungeonTracker` (once per dungeon per session) |
+| `guardian-defeated` | guardianId, x/y/z | `GuardianEntity` death |
+| `effect-applied` | effectId, durationSeconds | `StatusEffects.apply` (a start or a refresh that took effect) |
+
+---
+
+### Player Damage, Status Effects (`src/player/DamageModifiers.ts`, `src/player/effects/`)
+
+**Damage pipeline (RULE: every player damage path calls `applyDamageModifiers(amount, source)`
+before touching `PlayerHealth`; anything that changes incoming damage registers a modifier with
+`registerDamageModifier` instead of editing those paths).** Modifiers run in registration order,
+result clamped ≥ 0. Sources: `melee` (mob contact/attacks, `PlayerDamageHandler` default),
+`projectile`, `fire` (`EnvironmentalDamage`, burning floors), `fall`, `magic` (poison ticks and
+sorcery - Rime Sovereign's frost nova, Pyre Tyrant eruptions, the Hollow Priest's bone ward; armor,
+fire resistance and the Return Idol interrupt all ignore it). Geyser steam goes through as `fire`,
+TNT blasts as `melee`.
+`PlayerDamageHandler.damage` returns false when a hit is absorbed whole (dead or i-frames);
+projectiles then skip their on-hit status effect too.
+
+| Modifier | Effect | Registered in |
+|----------|--------|---------------|
+| Armor | melee/projectile × (1 − reduction); fire × full-set bonus | `equipment/ArmorDefense.ts` |
+| Status effects | fire resistance → fire 0; slow falling → fall 0; Iceskin → melee/projectile × (1 − 0.2·level) | `effects/EffectBehaviours.ts` |
+| Slime blocks | landing on one cancels fall damage | `progression/SlimeBounce.ts` |
+| Return Idol | observes only: any non-magic hit breaks the channel | `returnidol/ReturnIdolController.ts` |
+
+Entity hits go through `PlayerDamageHandler.damage(dmg, knockback?, source = 'melee')` (entity
+callback `(damage, knockback, source?) => void`): a hit while dead or inside i-frames is absorbed
+WHOLE - no damage and no knockback, so a volley knocks back like one hit.
+
+**Status effects** (`effects/StatusEffects.ts`): `playerEffects.apply(id, seconds, level = 1)` (a
+higher level replaces a lower; at equal level the longer remaining time wins; never weakens),
+`has`, `getLevel`, `getRemaining`, `remove`, `clear`, `getActive`, `onChange`. Ticked by the CRITICAL
+'status-effects' task; cleared on death AND again at respawn (late projectiles/clouds); never
+persisted. The module is bookkeeping only - what an effect DOES lives with the system it changes,
+which asks `has`/`getLevel`:
+
+| Id (`StatusEffectIds`) | Shown as | Behaviour | Implemented in |
+|------------------------|----------|-----------|----------------|
+| `fire_resistance` | Fire Resistance | fire damage 0, no burn ignition/vignette | damage modifier + `EnvironmentalDamage` fire-immunity query |
+| `slow_falling` | Slow Falling | glide at 4 blocks/s (braked after physics), fall damage 0 | `EffectBehaviours.update` + modifier |
+| `regeneration` | Regeneration | 1 HP per 2.5 s / level | `EffectBehaviours.update` |
+| `ember_sight` | Ember Sight | light floor raised to warm (0.92, 0.76, 0.58), biome floor ×1.6, eased | `EffectBehaviours.update` (post-adjusts the floor 'skybox' set) |
+| `strength` | Strength | +30 % melee per level | `combat/PlayerAttack.ts` |
+| `resistance` | Iceskin | melee/projectile −20 % per level | damage modifier |
+| `poison` | Poison | 1 'magic' HP per 1.25 s / level, never below 1 HP | `EffectBehaviours.update` |
+| `slowness` | Frostbite | walk speed −25 %/level (floor 25 %), frost vignette | `cameraControls.addSpeedModifier` |
+| `potion_sickness` | Potion Sickness | display-only healing-potion cooldown | gate in `HealingPotionCooldown.ts` |
+| `rootbound` (not in `StatusEffectIds`) | Rootbound | walk speed ×0.35 (Rootbound Warden snare, 2.5 s) | speed modifier in `enemies/rootbound_warden/RootboundEffect.ts`, installed by `setupEmberGrove` |
+
+`EffectBehaviours` runs in the CRITICAL 'alchemy-effects' task (with the frost vignette, Return
+Idol and effects HUD), registered after 'skybox'. HUD info (name, colour, buff/debuff, icon):
+`registerStatusEffectInfo` (`registerEffectDisplay.ts`). Bosses just `apply` debuffs.
+
+---
+
+### `src/combat/` - Player Melee
+
+- `PlayerAttack.ts` - `getPlayerAttackDamage(heldItem)` is THE single source of player melee damage:
+  every entity's `onPlayerInteract` takes its damage from it (never from tool mining stats) and
+  multiplies its own knockback/hit-stun by `getPlayerAttackKnockback(heldItem)`. Damage = profile ×
+  (0.1 + 0.9·charge²) × (1 + 0.3·strength); knockback share 0.2 + 0.8·charge². One arm clock:
+  charge = time since the last hit / the HELD item's cooldown (swapping never skips recovery).
+  `BlockInteraction.hitEntity` calls `registerPlayerAttack` after the hit (restarts the clock,
+  plays the swing); `resetPlayerAttack` on death.
+- `WeaponProfiles.ts` - Melee profiles: swords carry `weaponStats` (`IWeaponStats`: attackDamage,
+  attackCooldown, knockback); tools derive theirs from the item id `<material>_<kind>` (unknown
+  material: from `demolitionForce`), so mining stats never leak into combat. Anything else = fist
+  (2 dmg, 0.4 s). Never below fist damage.
+- `setupPlayerCombat.ts` - CRITICAL 'player-combat' task (clock + charge bar under the crosshair,
+  `AttackChargeIndicator.ts`).
+
+| Material | wood | stone | iron | steel | diamond | infernium | hellbane |
+|----------|------|-------|------|-------|---------|-----------|----------|
+| Sword damage (0.5 s, kb 1.0) | 4 | 5 | 6 | 7 | 8 | 10 | 13 |
+
+Axe = sword + 1 (0.8 s, kb 1.3 - the slow heavy hitter), pickaxe = sword − 2 (0.65 s), shovel =
+sword − 3 (0.6 s).
+
+---
+
+### Armor & Equipment (`src/items/armor/`, `src/player/equipment/`)
+
+- `items/armor/ArmorTiers.ts` - Slots `head/chest/legs/feet` (item ids `<tier>_helmet/_chestplate/
+  _leggings/_boots`), tier table; the tier id is the set id. `TieredArmorItem` builds every piece
+  (`ArmorItem`: `armorSlot`, `armorPoints`, `armorTier`, `armorSetId`, never stacks).
+- `player/equipment/PlayerEquipment.ts` - The 4 worn slots, separate from the inventory: worn armor
+  survives death. `armorPoints`, `fullSetId`, `onChange`.
+- `player/equipment/ArmorDefense.ts` - 3 % reduction per point, cap 75 %, melee + projectile only.
+  Full sets: infernium fire −50 %; hellbane fire −75 % and a "ward" (melee/projectile taken a further
+  −10 % after armor, still under the cap).
+- `player/equipment/setupArmorSystem.ts` - Equipment panel beside the inventory grid (drag/drop,
+  shift-click), right-click-to-wear, armor bar above the hearts (`ArmorDisplay`), the damage
+  modifier, and persistence (`equipment` key: slots, `maxHealthBonus`, current health - restored
+  after the bonus so health above the base max survives a reload).
+
+| Points (head/chest/legs/feet) | leather | copper | iron | steel | diamond | infernium | hellbane |
+|-------------------------------|---------|--------|------|-------|---------|-----------|----------|
+| | 1/3/2/1 | 2/4/3/1 | 2/6/5/2 | 3/7/6/3 | 3/8/6/3 | 4/8/7/4 | 4/9/7/4 |
+
+Leather (any `HIDE` item) and copper-diamond are hand-crafted, infernium and hellbane forged at the
+Hellforge (below). **Infernal Heart** (`items/consumables/infernal_heart/`, guardian loot): +4 max HP
+(2 hearts) per heart, cap +20; refused via `canConsume` once capped.
+
+---
+
+### Alchemy (`src/alchemy/`, `src/items/potions/`, Return Idol)
+
+`setupAlchemy.ts` wires `EffectBehaviours`, the effects HUD (`StatusEffectHUD`, top-left slot),
+debuff vignettes, the Return Idol and its persistence. Potions are `EffectPotionItem`s (effect id,
+duration, level; drink 1 s, stack 16) brewed at the apothecary from `herb` + one Hell ingredient
+(`crafting/recipes/AlchemyRecipes.ts`):
+
+| Potion | Ingredient | Effect |
+|--------|------------|--------|
+| `fire_resistance_potion` (`_long`) | `magma_cream` (+ `corrupted_essence`) | 180 s (480 s) |
+| `slow_falling_potion` | `ember_roach_wing`, or 2 `cattail_block` (surface route: the first descent precedes any Hell drop) | 90 s |
+| `regeneration_potion` | `ectoplasm` | level II, 45 s |
+| `ember_sight_potion` (`_long`) | `glowcap` (+ `corrupted_essence`) | 240 s (480 s) |
+| `strength_potion` | `prism_shard` | 120 s |
+| `iceskin_potion` | `rime_crystal` | resistance, 120 s |
+
+Healing Potions I-III (heal 10/20/40) share a 10 s cooldown (`HealingPotionCooldown.ts`: the
+`potion_sickness` badge; `canConsume` refuses with a notice). **Return Idol** (`return_idol`,
+hand recipe 2 gold bar + 2 corrupted essence + 1 obsidian): hold right-click 3 s
+(`canContinueUse`), reusable, 120 s cooldown persisted under `alchemy` (contributed only after it
+was loaded); any non-magic damage within 0.6 s breaks the channel; teleports to
+`getRespawnPosition()` behind a veil with input off until the destination is loaded and lit, then
+sets the player on safe ground; input comes back only if no overlay holds the pointer. The item
+talks to `ReturnIdolController` through `ReturnIdolHooks.ts` (items stay plain data).
+
+---
+
+### `src/hellforge/` - Hellforge Station
+
+`HellforgeBlock` (id 180, item `hellforge_block`; light 10, force 3, non-greedy) - E opens `HellforgeUI`,
+which crafts instantly from the player's inventory (shapeless `IRecipe`s) and throws results that
+don't fit out of the player (`dropOverflow`). Recipes live in their own `hellforgeRegistry`
+(`HellforgeRegistry.ts`, a `RecipeRegistry`, so they never show in hand crafting; the recipe book
+lists them as station 'hellforge'); weapon/tool recipes in `HellforgeRecipes.ts`, armor in
+`crafting/recipes/ArmorRecipes.ts`. Station recipe (hand): 4 `obsidian_block` + 2
+`infernium_ingot` + 1 `gold_bar`. Tier 6 = diamond item + infernium ingots (pick/axe 3, shovel 1,
+sword 2, helmet 3, chest 5, legs 4, boots 2); tier 7 = infernium item + 1 sigil + 2 ingots + 2
+biome material (sword/chest: ember sigil + magma cream; helmet/axe: bone sigil + soul shard;
+legs/shovel: spore sigil + glowcap; pickaxe: prism sigil + prism shard; boots: rime sigil + rime
+crystal).
+
+---
+
+### `src/progression/` - Journal
+
+- `milestones.ts` - Declarative data: 9 chapters (First Steps, Metal Ages, Arms & Armor, Alchemy,
+  The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 65 milestones. Chapter and
+  milestone ids are persisted - never rename. `stage` orders the arc: the "next goal" is the
+  unlocked, unfinished, non-optional milestone with the lowest stage. `requires` must be TRUE
+  implications (completing a milestone completes its prerequisites silently). `legacy` milestones
+  are pre-completed when a save without journal data is migrated.
+- `MilestoneTypes.ts` - Triggers: `obtain`/`obtainAll`/`obtainTagged` (carried items, polled 1 Hz),
+  event triggers (`mined`, `placed`, `crafted`, `consumed`, `killed`, `enteredBiome`,
+  `enteredLayer`, `enteredDungeon`, `defeated`, `effectApplied`) and `reachedDepth`. Match on block
+  `properties.name`, item ids, guardian/dungeon ids - other systems' exact strings are the
+  contract (renaming a block name or entity type silently breaks a milestone).
+- `ProgressionManager.ts` - Evaluates triggers off `gameEvents`; save data v1 (`completed`,
+  `obtained`, `introShown`) under the `progression` key, debounced 1.5 s save after each
+  completion (contributor returns `undefined` until the stored state loaded).
+- `JournalUI.ts` (J overlay, a registered modal overlay), `JournalHud.ts` (goal line, top-left HUD
+  slot), toasts (`ui/Toasts.ts`); CRITICAL 'progression' task.
+- Drop sinks: `BoneMeal.ts` (right-click a crop/berry bush: one growth stage), `SlimeBounce.ts`
+  (slime blocks cancel fall damage and bounce real falls); `ProgressionRecipes.ts` (iron axe/shovel,
+  bone meal, slime block, ...).
+
+---
+
+### `src/dungeons/` - Dungeons & Guardians
+
+Main-thread side of the procedural castles. The worker side (kits, layout, rasterizer) is
+`src/world/generate/dungeons/` (next section); workers only write block ids/metadata.
+`setupDungeons.ts` wires the guardian and garrison spawner systems, boss bar, Sigil Compass,
+`DungeonTracker` and `DungeonServices` (loot spill, player-dead query); tasks 'dungeons' (CRITICAL -
+cheap, and NORMAL starves while the world streams: guardian + garrison spawner activation) and
+'dungeons-hud' (CRITICAL: boss bar of the nearest engaged guardian, compass, 1 Hz dungeon-entered
+probe).
+
+**Spawner lifecycle** (`GuardianSpawnerSystem.ts`, `BlockIds.GUARDIAN_SPAWNER` 170 /
+`GUARDIAN_SPAWNER_SPENT` 171, force 6, hardness 200, light 7):
+- The kit's boss module writes `GUARDIAN_SPAWNER` (`ctx.guardian(x, y, z, index)`) with the guardian
+  index in its metadata (molten 1, ossuary 2, embergrove 3, crystal 4, cocytus 5). Its block entity
+  (`GuardianSpawnerBlockEntity`, created on every sub-chunk apply) reports load/unload to the system.
+- Armed + player within the guardian's `activationRadius` (default 12) and `activationHeight`
+  (default 8) of the altar → `definition.create(altar top centre)`, added through the
+  EntityManager; one live guardian per spawner.
+- Guardian leaves without dying (despawn, reset, arena sub-chunk unloaded - the guardian is
+  dismissed, never outlives its spawner's sub-chunk) → re-arms after 2 s.
+- Guardian dies → in the same call the block becomes `GUARDIAN_SPAWNER_SPENT` (normal `setBlock`,
+  index kept in metadata, persisted with the chunk) and its loot goes into a **reward chest**
+  (`RewardChest.ts`): on the altar, else the nearest loaded air cell with solid support in two rings
+  beside it, never inside the player; placed like a player chest (loot-resolved bit set, so no
+  loot table rolls into it); overflow and chest-less loot spill as drops. If the altar's sub-chunk
+  is unloaded at death, both happen when it reloads (this session).
+
+**Registries** (register from the biome's `setup<Biome>()`):
+- `GuardianRegistry.ts` - `registerGuardian({ id, index, displayName, activationRadius?,
+  activationHeight?, create(position) })`; `id` must equal the entity's `guardianId`.
+- `GarrisonRegistry.ts` - `registerGarrison(...)`, see Garrisons below.
+- `DungeonLocator.ts` - `registerDungeonLocator({ dungeonId, biome, displayName, findNearest(x, z,
+  seed, maxRadius) })` + `findNearestDungeon(x, z, seed, r, filter?)`: the registry the compass and
+  tracker query. Castles register through `registerProceduralDungeonLocator`
+  (`ProceduralDungeonLocator.ts`, see the framework section): the worker feature's placement math
+  from the SAME config constant - pure (region hash + biome map, never terrain rejection), a few
+  calls per second; it answers the castle's anchor (grid centre), y = base floor + 1. A locator that
+  drifts from its feature points the compass at nothing.
+
+**DungeonTracker** - `dungeon-entered` once per dungeon per session within 32 blocks horizontally
+of a located anchor (Hell layer only - a castle's grid reaches ~50 blocks from its anchor, so this
+fires a little way inside); `guardian-defeated` marks the nearest located dungeon within 96 blocks
+cleared; cleared keys (`<dungeonId>@x,z`) persist under `dungeons`.
+
+**Sigil Compass** (`sigil_compass`, hand recipe 2 gold bar + iron bar + corrupted essence): while in
+the selected hotbar slot, the HUD needle (`SigilCompassHud`, top-centre slot under the boss bar)
+points at the nearest castle anchor of the Hell biome the player stands in (range 1024: ≤ 25
+regions), preferring uncleared ones (probe sweep cached within 64 blocks); re-located every 2 s or
+16 blocks moved; silent on the surface or in a biome without a locator.
+
+**`GuardianEntity`** (`src/entities/guardians/GuardianEntity.ts`, abstract, extends
+`AggressiveEntity`, implements `BossBarTarget`): `GuardianConfig` adds `guardianId` (= `type`, the
+`guardian-defeated` id), `displayName`, `drops` (`guardianDrop(itemId, min, max)`, resolved through
+the item registry), `home`/`arenaRadius` (20)/`arenaHeight` (12), `phaseThresholds` ([0.5];
+invulnerable `phaseTransitionTime` 1.2 s), `regenPerSecond`, `knockbackResistance` (0.85),
+`damageTakenMultiplier`, `movement` ('ground' | 'flying' | 'stationary'), `maxMinions` (6),
+`bossBarColor`, `deathDuration`. Subclasses implement `createMesh()` (faces +Z),
+`updateAnimations(dt)` and usually `defineAttacks()` (`GuardianAttack`: cooldown, windup → active →
+recovery, range, phases, weight, line of sight; one attack at a time, weighted pick); hooks
+`onPhaseChanged`, `onEngage`, `onDisengage`, `onReset`, `onDefeated`, `onBlockedHit`. Helpers:
+`meleeStrike`, `areaStrike`, `damagePlayer(amount, kb, source)`, `applyEffectToPlayer`,
+`spawnProjectile`/`Fan`/`Ring`, `spawnMinion` (false at `maxMinions`), `clearMinions`,
+`setInvulnerable`, arena/LOS/movement helpers. Rules:
+- Engages when the player enters the arena or hits it; disengages `disengageDelay` (3 s) after the
+  player leaves or dies (attack cancelled, minions cleared), walks home, regenerates and resets at
+  full HP; dragged > arena + 6 from home for 3 s → teleported home.
+- Death (once): minions + projectiles cleared, `guardian-defeated`, loot rolled and handed to the
+  spawn link (reward chest); `getDrops()` is always `[]`. Loot nobody took spills via
+  `DungeonServices.spawnDrops`. `dismiss()` vanishes with no loot and no event.
+- Owned minions, projectiles and their offspring (`IEntity.spawnedChildren`, recursively: split
+  slimes, shardling fragments) are pruned every 0.5 s and removed together - including entities
+  still queued to enter the world - on disengage, reset, death and despawn.
+- A shield/focus minion that must not count as a creature kill sets `countsAsKill = false`.
+
+| # | Guardian (`id`) | Dungeon (`dungeonId`) | HP | Phases | Signature mechanic | Loot (+ 2 sigils, `infernal_heart`) |
+|---|-----------------|-----------------------|----|--------|--------------------|-----------------------------------|
+| 1 | Pyre Tyrant (`pyre_tyrant`) | Infernal Bastion (`infernal_bastion`) | 550 | 0.5 | fireball fans, slam leaves burning floor; phase 2 eruptions (`FirePatchEntity`) + Hell magma slimes | infernium ingots, magma cream, diamonds |
+| 2 | Bone King (`bone_king`) | Catacombs (`catacombs`) | 520 | 0.66, 0.33 | raises skeletons; bone shield (20 % damage) whose 5 shards break only on hits charged ≥ 0.8 | soul shards, gold, bones, ectoplasm |
+| 3 | Sporemother (`sporemother`, in `src/embergrove/sporemother/`) | Sporeheart Hive (`sporeheart_hive`) | 520 | 0.5 | rooted phase 1 (65 % damage), poison globs, spore stalker brood; uproots and walks with a poison aura | glowcap, emberwood, spore sacs, diamonds |
+| 4 | Prism Warden (`prism_warden`) | Prism Sanctum (`prism_sanctum`) | 520 | 0.66, 0.33 | locked prism beam; each phase raises 3/4 `PrismFocusEntity` shields (15 % damage until all break, `countsAsKill = false`) | prism shards, diamonds, infernium |
+| 5 | Rime Sovereign (`rime_sovereign`) | Frozen Citadel (`frozen_citadel`) | 500 | 0.66, 0.33 | frost nova ('magic' + Frostbite II), ice armor, two ice revenants (any standable spot) | rime crystals, diamonds, frost lanterns |
+
+Sigils: `ember_sigil`, `bone_sigil`, `spore_sigil`, `prism_sigil`, `rime_sigil` - every guardian
+drops 2, so one castle of each kind covers the 8 Hellbane recipes. Activation radius/height (set in
+each `setup<Biome>()`, tuned to the boss module) / `arenaRadius`: Pyre Tyrant 11/8 / 13, Bone King
+13/5 / 17, Sporemother 8/6 / 11, Prism Warden default 12/8 / 13, Rime Sovereign 10/6 / 12 (passed by
+`setupCocytus`).
+
+**Projectiles** (`src/entities/projectiles/`): `ProjectileEntity` (`type 'projectile'`, no physics
+body, not hittable) - `damage`, `owner` (never hit), `preset` (`fireball`, `bone_shard`,
+`ice_shard`, `crystal_shard`, `spore_glob`; shared self-lit visuals, never disposed) or own mesh,
+`gravity`, `homing`, `lifetime` (6 s), `knockback`, `effect` ({ id, seconds, level }, applied on
+hit), `damageSource` ('projectile'), hit callbacks. Moves in ≤ 0.25-block sub-steps (no tunnelling),
+stops on solid blocks. Spawn through `GuardianEntity.spawnProjectile*` or the entity spawn fn.
+
+**Chest loot** (`src/world/loot/ChestLootRegistry.ts`): worldgen chests are bare `CHEST` ids written by
+workers; on first open (`ChestBlock.prepareInteractionState`) an empty chest whose loot-resolved
+metadata bit (bit 6) is clear is filled from the highest-`priority` table whose signature block lies
+within its Chebyshev `signatureRadius` (≤ 8), then the bit is set either way. Rolls are deterministic
+from the chest position (seed-independent). `registerChestLootTable({ id, signatureBlocks,
+signatureRadius, priority?, roll(roll, x, y, z) => LootStack[] })` on the MAIN thread only (the
+module is bundled into every worker via the chest block - keep it free of heavy imports). No other
+chest-placing structure may put a table's signature block near its chests. Castle chests:
+`ctx.chest()` puts the kit's `lootTierBlocks[tier]` UNDER the chest and the biome registers one
+table per tier with radius 1 and priority rising with the tier, so the richest signature in a
+chest's 3×3×3 neighbourhood wins - keep higher-tier signature blocks out of reach of lower-tier
+chests (walls and floors count):
+
+| Table | Signature (tier 0 / 1 / 2 / 3) | Radius | Priority |
+|-------|--------------------------------|--------|----------|
+| `charred-camp` (volcanic) | `CHARRED_LOG` | 6 | 0 |
+| `bastion-t0`..`t3` | `INFERNAL_TILES` / `CHARRED_PLANKS` / `GILDED_INFERNAL_BRICKS` / `OBSIDIAN_BRICKS` | 1 | 11-14 |
+| `catacombs-t0`..`t3` | `CATACOMB_TILE` / `CATACOMB_SKULL_BRICK` / `CRYPT_ALTAR` / `GILDED_RELIQUARY` | 1 | 10-13 |
+| `sporeheart-t0`..`t3` | `HIVE_ROOTBRICK` / `BROOD_COMB` / `GLOWING_SAP` / `ROOT_LATTICE` | 1 | 10-13 |
+| `prism-sanctum-t1`..`t3` | `SANCTUM_BRICK` (tiers 0 and 1) / `MIRROR_PANEL` / `INLAID_SANCTUM_TILE` | 1 | 11-13 |
+| `frozen-citadel-t0`..`t3` | `GLACIAL_BRICK` / `FROZEN_MAGMA` / `GLACIAL_ICE` / `RIME_GLYPH` | 1 | 10-13 |
+
+**Garrisons** (`GarrisonRegistry.ts`, `GarrisonSpawnerSystem.ts`, `BlockIds.GARRISON_SPAWNER` 172 - an
+iron floor grate with embers, force 6, no drop, block entity like the guardian spawner): a kit
+module writes it with the garrison index in its metadata (`ctx.garrison(x, y, z, index)`; ranges:
+reference kit 1-9, molten 10-19, ossuary 20-29, embergrove 30-39, crystal 40-49, cocytus 50-59; the
+registered garrisons and their mobs are tabled under `src/entities/`).
+`registerGarrison({ id, index, displayName?, maxAlive (3), activationRadius (10, horizontal),
+activationHeight (5), respawnSeconds (600), spawnRadius (3), create(position, slot) })` on the main
+thread (`weightedGarrisonMembers(entries, fixedSlots?)` builds a mixed `create`). Phases: armed →
+player in range → `maxAlive` members on standable cells around the grate (fielded once) → when none
+is left: any killed → cooldown, re-armed after `respawnSeconds` with the player away (> 2 × radius,
+timer resets when they return); none killed (despawned) → armed again. The spawner's sub-chunk
+unloading removes its members (never outlive the room); phase is kept per spawner for the session,
+so chunk reloads never duplicate or refresh a garrison early. A garrison's `create` may return any
+entity (usually an `AggressiveEntity` mob; members are ordinary entities - they get the usual
+wiring, distance despawn and kill bookkeeping).
+
+### `src/world/generate/dungeons/` - Procedural dungeon framework (castles)
+
+Worker-safe (no DOM/three.js); kits import from `dungeons/index.ts`. Every dungeon type is a
+**kit** (`DungeonKit`) of **modules** (`ModuleDef`) on a 3D cell grid, grown into a castle by a
+seeded layout generator and rasterized per sub-chunk by the generic `ProceduralDungeonFeature`.
+Worked example: `kits/reference/ReferenceKeepKit.ts` (dev only - deliberately NOT imported by
+`kits/index.ts`; the scratch harness and dev checks register it).
+
+- **Placement** (`RegionPlacement.ts`, pure, shared by feature and locator): ONE candidate per
+  512×512 biome region of the dungeon's biome, accepted with `chance` (0.85), anchor jittered inside
+  the region so the footprint (`kitFootprintRadius(kit)` = (gridRadius+1)·cellSize + margins) + 8
+  stays out of the 96-block blend band - there the blended height equals the biome generator's own
+  height, so the castle (base Y, whole layout) is computable on the main thread. Two of one type are
+  ≥ 2·(104 + footprint radius) apart: 376-438 blocks for the production kits (radius 84-115; a radius
+  ≥ 152 leaves no room in a region - `regionDungeonAnchor` then returns null).
+  `findNearestRegionDungeon(placement, x, z, seed, r, biomeAt)`.
+- **Config** (`ProceduralDungeonConfig { kitId, biome, salt, chance? }`, in the kit's worker-safe
+  `*Config.ts`): ONE constant shared by the biome's features list (`new
+  ProceduralDungeonFeature(config)` - the `proceduralDungeon` feature type is already registered in
+  WorldGenerator + ChunkGenerationWorker) and its main-thread locator
+  (`registerProceduralDungeonLocator({ dungeonId, displayName, config, layer? })` in
+  `src/dungeons/ProceduralDungeonLocator.ts`; also `findNearestProceduralDungeon`,
+  `getProceduralDungeonLayout` (the exact worker layout, cached), `getBiomeTerrainHeight(biome, seed)`).
+  Each kit module calls `registerDungeonKit` at load and is imported from `kits/index.ts` (imported
+  by the feature: every worker, and the main thread).
+- **Kit**: `cellSize` (blocks per cell, e.g. 9), `floorHeight` (per level, e.g. 7), `gridRadius`
+  (cells from the anchor cell), `levels` [min, max] (negative = underground), `worldYRange`,
+  `targetModules`, `require` ({ tag, count }[]), `palette` (named materials: a block id or weighted
+  variants picked per world position), `door` ([3, 4]), `shaftSize` (Up/Down hole, default 1:
+  centred, so ladders of stacked modules line up in any rotation), `lootTierBlocks` (tier 0-3
+  signature block put UNDER each chest - see Chest loot), `baseY`/`baseYRange` (default:
+  median terrain height over the footprint; level 0's floor), `tierFor`, `exteriorMargin`,
+  `foundationDepth`, `exteriorHeight`, `maxAttempts`, `bossDepthFraction`, and the passes
+  `foundation(ctx)` (pre-pass, default: palette 'foundation' under level-0 modules) and
+  `exterior(ctx)` (post-pass: curtain walls, towers, approach, lights) in world coordinates.
+- **Module**: `size` [x cells, levels, z cells] (canonical orientation), `connectors` ({ cell, face
+  E/S/W/N/Up/Down, kind ('door'), exterior? }), `tags` (roles: `entrance` (needs an exterior
+  connector; placed on the grid edge facing out), `boss` (attached at the deepest open connector),
+  `cap` (dead-ends closing spare connectors), `vault`/`boss`/`cap` are sealed (join only through
+  their attach connector); others free: 'garrison', 'room', 'stairs'...), `weight`, `minCount`,
+  `maxCount`, `minDepth`/`maxDepth` (path depth), `levels`, `rotations`, `overhang` ({ up, down,
+  side } blocks it may draw outside its cell box - writes beyond are dropped), `build(ctx)`.
+- **Layout** (`LayoutGenerator.ts`): entrance on a seeded grid edge → weighted growth from random
+  open connectors (bounds, overlap, level and Y-range checks; joins every matching neighbour
+  connector, so loops form) → required tags/minCounts (deep-first for minDepth defs) → boss →
+  caps; up to `maxAttempts` seeded retries, best-scoring attempt as the deterministic fallback;
+  BFS path depth over joined connectors; tier = depth band (vault +1, boss 3); a dry run of every
+  builder/pass records markers (chests, garrisons, guardian, lights). ~0.3-8 ms per layout.
+- **Rasterizer** (`DungeonRasterizer.ts`, per sub-chunk; layouts in a per-worker LRU,
+  `LayoutCache.ts`): foundation pass → modules in placement order → exterior pass; later writes win.
+  Builders draw their WHOLE module every call through a clipped writer (current sub-chunk ∩ write
+  box) and read only pure inputs (`ctx.terrainY`, layout occupancy) - `setIf`/`fillIf` may test the
+  very cell they write - so any sub-chunk order gives identical bytes. `fill` ranges are inclusive
+  and ORDERED: an inverted range (e.g. a span clamped to `ctx.clip` that came out empty) writes
+  nothing - never swapped (a swap once drew the Catacombs' floating Y64 sheets); dev builds warn once
+  per call site (`setDungeonDevWarnings(enabled, sink?)` for harnesses). ~0.1-0.7 ms per sub-chunk
+  (max ~10 ms) for the reference keep.
+- **Builder context** (`ModuleContext`): module-local coords (x 0..w-1, y 0..h-1 (0 = bottom floor),
+  z 0..d-1; rotation/facing handled by the writer: `ctx.facing(BlockFacing)`), `set/setIf/fill/fillIf`
+  (BlockSpec = id | palette name | fn(x,y,z)), `chest(x,y,z,{tier,facing})`, `garrison(x,y,z,index)`,
+  `guardian(x,y,z,index)`, `light(x,y,z)`, `connectors` (open/closed), `doorwayBox(c)`,
+  `isCellOccupied`, `isOuterFace`, `rng` (fresh per call), `hash`, `terrainY`, `tier`, `depth`,
+  `dryRun`, `clip`. Primitives (`DungeonBuild.ts`): `room` (shell + interior floors + doorways for open
+  connectors), `doorways`/`doorway`, `windows`, `hollowBox`, `walls`, `slab`, `carve`, `sprinkle`,
+  `pillar`, `arch`, `battlements`, `roofPitched`, `roofPyramid`, `dome`, `stairs` (stairs blocks or
+  full steps), `spiralStairs`/`spiralRing`, `ladder`, `shaftLadder` (through an Up/Down hole),
+  `foundation`/`foundationColumn`, `clearAbove`, `approach` (gate path: causeway down / trench up to
+  the terrain); `foundationUnderModules` (passes).
+- Dev harness (scratch, not in the repo): layouts + per-level PNG maps, rasterized top views,
+  walkability BFS (entrance → boss and every chest) and a seam check (every sub-chunk again in a
+  shuffled order with a fresh layout must match byte for byte).
+
+**Production kits** (`kits/<dir>/`, all `cellSize` 9, `gridRadius` 5, `floorHeight` 7 - the citadel
+8; the castle's biome features keep out of it through the listed pure query):
+
+| Dungeon (kit id) | Biome | Files (`kits/`) | Levels, module defs (target) | Footprint r | Shape | Keep-out query |
+|------------------|-------|-----------------|------------------------------|-------------|-------|----------------|
+| Infernal Bastion (`infernal_bastion`) | `hell` | `molten/Bastion{Kit,Config,Modules,Build,Passes}.ts` | −1..3, 27 (24-34) | 101 | walled bailey on a brick plinth (lava sea or cut badlands), gatehouse + causeway, keep halls, undercroft (prison, treasury, vaults), obsidian spire; boss: Throne Crucible | HellPillar `avoidInfernalBastions` |
+| The Catacombs (`catacombs`) | `ossuary` | `ossuary/Catacombs{Kit,Config}.ts` | −3..0, 28 (26-36) | 108 | walled cemetery precinct + chapel-mausoleum entrance, grand stair into three crypt levels; boss: throne crypt | `isNearCatacombsPrecinct` (`features/ossuary/CatacombsSite.ts`) |
+| Sporeheart Hive (`sporeheart_hive`) | `ember-grove` | `embergrove/{SporeheartHiveKit,hiveModules,hiveShapes,hiveConstants}.ts` | −2..1, 25 (22-32) | 84 | root mound (foundation pass), buttress roots, crown fungi, root-arch gate; boss: Sporemother's throne at level −2 | `findHiveFootprintsNear` (`features/embergrove/HiveClearing.ts`) |
+| Prism Sanctum (`prism_sanctum`) | `crystal-abyss` | `crystal/PrismSanctum{Kit,Config,Modules,Site}.ts`, `sanctumBuild.ts` | −1..2, 27 (20-30) | 89 | temple on a sanctum-brick plinth, octagon hubs, galleries, observatory spire, processional stair; boss: lens chamber | `isNearPrismSanctum` (`PrismSanctumSite.ts`) |
+| Frozen Citadel (`frozen_citadel`) | `cocytus` | `cocytus/{FrozenCitadelKit,frozenCitadelConfig,frozenCitadelPlacement}.ts` | −2..2, 25 (24-31) | 115 | on the lake (floor Y 47): drawbridge over a crevasse, curtain walls + towers, great spire, undercroft under the ice; boss: throne hall | `isNearFrozenCitadel` (`frozenCitadelPlacement.ts`) |
+
+---
+
+### `src/entities/` - Entities
+
+**Key Files:**
+- `EntityManager.ts` - NORMAL task. `addEntity` queues (refused at `maxEntities` 1000 or a duplicate
+  id); `removeEntity(id)` also takes an entity still queued to enter (`onDespawn` + dispose - it never
+  enters the world). Every added entity is wired duck-typed: `setPlayerPositionRef`,
+  `setPlayerDamageCallback` (`(damage, knockback, source?)`), `setWorldQueryFns`,
+  `setEntitySpawnFn` / `setEntityRemoveFn` (minions, projectiles). An ACTIVE entity found
+  `!isAlive` (killed outside its own update, by another entity or a system) is reaped. Despawn
+  radius = max(1, `chunkDistance` − 2) chunks, horizontal, block entities exempt (at render
+  distance 2 a zero radius removed guardians, projectiles and drops right after spawning).
+- `spawning/EntitySpawner.ts` (LOW) + `EntitySpawnConfig.ts` - Mobs come from the biome's
+  `entitySpawns` (`entityType`, `spawnRate` roll, `minY`/`maxY`, `maxNearby` - counts every loaded
+  entity of the type, light bounds, `validGroundBlocks`, `searchFromSky`, `createEntity`); the layer
+  is picked from the player's Y, ground searched near the player's Y, ≥ 24 blocks away. Underground
+  spawns never set `searchFromSky` and keep `minY`/`maxY` inside the cavern.
+- `PlayerDamageHandler.ts` - Entity → player damage (see Player Damage)
+- `AggressiveEntity.ts` / `PeacefulEntity.ts` - Config-driven mobs; `onPlayerInteract` takes damage
+  and knockback from `getPlayerAttackDamage` / `getPlayerAttackKnockback`
+- `interfaces/IEntity.ts` - Adds `countsAsKill?` (false: no `entity-killed`) and `spawnedChildren?`
+  (entities this one put into the world itself, so an owning guardian can clear them)
+- `guardians/`, `projectiles/` - see Dungeons & Guardians
+
+**New mob checklist:** materials through `registerMaterialForLighting`, then `optimizeEntityMesh(root,
+{ merge, dynamic: [animated nodes], registerForLighting })`; a custom `onPlayerInteract` takes its
+damage from `getPlayerAttackDamage` (never tool stats); player damage goes through the damage
+callback with its `source`; entities a mob spawns (children, packs, bolts) enter through the
+EntityManager (`setChildSpawner`, `HellhoundEntity.setPackSpawner`, `setCrystalEntitySpawner`, the
+spawn fn) and are listed in `spawnedChildren`; drops via config `drops: IEntityDrop[]` or a
+once-guarded `getDrops()`. Entity `type` strings are matched by journal milestones - never rename.
+
+**Hell mobs** (HP / hit):
+
+| Biome | Mobs |
+|-------|------|
+| Molten Wastes | `magma_slime` Hell variant (`variant: 'hell'`: ×2 HP, contact 4; magma cream), `skeleton` (+ a 0.5-rate spawn on bastion bricks/tiles), `ember_roach`, `hellhound` 24 / 5-7 (pack leader brings 1-2 followers, capped at 6 alive) |
+| The Ossuary | `wraith` 24 / 6 + slowness (flies through rock), `bone_hound` 22 / 5, `skeleton` |
+| Ember Grove | `ember_hog` 26 / 5 (provoked only), `spore_stalker` 32 / 6 + poison, `ember_roach` |
+| Crystal Abyss | `shardling` 30 / 7 (shatters into two 12 / 4 fragments), `prism_wisp` 20 / 6 (fires `crystal_shard` bolts) |
+| Cocytus | `ice_revenant` 40 / 9 (slow telegraphed slam), `frost_wraith` 22 / 5 + Frostbite, `skeleton` (`enemies/cocytus/cocytusSpawns.ts`) |
+
+**Castle garrisons** (dungeon-only mobs, never in `entitySpawns`; `registerGarrison` in each
+`setup<Biome>()` - `src/embergrove/hive/HiveGarrisons.ts` for the hive; HP / hit):
+
+| Castle | Garrison mobs | Garrisons (index: members) |
+|--------|---------------|----------------------------|
+| Infernal Bastion | `infernal_knight` 42 / 9 mace smash, 6 shield-bash charge (frontal hits 20 %); `ember_caster` 24 / 7 fireball (every third a fan of 3), blinks away | 10 gate guard, 11 barracks (knight + skeletons), 12 caster nest (2 casters), 13 kennel (3 hellhounds, never pack leaders), 14 war forge (knight + Hell magma slimes), 15 prison (caster + skeletons), 16 vault guard (knight + caster, respawn 900 s), 17 wall patrol |
+| Catacombs | `crypt_ghoul` 34 / 7 per claw, the second + 3 s poison (lurks in a niche, leaps); `hollow_priest` 32 / 7 homing soul bolt + slowness, 6 'magic' bone ward, blinks | 20 ghoul den (3), 21 niche ambush (2, not lurking), 22 priest sanctum (priest + skeletons), 23 guard crypt (skeletons, sometimes a bone hound), 24 wraith haunt (2 wraiths) |
+| Sporeheart Hive | `spore_drone` 16 / 4 + 2.5 s poison (flies, orbits, darts); `rootbound_warden` 56 / 9 maul, 4 snare + Rootbound + yank (shrugs off knockback) | 30 brood (4 drones), 31 warden (+ 2 drones), 32 stalker den (spore stalkers, sometimes a drone) |
+| Prism Sanctum | `crystal_sentinel` 45 / 7 shield bash, 9 locked lance beam (spawns dormant; frontal hits 40 %); `prism_acolyte` 26 / 5 ×3 splitting bolt, blinks | 40 acolyte coven (3), 41 sentinel guard (2), 42 sentinel court (2 + acolyte), 43 shard swarm (sentinel + shardlings) |
+| Frozen Citadel | `frozen_knight` 45 / 10 + Frostbite (ice shield: frontal hits 30 %); `rime_archer` 26 / 7 ice shard + Frostbite | 50 guard (2 knights), 51 archers (2), 52 patrol (knight + archer), 53 warden (2 knights + archer), 54 frost wraiths (2), 55 the damned (2 ice revenants) |
 
 ---
 
@@ -855,8 +1500,16 @@ The item ID passed to `registerItemFactory()` must exactly match the `id` proper
 DOM-based overlays rendered above the WebGL canvas.
 
 **Key Files:**
+- `hudLayout.ts` - Shared HUD anchors: fixed, UI-scaled *slots* that HUD elements mount into
+  (`mountHudElement(el, slot, HudOrder.X)`) instead of positioning themselves - top-left (journal
+  goal line, then effect badges), top-centre (boss bar, then Sigil Compass; 440 px, narrower on
+  small windows so the side columns keep 220 px), top-right (toasts), bottom-centre (hearts +
+  armor row, action-bar messages above). The debug overlay registers its rects as obstacles
+  (`setHudObstacle`) and the top columns flow below them. New HUD elements mount into a slot too
+  (a self-positioned fixed element is how the old journal/effects/boss-bar/toast collisions began)
 - `Toolbar.ts` - Bottom hotbar (10 slots)
-- `Inventory.ts` - Grid inventory overlay (10×8)
+- `Inventory.ts` - Grid inventory overlay (10×8); the panel (plus crafting / recipe book / block
+  UI beside it) is centred above the raised toolbar and zoomed down to fit small windows
 - `CraftingPanel.ts` - 3×2 crafting grid + recipe list
 - `FpsCounter.ts` - Performance stats overlay (incl. light queue and the `LOD:` far-terrain line)
 - `SettingsMenu.ts` - Pause menu with settings pages (Render Distance, Far Terrain, Texture Filtering, shadows, ...)
@@ -865,13 +1518,27 @@ DOM-based overlays rendered above the WebGL canvas.
 - `DragDropHandler.ts` - Inventory drag-drop system
 - `SlotRenderer.ts` - Item icon/count rendering
 - `DebugManager.ts` - Debug mode cycling (Ctrl+Shift+P)
-- `blockui/` - Block-specific UIs (ForgeUI)
+- `blockui/` - Block-specific UIs (ForgeUI, WoodworkingBenchUI; the HellforgeUI lives in `src/hellforge/`)
+- `Toasts.ts` - `showToast({ caption?, title, body?, accent?, iconUrl?, durationMs? })`: queued
+  notifications in the top-right slot (journal, chapter completion)
+- `PlayerNotice.ts` / `HudMessage.ts` - One-line action-bar messages above the hearts
+  (`showPlayerNotice(text)`: "Equipped ...", refusals; HudMessage: Return Idol status)
+- `BossBar.ts` - Boss name + health with phase notches (`BossBarTarget`); `SigilCompassHud.ts` - compass plaque
+- `StatusEffectHUD.ts` / `EffectVignette.ts` - Effect badges (debuffs first, timer blinks under 10 s);
+  frost rim and poison pulse
+- `EquipmentPanel.ts` / `ArmorDisplay.ts` - Armor slots beside the inventory grid; armor row above the hearts
+- `ReturnIdolOverlay.ts` - Channel glow/ring and the teleport veil
+- `ModalOverlays.ts` - `registerModalOverlay(isOpen)`: an overlay that releases pointer lock (the
+  journal) registers here so losing the lock to it doesn't open the pause menu
 
-**Z-Index Layers:**
+**Z-Index Layers** (`HudZ` in hudLayout.ts for the HUD slots):
 - 25: Toolbar (normal)
-- 30: Crosshair, FPS counter
+- 26: Hearts, armor row, action-bar messages (bottom-centre slot)
+- 30: Crosshair, FPS counter, top HUD columns (journal line, effects, boss bar, compass)
+- 34: Toasts (above the HUD, under open panels - never cover the crafting grid)
 - 35: Inventory overlay
 - 40: Toolbar (raised during inventory)
+- 45: Journal book
 - 1000: Loading screen, drag ghost
 
 ---
@@ -937,6 +1604,13 @@ const worker = new Worker(
 )
 ```
 
+Workers that import the block registry or biomes (generation, LOD, liquid physics: ~800-950
+modules each) start through `whenWorkerLoadSlotFree()` (`src/workers/WorkerLoadGate.ts`) and call
+its `loaded` callback on 'worker-ready' or error: under `vite dev` each fetches its graph as separate
+requests, and a dozen loading at once exceeded Chromium's outstanding-request limit
+(`net::ERR_INSUFFICIENT_RESOURCES` - the worker dies with a message-less `error` event). Dev loads
+2 at a time; production is unthrottled. A new heavy worker pool should use it too.
+
 ### Worker Constraints
 
 Workers run in an isolated context without access to:
@@ -963,6 +1637,7 @@ Use lightweight data classes in workers (e.g., `WorkerSubChunk` instead of `SubC
 - Group related files in directories with an `index.ts` barrel export
 - Block types: `src/world/blocks/types/{block_name}/` with `assets/` subdirectory
 - Items: `src/items/` mirrors the structure of blocks
+- Gameplay systems: `src/<system>/setup<System>.ts`, called once from main.ts's wiring block
 
 ### Patterns
 
@@ -972,6 +1647,9 @@ Use lightweight data classes in workers (e.g., `WorkerSubChunk` instead of `SubC
 - Export types/interfaces for module boundaries
 - Use async/await for asynchronous operations (especially in workers)
 - Transfer ArrayBuffer ownership between main thread and workers for zero-copy performance
+- Data classes (items, mobs) that need a runtime system call a small hook module the system
+  registers itself with at startup (`ReturnIdolHooks`, `CrystalEntityHooks`, `DungeonServices`) -
+  every use tolerates the hook being unset (tests, workers)
 
 ### Performance Patterns
 

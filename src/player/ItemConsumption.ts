@@ -2,6 +2,7 @@ import type { IPlayerState } from './PlayerState.ts'
 import type { HeldItemRenderer } from '../renderer/helditem/HeldItemRenderer.ts'
 import type { IPlayerHealth } from './PlayerHealth.ts'
 import { isConsumable } from '../items/interfaces/IConsumable.ts'
+import { gameEvents } from '../events/GameEvents.ts'
 
 /**
  * Configuration for item consumption.
@@ -82,6 +83,12 @@ export class ItemConsumption {
       return
     }
 
+    // Item-specific gate (cooldowns, interruptions)
+    if (item.canContinueUse && !item.canContinueUse()) {
+      this.cancelConsumption()
+      return
+    }
+
     // Check if we switched items mid-consumption
     if (this.consumingItemId !== null && this.consumingItemId !== item.id) {
       this.cancelConsumption()
@@ -96,6 +103,12 @@ export class ItemConsumption {
 
     // Start consumption if not already
     if (this.consumingItemId === null) {
+      // The item may refuse (e.g. capped Infernal Heart): drop this press so
+      // the refusal shows once, not every frame while the button is held
+      if (item.canConsume && !item.canConsume(this.playerHealth)) {
+        this.isMouseDown = false
+        return
+      }
       this.consumingItemId = item.id
       this.consumingSlotIndex = selectedIndex
       this.consumptionProgress = 0
@@ -191,12 +204,15 @@ export class ItemConsumption {
 
     // Call the item's onConsume hook with player health for healing
     item.onConsume(this.playerHealth)
+    gameEvents.emit({ type: 'item-consumed', itemId: item.id })
 
-    // Decrease stack count
-    if (stack.count <= 1) {
-      this.playerState.inventory.toolbar.clearSlot(selectedIndex)
-    } else {
-      stack.count -= 1
+    // Decrease stack count (reusable items keep it)
+    if (item.consumedOnUse !== false) {
+      if (stack.count <= 1) {
+        this.playerState.inventory.toolbar.clearSlot(selectedIndex)
+      } else {
+        stack.count -= 1
+      }
     }
 
     // Notify listeners

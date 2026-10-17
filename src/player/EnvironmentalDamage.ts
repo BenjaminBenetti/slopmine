@@ -75,6 +75,9 @@ export class EnvironmentalDamage {
 
   private hotFloorAccumulator = 0
 
+  /** Fire immunity (fire resistance): no burning, no burn vignette. */
+  private isFireImmune: () => boolean = () => false
+
   constructor(
     world: IBlockIdSource,
     body: IBodyState,
@@ -95,9 +98,18 @@ export class EnvironmentalDamage {
     return this.burnTicksRemaining > 0
   }
 
-  /** True while the burn vignette should be shown (in lava or burning). */
+  /** True while the burn vignette should be shown (in lava or burning, unless fire immune). */
   get showBurnEffect(): boolean {
-    return this.inLava || this.isBurning
+    return (this.inLava || this.isBurning) && !this.isFireImmune()
+  }
+
+  /**
+   * Fire immunity query (fire resistance). While it holds, lava does not
+   * ignite the post-lava burn and the burn vignette stays off; the damage
+   * itself is zeroed by the 'fire' damage modifier.
+   */
+  setFireImmunityQuery(query: () => boolean): void {
+    this.isFireImmune = query
   }
 
   update(deltaTime: number): void {
@@ -118,7 +130,8 @@ export class EnvironmentalDamage {
       }
 
       // Keep the burning status primed; it starts counting down on exit.
-      this.burnTicksRemaining = BURN_TICK_COUNT
+      // Fire immunity never ignites (and puts out) the burn.
+      this.burnTicksRemaining = this.isFireImmune() ? 0 : BURN_TICK_COUNT
       this.burnTickAccumulator = 0
     } else {
       this.lavaTickAccumulator = 0

@@ -113,6 +113,45 @@ import { ExplosionParticleManager } from './renderer/particles/ExplosionParticle
 import { MagmaSlimeEntity } from './entities/animals/magma_slime/index.ts'
 import { PlayerDamageHandler } from './entities/PlayerDamageHandler.ts'
 
+import { gameEvents } from './events/GameEvents.ts'
+import { playerEffects } from './player/effects/StatusEffects.ts'
+import { applyDamageModifiers } from './player/DamageModifiers.ts'
+import { registerChestLootTable } from './world/loot/ChestLootRegistry.ts'
+import { charredCampLootTable } from './world/blocks/types/chest/ChestLoot.ts'
+
+// Progression (journal, recipe sinks)
+import { setupProgression } from './progression/setupProgression.ts'
+import { setupBoneMeal } from './progression/BoneMeal.ts'
+import { setupSlimeBounce } from './progression/SlimeBounce.ts'
+
+// Weapons, tool tiers 6-7 and the Hellforge
+import { setupPlayerCombat } from './combat/setupPlayerCombat.ts'
+import { setupHellforge } from './hellforge/setupHellforge.ts'
+
+// Armor and Infernal Hearts
+import { setupArmorSystem } from './player/equipment/setupArmorSystem.ts'
+
+// Alchemy (status effect potions, Return Idol)
+import { setupAlchemy } from './alchemy/setupAlchemy.ts'
+
+// Dungeons (guardian spawners, Sigil Compass)
+import { setupDungeons } from './dungeons/setupDungeons.ts'
+
+// Hell: Molten Wastes
+import { setupMolten } from './molten/setupMolten.ts'
+
+// Hell: The Ossuary
+import { setupOssuary } from './ossuary/setupOssuary.ts'
+
+// Hell: Ember Grove
+import { setupEmberGrove } from './embergrove/setupEmberGrove.ts'
+
+// Hell: Crystal Abyss
+import { setupCrystalAbyss } from './crystal/setupCrystalAbyss.ts'
+
+// Hell: Cocytus
+import { setupCocytus } from './cocytus/setupCocytus.ts'
+
 // Initialize world system
 registerDefaultBlocks()
 registerDefaultRecipes()
@@ -134,7 +173,12 @@ blockUIRegistry.register(BlockIds.APOTHECARY_WORKBENCH, (state) => createApothec
 
 // Register block UI for woodworking bench (needs playerState: results and
 // leftover ingredients go straight to the player inventory)
-blockUIRegistry.register(BlockIds.WOODWORKING_BENCH, (state) => createWoodworkingBenchUI(state as WoodworkingBenchState, playerState))
+blockUIRegistry.register(BlockIds.WOODWORKING_BENCH, (state) =>
+  createWoodworkingBenchUI(state as WoodworkingBenchState, playerState, (item, count) => {
+    // A full inventory: the rest is thrown out of the player, never lost
+    throwStackFromPlayer(item, count)
+  })
+)
 
 // Register block UI for chest
 blockUIRegistry.register(BlockIds.CHEST, (state) => createChestUI(state as ChestBlockState))
@@ -143,8 +187,6 @@ blockUIRegistry.register(BlockIds.CHEST, (state) => createChestUI(state as Chest
 for (const shelfId of [BlockIds.OAK_SHELF, BlockIds.PINE_SHELF, BlockIds.REDWOOD_SHELF]) {
   blockUIRegistry.register(shelfId, (state) => createShelfUI(state as ShelfBlockState))
 }
-
-
 
 // Biome mini-map helpers
 function getBiomeAbbreviation(biomeType: string): string {
@@ -291,12 +333,23 @@ setGlobalPersistenceManager(persistenceManager)
 world.setPersistenceManager(persistenceManager)
 worldGenerator.setPersistenceManager(persistenceManager)
 
+// True once the stored inventory and metadata were read (or found absent).
+// Until then nothing is saved: the in-memory inventory and position are still
+// the defaults, and a save (tab closed or reloaded during startup - Firefox
+// holds the persist() prompt open here) wrote them over the stored ones.
+// A failed read never sets it: the session then saves nothing.
+let savedPlayerStateLoaded = false
+
 // Initialize persistence and load saved data (async)
 persistenceManager.initialize().then(async () => {
   // Request persistent storage from main thread (more reliable than from worker)
   let persisted = false
   if (navigator.storage?.persist) {
-    persisted = await navigator.storage.persist()
+    try {
+      persisted = await navigator.storage.persist()
+    } catch (error) {
+      console.warn('Storage persistence request failed:', error)
+    }
   }
   console.log(`Storage persistence: ${persisted ? 'granted' : 'best-effort'}`)
 
@@ -336,6 +389,8 @@ persistenceManager.initialize().then(async () => {
     console.log(`Loaded saved health: ${savedMetadata.playerHealth}`)
   }
 
+  savedPlayerStateLoaded = true
+
   // Start auto-save (every 5 minutes)
   persistenceManager.startAutoSave(() => ({
     inventory: serializeInventory(playerState.inventory),
@@ -359,7 +414,7 @@ let skipSaveOnUnload = false
 
 // Safety save on page unload
 window.addEventListener('beforeunload', () => {
-  if (skipSaveOnUnload) return
+  if (skipSaveOnUnload || !savedPlayerStateLoaded) return
   persistenceManager.saveBeforeUnload(
     serializeInventory(playerState.inventory),
     world,
@@ -420,7 +475,8 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
     setTextureFiltering(mode)
   },
   onSave: async () => {
-    // Manual save triggered from pause menu
+    // Manual save triggered from pause menu (never before the stored state was read)
+    if (!savedPlayerStateLoaded) return
     await persistenceManager.saveAll(
       serializeInventory(playerState.inventory),
       world,
@@ -559,8 +615,10 @@ entityManager.setPlayerDamageCallback(playerDamageHandler.createCallback())
 // Uses its own damage cadence (bypasses melee i-frames), flashes the health
 // bar, and never applies knockback.
 const burnVignette = createBurnVignetteUI()
-const environmentalDamage = new EnvironmentalDamage(world, playerBody, (amount) => {
+const environmentalDamage = new EnvironmentalDamage(world, playerBody, (rawAmount) => {
   if (playerHealth.isDead) return
+  const amount = applyDamageModifiers(rawAmount, 'fire')
+  if (amount <= 0) return
   playerHealth.takeEnvironmentalDamage(amount)
   healthDisplay.flash()
 })
@@ -578,6 +636,9 @@ cameraControls.setWorld(physicsWorld)
 
 // Wire death callback for respawn
 playerHealth.setOnDeath(() => {
+  gameEvents.emit({ type: 'player-died' })
+  playerEffects.clear()
+
   // Disable player input during respawn
   cameraControls.setInputEnabled(false)
 
@@ -608,6 +669,8 @@ playerHealth.setOnDeath(() => {
 
     // Reset health to full
     playerHealth.reset()
+    // Effects applied after death (lingering poison clouds, late projectiles) don't carry over
+    playerEffects.clear()
 
     // Hold player in place to allow chunks to generate
     // This prevents falling through unloaded terrain
@@ -630,7 +693,10 @@ playerHealth.setOnDeath(() => {
         // Release player after hold period
         fallDamageTracker.reset()
         deathScreen.hide()
-        cameraControls.setInputEnabled(true)
+        // Control returns only in gameplay: an overlay still open (journal,
+        // inventory, block UI, pause menu) holds the pointer and re-enables
+        // input itself when it closes / the pointer is locked again
+        cameraControls.setInputEnabled(document.pointerLockElement === renderer.renderer.domElement)
       }
     }
     requestAnimationFrame(holdPlayer)
@@ -860,7 +926,6 @@ function syncViewDistance(): void {
   renderer.setFarPlane(Math.max(1000, blocks * 1.15 + 64))
 }
 syncViewDistance()
-
 
 // Add world lighting (sun at 10am) with settings-based shadow map size
 const lighting = new WorldLighting({
@@ -1109,9 +1174,9 @@ scheduler.createTask({
     playerHealth.update(dt)
 
     // Check for fall damage after physics (based on impact velocity)
-    const damage = fallDamageTracker.update(
-      playerBody.velocity.y,
-      playerBody.isOnGround
+    const damage = applyDamageModifiers(
+      fallDamageTracker.update(playerBody.velocity.y, playerBody.isOnGround),
+      'fall'
     )
     if (damage > 0) {
       playerHealth.takeDamage(damage)
@@ -1184,8 +1249,11 @@ scheduler.createTask({
 // main-thread system scans near the player and drives eruptions (warning
 // light-up, upward blast + light damage, revert). Sweeps are time-sliced
 // internally, so the per-tick cost stays small.
-const geyserSystem = new GeyserSystem(world, playerBody, (amount) => {
+const geyserSystem = new GeyserSystem(world, playerBody, (rawAmount) => {
   if (playerHealth.isDead) return
+  // Scalding steam: fire resistance and fire set bonuses apply
+  const amount = applyDamageModifiers(rawAmount, 'fire')
+  if (amount <= 0) return
   playerHealth.takeEnvironmentalDamage(amount)
   healthDisplay.flash()
 })
@@ -1221,8 +1289,11 @@ scheduler.createTask({
 
 // TNT: E-interact ignites a ~2s fuse, then a radius-4 explosion (blocks
 // destroyed with scattered drops, player damage + knockback, chain ignition).
-const tntSystem = new TntSystem(world, playerBody, (amount) => {
+const tntSystem = new TntSystem(world, playerBody, (rawAmount) => {
   if (playerHealth.isDead) return
+  // Blast force: armor and Iceskin reduce it like a heavy blow
+  const amount = applyDamageModifiers(rawAmount, 'melee')
+  if (amount <= 0) return
   playerHealth.takeEnvironmentalDamage(amount)
   healthDisplay.flash()
 })
@@ -1396,7 +1467,6 @@ scheduler.registerTask(
   })
 )
 
-
 // Liquid physics queue management (moves pending blocks to processing queue)
 scheduler.createTask({
   id: 'liquid-physics-queue',
@@ -1414,6 +1484,171 @@ scheduler.registerTask(
     doWork: () => world.processNextLiquidPhysicsColumn(),
   })
 )
+
+// ============================================================================
+// Depth expansion wiring (progression, Hell biomes, dungeons)
+// ============================================================================
+
+// Worldgen chest loot tables (rolled on a generated chest's first open)
+registerChestLootTable(charredCampLootTable)
+
+// Player status effects (potions, boss debuffs): advance timers every tick
+scheduler.createTask({
+  id: 'status-effects',
+  priority: TaskPriority.CRITICAL,
+  update: (dt) => playerEffects.update(dt),
+})
+
+// Biome entry events (journal, music, ...): checked a few times a second.
+// CRITICAL: it is a cheap 2 Hz check, and NORMAL tasks starve while the world streams.
+{
+  let lastBiomeKey = ''
+  let biomeCheckTimer = 0
+  scheduler.createTask({
+    id: 'biome-entry-events',
+    priority: TaskPriority.CRITICAL,
+    update: (dt) => {
+      biomeCheckTimer -= dt
+      if (biomeCheckTimer > 0 || isLoading) return
+      biomeCheckTimer = 0.5
+      const chunkX = Math.floor(playerBody.position.x / 32)
+      const chunkZ = Math.floor(playerBody.position.z / 32)
+      const { regionX, regionZ } = biomeRegistry.getRegionCoords(chunkX, chunkZ)
+      const layer: 0 | 1 = playerBody.position.y < LAYER_BOUNDARY_Y ? 0 : 1
+      const biome = biomeRegistry.selectBiomeForLayer(regionX, regionZ, worldGenerator.getConfig().seed, layer)
+      const key = `${biome}:${layer}`
+      if (key === lastBiomeKey) return
+      lastBiomeKey = key
+      gameEvents.emit({ type: 'biome-entered', biome, layer })
+    },
+  })
+}
+
+// Progression (journal, recipe sinks)
+// Journal: milestones, toasts, the J overlay, the HUD goal line, persistence
+setupProgression({
+  scheduler,
+  playerState,
+  playerPosition: playerBody.position,
+  inventoryUI,
+  cameraControls,
+  persistenceManager,
+  domElement: renderer.renderer.domElement,
+  isLoading: () => isLoading,
+  isPlayerDead: () => playerHealth.isDead,
+})
+// Dead-end drop sinks: bone meal grows crops, slime blocks cushion falls
+setupBoneMeal({
+  domElement: renderer.renderer.domElement,
+  camera: renderer.camera,
+  world,
+  playerState,
+  onUsed: () => {
+    toolbarUI.syncFromState(playerState.inventory.toolbar.slots)
+    updateHeldItem()
+  },
+})
+setupSlimeBounce({
+  scheduler,
+  playerBody,
+  getBlockId: (x, y, z) => world.getBlockIdFast(x, y, z),
+  isPhysicsActive: () => !playerBody.skipPhysics,
+})
+
+// Weapons, tool tiers 6-7 and the Hellforge
+// Melee combat: attack cooldown/charge bar + swing on hit (damage: combat/PlayerAttack.ts)
+setupPlayerCombat({
+  scheduler,
+  playerState,
+  heldItemRenderer,
+  isHudVisible: () => crosshair.element.style.display !== 'none' && !inventoryUI.isOpen,
+})
+// Hellforge station UI: crafts from the inventory; overflow is thrown at the player's feet
+setupHellforge({
+  playerState,
+  onInventoryChanged: updateHeldItem,
+  dropOverflow: (item, count) => {
+    throwStackFromPlayer(item, count)
+  },
+})
+
+// Armor and Infernal Hearts
+// Worn armor (inventory slots, HUD, damage reduction) + Infernal Heart max
+// health; `armorSystem.equipment` exposes worn armor (onChange, armorPoints)
+const armorSystem = setupArmorSystem({
+  playerState,
+  playerHealth,
+  healthDisplay,
+  inventoryUI,
+  inventoryInput,
+  toolbarUI,
+  domElement: renderer.renderer.domElement,
+  persistenceManager,
+})
+
+// Alchemy (status effect potions, Return Idol)
+// Status effect behaviours + HUD, potions' effects, Return Idol (after the
+// 'skybox' task: ember sight post-adjusts the light floor it sets)
+setupAlchemy({
+  scheduler,
+  playerHealth,
+  playerBody,
+  camera: renderer.camera,
+  cameraControls,
+  healthDisplay,
+  environmentalDamage,
+  itemConsumption,
+  playerState,
+  isSolid: (x, y, z) => physicsWorld.isSolidBlock(x, y, z),
+  isLoadedAt: (x, y, z) =>
+    y < 0 || y >= 512 ||
+    world.getSubChunk({ x: BigInt(Math.floor(x / 32)), z: BigInt(Math.floor(z / 32)), subY: Math.floor(y / 32) })?.lightReady === true,
+  getRespawnPosition,
+  isInGameplay: () => document.pointerLockElement === renderer.renderer.domElement,
+  resetAfterTeleport: () => {
+    fallDamageTracker.reset()
+    environmentalDamage.reset()
+    burnVignette.setActive(false)
+  },
+  persistence: persistenceManager,
+})
+
+// Dungeons (guardian spawners, Sigil Compass)
+// Guardian spawners, boss bar, projectile/minion plumbing, Sigil Compass and
+// dungeon-entered events (see src/dungeons)
+setupDungeons({
+  scheduler,
+  world,
+  entityManager,
+  playerBody,
+  playerHealth,
+  playerState,
+  camera: renderer.camera,
+  persistenceManager,
+  getSeed: () => worldGenerator.getConfig().seed,
+  isLoading: () => isLoading,
+})
+
+// Hell: Molten Wastes
+setupMolten({ entityManager })
+
+// Hell: The Ossuary
+setupOssuary()
+
+// Hell: Ember Grove
+setupEmberGrove({
+  scene: renderer.scene,
+  scheduler,
+  camera: renderer.camera,
+  cameraControls,
+  getSeed: () => worldGenerator.getConfig().seed,
+})
+
+// Hell: Crystal Abyss
+setupCrystalAbyss({ entityManager })
+
+// Hell: Cocytus
+setupCocytus()
 
 /** Shader warm-up (see warmUpWorldShaders) runs once, when loading is otherwise done. */
 let shaderWarmupStarted = false

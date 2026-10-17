@@ -26,7 +26,7 @@ export class DiamondBlockBlock extends SolidBlock {
     hardness: 5.0,
     lightLevel: 0,
     lightBlocking: 15,
-    demolitionForceRequired: 1,
+    demolitionForceRequired: 3, // Iron pickaxe (tier 3) or better
     tags: [BlockTags.ROCK],
   }
 

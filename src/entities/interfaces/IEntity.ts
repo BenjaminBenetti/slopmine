@@ -116,6 +116,20 @@ export interface IEntity {
    * @returns Array of items to drop, or empty array if no drops
    */
   getDrops?(): IItem[]
+
+  /**
+   * False for hittable structural parts that are not creatures (a guardian's
+   * shield focus): breaking one is no kill - no `entity-killed` event, so it
+   * never counts toward kill milestones. Default true.
+   */
+  readonly countsAsKill?: boolean
+
+  /**
+   * Entities this one put into the world itself (a slime's split children,
+   * a shardling's fragments), so an owner that tracks it (a guardian's
+   * minion) can clear them along with it.
+   */
+  readonly spawnedChildren?: readonly IEntity[]
 }
 
 /**

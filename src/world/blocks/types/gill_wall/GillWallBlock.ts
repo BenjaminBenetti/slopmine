@@ -1,0 +1,55 @@
+import * as THREE from 'three'
+import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
+import type { IItem } from '../../../../items/Item.ts'
+import { SolidBlock } from '../../Block.ts'
+import { BlockIds } from '../../BlockIds.ts'
+import { BlockTags } from '../../tags/BlockTags.ts'
+import { TextureId } from '../../FaceTextureRegistry.ts'
+import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
+import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
+import { registerEmissiveTexture } from '../../../../renderer/EmissiveTextures.ts'
+import { GillWallBlockItem } from '../../../../items/blocks/gill_wall/GillWallBlockItem.ts'
+import texUrl from './assets/gill-wall.webp'
+
+registerTextureUrl(TextureId.GILL_WALL, texUrl)
+registerEmissiveTexture(TextureId.GILL_WALL, { strength: 0.5, threshold: 0.22 })
+
+const texture = loadBlockTexture(texUrl)
+// Item displays glow too
+const material = new THREE.MeshLambertMaterial({
+  map: texture,
+  emissiveMap: texture,
+  emissive: 0xffffff,
+  emissiveIntensity: 0.5,
+})
+
+/**
+ * Gill wall - walls of glowing gill lamellae lining the hive's galleries and
+ * stair shafts. Dungeon structure: force 6.
+ */
+export class GillWallBlock extends SolidBlock {
+  readonly properties: IBlockProperties = {
+    id: BlockIds.GILL_WALL,
+    name: 'gill_wall',
+    isOpaque: true,
+    isSolid: true,
+    isLiquid: false,
+    hardness: 35,
+    lightLevel: 0,
+    lightBlocking: 15,
+    demolitionForceRequired: 6,
+    tags: [BlockTags.WOOD],
+  }
+
+  protected get defaultTextureId(): number {
+    return TextureId.GILL_WALL
+  }
+
+  protected getMaterials(): THREE.Material {
+    return material
+  }
+
+  getDrops(): IItem[] {
+    return [new GillWallBlockItem()]
+  }
+}

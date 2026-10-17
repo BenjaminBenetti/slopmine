@@ -6,6 +6,7 @@ import { PillarDetector, type PillarClingPoint } from './PillarDetector.ts'
 import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 import { EmberRoachWingItem } from '../../../items/materials/ember_roach_wing/EmberRoachWingItem.ts'
 import { CorruptedEssenceItem } from '../../../items/materials/corrupted_essence/CorruptedEssenceItem.ts'
+import { getPlayerAttackDamage, getPlayerAttackKnockback } from '../../../combat/PlayerAttack.ts'
 
 /**
  * State machine states for Ember Roach behavior.
@@ -41,7 +42,6 @@ const SWOOP_DURATION = 1.5 // seconds for full swoop arc (slower so player can r
 const ATTACK_COOLDOWN = 4.0 // seconds after attack before can attack again
 
 // Damage constants
-const DEFAULT_BASE_DAMAGE = 2 // Fist damage
 const KNOCKBACK_HORIZONTAL = 6.0
 const KNOCKBACK_VERTICAL = 5.0
 const KNOCKBACK_STUN_TIME = 2.0 // 2 seconds stun when hit
@@ -853,11 +853,10 @@ export class EmberRoachEntity extends Entity {
     if (!this.isAlive || this._isDying) return false
 
     // Calculate damage from held item
-    let damage = DEFAULT_BASE_DAMAGE
-    if (heldItem && 'toolStats' in heldItem) {
-      const toolItem = heldItem as { toolStats: { damage: number } }
-      damage = toolItem.toolStats.damage
-    }
+    const damage = getPlayerAttackDamage(heldItem)
+    // Weapon knockback x attack charge: scales the push (not the stun - a
+    // stunned roach drops its swoop, which every hit should do)
+    const knockback = getPlayerAttackKnockback(heldItem)
 
     // Apply damage
     this.health -= damage
@@ -873,9 +872,9 @@ export class EmberRoachEntity extends Entity {
 
     // Set knockback velocity
     this.knockbackVelocity.set(
-      this.knockbackDir.x * KNOCKBACK_HORIZONTAL,
-      KNOCKBACK_VERTICAL,
-      this.knockbackDir.z * KNOCKBACK_HORIZONTAL
+      this.knockbackDir.x * KNOCKBACK_HORIZONTAL * knockback,
+      KNOCKBACK_VERTICAL * Math.min(1, knockback),
+      this.knockbackDir.z * KNOCKBACK_HORIZONTAL * knockback
     )
 
     // Check death

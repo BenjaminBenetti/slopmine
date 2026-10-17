@@ -1,6 +1,7 @@
 import type { IItemStack } from '../player/PlayerState.ts'
 import { syncSlotsFromState } from './SlotRenderer.ts'
 import { applyUIScale } from './uiScale.ts'
+import { setHudToolbar } from './hudLayout.ts'
 
 export interface ToolbarUIOptions {
   slotCount?: number
@@ -78,6 +79,8 @@ export function createToolbarUI(
   }
 
   parent.appendChild(root)
+  // Panels opened with the toolbar raised above them (inventory) keep clear of it
+  setHudToolbar(root)
 
   let selectedIndex = 0
 

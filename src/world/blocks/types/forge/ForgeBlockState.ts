@@ -6,6 +6,7 @@ import type { SerializedForgeState, SerializedSlot } from '../../../../persisten
 import { smeltingRegistry } from '../../../../smelting/index.ts'
 import { getFuelValue, isFuel } from '../../../../smelting/SmeltingConfig.ts'
 import { createItemFromId } from '../../../../persistence/ItemRegistry.ts'
+import { gameEvents } from '../../../../events/GameEvents.ts'
 
 // Local serialization helpers to avoid circular dependency with BlockStateSerializer
 function serializeSlotLocal(stack: IItemStack | null): SerializedSlot | null {
@@ -216,6 +217,7 @@ export class ForgeBlockState implements ITickableBlockState {
     // Add result to output
     const result = recipe.createResult()
     let remaining = recipe.resultCount
+    gameEvents.emit({ type: 'item-crafted', itemId: result.id, count: recipe.resultCount, station: 'forge' })
 
     // First try to add to existing stacks
     for (let i = 0; i < this.outputSlots.length && remaining > 0; i++) {

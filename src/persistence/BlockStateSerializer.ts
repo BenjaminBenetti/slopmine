@@ -111,7 +111,27 @@ export interface IBlockProvider {
 }
 
 /**
- * Get all block states from the BlockStateManager that have data to persist.
+ * Block states the store holds a record for: filled from their record
+ * (markBlockStateRestored) or handed to a save with data. Only these get a
+ * removal record once they are empty - a state that is merely not restored
+ * YET (its record still being read) must never delete that record.
+ */
+const statesWithStoredRecord = new WeakSet<IBlockState>()
+
+/**
+ * Note that `state` was just filled from its stored record, so emptying it
+ * later removes that record (see getBlockStatesToPersist).
+ */
+export function markBlockStateRestored(state: IBlockState): void {
+  statesWithStoredRecord.add(state)
+}
+
+/**
+ * Get all block states from the BlockStateManager that have data to persist,
+ * plus a removal record (`removed: true`) for every state emptied since its
+ * record was stored. Empty states serialize to nothing, so without the
+ * removal the old record stayed and the next load refilled the state from
+ * it: a looted chest came back full while the player kept the items.
  * @param states Iterator of all block states
  * @param blockProvider World or other provider that can look up blocks by position
  */
@@ -131,6 +151,20 @@ export function getBlockStatesToPersist(
     const serialized = serializeBlockState(state, block)
     if (serialized) {
       result.push(serialized)
+      statesWithStoredRecord.add(state)
+    } else if (statesWithStoredRecord.has(state)) {
+      result.push({
+        blockName: block.properties.name,
+        stateType: state.stateType,
+        position: {
+          x: state.position.x.toString(),
+          y: state.position.y.toString(),
+          z: state.position.z.toString(),
+        },
+        data: null,
+        removed: true,
+      })
+      statesWithStoredRecord.delete(state)
     }
   }
 

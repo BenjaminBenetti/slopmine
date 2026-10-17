@@ -6,6 +6,7 @@ import type { IChunkCoordinate } from '../interfaces/ICoordinates.ts'
 import { createChunkKey, type ChunkKey } from '../interfaces/ICoordinates.ts'
 import type { ChunkColumn } from '../chunks/ChunkColumn.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT, SUB_CHUNK_COUNT } from '../interfaces/IChunk.ts'
+import { whenWorkerLoadSlotFree, isWorkerLoadFailure } from '../../workers/WorkerLoadGate.ts'
 import type {
   LiquidPhysicsRequest,
   LiquidPhysicsResponse,
@@ -89,9 +90,14 @@ export class BackgroundLiquidPhysicsManager {
   }
 
   /**
-   * Create a single liquid physics worker with retry logic.
+   * Create a single liquid physics worker with retry logic (once a load slot
+   * is free - see WorkerLoadGate).
    */
   private createLiquidWorker(index: number, retryCount = 0): void {
+    whenWorkerLoadSlotFree((loaded) => this.startLiquidWorker(index, retryCount, loaded))
+  }
+
+  private startLiquidWorker(index: number, retryCount: number, loaded: () => void): void {
     const worker = new Worker(
       new URL('../../workers/LiquidPhysicsWorker.ts', import.meta.url),
       { type: 'module' }
@@ -99,6 +105,7 @@ export class BackgroundLiquidPhysicsManager {
 
     worker.onmessage = (event: MessageEvent<LiquidPhysicsResponse | LiquidPhysicsError | { type: 'worker-ready' }>) => {
       if (event.data.type === 'worker-ready') {
+        loaded()
         this.workersReady++
         console.log(`[WorldManager] Liquid physics worker ${index} ready (${this.workersReady}/${this.WORKER_COUNT})`)
         return
@@ -108,12 +115,18 @@ export class BackgroundLiquidPhysicsManager {
     }
 
     worker.onerror = (event) => {
+      loaded()
       const errorEvent = event as ErrorEvent
-      console.error(`[LiquidPhysicsWorker ${index}] error (attempt ${retryCount + 1}):`, {
-        message: errorEvent.message,
-        filename: errorEvent.filename,
-        lineno: errorEvent.lineno,
-      })
+      if (isWorkerLoadFailure(event)) {
+        // Its scripts failed to load (no exception message): retried below
+        console.warn(`[LiquidPhysicsWorker ${index}] failed to load its scripts (attempt ${retryCount + 1})`)
+      } else {
+        console.error(`[LiquidPhysicsWorker ${index}] error (attempt ${retryCount + 1}):`, {
+          message: errorEvent.message,
+          filename: errorEvent.filename,
+          lineno: errorEvent.lineno,
+        })
+      }
       this.workerBusy[index] = false
       // Retry after delay
       if (retryCount < 2) {

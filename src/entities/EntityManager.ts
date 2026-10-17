@@ -11,6 +11,7 @@ import type { IEntityCallbacks } from './interfaces/IEntityCallbacks.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../world/interfaces/IChunk.ts'
 import type { IWorldCoordinate } from '../world/interfaces/ICoordinates.ts'
 import { Entity } from './Entity.ts'
+import type { DamageSource } from '../player/DamageModifiers.ts'
 
 /**
  * Create a string key from world coordinates for block entity lookup.
@@ -53,7 +54,7 @@ export class EntityManager implements ITask {
   private readonly scene: THREE.Scene
   private readonly physicsEngine: PhysicsEngine | null
   private playerBody: IPhysicsBody | null = null
-  private playerDamageCallback: ((damage: number, knockback: THREE.Vector3) => void) | null = null
+  private playerDamageCallback: ((damage: number, knockback: THREE.Vector3, source?: DamageSource) => boolean | void) | null = null
 
   private readonly maxEntities: number
   private readonly getChunkDistance: () => number
@@ -94,6 +95,10 @@ export class EntityManager implements ITask {
 
   private readonly tempVector = new THREE.Vector3()
 
+  /** Handed to entities that spawn/remove others (see spawnEntity). */
+  private readonly spawnFn = (entity: IEntity): boolean => this.addEntity(entity)
+  private readonly removeFn = (entityId: EntityId): boolean => this.removeEntity(entityId)
+
   /**
    * Per-entity light-query throttle. The world light query is only re-run when
    * an entity crosses into a new block, or after LIGHT_REFRESH_MS to catch
@@ -128,7 +133,7 @@ export class EntityManager implements ITask {
    * Set the callback for player damage from aggressive entities.
    * This callback will be automatically passed to any entity with a setPlayerDamageCallback method.
    */
-  setPlayerDamageCallback(callback: (damage: number, knockback: THREE.Vector3) => void): void {
+  setPlayerDamageCallback(callback: (damage: number, knockback: THREE.Vector3, source?: DamageSource) => boolean | void): void {
     this.playerDamageCallback = callback
   }
 
@@ -194,10 +199,19 @@ export class EntityManager implements ITask {
   /**
    * Queue an entity for removal on the next update.
    * Entity will be skipped in updates while pending removal.
+   * An entity still queued for addition never enters the world: it is
+   * dropped from the queue and despawned/disposed at once.
    */
   removeEntity(entityId: EntityId): boolean {
     if (!this.entities.has(entityId)) {
-      return false
+      const index = this.entitiesToAdd.findIndex((entity) => entity.id === entityId)
+      if (index < 0) return false
+      const entity = this.entitiesToAdd[index]
+      if (!entity.onDespawn()) return false
+      this.entitiesToAdd.splice(index, 1)
+      entity.state = EntityState.DISPOSED
+      entity.dispose()
+      return true
     }
     this.entitiesToRemove.add(entityId)
     return true
@@ -382,15 +396,25 @@ export class EntityManager implements ITask {
     if (shouldUpdateTier[1]) this.updateAccumulators[1] = 0
     if (shouldUpdateTier[2]) this.updateAccumulators[2] = 0
 
-    // Calculate despawn distance (2 chunks before max chunk distance)
+    // Calculate despawn distance (2 chunks before max chunk distance, at
+    // least 1 chunk: at render distance 2 a zero radius removed every
+    // entity right after it spawned - guardians, projectiles, drops)
     const despawnDistanceSq = this.playerBody
-      ? ((this.getChunkDistance() - 2) * CHUNK_SIZE_X) ** 2
+      ? (Math.max(1, this.getChunkDistance() - 2) * CHUNK_SIZE_X) ** 2
       : Infinity
 
     let updatedCount = 0
 
     for (const entity of this.entities.values()) {
-      if (entity.state !== EntityState.ACTIVE || !entity.isAlive) continue
+      if (entity.state !== EntityState.ACTIVE) continue
+
+      // Killed outside its own update (by another entity or a system): reap
+      // it now - otherwise it is never updated again and never removed
+      if (!entity.isAlive) {
+        entity.state = EntityState.DESPAWNING
+        this.entitiesToRemove.add(entity.id)
+        continue
+      }
 
       // Skip entities that are pending removal (prevents update after block destroyed)
       if (this.entitiesToRemove.has(entity.id)) continue
@@ -522,7 +546,7 @@ export class EntityManager implements ITask {
 
     // Set player damage callback for aggressive entities
     if (this.playerDamageCallback && 'setPlayerDamageCallback' in entity) {
-      const aggressiveEntity = entity as { setPlayerDamageCallback: (cb: (damage: number, knockback: THREE.Vector3) => void) => void }
+      const aggressiveEntity = entity as { setPlayerDamageCallback: (cb: (damage: number, knockback: THREE.Vector3, source?: DamageSource) => boolean | void) => void }
       aggressiveEntity.setPlayerDamageCallback(this.playerDamageCallback)
     }
 
@@ -535,6 +559,14 @@ export class EntityManager implements ITask {
         ) => void
       }
       worldAwareEntity.setWorldQueryFns(this.blockQueryFn, this.solidQueryFn)
+    }
+
+    // Let entities add/remove other entities (guardian minions, projectiles)
+    if ('setEntitySpawnFn' in entity) {
+      (entity as { setEntitySpawnFn: (spawn: (e: IEntity) => boolean) => void }).setEntitySpawnFn(this.spawnFn)
+    }
+    if ('setEntityRemoveFn' in entity) {
+      (entity as { setEntityRemoveFn: (remove: (id: EntityId) => boolean) => void }).setEntityRemoveFn(this.removeFn)
     }
 
     entity.state = EntityState.ACTIVE

@@ -13,12 +13,13 @@ import { recipeRegistry } from './RecipeRegistry.ts'
 import { smeltingRegistry } from '../smelting/SmeltingRegistry.ts'
 import { brewingRegistry } from '../brewing/BrewingRegistry.ts'
 import { woodworkingRegistry } from '../woodworking/WoodworkingRegistry.ts'
+import { hellforgeRegistry } from '../hellforge/HellforgeRegistry.ts'
 import { getRegisteredItemIds, createItemFromId } from '../persistence/ItemRegistry.ts'
 
 /**
  * Crafting station types
  */
-export type CraftingStation = 'hand' | 'forge' | 'apothecary' | 'woodworking'
+export type CraftingStation = 'hand' | 'forge' | 'apothecary' | 'woodworking' | 'hellforge'
 
 /**
  * Display info for crafting stations
@@ -28,6 +29,7 @@ export const STATION_INFO: Record<CraftingStation, { label: string; color: strin
   forge: { label: 'Forge', color: '#FF6B35' },
   apothecary: { label: 'Apothecary', color: '#9B59B6' },
   woodworking: { label: 'Woodworking', color: '#27AE60' },
+  hellforge: { label: 'Hellforge', color: '#C0392B' },
 }
 
 /**
@@ -137,6 +139,11 @@ export class RecipeBook {
       this.indexWoodworkingRecipe(recipe)
     }
 
+    // Index hellforge recipes
+    for (const recipe of hellforgeRegistry.getAllRecipes()) {
+      this.indexHandRecipe(recipe, 'hellforge')
+    }
+
     // Build sorted item list and cache item info
     this.buildItemList()
 
@@ -146,12 +153,12 @@ export class RecipeBook {
   /**
    * Index a hand crafting recipe
    */
-  private indexHandRecipe(recipe: IRecipe): void {
+  private indexHandRecipe(recipe: IRecipe, station: CraftingStation = 'hand'): void {
     const resultItem = recipe.createResult()
     const info: IRecipeInfo = {
       recipeId: recipe.id,
       name: recipe.name,
-      station: 'hand',
+      station,
       ingredients: recipe.ingredients.map(this.normalizeIngredient),
       resultItemId: resultItem.id,
       resultCount: recipe.resultCount,

@@ -6,6 +6,7 @@ import { CaveSlimeEntity } from '../../../entities/animals/cave_slime/index.ts'
 import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { HerbFeature } from '../features/HerbFeature.ts'
+import { CattailFeature } from '../features/CattailFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -96,6 +97,16 @@ export class SwampGenerator extends BiomeGenerator {
         maxPatchSize: 5,
         gridSize: 14,
         validGroundBlocks: [BlockIds.MUDDY_GRASS],
+      }),
+      // Cattail reeds on the mud banks of the swamp pools (surface slow
+      // falling ingredient); after the clay mounds so they root on both
+      new CattailFeature({
+        waterLevel: 234,
+        waterBlockId: BlockIds.SWAMP_WATER,
+        maxHeightAboveWater: 1,
+        zoneFrequency: 0.02,
+        zoneThreshold: 0.4,
+        density: 0.55,
       }),
     ],
     caves: {

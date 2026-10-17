@@ -199,6 +199,152 @@ import { IronAxeItem } from '../items/tools/axe/IronAxeItem.ts'
 import { SteelAxeItem } from '../items/tools/axe/SteelAxeItem.ts'
 import { DiamondAxeItem } from '../items/tools/axe/DiamondAxeItem.ts'
 
+// Progression (journal, recipe sinks)
+import { CookedVenisonItem } from '../items/food/cooked_venison/CookedVenisonItem.ts'
+import { BoneMealItem } from '../items/materials/bone_meal/BoneMealItem.ts'
+import { SlimeBlockItem } from '../items/blocks/slime/SlimeBlockItem.ts'
+
+// Weapons, tool tiers 6-7 and the Hellforge
+import { WoodSwordItem } from '../items/weapons/sword/WoodSwordItem.ts'
+import { StoneSwordItem } from '../items/weapons/sword/StoneSwordItem.ts'
+import { IronSwordItem } from '../items/weapons/sword/IronSwordItem.ts'
+import { SteelSwordItem } from '../items/weapons/sword/SteelSwordItem.ts'
+import { DiamondSwordItem } from '../items/weapons/sword/DiamondSwordItem.ts'
+import { InferniumSwordItem } from '../items/weapons/sword/InferniumSwordItem.ts'
+import { HellbaneSwordItem } from '../items/weapons/sword/HellbaneSwordItem.ts'
+import { InferniumPickaxeItem } from '../items/tools/pickaxe/InferniumPickaxeItem.ts'
+import { InferniumAxeItem } from '../items/tools/axe/InferniumAxeItem.ts'
+import { InferniumShovelItem } from '../items/tools/shovel/InferniumShovelItem.ts'
+import { HellbanePickaxeItem } from '../items/tools/pickaxe/HellbanePickaxeItem.ts'
+import { HellbaneAxeItem } from '../items/tools/axe/HellbaneAxeItem.ts'
+import { HellbaneShovelItem } from '../items/tools/shovel/HellbaneShovelItem.ts'
+import { HellforgeBlockItem } from '../items/blocks/hellforge/HellforgeBlockItem.ts'
+
+// Armor and Infernal Hearts
+import { TieredArmorItem } from '../items/armor/TieredArmorItem.ts'
+import { ARMOR_SLOTS, ARMOR_TIER_IDS, armorItemId } from '../items/armor/ArmorTiers.ts'
+import { InfernalHeartItem } from '../items/consumables/infernal_heart/InfernalHeartItem.ts'
+
+// Alchemy (status effect potions, Return Idol)
+import { FireResistancePotionItem } from '../items/potions/fire_resistance_potion/FireResistancePotionItem.ts'
+import { LongFireResistancePotionItem } from '../items/potions/fire_resistance_potion/LongFireResistancePotionItem.ts'
+import { SlowFallingPotionItem } from '../items/potions/slow_falling_potion/SlowFallingPotionItem.ts'
+import { RegenerationPotionItem } from '../items/potions/regeneration_potion/RegenerationPotionItem.ts'
+import { EmberSightPotionItem } from '../items/potions/ember_sight_potion/EmberSightPotionItem.ts'
+import { LongEmberSightPotionItem } from '../items/potions/ember_sight_potion/LongEmberSightPotionItem.ts'
+import { StrengthPotionItem } from '../items/potions/strength_potion/StrengthPotionItem.ts'
+import { IceskinPotionItem } from '../items/potions/iceskin_potion/IceskinPotionItem.ts'
+import { ReturnIdolItem } from '../items/magic/return_idol/ReturnIdolItem.ts'
+
+// Dungeons (guardian spawners, Sigil Compass)
+import { SigilCompassItem } from '../items/magic/sigil_compass/SigilCompassItem.ts'
+
+// Hell: Molten Wastes
+import { RawInferniumItem } from '../items/ores/infernium/RawInferniumItem.ts'
+import { InferniumIngotItem } from '../items/bars/infernium/InferniumIngotItem.ts'
+import { MagmaCreamItem } from '../items/materials/magma_cream/MagmaCreamItem.ts'
+import { EmberSigilItem } from '../items/materials/ember_sigil/EmberSigilItem.ts'
+import { InfernalBricksBlockItem } from '../items/blocks/infernal_bricks/InfernalBricksBlockItem.ts'
+import { CrackedInfernalBricksBlockItem } from '../items/blocks/cracked_infernal_bricks/CrackedInfernalBricksBlockItem.ts'
+import { InfernalBrickPillarBlockItem } from '../items/blocks/infernal_brick_pillar/InfernalBrickPillarBlockItem.ts'
+import { EmberGlyphBlockItem } from '../items/blocks/ember_glyph/EmberGlyphBlockItem.ts'
+import { InfernalBrazierBlockItem } from '../items/blocks/infernal_brazier/InfernalBrazierBlockItem.ts'
+import { HellAshBlockItem } from '../items/blocks/hell_ash/HellAshBlockItem.ts'
+import { InfernalTilesBlockItem } from '../items/blocks/infernal_tiles/InfernalTilesBlockItem.ts'
+import { ObsidianBricksBlockItem } from '../items/blocks/obsidian_bricks/ObsidianBricksBlockItem.ts'
+import { GildedInfernalBricksBlockItem } from '../items/blocks/gilded_infernal_bricks/GildedInfernalBricksBlockItem.ts'
+import { MagmaBricksBlockItem } from '../items/blocks/magma_bricks/MagmaBricksBlockItem.ts'
+import { ScorchedInfernalBricksBlockItem } from '../items/blocks/scorched_infernal_bricks/ScorchedInfernalBricksBlockItem.ts'
+import { CharredPlanksBlockItem } from '../items/blocks/charred_planks/CharredPlanksBlockItem.ts'
+import { InfernalBrickStairsBlockItem } from '../items/blocks/infernal_brick_stairs/InfernalBrickStairsBlockItem.ts'
+import { InfernalBrickSlabBlockItem } from '../items/blocks/infernal_brick_slab/InfernalBrickSlabBlockItem.ts'
+import { InfernalIronBarsBlockItem } from '../items/blocks/infernal_iron_bars/InfernalIronBarsBlockItem.ts'
+import { InfernalChainBlockItem } from '../items/blocks/infernal_chain/InfernalChainBlockItem.ts'
+import { EmberLanternBlockItem } from '../items/blocks/ember_lantern/EmberLanternBlockItem.ts'
+import { InfernalBannerBlockItem } from '../items/blocks/infernal_banner/InfernalBannerBlockItem.ts'
+import { InfernalAnvilBlockItem } from '../items/blocks/infernal_anvil/InfernalAnvilBlockItem.ts'
+import { WeaponRackBlockItem } from '../items/blocks/weapon_rack/WeaponRackBlockItem.ts'
+import { InfernalThroneBlockItem } from '../items/blocks/infernal_throne/InfernalThroneBlockItem.ts'
+
+// Hell: The Ossuary
+import { BoneAshBlockItem } from '../items/blocks/bone_ash/BoneAshBlockItem.ts'
+import { OssifiedRockBlockItem } from '../items/blocks/ossified_rock/OssifiedRockBlockItem.ts'
+import { BoneBlockItem } from '../items/blocks/bone_block/BoneBlockItem.ts'
+import { CatacombBrickBlockItem } from '../items/blocks/catacomb_brick/CatacombBrickBlockItem.ts'
+import { CatacombSkullBrickBlockItem } from '../items/blocks/catacomb_skull_brick/CatacombSkullBrickBlockItem.ts'
+import { SoulLanternBlockItem } from '../items/blocks/soul_lantern/SoulLanternBlockItem.ts'
+import { SoulTorchBlockItem } from '../items/blocks/soul_torch/SoulTorchBlockItem.ts'
+import { SarcophagusBlockItem } from '../items/blocks/sarcophagus/SarcophagusBlockItem.ts'
+import { SoulBloomBlockItem } from '../items/blocks/soul_bloom/SoulBloomBlockItem.ts'
+import { CrackedCatacombBrickBlockItem } from '../items/blocks/cracked_catacomb_brick/CrackedCatacombBrickBlockItem.ts'
+import { CatacombTileBlockItem } from '../items/blocks/catacomb_tile/CatacombTileBlockItem.ts'
+import { CarvedBonePillarBlockItem } from '../items/blocks/carved_bone_pillar/CarvedBonePillarBlockItem.ts'
+import { BurialNicheBlockItem } from '../items/blocks/burial_niche/BurialNicheBlockItem.ts'
+import { CryptGrateBlockItem } from '../items/blocks/crypt_grate/CryptGrateBlockItem.ts'
+import { CryptAltarBlockItem } from '../items/blocks/crypt_altar/CryptAltarBlockItem.ts'
+import { GildedReliquaryBlockItem } from '../items/blocks/gilded_reliquary/GildedReliquaryBlockItem.ts'
+import { CatacombFriezeBlockItem } from '../items/blocks/catacomb_frieze/CatacombFriezeBlockItem.ts'
+import { FuneraryUrnBlockItem } from '../items/blocks/funerary_urn/FuneraryUrnBlockItem.ts'
+import { SoulCandelabraBlockItem } from '../items/blocks/soul_candelabra/SoulCandelabraBlockItem.ts'
+import { GraveCandlesBlockItem } from '../items/blocks/grave_candles/GraveCandlesBlockItem.ts'
+import { SoulShardItem } from '../items/materials/soul_shard/SoulShardItem.ts'
+import { EctoplasmItem } from '../items/materials/ectoplasm/EctoplasmItem.ts'
+import { BoneSigilItem } from '../items/materials/bone_sigil/BoneSigilItem.ts'
+
+// Hell: Ember Grove
+import { EmberwoodStemBlockItem } from '../items/blocks/emberwood_stem/EmberwoodStemBlockItem.ts'
+import { EmberwoodPlanksBlockItem } from '../items/blocks/emberwood_planks/EmberwoodPlanksBlockItem.ts'
+import { EmberCapBlockItem } from '../items/blocks/ember_cap/EmberCapBlockItem.ts'
+import { EmberGillsBlockItem } from '../items/blocks/ember_gills/EmberGillsBlockItem.ts'
+import { ShelfFungusBlockItem } from '../items/blocks/shelf_fungus/ShelfFungusBlockItem.ts'
+import { HiveRootbrickBlockItem } from '../items/blocks/hive_rootbrick/HiveRootbrickBlockItem.ts'
+import { HiveRootBlockItem } from '../items/blocks/hive_root/HiveRootBlockItem.ts'
+import { SporeSacBlockItem } from '../items/blocks/spore_sac/SporeSacBlockItem.ts'
+import { GlowcapItem } from '../items/food/glowcap/GlowcapItem.ts'
+import { RoastedGlowcapItem } from '../items/food/roasted_glowcap/RoastedGlowcapItem.ts'
+import { RawEmberHogItem } from '../items/food/raw_ember_hog/RawEmberHogItem.ts'
+import { CookedEmberHogItem } from '../items/food/cooked_ember_hog/CookedEmberHogItem.ts'
+import { SporeSigilItem } from '../items/materials/spore_sigil/SporeSigilItem.ts'
+import { ChitinPlateBlockItem } from '../items/blocks/chitin_plate/ChitinPlateBlockItem.ts'
+import { HiveMembraneBlockItem } from '../items/blocks/hive_membrane/HiveMembraneBlockItem.ts'
+import { BroodCombBlockItem } from '../items/blocks/brood_comb/BroodCombBlockItem.ts'
+import { GillWallBlockItem } from '../items/blocks/gill_wall/GillWallBlockItem.ts'
+import { RootPillarBlockItem } from '../items/blocks/root_pillar/RootPillarBlockItem.ts'
+import { RootLatticeBlockItem } from '../items/blocks/root_lattice/RootLatticeBlockItem.ts'
+import { OvergrownRootbrickBlockItem } from '../items/blocks/overgrown_rootbrick/OvergrownRootbrickBlockItem.ts'
+import { MycelialCarpetBlockItem } from '../items/blocks/mycelial_carpet/MycelialCarpetBlockItem.ts'
+import { GlowingSapBlockItem } from '../items/blocks/glowing_sap/GlowingSapBlockItem.ts'
+import { GlowBulbBlockItem } from '../items/blocks/glow_bulb/GlowBulbBlockItem.ts'
+import { EmberwoodStairsBlockItem } from '../items/blocks/emberwood_stairs/EmberwoodStairsBlockItem.ts'
+
+// Hell: Crystal Abyss
+import { PrismShardItem } from '../items/materials/prism_shard/PrismShardItem.ts'
+import { PrismSigilItem } from '../items/materials/prism_sigil/PrismSigilItem.ts'
+import { AbyssalStoneBlockItem } from '../items/blocks/abyssal_stone/AbyssalStoneBlockItem.ts'
+import { GlitteringAbyssalStoneBlockItem } from '../items/blocks/glittering_abyssal_stone/GlitteringAbyssalStoneBlockItem.ts'
+import { SpireCrystalBlockItem } from '../items/blocks/spire_crystal/SpireCrystalBlockItem.ts'
+import { RoseCrystalBlockItem } from '../items/blocks/rose_crystal/RoseCrystalBlockItem.ts'
+import { GeodeCrustBlockItem } from '../items/blocks/geode_crust/GeodeCrustBlockItem.ts'
+import { PolishedAbyssalStoneBlockItem } from '../items/blocks/polished_abyssal_stone/PolishedAbyssalStoneBlockItem.ts'
+import { AbyssalBricksBlockItem } from '../items/blocks/abyssal_bricks/AbyssalBricksBlockItem.ts'
+import { CrystalLampBlockItem } from '../items/blocks/crystal_lamp/CrystalLampBlockItem.ts'
+import { InlaidSanctumTileBlockItem } from '../items/blocks/inlaid_sanctum_tile/InlaidSanctumTileBlockItem.ts'
+import { CarvedSanctumBrickBlockItem } from '../items/blocks/carved_sanctum_brick/CarvedSanctumBrickBlockItem.ts'
+import { SanctumPillarBlockItem } from '../items/blocks/sanctum_pillar/SanctumPillarBlockItem.ts'
+import { GildedSanctumTrimBlockItem } from '../items/blocks/gilded_sanctum_trim/GildedSanctumTrimBlockItem.ts'
+import { MirrorPanelBlockItem } from '../items/blocks/mirror_panel/MirrorPanelBlockItem.ts'
+import { PrismRoofTileBlockItem } from '../items/blocks/prism_roof_tile/PrismRoofTileBlockItem.ts'
+import { CrystalArchiveBlockItem } from '../items/blocks/crystal_archive/CrystalArchiveBlockItem.ts'
+import { CrystalGlassBlockItem } from '../items/blocks/crystal_glass/CrystalGlassBlockItem.ts'
+import { PrismPedestalBlockItem } from '../items/blocks/prism_pedestal/PrismPedestalBlockItem.ts'
+import { PrismLanternBlockItem } from '../items/blocks/prism_lantern/PrismLanternBlockItem.ts'
+import { LensApparatusBlockItem } from '../items/blocks/lens_apparatus/LensApparatusBlockItem.ts'
+import { SanctumBannerBlockItem } from '../items/blocks/sanctum_banner/SanctumBannerBlockItem.ts'
+import { SanctumStairsBlockItem } from '../items/blocks/sanctum_stairs/SanctumStairsBlockItem.ts'
+
+// Hell: Cocytus
+import { registerCocytusItems } from '../items/cocytus/registerCocytusItems.ts'
+
 type ItemFactory = () => IItem
 
 // Map of item IDs to factory functions
@@ -436,6 +582,155 @@ export function initializeItemRegistry(): void {
   registerItemFactory('pine_window_block', () => new PineWindowBlockItem())
   registerItemFactory('redwood_window_block', () => new RedwoodWindowBlockItem())
   registerItemFactory('stick', () => new StickItem())
+
+  // Progression (journal, recipe sinks)
+  registerItemFactory('cooked_venison', () => new CookedVenisonItem())
+  registerItemFactory('bone_meal', () => new BoneMealItem())
+  registerItemFactory('slime_block', () => new SlimeBlockItem())
+
+  // Weapons, tool tiers 6-7 and the Hellforge
+  registerItemFactory('wood_sword', () => new WoodSwordItem())
+  registerItemFactory('stone_sword', () => new StoneSwordItem())
+  registerItemFactory('iron_sword', () => new IronSwordItem())
+  registerItemFactory('steel_sword', () => new SteelSwordItem())
+  registerItemFactory('diamond_sword', () => new DiamondSwordItem())
+  registerItemFactory('infernium_sword', () => new InferniumSwordItem())
+  registerItemFactory('hellbane_sword', () => new HellbaneSwordItem())
+  registerItemFactory('infernium_pickaxe', () => new InferniumPickaxeItem())
+  registerItemFactory('infernium_axe', () => new InferniumAxeItem())
+  registerItemFactory('infernium_shovel', () => new InferniumShovelItem())
+  registerItemFactory('hellbane_pickaxe', () => new HellbanePickaxeItem())
+  registerItemFactory('hellbane_axe', () => new HellbaneAxeItem())
+  registerItemFactory('hellbane_shovel', () => new HellbaneShovelItem())
+  registerItemFactory('hellforge_block', () => new HellforgeBlockItem())
+
+  // Armor and Infernal Hearts
+  for (const tier of ARMOR_TIER_IDS) {
+    for (const slot of ARMOR_SLOTS) {
+      registerItemFactory(armorItemId(tier, slot), () => new TieredArmorItem(tier, slot))
+    }
+  }
+  registerItemFactory('infernal_heart', () => new InfernalHeartItem())
+
+  // Alchemy (status effect potions, Return Idol)
+  registerItemFactory('fire_resistance_potion', () => new FireResistancePotionItem())
+  registerItemFactory('fire_resistance_potion_long', () => new LongFireResistancePotionItem())
+  registerItemFactory('slow_falling_potion', () => new SlowFallingPotionItem())
+  registerItemFactory('regeneration_potion', () => new RegenerationPotionItem())
+  registerItemFactory('ember_sight_potion', () => new EmberSightPotionItem())
+  registerItemFactory('ember_sight_potion_long', () => new LongEmberSightPotionItem())
+  registerItemFactory('strength_potion', () => new StrengthPotionItem())
+  registerItemFactory('iceskin_potion', () => new IceskinPotionItem())
+  registerItemFactory('return_idol', () => new ReturnIdolItem())
+
+  // Dungeons (guardian spawners, Sigil Compass)
+  registerItemFactory('sigil_compass', () => new SigilCompassItem())
+
+  // Hell: Molten Wastes
+  registerItemFactory('raw_infernium', () => new RawInferniumItem())
+  registerItemFactory('infernium_ingot', () => new InferniumIngotItem())
+  registerItemFactory('magma_cream', () => new MagmaCreamItem())
+  registerItemFactory('ember_sigil', () => new EmberSigilItem())
+  registerItemFactory('infernal_bricks_block', () => new InfernalBricksBlockItem())
+  registerItemFactory('cracked_infernal_bricks_block', () => new CrackedInfernalBricksBlockItem())
+  registerItemFactory('infernal_brick_pillar_block', () => new InfernalBrickPillarBlockItem())
+  registerItemFactory('ember_glyph_block', () => new EmberGlyphBlockItem())
+  registerItemFactory('infernal_brazier_block', () => new InfernalBrazierBlockItem())
+  registerItemFactory('hell_ash_block', () => new HellAshBlockItem())
+  registerItemFactory('infernal_tiles_block', () => new InfernalTilesBlockItem())
+  registerItemFactory('obsidian_bricks_block', () => new ObsidianBricksBlockItem())
+  registerItemFactory('gilded_infernal_bricks_block', () => new GildedInfernalBricksBlockItem())
+  registerItemFactory('magma_bricks_block', () => new MagmaBricksBlockItem())
+  registerItemFactory('scorched_infernal_bricks_block', () => new ScorchedInfernalBricksBlockItem())
+  registerItemFactory('charred_planks_block', () => new CharredPlanksBlockItem())
+  registerItemFactory('infernal_brick_stairs_block', () => new InfernalBrickStairsBlockItem())
+  registerItemFactory('infernal_brick_slab_block', () => new InfernalBrickSlabBlockItem())
+  registerItemFactory('infernal_iron_bars_block', () => new InfernalIronBarsBlockItem())
+  registerItemFactory('infernal_chain_block', () => new InfernalChainBlockItem())
+  registerItemFactory('ember_lantern_block', () => new EmberLanternBlockItem())
+  registerItemFactory('infernal_banner_block', () => new InfernalBannerBlockItem())
+  registerItemFactory('infernal_anvil_block', () => new InfernalAnvilBlockItem())
+  registerItemFactory('weapon_rack_block', () => new WeaponRackBlockItem())
+  registerItemFactory('infernal_throne_block', () => new InfernalThroneBlockItem())
+
+  // Hell: The Ossuary
+  registerItemFactory('bone_ash_block', () => new BoneAshBlockItem())
+  registerItemFactory('ossified_rock_block', () => new OssifiedRockBlockItem())
+  registerItemFactory('bone_block', () => new BoneBlockItem())
+  registerItemFactory('catacomb_brick_block', () => new CatacombBrickBlockItem())
+  registerItemFactory('catacomb_skull_brick_block', () => new CatacombSkullBrickBlockItem())
+  registerItemFactory('soul_lantern_block', () => new SoulLanternBlockItem())
+  registerItemFactory('soul_torch_block', () => new SoulTorchBlockItem())
+  registerItemFactory('sarcophagus_block', () => new SarcophagusBlockItem())
+  registerItemFactory('soul_bloom_block', () => new SoulBloomBlockItem())
+  registerItemFactory('cracked_catacomb_brick_block', () => new CrackedCatacombBrickBlockItem())
+  registerItemFactory('catacomb_tile_block', () => new CatacombTileBlockItem())
+  registerItemFactory('carved_bone_pillar_block', () => new CarvedBonePillarBlockItem())
+  registerItemFactory('burial_niche_block', () => new BurialNicheBlockItem())
+  registerItemFactory('crypt_grate_block', () => new CryptGrateBlockItem())
+  registerItemFactory('crypt_altar_block', () => new CryptAltarBlockItem())
+  registerItemFactory('gilded_reliquary_block', () => new GildedReliquaryBlockItem())
+  registerItemFactory('catacomb_frieze_block', () => new CatacombFriezeBlockItem())
+  registerItemFactory('funerary_urn_block', () => new FuneraryUrnBlockItem())
+  registerItemFactory('soul_candelabra_block', () => new SoulCandelabraBlockItem())
+  registerItemFactory('grave_candles_block', () => new GraveCandlesBlockItem())
+  registerItemFactory('soul_shard', () => new SoulShardItem())
+  registerItemFactory('ectoplasm', () => new EctoplasmItem())
+  registerItemFactory('bone_sigil', () => new BoneSigilItem())
+
+  // Hell: Ember Grove
+  registerItemFactory('emberwood_stem_block', () => new EmberwoodStemBlockItem())
+  registerItemFactory('emberwood_planks_block', () => new EmberwoodPlanksBlockItem())
+  registerItemFactory('ember_cap_block', () => new EmberCapBlockItem())
+  registerItemFactory('ember_gills_block', () => new EmberGillsBlockItem())
+  registerItemFactory('shelf_fungus_block', () => new ShelfFungusBlockItem())
+  registerItemFactory('hive_rootbrick_block', () => new HiveRootbrickBlockItem())
+  registerItemFactory('hive_root_block', () => new HiveRootBlockItem())
+  registerItemFactory('spore_sac_block', () => new SporeSacBlockItem())
+  registerItemFactory('glowcap', () => new GlowcapItem())
+  registerItemFactory('roasted_glowcap', () => new RoastedGlowcapItem())
+  registerItemFactory('raw_ember_hog', () => new RawEmberHogItem())
+  registerItemFactory('cooked_ember_hog', () => new CookedEmberHogItem())
+  registerItemFactory('spore_sigil', () => new SporeSigilItem())
+  registerItemFactory('chitin_plate_block', () => new ChitinPlateBlockItem())
+  registerItemFactory('hive_membrane_block', () => new HiveMembraneBlockItem())
+  registerItemFactory('brood_comb_block', () => new BroodCombBlockItem())
+  registerItemFactory('gill_wall_block', () => new GillWallBlockItem())
+  registerItemFactory('root_pillar_block', () => new RootPillarBlockItem())
+  registerItemFactory('root_lattice_block', () => new RootLatticeBlockItem())
+  registerItemFactory('overgrown_rootbrick_block', () => new OvergrownRootbrickBlockItem())
+  registerItemFactory('mycelial_carpet_block', () => new MycelialCarpetBlockItem())
+  registerItemFactory('glowing_sap_block', () => new GlowingSapBlockItem())
+  registerItemFactory('glow_bulb_block', () => new GlowBulbBlockItem())
+  registerItemFactory('emberwood_stairs_block', () => new EmberwoodStairsBlockItem())
+
+  // Hell: Crystal Abyss
+  registerItemFactory('prism_shard', () => new PrismShardItem())
+  registerItemFactory('prism_sigil', () => new PrismSigilItem())
+  registerItemFactory('abyssal_stone_block', () => new AbyssalStoneBlockItem())
+  registerItemFactory('glittering_abyssal_stone_block', () => new GlitteringAbyssalStoneBlockItem())
+  registerItemFactory('spire_crystal_block', () => new SpireCrystalBlockItem())
+  registerItemFactory('rose_crystal_block', () => new RoseCrystalBlockItem())
+  registerItemFactory('geode_crust_block', () => new GeodeCrustBlockItem())
+  registerItemFactory('polished_abyssal_stone_block', () => new PolishedAbyssalStoneBlockItem())
+  registerItemFactory('abyssal_bricks_block', () => new AbyssalBricksBlockItem())
+  registerItemFactory('crystal_lamp_block', () => new CrystalLampBlockItem())
+  registerItemFactory('inlaid_sanctum_tile_block', () => new InlaidSanctumTileBlockItem())
+  registerItemFactory('carved_sanctum_brick_block', () => new CarvedSanctumBrickBlockItem())
+  registerItemFactory('sanctum_pillar_block', () => new SanctumPillarBlockItem())
+  registerItemFactory('gilded_sanctum_trim_block', () => new GildedSanctumTrimBlockItem())
+  registerItemFactory('mirror_panel_block', () => new MirrorPanelBlockItem())
+  registerItemFactory('prism_roof_tile_block', () => new PrismRoofTileBlockItem())
+  registerItemFactory('crystal_archive_block', () => new CrystalArchiveBlockItem())
+  registerItemFactory('crystal_glass_block', () => new CrystalGlassBlockItem())
+  registerItemFactory('prism_pedestal_block', () => new PrismPedestalBlockItem())
+  registerItemFactory('prism_lantern_block', () => new PrismLanternBlockItem())
+  registerItemFactory('lens_apparatus_block', () => new LensApparatusBlockItem())
+  registerItemFactory('sanctum_banner_block', () => new SanctumBannerBlockItem())
+  registerItemFactory('sanctum_stairs_block', () => new SanctumStairsBlockItem())
+
+  // Hell: Cocytus
+  registerCocytusItems(registerItemFactory)
 
   console.log(`Item registry initialized with ${itemFactories.size} items`)
 }

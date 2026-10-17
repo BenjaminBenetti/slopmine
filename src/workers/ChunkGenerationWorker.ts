@@ -11,6 +11,7 @@ import { ColumnHeights } from './ColumnHeights.ts'
 import { SimplexNoise } from '../world/generate/SimplexNoise.ts'
 import { CaveCarver } from '../world/generate/caves/CaveCarver.ts'
 import { applyCaveWallLining } from '../world/generate/caves/CaveWallLining.ts'
+import { applyHellCeilingBand } from '../world/generate/HellCeiling.ts'
 import { computeSubChunkLight, provesSkyAbove, resolveSkySeed, SKY_SEED_SIZE } from '../world/lighting/SubChunkLight.ts'
 import { getLightTables } from '../world/lighting/LightTables.ts'
 import { CliffFeature, type CliffFeatureSettings } from '../world/generate/features/CliffFeature.ts'
@@ -77,6 +78,34 @@ import {
 // Import biome registry for dynamic biome instantiation
 import { biomeRegistry } from '../world/generate/biomes/BiomeRegistry.ts'
 import type { BiomeType } from '../world/generate/GenerationConfig.ts'
+
+// Hell: Molten Wastes
+import { InferniumOreFeature, type InferniumOreFeatureSettings } from '../world/generate/features/InferniumOreFeature.ts'
+
+// Hell: The Ossuary
+import { FossilFeature, type FossilFeatureSettings } from '../world/generate/features/ossuary/FossilFeature.ts'
+import { BoneSpireFeature, type BoneSpireFeatureSettings } from '../world/generate/features/ossuary/BoneSpireFeature.ts'
+import { OssuaryScatterFeature, type OssuaryScatterFeatureSettings } from '../world/generate/features/ossuary/OssuaryScatterFeature.ts'
+
+// Hell: Ember Grove
+import { GiantFungusFeature, type GiantFungusFeatureSettings } from '../world/generate/features/embergrove/GiantFungusFeature.ts'
+import { EmberFloorFeature, type EmberFloorFeatureSettings } from '../world/generate/features/embergrove/EmberFloorFeature.ts'
+
+// Hell: Crystal Abyss
+import { CrystalSpireFeature, type CrystalSpireFeatureSettings } from '../world/generate/features/crystal/CrystalSpireFeature.ts'
+import { CrystalGeodeFeature, type CrystalGeodeFeatureSettings } from '../world/generate/features/crystal/CrystalGeodeFeature.ts'
+import { AbyssIslandFeature, type AbyssIslandFeatureSettings } from '../world/generate/features/crystal/AbyssIslandFeature.ts'
+import { CrystalScatterFeature, type CrystalScatterFeatureSettings } from '../world/generate/features/crystal/CrystalScatterFeature.ts'
+import { CrystalCoreFeature, type CrystalCoreFeatureSettings } from '../world/generate/features/crystal/CrystalCoreFeature.ts'
+
+// Hell: Cocytus
+import { FrozenLakeFeature, type FrozenLakeFeatureSettings } from '../world/generate/features/FrozenLakeFeature.ts'
+import { IceSpireFeature, type IceSpireFeatureSettings } from '../world/generate/features/IceSpireFeature.ts'
+import { FrozenLavafallFeature, type FrozenLavafallFeatureSettings } from '../world/generate/features/FrozenLavafallFeature.ts'
+import { FrostCrystalFeature, type FrostCrystalFeatureSettings } from '../world/generate/features/FrostCrystalFeature.ts'
+
+// Dungeons (procedural castles)
+import { ProceduralDungeonFeature, type ProceduralDungeonConfig } from '../world/generate/dungeons/ProceduralDungeonFeature.ts'
 
 // Initialize block registry in worker context
 try {
@@ -159,6 +188,34 @@ export type FeatureConfig =
   | { type: 'huntersCamp'; settings: HuntersCampFeatureSettings }
   | { type: 'basaltColumns'; settings: BasaltColumnsFeatureSettings }
   | { type: 'charredMiningCamp'; settings: CharredMiningCampFeatureSettings }
+
+  // Hell: Molten Wastes
+  | { type: 'inferniumOre'; settings: InferniumOreFeatureSettings }
+
+  // Hell: The Ossuary
+  | { type: 'ossuaryFossil'; settings: FossilFeatureSettings }
+  | { type: 'ossuaryBoneSpire'; settings: BoneSpireFeatureSettings }
+  | { type: 'ossuaryScatter'; settings: OssuaryScatterFeatureSettings }
+
+  // Hell: Ember Grove
+  | { type: 'giantFungus'; settings: GiantFungusFeatureSettings }
+  | { type: 'emberFloor'; settings: EmberFloorFeatureSettings }
+
+  // Hell: Crystal Abyss
+  | { type: 'crystalSpire'; settings: CrystalSpireFeatureSettings }
+  | { type: 'crystalGeode'; settings: CrystalGeodeFeatureSettings }
+  | { type: 'abyssIsland'; settings: AbyssIslandFeatureSettings }
+  | { type: 'crystalScatter'; settings: CrystalScatterFeatureSettings }
+  | { type: 'crystalCore'; settings: CrystalCoreFeatureSettings }
+
+  // Hell: Cocytus
+  | { type: 'frozenLake'; settings: FrozenLakeFeatureSettings }
+  | { type: 'iceSpire'; settings: IceSpireFeatureSettings }
+  | { type: 'frozenLavafall'; settings: FrozenLavafallFeatureSettings }
+  | { type: 'frostCrystal'; settings: FrostCrystalFeatureSettings }
+
+  // Dungeons (procedural castles)
+  | { type: 'proceduralDungeon'; settings: ProceduralDungeonConfig }
 
 /**
  * Biome config passed from main thread (plain object, no class instances).
@@ -376,6 +433,51 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new BasaltColumnsFeature(config.settings)
       case 'charredMiningCamp':
         return new CharredMiningCampFeature(config.settings)
+
+      // Hell: Molten Wastes
+      case 'inferniumOre':
+        return new InferniumOreFeature(config.settings)
+
+      // Hell: The Ossuary
+      case 'ossuaryFossil':
+        return new FossilFeature(config.settings)
+      case 'ossuaryBoneSpire':
+        return new BoneSpireFeature(config.settings)
+      case 'ossuaryScatter':
+        return new OssuaryScatterFeature(config.settings)
+
+      // Hell: Ember Grove
+      case 'giantFungus':
+        return new GiantFungusFeature(config.settings)
+      case 'emberFloor':
+        return new EmberFloorFeature(config.settings)
+
+      // Hell: Crystal Abyss
+      case 'crystalSpire':
+        return new CrystalSpireFeature(config.settings)
+      case 'crystalGeode':
+        return new CrystalGeodeFeature(config.settings)
+      case 'abyssIsland':
+        return new AbyssIslandFeature(config.settings)
+      case 'crystalScatter':
+        return new CrystalScatterFeature(config.settings)
+      case 'crystalCore':
+        return new CrystalCoreFeature(config.settings)
+
+      // Hell: Cocytus
+      case 'frozenLake':
+        return new FrozenLakeFeature(config.settings)
+      case 'iceSpire':
+        return new IceSpireFeature(config.settings)
+      case 'frozenLavafall':
+        return new FrozenLavafallFeature(config.settings)
+      case 'frostCrystal':
+        return new FrostCrystalFeature(config.settings)
+
+      // Dungeons (procedural castles)
+      case 'proceduralDungeon':
+        return new ProceduralDungeonFeature(config.settings)
+
       default:
         throw new Error(`Unknown feature type: ${(config as any).type}`)
     }
@@ -480,7 +582,6 @@ function getBlendedHeightAt(
 
     // Bilinear interpolation of heights
     return Math.floor(bilerp([h00, h10, h01, h11], u, v))
-
   } else if (xInBlend) {
     // X-axis blending only
     const neighbor = xBoundary.neighborDirection === -1
@@ -492,7 +593,6 @@ function getBlendedHeightAt(
     // t: 0.5 at boundary, 1.0 at edge of blend zone (fully primary)
     const t = 0.5 + 0.5 * smoothstep(xBoundary.distance / BLEND_DISTANCE)
     return Math.floor(lerp(neighborHeight, primaryHeight, t))
-
   } else {
     // Z-axis blending only
     const neighbor = zBoundary.neighborDirection === -1
@@ -860,13 +960,44 @@ function generateSubChunkTerrain(
   // Check if we have any different neighboring biomes
   const uniqueNeighbors = getUniqueNeighborBiomes(biomeData)
 
-  if (uniqueNeighbors.length > 0) {
+  // Only chunks on their biome region's edge dither (getNeighborAndDistance
+  // returns null everywhere else), and each column dithers with at most one
+  // neighbour. Resolve every column's neighbour and probability once, then
+  // fill only the neighbours some column actually uses - interior chunks (14 of
+  // every 16 rows of a region) used to fill every differing neighbour biome's
+  // whole sub-chunk just to discard it.
+  const { chunkLocalX, chunkLocalZ } = biomeData
+  const onRegionEdge =
+    chunkLocalX === 0 || chunkLocalX === BIOME_REGION_SIZE - 1 || chunkLocalZ === 0 || chunkLocalZ === BIOME_REGION_SIZE - 1
+
+  if (uniqueNeighbors.length > 0 && onRegionEdge) {
+    const columnCount = CHUNK_SIZE_X * CHUNK_SIZE_Z
+    const columnNeighbor: Array<string | null> = new Array(columnCount).fill(null)
+    const columnProbability = new Float64Array(columnCount)
+    const usedNeighbors = new Set<string>()
+    for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
+      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
+        const worldX = chunkWorldX + localX
+        const worldZ = chunkWorldZ + localZ
+        // Uses the noise-varied effective dither distance for organic boundaries
+        const neighborInfo = getNeighborAndDistance(biomeData, localX, localZ, worldX, worldZ, seed)
+        if (!neighborInfo) continue
+        const ditherProb = getDitherProbability(neighborInfo.distance, neighborInfo.effectiveDitherDistance)
+        if (ditherProb <= 0) continue
+        const column = localZ * CHUNK_SIZE_X + localX
+        columnNeighbor[column] = neighborInfo.neighbor.name
+        columnProbability[column] = ditherProb
+        usedNeighbors.add(neighborInfo.neighbor.name)
+      }
+    }
+
     // Create temporary storage for secondary biome blocks
     const blockCount = CHUNK_SIZE_X * CHUNK_SIZE_Z * SUB_CHUNK_HEIGHT
-    const secondaryBlocks = new Uint16Array(blockCount)
+    const secondaryBlocks = usedNeighbors.size > 0 ? new Uint16Array(blockCount) : null
 
-    // For each unique neighbor, fill temp buffer and dither-blend
+    // For each neighbour some column blends with, fill temp buffer and dither-blend
     for (const neighborConfig of uniqueNeighbors) {
+      if (!secondaryBlocks || !usedNeighbors.has(neighborConfig.name)) continue
       const neighborBiome = getBiomeGenerator(neighborConfig.name, seed, seaLevel, terrainThickness)
 
       // Create a temp sub-chunk to fill with neighbor biome
@@ -884,21 +1015,11 @@ function generateSubChunkTerrain(
       // Dither-blend: copy secondary blocks based on dither pattern
       for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
         for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-          // Get world coordinates first (needed for noise-based dither distance)
+          const column = localZ * CHUNK_SIZE_X + localX
+          if (columnNeighbor[column] !== neighborConfig.name) continue
+          const ditherProb = columnProbability[column]
           const worldX = chunkWorldX + localX
           const worldZ = chunkWorldZ + localZ
-
-          // Check if this position should blend with this neighbor
-          const neighborInfo = getNeighborAndDistance(biomeData, localX, localZ, worldX, worldZ, seed)
-          if (!neighborInfo || neighborInfo.neighbor.name !== neighborConfig.name) {
-            continue
-          }
-
-          // Calculate dither probability based on distance to biome boundary
-          // Uses the noise-varied effective dither distance for organic boundaries
-          const ditherProb = getDitherProbability(neighborInfo.distance, neighborInfo.effectiveDitherDistance)
-
-          if (ditherProb <= 0) continue
 
           // Dither each Y level in this column
           for (let localY = 0; localY < SUB_CHUNK_HEIGHT; localY++) {
@@ -945,6 +1066,18 @@ function generateSubChunkTerrain(
   }
 
   return { hasTerrainAbove, maxSolidY }
+}
+
+/** 1 = opaque block id (unregistered ids read as air: 0). Built once per worker. */
+let opaqueTable: Uint8Array | null = null
+function getOpaqueTable(): Uint8Array {
+  if (!opaqueTable) {
+    opaqueTable = new Uint8Array(0x10000)
+    for (const id of BlockRegistry.getInstance().getAllBlockIds()) {
+      if (getBlock(id).properties.isOpaque) opaqueTable[id] = 1
+    }
+  }
+  return opaqueTable
 }
 
 /**
@@ -1105,6 +1238,10 @@ async function generateSubChunk(
     applyCaveWallLining(subChunk, biomeConfig.caves, seed, chunkWorldX, chunkWorldZ, minWorldY, maxWorldY, getHeight)
   }
 
+  // Phase 4.6: the Hell cavern's dark rock ceiling - the bottom layers of the
+  // surface fill turn to basalt (see HellCeiling.ts; a no-op elsewhere)
+  applyHellCeilingBand(blocks, minWorldY, seaLevel - terrainThickness)
+
   // Phase 5: Local light, after every block-writing phase: direct sky where
   // the seed opens the top face, emitters, and propagation within the
   // sub-chunk. The main thread merges it with loaded neighbours. Runs for
@@ -1125,10 +1262,13 @@ async function generateSubChunk(
   // Phase 6: Compute opacity for occlusion culling (done in worker to avoid main thread work)
   const blockData = subChunk.getBlockData()
   let isFullyOpaque = options.opacity
-  for (let i = 0; isFullyOpaque && i < blockData.length; i++) {
-    const block = getBlock(blockData[i])
-    if (!block.properties.isOpaque) {
-      isFullyOpaque = false
+  if (isFullyOpaque) {
+    const opaque = getOpaqueTable()
+    for (let i = 0; i < blockData.length; i++) {
+      if (opaque[blockData[i]] === 0) {
+        isFullyOpaque = false
+        break
+      }
     }
   }
 

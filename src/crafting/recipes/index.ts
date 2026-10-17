@@ -33,6 +33,38 @@ import { resinTapRecipes } from './ResinTapRecipes.ts'
 import { morelSmeltingRecipes } from './MorelRecipes.ts'
 import { tntRecipes } from './TntRecipe.ts'
 
+// Progression (journal, recipe sinks)
+import { progressionHandRecipes, progressionSmeltingRecipes } from './ProgressionRecipes.ts'
+
+// Weapons, tool tiers 6-7 and the Hellforge
+import { swordRecipes } from './SwordRecipes.ts'
+import { hellforgeStationRecipe, registerHellforgeWeaponRecipes } from '../../hellforge/HellforgeRecipes.ts'
+
+// Armor and Infernal Hearts
+import { hellforgeRegistry } from '../../hellforge/HellforgeRegistry.ts'
+import { armorHandRecipes, armorHellforgeRecipes } from './ArmorRecipes.ts'
+
+// Alchemy (status effect potions, Return Idol)
+import { alchemyBrewingRecipes, alchemyHandRecipes } from './AlchemyRecipes.ts'
+
+// Dungeons (guardian spawners, Sigil Compass)
+import { dungeonHandRecipes } from './DungeonRecipes.ts'
+
+// Hell: Molten Wastes
+import { moltenHandRecipes, moltenSmeltingRecipes } from './MoltenRecipes.ts'
+
+// Hell: The Ossuary
+import { ossuaryHandRecipes } from './OssuaryRecipes.ts'
+
+// Hell: Ember Grove
+import { embergroveHandRecipes, embergroveWoodworkingRecipes, embergroveSmeltingRecipes } from './EmbergroveRecipes.ts'
+
+// Hell: Crystal Abyss
+import { crystalAbyssRecipes } from './CrystalAbyssRecipes.ts'
+
+// Hell: Cocytus
+import { cocytusHandRecipes } from './CocytusRecipes.ts'
+
 /**
  * Register all default recipes.
  * Call this at startup.
@@ -136,6 +168,70 @@ export function registerDefaultRecipes(): void {
   }
   for (const recipe of carpentryWoodworkingRecipes) {
     woodworkingRegistry.register(recipe)
+  }
+
+  // Progression (journal, recipe sinks)
+  for (const recipe of progressionHandRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of progressionSmeltingRecipes) {
+    smeltingRegistry.register(recipe)
+  }
+
+  // Weapons, tool tiers 6-7 and the Hellforge
+  for (const recipe of swordRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  recipeRegistry.register(hellforgeStationRecipe)
+  registerHellforgeWeaponRecipes()
+
+  // Armor and Infernal Hearts
+  for (const recipe of armorHandRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of armorHellforgeRecipes) {
+    hellforgeRegistry.register(recipe)
+  }
+
+  // Alchemy (status effect potions, Return Idol)
+  for (const recipe of alchemyBrewingRecipes) {
+    brewingRegistry.register(recipe)
+  }
+  for (const recipe of alchemyHandRecipes) {
+    recipeRegistry.register(recipe)
+  }
+
+  // Dungeons (guardian spawners, Sigil Compass)
+  for (const recipe of dungeonHandRecipes) {
+    recipeRegistry.register(recipe)
+  }
+
+  // Hell: Molten Wastes
+  for (const recipe of moltenHandRecipes) {
+    recipeRegistry.register(recipe)
+  }
+  for (const recipe of moltenSmeltingRecipes) {
+    smeltingRegistry.register(recipe)
+  }
+
+  // Hell: The Ossuary
+  for (const recipe of ossuaryHandRecipes) {
+    recipeRegistry.register(recipe)
+  }
+
+  // Hell: Ember Grove
+  for (const recipe of embergroveHandRecipes) recipeRegistry.register(recipe)
+  for (const recipe of embergroveWoodworkingRecipes) woodworkingRegistry.register(recipe)
+  for (const recipe of embergroveSmeltingRecipes) smeltingRegistry.register(recipe)
+
+  // Hell: Crystal Abyss
+  for (const recipe of crystalAbyssRecipes) {
+    recipeRegistry.register(recipe)
+  }
+
+  // Hell: Cocytus
+  for (const recipe of cocytusHandRecipes) {
+    recipeRegistry.register(recipe)
   }
 }
 

@@ -7,6 +7,8 @@ export { StonePickaxeItem } from './pickaxe/StonePickaxeItem.ts'
 export { IronPickaxeItem } from './pickaxe/IronPickaxeItem.ts'
 export { SteelPickaxeItem } from './pickaxe/SteelPickaxeItem.ts'
 export { DiamondPickaxeItem } from './pickaxe/DiamondPickaxeItem.ts'
+export { InferniumPickaxeItem } from './pickaxe/InferniumPickaxeItem.ts'
+export { HellbanePickaxeItem } from './pickaxe/HellbanePickaxeItem.ts'
 
 // Shovel
 export { ShovelItem } from './shovel/ShovelItem.ts'
@@ -15,6 +17,8 @@ export { StoneShovelItem } from './shovel/StoneShovelItem.ts'
 export { IronShovelItem } from './shovel/IronShovelItem.ts'
 export { SteelShovelItem } from './shovel/SteelShovelItem.ts'
 export { DiamondShovelItem } from './shovel/DiamondShovelItem.ts'
+export { InferniumShovelItem } from './shovel/InferniumShovelItem.ts'
+export { HellbaneShovelItem } from './shovel/HellbaneShovelItem.ts'
 
 // Axe
 export { AxeItem } from './axe/AxeItem.ts'
@@ -23,3 +27,5 @@ export { StoneAxeItem } from './axe/StoneAxeItem.ts'
 export { IronAxeItem } from './axe/IronAxeItem.ts'
 export { SteelAxeItem } from './axe/SteelAxeItem.ts'
 export { DiamondAxeItem } from './axe/DiamondAxeItem.ts'
+export { InferniumAxeItem } from './axe/InferniumAxeItem.ts'
+export { HellbaneAxeItem } from './axe/HellbaneAxeItem.ts'

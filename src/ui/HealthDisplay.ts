@@ -1,14 +1,20 @@
-import { applyUIScale } from './uiScale.ts'
+import { HudOrder, mountHudElement } from './hudLayout.ts'
 
 export interface HealthDisplayOptions {
   heartSizePx?: number
+  /** Hearts per row (the base 40 HP fill one row of 20) */
   heartCount?: number
+  /** Most hearts ever shown (extra rows stack above the first; 30 = +20 max HP) */
+  maxHeartCount?: number
 }
 
 export interface HealthDisplayUI {
   readonly root: HTMLDivElement
+  /** Shows ceil(max / 2) hearts (up to maxHeartCount), filled by `current` */
   updateHealth(current: number, max: number): void
   flash(): void
+  /** Attach a HUD row above the hearts (e.g. armor); it moves up with extra heart rows */
+  attachAbove(element: HTMLElement): void
   destroy(): void
 }
 
@@ -24,10 +30,39 @@ function getHeartState(heartIndex: number, currentHealth: number): HeartState {
 // Counter for unique gradient IDs
 let heartIdCounter = 0
 
+/** Full-heart gradient stops + stroke; bonus hearts (past the first row) burn ember-orange. */
+interface HeartPalette {
+  readonly fullStops: string
+  readonly fullStroke: string
+  readonly emptyStroke: string
+}
+
+const NORMAL_HEART: HeartPalette = {
+  fullStops: `
+        <stop offset="0%" stop-color="#ff4444"/>
+        <stop offset="35%" stop-color="#e31b23"/>
+        <stop offset="70%" stop-color="#c01018"/>
+        <stop offset="100%" stop-color="#8a0a10"/>
+      `,
+  fullStroke: '#ff6666',
+  emptyStroke: '#602020',
+}
+
+const INFERNAL_HEART: HeartPalette = {
+  fullStops: `
+        <stop offset="0%" stop-color="#ffb347"/>
+        <stop offset="30%" stop-color="#ff6a1f"/>
+        <stop offset="65%" stop-color="#c8201c"/>
+        <stop offset="100%" stop-color="#6a0810"/>
+      `,
+  fullStroke: '#ffc46b',
+  emptyStroke: '#7a3418',
+}
+
 /**
  * Creates a 3D-style heart element with gradients and shadows.
  */
-function createHeart3D(size: number): {
+function createHeart3D(size: number, palette: HeartPalette = NORMAL_HEART): {
   container: HTMLDivElement
   emptyHeart: HTMLDivElement
   filledHeart: HTMLDivElement
@@ -58,16 +93,11 @@ function createHeart3D(size: number): {
         <stop offset="40%" stop-color="#2a1010"/>
         <stop offset="100%" stop-color="#1a0808"/>
       `
-      strokeColor = '#602020'
+      strokeColor = palette.emptyStroke
       highlightOpacity = '0.15'
     } else {
-      gradientColors = `
-        <stop offset="0%" stop-color="#ff4444"/>
-        <stop offset="35%" stop-color="#e31b23"/>
-        <stop offset="70%" stop-color="#c01018"/>
-        <stop offset="100%" stop-color="#8a0a10"/>
-      `
-      strokeColor = '#ff6666'
+      gradientColors = palette.fullStops
+      strokeColor = palette.fullStroke
       highlightOpacity = '0.4'
     }
 
@@ -115,10 +145,7 @@ function createHeart3D(size: number): {
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;">
         <defs>
           <linearGradient id="${gradId}" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#ff4444"/>
-            <stop offset="35%" stop-color="#e31b23"/>
-            <stop offset="70%" stop-color="#c01018"/>
-            <stop offset="100%" stop-color="#8a0a10"/>
+            ${palette.fullStops}
           </linearGradient>
           <radialGradient id="${highId}" cx="30%" cy="30%" r="50%">
             <stop offset="0%" stop-color="white" stop-opacity="0.4"/>
@@ -127,7 +154,7 @@ function createHeart3D(size: number): {
         </defs>
         <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
               fill="url(#${gradId})"
-              stroke="#ff6666"
+              stroke="${palette.fullStroke}"
               stroke-width="0.5"/>
         <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
               fill="url(#${highId})"/>
@@ -158,18 +185,19 @@ export function createHealthDisplayUI(
   options: HealthDisplayOptions = {}
 ): HealthDisplayUI {
   const heartSize = options.heartSizePx ?? 24
-  const heartCount = options.heartCount ?? 20
+  const rowLength = options.heartCount ?? 20
+  const maxHearts = Math.max(rowLength, options.maxHeartCount ?? 30)
 
+  // Column, bottom-up: first heart row at the bottom, extra rows and
+  // attached HUD rows (armor) stack above it, all left-aligned. Mounted at
+  // the bottom of the HUD's bottom-centre column, right above the toolbar;
+  // action-bar messages stack above it there.
   const root = document.createElement('div')
-  root.style.position = 'fixed'
-  root.style.left = '50%'
-  root.style.bottom = 'calc(2.5% + 70px)'
-  root.style.transform = 'translateX(-50%)'
   root.style.display = 'flex'
-  root.style.gap = '3px'
+  root.style.flexDirection = 'column-reverse'
+  root.style.alignItems = 'flex-start'
+  root.style.gap = '2px'
   root.style.pointerEvents = 'none'
-  root.style.zIndex = '26'
-  applyUIScale(root)
 
   const hearts: Array<{
     container: HTMLDivElement
@@ -177,14 +205,42 @@ export function createHealthDisplayUI(
     filledHeart: HTMLDivElement
     halfHeart: HTMLDivElement
   }> = []
+  const rows: HTMLDivElement[] = []
 
-  for (let i = 0; i < heartCount; i++) {
-    const heart = createHeart3D(heartSize)
+  for (let i = 0; i < maxHearts; i++) {
+    const rowIndex = Math.floor(i / rowLength)
+    if (rowIndex >= rows.length) {
+      const row = document.createElement('div')
+      row.style.display = 'flex'
+      row.style.gap = '3px'
+      rows.push(row)
+      root.appendChild(row)
+    }
+    const heart = createHeart3D(heartSize, rowIndex === 0 ? NORMAL_HEART : INFERNAL_HEART)
     hearts.push(heart)
-    root.appendChild(heart.container)
+    rows[rowIndex].appendChild(heart.container)
   }
 
-  parent.appendChild(root)
+  // HUD rows attached above the hearts (appended last = drawn on top)
+  const aboveSlot = document.createElement('div')
+  aboveSlot.style.display = 'flex'
+  aboveSlot.style.flexDirection = 'column-reverse'
+  aboveSlot.style.alignItems = 'flex-start'
+  aboveSlot.style.gap = '2px'
+  root.appendChild(aboveSlot)
+
+  mountHudElement(root, 'bottomCenter', HudOrder.HEARTS, parent)
+
+  /** Show ceil(max / 2) hearts; hide the rest and any empty extra row. */
+  function updateHeartCount(max: number): void {
+    const visible = Math.max(1, Math.min(maxHearts, Math.ceil(max / 2)))
+    for (let i = 0; i < hearts.length; i++) {
+      hearts[i].container.style.display = i < visible ? '' : 'none'
+    }
+    for (let r = 0; r < rows.length; r++) {
+      rows[r].style.display = r * rowLength < visible ? 'flex' : 'none'
+    }
+  }
 
   function updateHeartVisuals(current: number): void {
     for (let i = 0; i < hearts.length; i++) {
@@ -208,8 +264,9 @@ export function createHealthDisplayUI(
     }
   }
 
-  // Initialize with full health
-  updateHeartVisuals(heartCount * 2)
+  // Initialize with one full row
+  updateHeartCount(rowLength * 2)
+  updateHeartVisuals(rowLength * 2)
 
   // Track flash state for cleanup
   let flashTimeout: ReturnType<typeof setTimeout> | null = null
@@ -217,8 +274,13 @@ export function createHealthDisplayUI(
   return {
     root,
 
-    updateHealth(current: number, _max: number): void {
+    updateHealth(current: number, max: number): void {
+      updateHeartCount(max)
       updateHeartVisuals(current)
+    },
+
+    attachAbove(element: HTMLElement): void {
+      aboveSlot.appendChild(element)
     },
 
     flash(): void {
@@ -246,9 +308,7 @@ export function createHealthDisplayUI(
       if (flashTimeout) {
         clearTimeout(flashTimeout)
       }
-      if (root.parentElement === parent) {
-        parent.removeChild(root)
-      }
+      root.remove()
     },
   }
 }

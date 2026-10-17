@@ -39,6 +39,8 @@ export interface IModifiedChunkProvider {
 export class PersistenceManager {
   private worker: Worker | null = null
   private initialized = false
+  /** clearAll() ran (New Game): nothing is written any more - the page reloads into the new world */
+  private writesClosed = false
   private storagePersisted = false
   private initPromise: Promise<boolean> | null = null
 
@@ -73,6 +75,8 @@ export class PersistenceManager {
 
   // Auto-save state
   private autoSaveInterval: ReturnType<typeof setInterval> | null = null
+  /** Keyed player data saved with every saveAll (see registerPlayerDataContributor). */
+  private readonly playerDataContributors = new Map<string, () => unknown>()
   private autoSaveCallback: (() => {
     inventory: SerializedInventory
     chunkProvider: IModifiedChunkProvider
@@ -302,15 +306,17 @@ export class PersistenceManager {
   }
 
   /**
-   * Save a single sub-chunk to storage.
+   * Save a single sub-chunk to storage, with the block states inside it
+   * (optional) written in the same transaction.
    */
   async saveSubChunk(
     coordinate: ISubChunkCoordinate,
     blocks: Uint16Array,
     metadata: Uint8Array | undefined,
-    skyOpenAbove: boolean
+    skyOpenAbove: boolean,
+    blockStates?: SerializedBlockState[]
   ): Promise<void> {
-    if (!this.initialized || !this.worker) {
+    if (!this.initialized || !this.worker || this.writesClosed) {
       return
     }
 
@@ -336,6 +342,7 @@ export class PersistenceManager {
       blocks: blocksCopy,
       metadata: metadataCopy,
       skyOpenAbove,
+      blockStates: blockStates && blockStates.length > 0 ? blockStates : undefined,
     })
     if (response.type !== 'subchunk-saved') {
       // Kept in unconfirmedSaves: still served to loads
@@ -359,12 +366,20 @@ export class PersistenceManager {
     bedSpawnPoint?: { x: number; y: number; z: number },
     blockStates?: SerializedBlockState[]
   ): Promise<void> {
-    if (!this.initialized || !this.worker) {
+    if (!this.initialized || !this.worker || this.writesClosed) {
       return
     }
 
+    // Every request is posted right here, before the first await (the worker
+    // handles them strictly in order). On a page unload (saveBeforeUnload)
+    // nothing after an await runs: awaiting each reply before sending the
+    // next request left the inventory, player data, metadata and block states
+    // unsent whenever sub-chunks were saved first, and a page that died
+    // between two replies kept the inventory without the worn armor that had
+    // been moved out of it.
     const modifiedChunks = chunkProvider.getModifiedSubChunks()
 
+    let batchSave: Promise<PersistenceWorkerResponse> | null = null
     if (modifiedChunks.length > 0) {
       // Batch save all modified sub-chunks
       const subchunks = modifiedChunks.map((mc) => ({
@@ -376,35 +391,22 @@ export class PersistenceManager {
         skyOpenAbove: mc.skyOpenAbove,
       }))
 
-      const response = await this.sendRequest({
+      batchSave = this.sendRequest({
         type: 'batch-save-subchunks',
         subchunks,
       })
-
-      // Update cache and clear modified flags
-      for (const mc of modifiedChunks) {
-        const key = createSubChunkKey(mc.coordinate.x, mc.coordinate.z, mc.coordinate.subY)
-        this.existenceCache.set(key, true)
-        this.modifiedSubChunks.delete(key)
-      }
-
-      if (response.type === 'batch-save-complete') {
-        // Confirmed written: these versions need no further save
-        for (const mc of modifiedChunks) mc.markSaved?.()
-        chunkProvider.clearModifiedFlags()
-      } else {
-        console.error('Batch sub-chunk save failed:', response.type === 'error' ? response.message : response.type)
-      }
     }
 
-    // Save inventory
-    await this.sendRequest({
+    // Inventory and keyed player data (worn armor, ...) in one transaction:
+    // items move between them, so both or neither are written
+    const inventorySave = this.sendRequest({
       type: 'save-inventory',
       inventory,
+      playerData: this.collectPlayerData(),
     })
 
     // Save metadata
-    await this.sendRequest({
+    const metadataSave = this.sendRequest({
       type: 'save-metadata',
       metadata: {
         version: 1,
@@ -419,14 +421,62 @@ export class PersistenceManager {
     })
 
     // Save block states (forges, workbenches, etc.)
-    if (blockStates && blockStates.length > 0) {
-      const savedCount = await this.saveBlockStates(blockStates)
+    const blockStatesSave = blockStates && blockStates.length > 0 ? this.saveBlockStates(blockStates) : null
+
+    const [batchResponse, inventoryResponse, , savedCount] = await Promise.all([
+      batchSave,
+      inventorySave,
+      metadataSave,
+      blockStatesSave,
+    ])
+
+    if (batchResponse) {
+      // Update cache and clear modified flags
+      for (const mc of modifiedChunks) {
+        const key = createSubChunkKey(mc.coordinate.x, mc.coordinate.z, mc.coordinate.subY)
+        this.existenceCache.set(key, true)
+        this.modifiedSubChunks.delete(key)
+      }
+
+      if (batchResponse.type === 'batch-save-complete') {
+        // Confirmed written: these versions need no further save
+        for (const mc of modifiedChunks) mc.markSaved?.()
+        chunkProvider.clearModifiedFlags()
+      } else {
+        console.error('Batch sub-chunk save failed:', batchResponse.type === 'error' ? batchResponse.message : batchResponse.type)
+      }
+    }
+
+    if (inventoryResponse.type === 'error') {
+      console.error('[PersistenceManager] saving inventory and player data failed:', inventoryResponse.message)
+    }
+
+    if (savedCount !== null) {
       console.log(`[PersistenceManager] Saved ${savedCount} block states`)
     }
   }
 
   /**
-   * Load player inventory from storage.
+   * Collect every contributor's player data for a save. Each value is
+   * snapshotted with structuredClone, so a contributor returning something
+   * uncloneable is skipped (logged) instead of failing the whole player save.
+   */
+  private collectPlayerData(): Array<{ key: string; data: unknown }> {
+    const entries: Array<{ key: string; data: unknown }> = []
+    for (const [key, contributor] of this.playerDataContributors) {
+      try {
+        const data = contributor()
+        if (data !== undefined) entries.push({ key, data: structuredClone(data) })
+      } catch (error) {
+        console.error(`[PersistenceManager] player data contributor '${key}' failed:`, error)
+      }
+    }
+    return entries
+  }
+
+  /**
+   * Load player inventory from storage (null when never saved). Throws when
+   * the read fails - the caller must not then save its default inventory.
    */
   async loadInventory(): Promise<SerializedInventory | null> {
     if (!this.initialized || !this.worker) {
@@ -439,7 +489,49 @@ export class PersistenceManager {
       return response.inventory
     }
 
-    return null
+    const reason = response.type === 'error' ? response.message : `unexpected response ${response.type}`
+    throw new Error(`Failed to load inventory: ${reason}`)
+  }
+
+  /**
+   * Register a keyed player-data contributor: `collect()` is called on every
+   * save (manual, autosave, page unload) and its result stored under `key`
+   * in the player store. Return undefined to skip a save. The value must be
+   * structured-cloneable (plain objects, arrays, strings, numbers); include
+   * a `version` field and tolerate missing/unknown fields when loading.
+   */
+  registerPlayerDataContributor(key: string, collect: () => unknown): void {
+    this.playerDataContributors.set(key, collect)
+  }
+
+  /**
+   * Save keyed player data now (outside the regular save cycle).
+   */
+  async savePlayerData(key: string, data: unknown): Promise<void> {
+    if (!this.initialized || !this.worker || this.writesClosed) {
+      return
+    }
+    const response = await this.sendRequest({ type: 'save-player-data', key, data })
+    if (response.type === 'error') {
+      console.error(`[PersistenceManager] saving player data '${key}' failed:`, response.message)
+    }
+  }
+
+  /**
+   * Load keyed player data (null when never saved, or before initialize()).
+   * Throws when the read fails: that is not "never saved" - a caller taking it
+   * for null would contribute its defaults and save them over the stored data.
+   */
+  async loadPlayerData<T = unknown>(key: string): Promise<T | null> {
+    if (!this.initialized || !this.worker) {
+      return null
+    }
+    const response = await this.sendRequest({ type: 'load-player-data', key })
+    if (response.type === 'player-data-loaded') {
+      return (response.data ?? null) as T | null
+    }
+    const reason = response.type === 'error' ? response.message : `unexpected response ${response.type}`
+    throw new Error(`Failed to load player data '${key}': ${reason}`)
   }
 
   /**
@@ -456,7 +548,9 @@ export class PersistenceManager {
       return response.metadata
     }
 
-    return null
+    // Not "never saved": saving the default position/spawn over it would lose them
+    const reason = response.type === 'error' ? response.message : `unexpected response ${response.type}`
+    throw new Error(`Failed to load metadata: ${reason}`)
   }
 
   // ============================================================================
@@ -470,7 +564,7 @@ export class PersistenceManager {
    * @returns Number of states saved
    */
   async saveBlockStates(states: SerializedBlockState[]): Promise<number> {
-    if (!this.initialized || !this.worker) {
+    if (!this.initialized || !this.worker || this.writesClosed) {
       return 0
     }
 
@@ -524,7 +618,7 @@ export class PersistenceManager {
    * Fire-and-forget - doesn't wait for completion.
    */
   deleteBlockState(x: bigint, y: bigint, z: bigint): void {
-    if (!this.initialized || !this.worker) {
+    if (!this.initialized || !this.worker || this.writesClosed) {
       return
     }
 
@@ -644,13 +738,17 @@ export class PersistenceManager {
   }
 
   /**
-   * Clear all saved data (for new game).
+   * Clear all saved data (for new game). Every later write is ignored: a
+   * save posted after the clear (a debounced journal save, an autosave, a
+   * sub-chunk unload while the page reloads) would carry the old world's
+   * progress into the new one.
    */
   async clearAll(): Promise<void> {
     if (!this.initialized || !this.worker) {
       return
     }
 
+    this.writesClosed = true
     await this.sendRequest({ type: 'clear-all' })
     this.clearCache()
     console.log('All saved data cleared')

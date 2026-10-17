@@ -1,4 +1,5 @@
 import type { LodInitRequest, LodWorkerRequest, LodWorkerResponse } from './LodTypes.ts'
+import { whenWorkerLoadSlotFree, isWorkerLoadFailure } from '../../workers/WorkerLoadGate.ts'
 
 /** Delay between worker creations (same staggering as the generation pool). */
 const CREATE_STAGGER_MS = 100
@@ -103,8 +104,16 @@ export class LodWorkerPool {
     }
   }
 
+  /** Create a worker once a load slot is free (see WorkerLoadGate). */
   private createWorker(index: number, attempt: number): void {
-    if (this.disposed) return
+    whenWorkerLoadSlotFree((loaded) => this.startWorker(index, attempt, loaded))
+  }
+
+  private startWorker(index: number, attempt: number, loaded: () => void): void {
+    if (this.disposed) {
+      loaded()
+      return
+    }
     const worker = new Worker(
       new URL('../../workers/ChunkGenerationWorker.ts', import.meta.url),
       { type: 'module' }
@@ -112,6 +121,7 @@ export class LodWorkerPool {
     worker.onmessage = (event: MessageEvent<LodWorkerResponse | { type: 'worker-ready' }>) => {
       const data = event.data
       if (data.type === 'worker-ready') {
+        loaded()
         this.ready[index] = true
         if (this.initMessage) this.sendInit(index)
         return
@@ -119,7 +129,12 @@ export class LodWorkerPool {
       this.onResponse(index, data)
     }
     worker.onerror = (event) => {
-      console.error(`[LodWorkerPool] LOD worker ${index} error (attempt ${attempt}):`, event.message)
+      loaded()
+      if (isWorkerLoadFailure(event)) {
+        console.warn(`[LodWorkerPool] LOD worker ${index} failed to load its scripts (attempt ${attempt})`)
+      } else {
+        console.error(`[LodWorkerPool] LOD worker ${index} error (attempt ${attempt}):`, event.message)
+      }
       if (this.workers[index] !== worker) return
       if (this.ready[index]) {
         // Request errors come back as lod-error messages; an error event from

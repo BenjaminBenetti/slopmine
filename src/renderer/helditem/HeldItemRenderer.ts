@@ -146,6 +146,8 @@ export class HeldItemRenderer {
   // Swing animation state
   private isMining = false
   private swingPhase = 0
+  /** Seconds left of a one-shot attack swing (playAttackSwing) */
+  private attackSwingRemaining = 0
   /** Stores the current swing offset applied to position */
   private readonly swingOffset = new THREE.Vector3()
   /** Stores the current swing rotation applied to mesh */
@@ -291,6 +293,16 @@ export class HeldItemRenderer {
   }
 
   /**
+   * Play one full swing (a melee hit), even if the button was only tapped.
+   */
+  playAttackSwing(): void {
+    if (!this.isMining && this.attackSwingRemaining <= 0) {
+      this.swingPhase = 0
+    }
+    this.attackSwingRemaining = this.getSwingConfig().duration
+  }
+
+  /**
    * Set whether the player is currently eating.
    * Controls the eating animation.
    */
@@ -338,6 +350,7 @@ export class HeldItemRenderer {
     // Reset animation phases when switching items
     this.bobPhase = 0
     this.swingPhase = 0
+    this.attackSwingRemaining = 0
     this.swingOffset.set(0, 0, 0)
     this.swingRotation.set(0, 0, 0)
     this.eatingPhase = 0
@@ -415,8 +428,9 @@ export class HeldItemRenderer {
    */
   private updateSwingAnimation(deltaTime: number): void {
     const config = this.getSwingConfig()
+    this.attackSwingRemaining = Math.max(0, this.attackSwingRemaining - deltaTime)
 
-    if (this.isMining) {
+    if (this.isMining || this.attackSwingRemaining > 0) {
       // Advance swing phase (loops continuously)
       const swingSpeed = (1 / config.duration) * Math.PI * 2
       this.swingPhase += deltaTime * swingSpeed

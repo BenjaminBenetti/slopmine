@@ -12,6 +12,8 @@ export const ItemTags = {
   COAL: 'coal',
   LOG: 'log',
   PLANK: 'plank',
+  /** Animal hides that make leather armor (pelts, leather, scales) */
+  HIDE: 'hide',
 } as const
 
 export type ItemTag = (typeof ItemTags)[keyof typeof ItemTags]

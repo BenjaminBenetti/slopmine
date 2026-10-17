@@ -17,6 +17,6 @@ export class AlligatorLeatherItem extends Item {
   }
 
   override get tags(): ReadonlyArray<string> {
-    return ['material', 'leather']
+    return ['material', 'leather', 'hide']
   }
 }
