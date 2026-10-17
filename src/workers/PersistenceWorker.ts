@@ -115,7 +115,8 @@ async function saveSubChunk(
   subY: number,
   blocks: Uint16Array,
   metadata: Uint8Array | undefined,
-  skyOpenAbove: boolean
+  skyOpenAbove: boolean,
+  blockStates: SerializedBlockState[] = []
 ): Promise<void> {
   const database = await openDatabase()
 
@@ -157,6 +158,19 @@ async function saveSubChunk(
 
   if (metadata) {
     new Uint8Array(buffer, offset, metadataLength).set(metadata)
+  }
+
+  if (blockStates.length > 0) {
+    // The sub-chunk's block states (chest contents, ...) in the same
+    // transaction: a chest block is never stored without its contents
+    return new Promise((resolve, reject) => {
+      const tx = database.transaction([CHUNKS_STORE, BLOCK_STATES_STORE], 'readwrite')
+      tx.objectStore(CHUNKS_STORE).put(buffer, makeChunkKey(chunkX, chunkZ, subY))
+      writeBlockStates(tx.objectStore(BLOCK_STATES_STORE), blockStates, () => {})
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(new Error(`Failed to save chunk: ${tx.error?.message}`))
+      tx.onabort = () => reject(new Error(`Failed to save chunk: ${tx.error?.message ?? 'transaction aborted'}`))
+    })
   }
 
   return new Promise((resolve, reject) => {
@@ -290,19 +304,27 @@ async function checkSubChunkExists(
 }
 
 /**
- * Save player inventory.
+ * Save player inventory, plus keyed player data in the same transaction
+ * (worn armor and the inventory exchange items: both or neither are written).
  */
-async function saveInventory(inventory: SerializedInventory): Promise<void> {
+async function saveInventory(
+  inventory: SerializedInventory,
+  playerData: ReadonlyArray<{ key: string; data: unknown }> = []
+): Promise<void> {
   const database = await openDatabase()
 
   return new Promise((resolve, reject) => {
     const tx = database.transaction(PLAYER_STORE, 'readwrite')
     const store = tx.objectStore(PLAYER_STORE)
 
-    const request = store.put(inventory, 'inventory')
+    store.put(inventory, 'inventory')
+    for (const entry of playerData) {
+      store.put(entry.data, playerDataStoreKey(entry.key))
+    }
 
-    request.onsuccess = () => resolve()
-    request.onerror = () => reject(new Error(`Failed to save inventory: ${request.error?.message}`))
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(new Error(`Failed to save inventory: ${tx.error?.message}`))
+    tx.onabort = () => reject(new Error(`Failed to save inventory: ${tx.error?.message ?? 'transaction aborted'}`))
   })
 }
 
@@ -320,6 +342,48 @@ async function loadInventory(): Promise<SerializedInventory | null> {
 
     request.onsuccess = () => resolve(request.result || null)
     request.onerror = () => reject(new Error(`Failed to load inventory: ${request.error?.message}`))
+  })
+}
+
+/**
+ * Store key of keyed player data. Prefixed so it can never collide with the
+ * fixed 'inventory' record in the same store.
+ */
+function playerDataStoreKey(key: string): string {
+  return `data:${key}`
+}
+
+/**
+ * Save keyed player data (any structured-cloneable value).
+ */
+async function savePlayerData(key: string, data: unknown): Promise<void> {
+  const database = await openDatabase()
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(PLAYER_STORE, 'readwrite')
+    const store = tx.objectStore(PLAYER_STORE)
+
+    const request = store.put(data, playerDataStoreKey(key))
+
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(new Error(`Failed to save player data '${key}': ${request.error?.message}`))
+  })
+}
+
+/**
+ * Load keyed player data (null when never saved).
+ */
+async function loadPlayerData(key: string): Promise<unknown> {
+  const database = await openDatabase()
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(PLAYER_STORE, 'readonly')
+    const store = tx.objectStore(PLAYER_STORE)
+
+    const request = store.get(playerDataStoreKey(key))
+
+    request.onsuccess = () => resolve(request.result ?? null)
+    request.onerror = () => reject(new Error(`Failed to load player data '${key}': ${request.error?.message}`))
   })
 }
 
@@ -432,6 +496,41 @@ function makePositionKey(x: string, y: string, z: string): string {
 }
 
 /**
+ * Queue block-state writes on a block-states object store of an open
+ * transaction: a put per state, or a delete for a removal record (an emptied
+ * state: drop its old record, else the next load refills it). `onWritten`
+ * counts each successful request.
+ */
+function writeBlockStates(store: IDBObjectStore, states: SerializedBlockState[], onWritten: () => void): void {
+  for (const state of states) {
+    const posKey = makePositionKey(
+      state.position.x,
+      state.position.y,
+      state.position.z
+    )
+    if (state.removed) {
+      const request = store.delete(posKey)
+      request.onsuccess = onWritten
+      request.onerror = () => {
+        console.error(`Failed to remove block state at ${posKey}:`, request.error)
+      }
+      continue
+    }
+    // Add chunk key for indexing
+    const stateWithChunk = {
+      ...state,
+      chunkKey: computeChunkKey(state.position.x, state.position.z),
+    }
+
+    const request = store.put(stateWithChunk, posKey)
+    request.onsuccess = onWritten
+    request.onerror = () => {
+      console.error(`Failed to save block state at ${posKey}:`, request.error)
+    }
+  }
+}
+
+/**
  * Save block states to IndexedDB.
  * Each state is stored with its coordinate key and chunk index.
  */
@@ -447,26 +546,9 @@ async function saveBlockStates(states: SerializedBlockState[]): Promise<number> 
     const store = tx.objectStore(BLOCK_STATES_STORE)
     let savedCount = 0
 
-    for (const state of states) {
-      const posKey = makePositionKey(
-        state.position.x,
-        state.position.y,
-        state.position.z
-      )
-      // Add chunk key for indexing
-      const stateWithChunk = {
-        ...state,
-        chunkKey: computeChunkKey(state.position.x, state.position.z),
-      }
-
-      const request = store.put(stateWithChunk, posKey)
-      request.onsuccess = () => {
-        savedCount++
-      }
-      request.onerror = () => {
-        console.error(`Failed to save block state at ${posKey}:`, request.error)
-      }
-    }
+    writeBlockStates(store, states, () => {
+      savedCount++
+    })
 
     tx.oncomplete = () => resolve(savedCount)
     tx.onerror = () => reject(new Error(`Failed to save block states: ${tx.error?.message}`))
@@ -559,7 +641,8 @@ async function handleMessage(event: MessageEvent<PersistenceWorkerRequest & { re
           request.subY,
           request.blocks,
           request.metadata,
-          request.skyOpenAbove
+          request.skyOpenAbove,
+          request.blockStates
         )
         response = {
           type: 'subchunk-saved',
@@ -620,7 +703,7 @@ async function handleMessage(event: MessageEvent<PersistenceWorkerRequest & { re
       }
 
       case 'save-inventory': {
-        await saveInventory(request.inventory)
+        await saveInventory(request.inventory, request.playerData)
         response = { type: 'inventory-saved' }
         break
       }
@@ -628,6 +711,18 @@ async function handleMessage(event: MessageEvent<PersistenceWorkerRequest & { re
       case 'load-inventory': {
         const inventory = await loadInventory()
         response = { type: 'inventory-loaded', inventory }
+        break
+      }
+
+      case 'save-player-data': {
+        await savePlayerData(request.key, request.data)
+        response = { type: 'player-data-saved', key: request.key }
+        break
+      }
+
+      case 'load-player-data': {
+        const data = await loadPlayerData(request.key)
+        response = { type: 'player-data-loaded', key: request.key, data }
         break
       }
 

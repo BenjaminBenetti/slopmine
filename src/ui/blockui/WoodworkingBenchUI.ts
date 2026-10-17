@@ -1,9 +1,11 @@
 import type { IBlockUI } from './interfaces/IBlockUI.ts'
 import type { IItemStack, IPlayerState } from '../../player/PlayerState.ts'
+import type { IItem } from '../../items/Item.ts'
 import type { WoodworkingBenchState } from '../../world/blocks/types/woodworking_bench/WoodworkingBenchState.ts'
 import type { IWoodworkingRecipe } from '../../woodworking/interfaces/IWoodworkingRecipe.ts'
 import { syncSlotsFromState } from '../SlotRenderer.ts'
 import type { CraftBatch } from '../CraftingPanel.ts'
+import { gameEvents } from '../../events/GameEvents.ts'
 
 /**
  * Woodworking bench UI - deliberately mirrors the hand-crafting panel:
@@ -14,7 +16,9 @@ import type { CraftBatch } from '../CraftingPanel.ts'
  */
 export function createWoodworkingBenchUI(
   state: WoodworkingBenchState,
-  playerState: IPlayerState
+  playerState: IPlayerState,
+  /** Throws out what a full inventory can't take (craft results, returned ingredients) */
+  dropOverflow?: (item: IItem, count: number) => void
 ): IBlockUI {
   const slotSize = 44
 
@@ -100,9 +104,15 @@ export function createWoodworkingBenchUI(
     while (crafted < cap) {
       if (!state.craft(recipe)) break // ingredients exhausted
 
-      const leftover = playerState.addItemCounted(recipe.createResult(), recipe.resultCount)
+      const product = recipe.createResult()
+      const leftover = playerState.addItemCounted(product, recipe.resultCount)
       crafted++
-      if (leftover > 0) break // inventory full - stop batching
+      gameEvents.emit({ type: 'item-crafted', itemId: product.id, count: recipe.resultCount, station: 'woodworking' })
+      if (leftover > 0) {
+        // Inventory full: the rest is thrown out (never lost) - stop batching
+        dropOverflow?.(product, leftover)
+        break
+      }
     }
 
     if (crafted > 0) refresh()
@@ -194,7 +204,8 @@ export function createWoodworkingBenchUI(
     for (let i = 0; i < state.getSlotCount(); i++) {
       const stack = state.getStack(i)
       if (stack) {
-        playerState.addItem(stack.item, stack.count)
+        const leftover = playerState.addItemCounted(stack.item, stack.count)
+        if (leftover > 0) dropOverflow?.(stack.item, leftover)
         state.setStack(i, null)
       }
     }

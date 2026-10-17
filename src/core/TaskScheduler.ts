@@ -189,6 +189,19 @@ export class TaskScheduler {
     this.currentBudgetMs = Math.max(this.minBudgetMs, Math.min(this.maxBudgetMs, targetBudget))
   }
 
+  /** Task ids that have thrown (logged once each). */
+  private readonly failedTaskIds = new Set<string>()
+  /** Result recorded for a task that threw this frame (pre-allocated). */
+  private readonly failedResult: ITaskResult = { completed: false, elapsedMs: 0 }
+
+  /** Log a task's exception the first time that task throws; later throws are counted silently. */
+  private reportTaskError(taskId: string, error: unknown): void {
+    if (this.failedTaskIds.has(taskId)) return
+    this.failedTaskIds.add(taskId)
+    const detail = error instanceof Error ? (error.stack ?? `${error.name}: ${error.message}`) : String(error)
+    console.error(`[TaskScheduler] task '${taskId}' threw (further errors from it are not logged; it keeps running every frame):\n${detail}`)
+  }
+
   /**
    * Check if there's time remaining in the current frame budget.
    */
@@ -237,9 +250,19 @@ export class TaskScheduler {
           continue
         }
 
-        // Execute task
+        // Execute task. A throwing task must never stop the frame (the game
+        // loop re-arms requestAnimationFrame only after update returns): log
+        // it once per task id with the stack, count its time, run the rest.
         const remainingMs = Math.max(0, this.currentBudgetMs - this.getElapsedMs())
-        const result = task.execute(deltaTime, remainingMs)
+        const taskStart = performance.now()
+        let result: ITaskResult
+        try {
+          result = task.execute(deltaTime, remainingMs)
+        } catch (error) {
+          this.reportTaskError(task.id, error)
+          this.failedResult.elapsedMs = performance.now() - taskStart
+          result = this.failedResult
+        }
         tasksExecuted++
 
         // Track time

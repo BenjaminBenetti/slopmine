@@ -163,6 +163,129 @@ import { CrabShellBlock } from './types/crab_shell/CrabShellBlock.ts'
 import { SeaStarBlock } from './types/sea_star/SeaStarBlock.ts'
 import { ResinTorchBlock } from './types/resin_torch/ResinTorchBlock.ts'
 
+// Progression (journal, recipe sinks)
+import { SlimeBlock } from './types/slime/SlimeBlock.ts'
+
+// Weapons, tool tiers 6-7 and the Hellforge
+import { HellforgeBlock } from './types/hellforge/HellforgeBlock.ts'
+
+// Dungeons (guardian spawners, Sigil Compass)
+import { GuardianSpawnerBlock } from './types/guardian_spawner/GuardianSpawnerBlock.ts'
+import { GuardianSpawnerSpentBlock } from './types/guardian_spawner_spent/GuardianSpawnerSpentBlock.ts'
+import { GarrisonSpawnerBlock } from './types/garrison_spawner/GarrisonSpawnerBlock.ts'
+
+// Hell: Molten Wastes
+import { InferniumOreBlock } from './types/infernium_ore/InferniumOreBlock.ts'
+import { InfernalBricksBlock } from './types/infernal_bricks/InfernalBricksBlock.ts'
+import { CrackedInfernalBricksBlock } from './types/cracked_infernal_bricks/CrackedInfernalBricksBlock.ts'
+import { InfernalBrickPillarBlock } from './types/infernal_brick_pillar/InfernalBrickPillarBlock.ts'
+import { EmberGlyphBlock } from './types/ember_glyph/EmberGlyphBlock.ts'
+import { InfernalBrazierBlock } from './types/infernal_brazier/InfernalBrazierBlock.ts'
+import { HellAshBlock } from './types/hell_ash/HellAshBlock.ts'
+import { CraftedInfernalBricksBlock } from './types/crafted_infernal_bricks/CraftedInfernalBricksBlock.ts'
+import { InfernalTilesBlock } from './types/infernal_tiles/InfernalTilesBlock.ts'
+import { ObsidianBricksBlock } from './types/obsidian_bricks/ObsidianBricksBlock.ts'
+import { GildedInfernalBricksBlock } from './types/gilded_infernal_bricks/GildedInfernalBricksBlock.ts'
+import { MagmaBricksBlock } from './types/magma_bricks/MagmaBricksBlock.ts'
+import { ScorchedInfernalBricksBlock } from './types/scorched_infernal_bricks/ScorchedInfernalBricksBlock.ts'
+import { CharredPlanksBlock } from './types/charred_planks/CharredPlanksBlock.ts'
+import { InfernalBrickStairsBlock } from './types/infernal_brick_stairs/InfernalBrickStairsBlock.ts'
+import { InfernalBrickSlabBlock } from './types/infernal_brick_slab/InfernalBrickSlabBlock.ts'
+import { InfernalIronBarsBlock } from './types/infernal_iron_bars/InfernalIronBarsBlock.ts'
+import { InfernalChainBlock } from './types/infernal_chain/InfernalChainBlock.ts'
+import { EmberLanternBlock } from './types/ember_lantern/EmberLanternBlock.ts'
+import { InfernalBannerBlock } from './types/infernal_banner/InfernalBannerBlock.ts'
+import { InfernalAnvilBlock } from './types/infernal_anvil/InfernalAnvilBlock.ts'
+import { WeaponRackBlock } from './types/weapon_rack/WeaponRackBlock.ts'
+import { InfernalThroneBlock } from './types/infernal_throne/InfernalThroneBlock.ts'
+import { InfernalHoardBlock } from './types/infernal_hoard/InfernalHoardBlock.ts'
+
+// Hell: The Ossuary
+import { BoneAshBlock } from './types/bone_ash/BoneAshBlock.ts'
+import { OssifiedRockBlock } from './types/ossified_rock/OssifiedRockBlock.ts'
+import { BoneBlock } from './types/bone_block/BoneBlock.ts'
+import { SoulVeinBlock } from './types/soul_vein/SoulVeinBlock.ts'
+import { CatacombBrickBlock } from './types/catacomb_brick/CatacombBrickBlock.ts'
+import { CatacombSkullBrickBlock } from './types/catacomb_skull_brick/CatacombSkullBrickBlock.ts'
+import { SoulLanternBlock } from './types/soul_lantern/SoulLanternBlock.ts'
+import { SoulTorchBlock } from './types/soul_torch/SoulTorchBlock.ts'
+import { SarcophagusBlock } from './types/sarcophagus/SarcophagusBlock.ts'
+import { BonePileBlock } from './types/bone_pile/BonePileBlock.ts'
+import { SoulBloomBlock } from './types/soul_bloom/SoulBloomBlock.ts'
+import { CrackedCatacombBrickBlock } from './types/cracked_catacomb_brick/CrackedCatacombBrickBlock.ts'
+import { CatacombTileBlock } from './types/catacomb_tile/CatacombTileBlock.ts'
+import { CarvedBonePillarBlock } from './types/carved_bone_pillar/CarvedBonePillarBlock.ts'
+import { BurialNicheBlock } from './types/burial_niche/BurialNicheBlock.ts'
+import { CryptGrateBlock } from './types/crypt_grate/CryptGrateBlock.ts'
+import { CryptAltarBlock } from './types/crypt_altar/CryptAltarBlock.ts'
+import { GildedReliquaryBlock } from './types/gilded_reliquary/GildedReliquaryBlock.ts'
+import { CatacombFriezeBlock } from './types/catacomb_frieze/CatacombFriezeBlock.ts'
+import { FuneraryUrnBlock } from './types/funerary_urn/FuneraryUrnBlock.ts'
+import { SoulCandelabraBlock } from './types/soul_candelabra/SoulCandelabraBlock.ts'
+import { CryptCobwebBlock } from './types/crypt_cobweb/CryptCobwebBlock.ts'
+import { GraveCandlesBlock } from './types/grave_candles/GraveCandlesBlock.ts'
+
+// Hell: Ember Grove
+import { EmberwoodStemBlock } from './types/emberwood_stem/EmberwoodStemBlock.ts'
+import { EmberwoodPlanksBlock } from './types/emberwood_planks/EmberwoodPlanksBlock.ts'
+import { EmberCapBlock } from './types/ember_cap/EmberCapBlock.ts'
+import { EmberGillsBlock } from './types/ember_gills/EmberGillsBlock.ts'
+import { CrimsonMyceliumBlock } from './types/crimson_mycelium/CrimsonMyceliumBlock.ts'
+import { GlowcapBlock } from './types/glowcap/GlowcapBlock.ts'
+import { ShelfFungusBlock } from './types/shelf_fungus/ShelfFungusBlock.ts'
+import { SporeStrandBlock } from './types/spore_strand/SporeStrandBlock.ts'
+import { CrimsonSproutsBlock } from './types/crimson_sprouts/CrimsonSproutsBlock.ts'
+import { HiveRootbrickBlock } from './types/hive_rootbrick/HiveRootbrickBlock.ts'
+import { HiveRootBlock } from './types/hive_root/HiveRootBlock.ts'
+import { SporeSacBlock } from './types/spore_sac/SporeSacBlock.ts'
+import { ChitinPlateBlock } from './types/chitin_plate/ChitinPlateBlock.ts'
+import { HiveMembraneBlock } from './types/hive_membrane/HiveMembraneBlock.ts'
+import { BroodCombBlock } from './types/brood_comb/BroodCombBlock.ts'
+import { GillWallBlock } from './types/gill_wall/GillWallBlock.ts'
+import { RootPillarBlock } from './types/root_pillar/RootPillarBlock.ts'
+import { RootLatticeBlock } from './types/root_lattice/RootLatticeBlock.ts'
+import { OvergrownRootbrickBlock } from './types/overgrown_rootbrick/OvergrownRootbrickBlock.ts'
+import { MycelialCarpetBlock } from './types/mycelial_carpet/MycelialCarpetBlock.ts'
+import { GlowingSapBlock } from './types/glowing_sap/GlowingSapBlock.ts'
+import { EggPodClusterBlock } from './types/egg_pod_cluster/EggPodClusterBlock.ts'
+import { HangingTendrilsBlock } from './types/hanging_tendrils/HangingTendrilsBlock.ts'
+import { GlowBulbBlock } from './types/glow_bulb/GlowBulbBlock.ts'
+import { EmberwoodStairsBlock } from './types/emberwood_stairs/EmberwoodStairsBlock.ts'
+
+// Hell: Crystal Abyss
+import { AbyssalStoneBlock } from './types/abyssal_stone/AbyssalStoneBlock.ts'
+import { GlitteringAbyssalStoneBlock } from './types/glittering_abyssal_stone/GlitteringAbyssalStoneBlock.ts'
+import { PrismCrystalBlock } from './types/prism_crystal/PrismCrystalBlock.ts'
+import { SpireCrystalBlock } from './types/spire_crystal/SpireCrystalBlock.ts'
+import { RoseCrystalBlock } from './types/rose_crystal/RoseCrystalBlock.ts'
+import { GeodeCrustBlock } from './types/geode_crust/GeodeCrustBlock.ts'
+import { PolishedAbyssalStoneBlock } from './types/polished_abyssal_stone/PolishedAbyssalStoneBlock.ts'
+import { AbyssalBricksBlock } from './types/abyssal_bricks/AbyssalBricksBlock.ts'
+import { SanctumBrickBlock } from './types/sanctum_brick/SanctumBrickBlock.ts'
+import { SanctumTileBlock } from './types/sanctum_tile/SanctumTileBlock.ts'
+import { CrystalLampBlock } from './types/crystal_lamp/CrystalLampBlock.ts'
+import { PrismClusterBlock } from './types/prism_cluster/PrismClusterBlock.ts'
+import { HangingPrismClusterBlock } from './types/hanging_prism_cluster/HangingPrismClusterBlock.ts'
+import { SpireCrystalCoreBlock } from './types/crystal_core/SpireCrystalCoreBlock.ts'
+import { RoseCrystalCoreBlock } from './types/crystal_core/RoseCrystalCoreBlock.ts'
+import { PrismCrystalCoreBlock } from './types/crystal_core/PrismCrystalCoreBlock.ts'
+import { InlaidSanctumTileBlock } from './types/inlaid_sanctum_tile/InlaidSanctumTileBlock.ts'
+import { CarvedSanctumBrickBlock } from './types/carved_sanctum_brick/CarvedSanctumBrickBlock.ts'
+import { SanctumPillarBlock } from './types/sanctum_pillar/SanctumPillarBlock.ts'
+import { GildedSanctumTrimBlock } from './types/gilded_sanctum_trim/GildedSanctumTrimBlock.ts'
+import { MirrorPanelBlock } from './types/mirror_panel/MirrorPanelBlock.ts'
+import { PrismRoofTileBlock } from './types/prism_roof_tile/PrismRoofTileBlock.ts'
+import { CrystalArchiveBlock } from './types/crystal_archive/CrystalArchiveBlock.ts'
+import { CrystalGlassBlock } from './types/crystal_glass/CrystalGlassBlock.ts'
+import { PrismPedestalBlock } from './types/prism_pedestal/PrismPedestalBlock.ts'
+import { PrismLanternBlock } from './types/prism_lantern/PrismLanternBlock.ts'
+import { LensApparatusBlock } from './types/lens_apparatus/LensApparatusBlock.ts'
+import { SanctumBannerBlock } from './types/sanctum_banner/SanctumBannerBlock.ts'
+import { SanctumStairsBlock } from './types/sanctum_stairs/SanctumStairsBlock.ts'
+
+// Hell: Cocytus
+import { registerCocytusBlocks } from './types/cocytus_shared/registerCocytusBlocks.ts'
+
 /**
  * Register all default block types.
  * Block properties are defined in each block class file (single source of truth).
@@ -375,4 +498,128 @@ export function registerDefaultBlocks(): void {
   registerBlock(new OakWindowBlock())
   registerBlock(new PineWindowBlock())
   registerBlock(new RedwoodWindowBlock())
+
+  // Progression (journal, recipe sinks)
+  registerBlock(new SlimeBlock())
+
+  // Weapons, tool tiers 6-7 and the Hellforge
+  registerBlock(new HellforgeBlock())
+
+  // Dungeons (guardian spawners, Sigil Compass)
+  registerBlock(new GuardianSpawnerBlock())
+  registerBlock(new GuardianSpawnerSpentBlock())
+  registerBlock(new GarrisonSpawnerBlock())
+
+  // Hell: Molten Wastes
+  registerBlock(new InferniumOreBlock())
+  registerBlock(new InfernalBricksBlock())
+  registerBlock(new CrackedInfernalBricksBlock())
+  registerBlock(new InfernalBrickPillarBlock())
+  registerBlock(new EmberGlyphBlock())
+  registerBlock(new InfernalBrazierBlock())
+  registerBlock(new HellAshBlock())
+  registerBlock(new CraftedInfernalBricksBlock())
+  registerBlock(new InfernalTilesBlock())
+  registerBlock(new ObsidianBricksBlock())
+  registerBlock(new GildedInfernalBricksBlock())
+  registerBlock(new MagmaBricksBlock())
+  registerBlock(new ScorchedInfernalBricksBlock())
+  registerBlock(new CharredPlanksBlock())
+  registerBlock(new InfernalBrickStairsBlock())
+  registerBlock(new InfernalBrickSlabBlock())
+  registerBlock(new InfernalIronBarsBlock())
+  registerBlock(new InfernalChainBlock())
+  registerBlock(new EmberLanternBlock())
+  registerBlock(new InfernalBannerBlock())
+  registerBlock(new InfernalAnvilBlock())
+  registerBlock(new WeaponRackBlock())
+  registerBlock(new InfernalThroneBlock())
+  registerBlock(new InfernalHoardBlock())
+
+  // Hell: The Ossuary
+  registerBlock(new BoneAshBlock())
+  registerBlock(new OssifiedRockBlock())
+  registerBlock(new BoneBlock())
+  registerBlock(new SoulVeinBlock())
+  registerBlock(new CatacombBrickBlock())
+  registerBlock(new CatacombSkullBrickBlock())
+  registerBlock(new SoulLanternBlock())
+  registerBlock(new SoulTorchBlock())
+  registerBlock(new SarcophagusBlock())
+  registerBlock(new BonePileBlock())
+  registerBlock(new SoulBloomBlock())
+  registerBlock(new CrackedCatacombBrickBlock())
+  registerBlock(new CatacombTileBlock())
+  registerBlock(new CarvedBonePillarBlock())
+  registerBlock(new BurialNicheBlock())
+  registerBlock(new CryptGrateBlock())
+  registerBlock(new CryptAltarBlock())
+  registerBlock(new GildedReliquaryBlock())
+  registerBlock(new CatacombFriezeBlock())
+  registerBlock(new FuneraryUrnBlock())
+  registerBlock(new SoulCandelabraBlock())
+  registerBlock(new CryptCobwebBlock())
+  registerBlock(new GraveCandlesBlock())
+
+  // Hell: Ember Grove
+  registerBlock(new EmberwoodStemBlock())
+  registerBlock(new EmberwoodPlanksBlock())
+  registerBlock(new EmberCapBlock())
+  registerBlock(new EmberGillsBlock())
+  registerBlock(new EmberGillsBlock(true))
+  registerBlock(new CrimsonMyceliumBlock())
+  registerBlock(new GlowcapBlock())
+  registerBlock(new ShelfFungusBlock())
+  registerBlock(new SporeStrandBlock())
+  registerBlock(new CrimsonSproutsBlock())
+  registerBlock(new HiveRootbrickBlock())
+  registerBlock(new HiveRootBlock())
+  registerBlock(new SporeSacBlock())
+  registerBlock(new ChitinPlateBlock())
+  registerBlock(new HiveMembraneBlock())
+  registerBlock(new BroodCombBlock())
+  registerBlock(new GillWallBlock())
+  registerBlock(new RootPillarBlock())
+  registerBlock(new RootLatticeBlock())
+  registerBlock(new OvergrownRootbrickBlock())
+  registerBlock(new MycelialCarpetBlock())
+  registerBlock(new GlowingSapBlock())
+  registerBlock(new EggPodClusterBlock())
+  registerBlock(new HangingTendrilsBlock())
+  registerBlock(new GlowBulbBlock())
+  registerBlock(new EmberwoodStairsBlock())
+
+  // Hell: Crystal Abyss
+  registerBlock(new AbyssalStoneBlock())
+  registerBlock(new GlitteringAbyssalStoneBlock())
+  registerBlock(new PrismCrystalBlock())
+  registerBlock(new SpireCrystalBlock())
+  registerBlock(new RoseCrystalBlock())
+  registerBlock(new GeodeCrustBlock())
+  registerBlock(new PolishedAbyssalStoneBlock())
+  registerBlock(new AbyssalBricksBlock())
+  registerBlock(new SanctumBrickBlock())
+  registerBlock(new SanctumTileBlock())
+  registerBlock(new CrystalLampBlock())
+  registerBlock(new PrismClusterBlock())
+  registerBlock(new HangingPrismClusterBlock())
+  registerBlock(new SpireCrystalCoreBlock())
+  registerBlock(new RoseCrystalCoreBlock())
+  registerBlock(new PrismCrystalCoreBlock())
+  registerBlock(new InlaidSanctumTileBlock())
+  registerBlock(new CarvedSanctumBrickBlock())
+  registerBlock(new SanctumPillarBlock())
+  registerBlock(new GildedSanctumTrimBlock())
+  registerBlock(new MirrorPanelBlock())
+  registerBlock(new PrismRoofTileBlock())
+  registerBlock(new CrystalArchiveBlock())
+  registerBlock(new CrystalGlassBlock())
+  registerBlock(new PrismPedestalBlock())
+  registerBlock(new PrismLanternBlock())
+  registerBlock(new LensApparatusBlock())
+  registerBlock(new SanctumBannerBlock())
+  registerBlock(new SanctumStairsBlock())
+
+  // Hell: Cocytus
+  registerCocytusBlocks()
 }

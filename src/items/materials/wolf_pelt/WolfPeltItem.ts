@@ -17,6 +17,6 @@ export class WolfPeltItem extends Item {
   }
 
   override get tags(): ReadonlyArray<string> {
-    return ['material', 'pelt']
+    return ['material', 'pelt', 'hide']
   }
 }

@@ -6,8 +6,29 @@ import { UI_SCALE } from './uiScale.ts'
 
 export interface DragDropSlotInfo {
   element: HTMLDivElement
-  container: 'toolbar' | 'inventory' | 'crafting'
+  container: 'toolbar' | 'inventory' | 'crafting' | 'extra'
   index: number
+  /** The extra container (container === 'extra') */
+  extra?: DragDropExtraContainer
+}
+
+/**
+ * An extra slot container added with `addContainer` (e.g. worn armor):
+ * slots that only accept some items. Ctrl/shift+click on one of its slots
+ * moves the stack back to the player; shift+click on a player slot holding
+ * an item it takes (`quickTarget`) moves the item in, swapping out the
+ * previous stack.
+ */
+export interface DragDropExtraContainer {
+  /** Element enclosing the slots (drops inside it snap to its nearest slot) */
+  readonly root: HTMLElement
+  readonly slots: HTMLDivElement[]
+  getStack(index: number): IItemStack | null
+  setStack(index: number, stack: IItemStack | null): void
+  /** Whether `item` may go into slot `index` */
+  accepts(index: number, item: IItem): boolean
+  /** Slot that shift+click quick-places `item` into, or -1 */
+  quickTarget?(item: IItem): number
 }
 
 export interface DragDropOptions {
@@ -45,6 +66,8 @@ export interface DragDropHandler {
   enable(): void
   /** Disable drag-drop (call when inventory closes) */
   disable(): void
+  /** Add an extra slot container (see DragDropExtraContainer) */
+  addContainer(container: DragDropExtraContainer): void
   /** Clean up all listeners */
   dispose(): void
 }
@@ -76,6 +99,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
 
   // Build lookup map: element -> slot info
   const slotMap = new Map<HTMLDivElement, DragDropSlotInfo>()
+  const extraContainers: DragDropExtraContainer[] = []
 
   function buildSlotMap(): void {
     slotMap.clear()
@@ -90,6 +114,16 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
         slotMap.set(el, { element: el, container: 'crafting', index: i })
       })
     }
+    for (const extra of extraContainers) {
+      extra.slots.forEach((el, i) => {
+        slotMap.set(el, { element: el, container: 'extra', index: i, extra })
+      })
+    }
+  }
+
+  /** Whether `item` may be put into the slot (extra containers filter). */
+  function slotAccepts(info: DragDropSlotInfo, item: IItem): boolean {
+    return !info.extra || info.extra.accepts(info.index, item)
   }
 
   function getStackFromSlot(info: DragDropSlotInfo): IItemStack | null {
@@ -99,6 +133,9 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     if (info.container === 'crafting' && craftingState) {
       return craftingState.getStack(info.index)
     }
+    if (info.extra) {
+      return info.extra.getStack(info.index)
+    }
     return inventoryState.getStack(info.index)
   }
 
@@ -107,6 +144,8 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
       toolbarState.setStack(info.index, stack)
     } else if (info.container === 'crafting' && craftingState) {
       craftingState.setStack(info.index, stack)
+    } else if (info.extra) {
+      info.extra.setStack(info.index, stack)
     } else {
       inventoryState.setStack(info.index, stack)
     }
@@ -247,10 +286,31 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     const exact = findSlotUnderPoint(x, y)
     if (exact) return exact
 
-    // Check if cursor is within toolbar, inventory, or crafting area
+    // Inside an extra container (which may sit inside the inventory panel):
+    // snap to its nearest slot
+    for (const extra of extraContainers) {
+      if (!isPointInElement(x, y, extra.root)) continue
+      let nearestIndex = -1
+      let nearestDistSq = Infinity
+      for (let i = 0; i < extra.slots.length; i++) {
+        const center = getSlotCenter(extra.slots[i])
+        const distSq = distanceSquared(x, y, center.x, center.y)
+        if (distSq < nearestDistSq) {
+          nearestDistSq = distSq
+          nearestIndex = i
+        }
+      }
+      if (nearestIndex >= 0) {
+        return { element: extra.slots[nearestIndex], container: 'extra', index: nearestIndex, extra }
+      }
+    }
+
+    // Check if cursor is within toolbar, inventory, or crafting area. The
+    // crafting / block UI panel sits inside the inventory panel: it wins
+    // (both matching would skip every slot)
     const inToolbar = isPointInElement(x, y, toolbarRoot)
-    const inInventory = isPointInElement(x, y, inventoryRoot)
     const inCrafting = craftingRoot ? isPointInElement(x, y, craftingRoot) : false
+    const inInventory = !inCrafting && isPointInElement(x, y, inventoryRoot)
 
     if (!inToolbar && !inInventory && !inCrafting) {
       return null
@@ -262,6 +322,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
 
     for (const [slotEl, info] of slotMap) {
       // Only consider slots from the container the cursor is in
+      if (info.container === 'extra') continue
       if (inToolbar && info.container !== 'toolbar') continue
       if (inInventory && info.container !== 'inventory') continue
       if (inCrafting && info.container !== 'crafting') continue
@@ -276,6 +337,16 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     }
 
     return closestSlot
+  }
+
+  /** Whether (x, y) is over a slot panel: a release there never throws the stack out. */
+  function isOverPanel(x: number, y: number): boolean {
+    return (
+      isPointInElement(x, y, toolbarRoot) ||
+      isPointInElement(x, y, inventoryRoot) ||
+      (craftingRoot !== undefined && isPointInElement(x, y, craftingRoot)) ||
+      extraContainers.some((extra) => isPointInElement(x, y, extra.root))
+    )
   }
 
   function performSwap(
@@ -309,8 +380,9 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
       // Source is empty, place stack
       setStackInSlot(source, stack)
       renderStackInSlot(source.element, stack)
-    } else {
-      // Source has different item (shouldn't happen normally)
+    } else if (!onDropOutside?.(stack)) {
+      // Source refilled with a different item meanwhile (e.g. a pickup):
+      // the stack was thrown out rather than lost (warn if it could not be)
       console.warn('Cannot return to source - different item in slot')
     }
   }
@@ -324,6 +396,17 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     dragged: IItemStack
   ): void {
     const targetStack = getStackFromSlot(target)
+
+    // Filtered slots: the dragged stack must fit the target, and a swapped-out
+    // target stack must fit the source
+    if (
+      !slotAccepts(target, dragged.item) ||
+      (targetStack && targetStack.item.id !== dragged.item.id && !slotAccepts(source, targetStack.item))
+    ) {
+      returnToSource(source, dragged)
+      onStateChanged?.()
+      return
+    }
 
     if (!targetStack) {
       // Empty target: just place the dragged stack
@@ -350,6 +433,10 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
         // No space - return all to source
         returnToSource(source, dragged)
       }
+    } else if (getStackFromSlot(source)) {
+      // The source still holds the rest of a split (shift) stack: the
+      // target's items have nowhere to go - no swap, the dragged items go home
+      returnToSource(source, dragged)
     } else {
       // Different items: put dragged in target, return target's items to source
       setStackInSlot(target, dragged)
@@ -376,7 +463,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
    */
   function performQuickTransfer(source: DragDropSlotInfo, stack: IItemStack): void {
     let targets: DragDropSlotInfo[]
-    if (source.container === 'crafting') {
+    if (source.container === 'crafting' || source.container === 'extra') {
       targets = [
         ...slotInfosFor('inventory', inventorySlots),
         ...slotInfosFor('toolbar', toolbarSlots),
@@ -430,6 +517,31 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     onStateChanged?.()
   }
 
+  /**
+   * Shift+click on a player slot: put its item into an extra container slot
+   * that takes it (e.g. wear armor), swapping out what was there. Returns
+   * false when no extra container takes the item.
+   */
+  function performQuickPlaceIntoExtra(source: DragDropSlotInfo, stack: IItemStack): boolean {
+    for (const extra of extraContainers) {
+      const index = extra.quickTarget?.(stack.item) ?? -1
+      if (index < 0 || !extra.accepts(index, stack.item)) continue
+      const target: DragDropSlotInfo = { element: extra.slots[index], container: 'extra', index, extra }
+      const previous = getStackFromSlot(target)
+      // Only one item moves; a swap needs the source slot to empty out
+      if (previous && stack.count > 1) continue
+      const moved = { item: stack.item, count: 1 }
+      const sourceRemainder = stack.count > 1 ? { item: stack.item, count: stack.count - 1 } : previous
+      setStackInSlot(target, moved)
+      renderStackInSlot(target.element, moved)
+      setStackInSlot(source, sourceRemainder)
+      renderStackInSlot(source.element, sourceRemainder)
+      onStateChanged?.()
+      return true
+    }
+    return false
+  }
+
   function cancelDrag(): void {
     if (dragging && dragSource) {
       dragSource.element.style.opacity = '1'
@@ -464,6 +576,18 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     if (event.ctrlKey) {
       performQuickTransfer(slot, stack)
       return
+    }
+
+    // Shift+click: an extra container slot (worn armor) goes back to the
+    // player; a player-slot item an extra container takes goes into it
+    if (event.shiftKey) {
+      if (slot.container === 'extra') {
+        performQuickTransfer(slot, stack)
+        return
+      }
+      if ((slot.container === 'toolbar' || slot.container === 'inventory') && performQuickPlaceIntoExtra(slot, stack)) {
+        return
+      }
     }
 
     // Determine how many items to pick up based on modifiers
@@ -536,8 +660,10 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     if (targetSlot && (targetSlot.container !== dragSource.container || targetSlot.index !== dragSource.index)) {
       // Valid target - perform drop with merge logic
       performDrop(dragSource, targetSlot, draggedStack)
-    } else if (!targetSlot && onDropOutside?.(draggedStack)) {
-      // Released over the game world and the stack was thrown out
+    } else if (!targetSlot && !isOverPanel(event.clientX, event.clientY) && onDropOutside?.(draggedStack)) {
+      // Released over the game world and the stack was thrown out (a panel
+      // without a slot under the cursor, e.g. the Hellforge's recipe list,
+      // returns the stack instead)
       onStateChanged?.()
     } else {
       // Dropped on same slot or throw not handled - return items to source
@@ -568,6 +694,9 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
     if (craftingSlots) {
       craftingSlots.forEach(slot => { slot.style.pointerEvents = value })
     }
+    for (const extra of extraContainers) {
+      extra.slots.forEach(slot => { slot.style.pointerEvents = value })
+    }
   }
 
   return {
@@ -597,6 +726,14 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('keydown', onKeyDown)
+    },
+
+    addContainer(container: DragDropExtraContainer): void {
+      extraContainers.push(container)
+      if (enabled) {
+        buildSlotMap()
+        enableSlotPointerEvents(true)
+      }
     },
 
     dispose(): void {

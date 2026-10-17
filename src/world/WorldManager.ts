@@ -40,9 +40,10 @@ import type { EntityManager } from '../entities/EntityManager.ts'
 import { BlockStateManager } from './blockstate/BlockStateManager.ts'
 import type { IBlockState } from './blockstate/interfaces/IBlockState.ts'
 import type { ITickableBlockState } from './blockstate/interfaces/ITickableBlockState.ts'
-import { deserializeBlockState } from '../persistence/BlockStateSerializer.ts'
+import { deserializeBlockState, getBlockStatesToPersist, markBlockStateRestored } from '../persistence/BlockStateSerializer.ts'
 import type { SerializedBlockState } from '../persistence/PersistenceTypes.ts'
 import type { IDecorationWorld } from './generate/IDecorationWorld.ts'
+import { whenWorkerLoadSlotFree, isWorkerLoadFailure } from '../workers/WorkerLoadGate.ts'
 
 /** BigInt chunk offsets for neighbour lookups, indexed by offset + 1. */
 const NEIGHBOR_OFFSETS: readonly bigint[] = [-1n, 0n, 1n]
@@ -493,9 +494,14 @@ export class WorldManager implements IModifiedChunkProvider {
   }
 
   /**
-   * Create a single generation worker with retry logic.
+   * Create a single generation worker with retry logic (once a load slot is
+   * free - see WorkerLoadGate).
    */
   private createGenerationWorker(index: number, retryCount = 0): void {
+    whenWorkerLoadSlotFree((loaded) => this.startGenerationWorker(index, retryCount, loaded))
+  }
+
+  private startGenerationWorker(index: number, retryCount: number, loaded: () => void): void {
     const worker = new Worker(
       new URL('../workers/ChunkGenerationWorker.ts', import.meta.url),
       { type: 'module' }
@@ -504,6 +510,7 @@ export class WorldManager implements IModifiedChunkProvider {
       event: MessageEvent<SubChunkGenerationResponse | SubChunkGenerationError | { type: 'worker-ready' }>
     ) => {
       if (event.data.type === 'worker-ready') {
+        loaded()
         this.readyGenerationWorkers.push(worker)
         console.log(`[WorldManager] Generation worker ${index} ready (${this.readyGenerationWorkers.length}/${this.WORKER_COUNT})`)
         return
@@ -511,12 +518,18 @@ export class WorldManager implements IModifiedChunkProvider {
       this.handleSubChunkGenerationResult(event.data)
     }
     worker.onerror = (event) => {
+      loaded()
       const errorEvent = event as ErrorEvent
-      console.error(`[WorldManager] Generation worker ${index} error (attempt ${retryCount + 1}):`, {
-        message: errorEvent.message,
-        filename: errorEvent.filename,
-        lineno: errorEvent.lineno,
-      })
+      if (isWorkerLoadFailure(event)) {
+        // Its scripts failed to load (no exception message): retried below
+        console.warn(`[WorldManager] Generation worker ${index} failed to load its scripts (attempt ${retryCount + 1})`)
+      } else {
+        console.error(`[WorldManager] Generation worker ${index} error (attempt ${retryCount + 1}):`, {
+          message: errorEvent.message,
+          filename: errorEvent.filename,
+          lineno: errorEvent.lineno,
+        })
+      }
       // Remove this worker from the ready pool if it was there
       const idx = this.readyGenerationWorkers.indexOf(worker)
       if (idx !== -1) {
@@ -1069,6 +1082,7 @@ export class WorldManager implements IModifiedChunkProvider {
           // Populate the existing state with saved data
           // This preserves the BlockTickManager registration
           existingState.deserialize(serialized.data)
+          markBlockStateRestored(existingState)
         } else {
           // State doesn't exist (block wasn't loaded yet, or was broken)
           // Create a new state with the saved data
@@ -1079,6 +1093,7 @@ export class WorldManager implements IModifiedChunkProvider {
             this.pendingPersistedStates.set(`${serialized.position.x},${serialized.position.y},${serialized.position.z}`, serialized)
           }
           if (newState) {
+            markBlockStateRestored(newState)
             blockStateManager.setState(position, newState)
             // Note: This state won't be registered with BlockTickManager
             // It will be registered when the block's sub-chunk is loaded
@@ -1104,6 +1119,7 @@ export class WorldManager implements IModifiedChunkProvider {
     const state = BlockStateManager.getInstance().getState<IBlockState>({ x, y, z })
     if (!state || state.stateType !== parked.stateType) return
     state.deserialize(parked.data)
+    markBlockStateRestored(state)
     this.pendingPersistedStates.delete(key)
   }
 
@@ -2115,11 +2131,18 @@ export class WorldManager implements IModifiedChunkProvider {
    * exactly its data (SubChunk.isPersistClean: loaded from a confirmed record
    * or saved, and not changed since - no edit, liquid flow, decoration or
    * merged data). Everything else that completed generation is saved.
+   * `blockStates` (see collectBlockStatesForUnload) go in the same
+   * transaction, or alone when the blocks need no save.
    */
-  private saveSubChunkIfChanged(subChunk: SubChunk): void {
+  private saveSubChunkIfChanged(subChunk: SubChunk, blockStates: SerializedBlockState[] = []): void {
     if (!this.persistenceManager || subChunk.state < ChunkState.LOADED) return
     if (subChunk.isPersistClean()) {
       this.persistStats.skipped++
+      // Its blocks are stored as they are; only its states (chest contents) may have changed
+      if (blockStates.length > 0) {
+        this.persistenceManager.saveBlockStates(blockStates)
+          .catch(err => console.error('Failed to save block states on unload:', err))
+      }
       return
     }
     this.persistStats.saved++
@@ -2127,8 +2150,44 @@ export class WorldManager implements IModifiedChunkProvider {
       subChunk.coordinate,
       subChunk.getBlockData(),
       subChunk.getMetadataData(),
-      subChunk.skyOpenAbove
+      subChunk.skyOpenAbove,
+      blockStates
     ).catch(err => console.error('Failed to save sub-chunk on unload:', err))
+  }
+
+  /**
+   * Serialize the block states inside a column (or one of its sub-chunks)
+   * for its unload save, grouped by sub-chunk Y. Must run while the
+   * sub-chunks are still loaded: afterwards the world can't name the states'
+   * blocks, so regular saves skip them (getBlockStatesToPersist) and a
+   * chest edited since the last save would come back with its old contents.
+   *
+   * The states themselves stay in BlockStateManager: the persisted records
+   * are restored only once per column per session (restoredBlockStateChunks),
+   * so the in-memory state is what a reload of the column in this session
+   * shows - dropping it would leave that reload with an empty state.
+   */
+  private collectBlockStatesForUnload(chunkX: bigint, chunkZ: bigint, subY?: number): Map<number, SerializedBlockState[]> {
+    const bySubY = new Map<number, SerializedBlockState[]>()
+    const minX = chunkX * BigInt(CHUNK_SIZE_X)
+    const minZ = chunkZ * BigInt(CHUNK_SIZE_Z)
+    const maxX = minX + BigInt(CHUNK_SIZE_X)
+    const maxZ = minZ + BigInt(CHUNK_SIZE_Z)
+    const inside: IBlockState[] = []
+    for (const state of BlockStateManager.getInstance().getAllStates()) {
+      const { x, y, z } = state.position
+      if (x < minX || x >= maxX || z < minZ || z >= maxZ) continue
+      if (subY !== undefined && Math.floor(Number(y) / SUB_CHUNK_HEIGHT) !== subY) continue
+      inside.push(state)
+    }
+    if (inside.length === 0) return bySubY
+    for (const serialized of getBlockStatesToPersist(inside.values(), this)) {
+      const stateSubY = Math.floor(Number(serialized.position.y) / SUB_CHUNK_HEIGHT)
+      let list = bySubY.get(stateSubY)
+      if (!list) bySubY.set(stateSubY, (list = []))
+      list.push(serialized)
+    }
+    return bySubY
   }
 
   /**
@@ -2136,12 +2195,13 @@ export class WorldManager implements IModifiedChunkProvider {
    * Saves its sub-chunks first (see saveSubChunkIfChanged).
    */
   unloadChunk(coordinate: IChunkCoordinate): void {
-    // Save its sub-chunks before unloading (fire and forget)
+    // Save its sub-chunks, with their block states, before unloading (fire and forget)
     const column = this.chunkManager.getColumn(coordinate)
     if (column) {
+      const blockStates = this.collectBlockStatesForUnload(coordinate.x, coordinate.z)
       for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
         const subChunk = column.getSubChunk(subY)
-        if (subChunk) this.saveSubChunkIfChanged(subChunk)
+        if (subChunk) this.saveSubChunkIfChanged(subChunk, blockStates.get(subY))
       }
     }
 
@@ -2212,8 +2272,11 @@ export class WorldManager implements IModifiedChunkProvider {
     const subChunk = column?.getSubChunk(coordinate.subY)
     if (!column || !subChunk || !subChunk.lightReady) return false
 
-    // Save it (like unloadChunk)
-    this.saveSubChunkIfChanged(subChunk)
+    // Save it with its block states (like unloadChunk)
+    this.saveSubChunkIfChanged(
+      subChunk,
+      this.collectBlockStatesForUnload(coordinate.x, coordinate.z, coordinate.subY).get(coordinate.subY)
+    )
 
     // Above its column's sky proof an unloaded sub-chunk counts as open sky -
     // but this one is known to hold sky-stopping blocks (a player's platform

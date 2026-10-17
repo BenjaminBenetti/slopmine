@@ -1,4 +1,5 @@
 import type { CameraControls } from './FirstPersonCameraControls.ts'
+import { isModalOverlayOpen } from '../ui/ModalOverlays.ts'
 
 export interface SettingsInputOptions {
   domElement: HTMLElement
@@ -53,8 +54,9 @@ export class SettingsInputHandler implements SettingsInput {
       this.cameraControls.setInputEnabled(true)
       this.setGamePaused(false)
     } else {
-      // Pointer lock lost - show settings if inventory is not open
-      if (!this.isInventoryOpen()) {
+      // Pointer lock lost - show settings if inventory (or another modal
+      // overlay, e.g. the journal) is not open
+      if (!this.isInventoryOpen() && !isModalOverlayOpen()) {
         this.openSettingsUI()
         this.cameraControls.setInputEnabled(false)
         this.setGamePaused(true)

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { HELL_CEILING_Y } from '../world/generate/GenerationConfig.ts'
 
 /**
  * Spherical fog: three.js measures fog depth along the view axis
@@ -6,12 +7,21 @@ import * as THREE from 'three'
  * the center and the chunk edge peeks out at the sides. Measuring true
  * distance instead makes the fog a sphere around the camera. Patched on the
  * shared chunk at module load, before any fogged material compiles.
+ *
+ * `vFogRise` is the fragment's world height above the camera (the view-space
+ * offset rotated back to world space: row 1 of the view rotation's inverse =
+ * column 1 of the view matrix), for the cavern ceiling haze below.
  */
 THREE.ShaderChunk.fog_vertex = /* glsl */ `
 #ifdef USE_FOG
 	vFogDepth = length( mvPosition.xyz );
+	vFogRise = dot( viewMatrix[ 1 ].xyz, mvPosition.xyz );
 #endif
 `
+THREE.ShaderChunk.fog_pars_vertex = THREE.ShaderChunk.fog_pars_vertex.replace(
+  'varying float vFogDepth;',
+  'varying float vFogDepth;\n\tvarying float vFogRise;'
+)
 
 /** Where the edge fog starts, as a fraction of where it ends. */
 const EDGE_START_FRACTION = 0.6
@@ -30,14 +40,64 @@ const CLEAR_HAZE_DISTANCE = 1500
 const HAZE_DENSITY_EXPONENT = 1.5
 
 /**
- * The linear THREE.Fog path (fog_fragment) reinterpreted as two layers, for
+ * Cavern ceiling haze (the Hell layer): smoke gathers under the cavern's rock
+ * ceiling (HELL_CEILING_Y, the underside of the surface layer). Its density
+ * per block is CEILING_HAZE_DENSITY at the ceiling and falls off downward
+ * exponentially over CEILING_HAZE_SCALE_HEIGHT blocks; there is none above
+ * the ceiling (inside the rock, and the whole surface world). The ceiling
+ * seen straight up from anywhere in the cavern is hazed 1 - exp(-0.12 * 8)
+ * = 62%, more at an angle (75% at 45°) - it reads as dark rock fading into
+ * the haze, not as a lit slab with an edge, and tall pillars and spires fade
+ * into it toward the top. Near the floor the haze is negligible; standing
+ * high (Y 125) it hazes a level view by ~30% at 20 blocks.
+ */
+const CEILING_HAZE_DENSITY = 0.12
+const CEILING_HAZE_SCALE_HEIGHT = 8
+
+/** GLSL float literal. */
+function glslFloat(value: number): string {
+  return Number.isInteger(value) ? `${value}.0` : `${value}`
+}
+
+/**
+ * Fragment declarations for the fog: three's (fogColor, fogNear/far, the
+ * depth varying) plus the rise varying and the ceiling haze function.
+ *
+ * slopCeilingHaze: opacity of the ceiling smoke between the camera (world
+ * height camY) and a fragment `rise` blocks above it at distance `dist`. The
+ * optical depth is the distance times the mean density along the straight
+ * ray, integrated analytically over height (exp((y - ceiling) / H), clamped
+ * at the ceiling); a level ray uses the density at its height.
+ */
+THREE.ShaderChunk.fog_pars_fragment = THREE.ShaderChunk.fog_pars_fragment.replace(
+  'varying float vFogDepth;',
+  /* glsl */ `varying float vFogDepth;
+	varying float vFogRise;
+	float slopCeilingHaze( float camY, float rise, float dist ) {
+		const float ceilingY = ${glslFloat(HELL_CEILING_Y)};
+		const float scaleHeight = ${glslFloat(CEILING_HAZE_SCALE_HEIGHT)};
+		const float density = ${glslFloat(CEILING_HAZE_DENSITY)};
+		float g0 = exp( ( min( camY, ceilingY ) - ceilingY ) / scaleHeight );
+		float g1 = exp( ( min( camY + rise, ceilingY ) - ceilingY ) / scaleHeight );
+		// A level ray has the density at the camera's height - none above the
+		// ceiling (g0 is clamped to 1 there: using it painted a fog-coloured
+		// line at eye level across the whole surface world)
+		float levelDensity = camY < ceilingY ? density * g0 : 0.0;
+		float meanDensity = abs( rise ) > 0.01 ? density * scaleHeight * ( g1 - g0 ) / rise : levelDensity;
+		return 1.0 - exp( - dist * meanDensity );
+	}`
+)
+
+/**
+ * The linear THREE.Fog path (fog_fragment) reinterpreted as three layers, for
  * every fogged material (patched globally, like fog_vertex):
  * - `fogFar` is where the drawn world ends; an edge ramp from
  *   EDGE_START_FRACTION·fogFar to fogFar hides it completely;
  * - `fogNear` is the aerial haze distance: exponential haze toward the fog
  *   color (1 - exp(-d / fogNear)) that tints and softens the far view without
- *   erasing it.
- * The two combine as independent layers. FogExp2 is untouched (unused).
+ *   erasing it;
+ * - the cavern ceiling haze (slopCeilingHaze), zero outside the Hell cavern.
+ * They combine as independent layers. FogExp2 is untouched (unused).
  */
 THREE.ShaderChunk.fog_fragment = /* glsl */ `
 #ifdef USE_FOG
@@ -46,7 +106,8 @@ THREE.ShaderChunk.fog_fragment = /* glsl */ `
 	#else
 		float fogEdge = smoothstep( fogFar * ${EDGE_START_FRACTION}, fogFar, vFogDepth );
 		float fogHaze = 1.0 - exp( - vFogDepth / max( fogNear, 1.0 ) );
-		float fogFactor = 1.0 - ( 1.0 - fogEdge ) * ( 1.0 - fogHaze );
+		float fogCeiling = slopCeilingHaze( cameraPosition.y, vFogRise, vFogDepth );
+		float fogFactor = 1.0 - ( 1.0 - fogEdge ) * ( 1.0 - fogHaze ) * ( 1.0 - fogCeiling );
 	#endif
 	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
 #endif

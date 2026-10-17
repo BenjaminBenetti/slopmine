@@ -1,4 +1,5 @@
 import type { IItem } from '../items/Item.ts'
+import { gameEvents } from '../events/GameEvents.ts'
 
 /**
  * Represents a stack of items in an inventory slot.
@@ -323,6 +324,9 @@ export class PlayerState implements IPlayerState {
       }
     }
 
+    if (remaining < amount) {
+      gameEvents.emit({ type: 'item-added', itemId: item.id, count: amount - remaining })
+    }
     return remaining
   }
 }

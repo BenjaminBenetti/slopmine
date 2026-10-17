@@ -20,6 +20,8 @@ export interface CattailFeatureSettings {
   readonly density: number
   /** Valid ground blocks for cattail placement (defaults to grass/dirt/mud/clay) */
   readonly validGroundBlocks?: number[]
+  /** The biome's water block (defaults to WATER; swamps use SWAMP_WATER) */
+  readonly waterBlockId?: number
 }
 
 const DEFAULT_GROUND_BLOCKS = [BlockIds.GRASS, BlockIds.DIRT, BlockIds.MUD, BlockIds.CLAY]
@@ -54,6 +56,7 @@ export class CattailFeature extends Feature {
     if (potentialMaxY < subChunkMinY || potentialMinY > subChunkMaxY) return
 
     const validBlocks = this.settings.validGroundBlocks ?? DEFAULT_GROUND_BLOCKS
+    const waterId = this.settings.waterBlockId ?? BlockIds.WATER
 
     for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
       for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
@@ -64,11 +67,11 @@ export class CattailFeature extends Feature {
         // Skip columns that are open water at the water line - reeds grow on the bank
         const waterLocalY = waterLevel - subChunkMinY
         if (waterLocalY >= 0 && waterLocalY < SUB_CHUNK_HEIGHT) {
-          if (chunk.getBlockId(localX, waterLocalY, localZ) === BlockIds.WATER) continue
+          if (chunk.getBlockId(localX, waterLocalY, localZ) === waterId) continue
         }
 
         // Only shore columns: some directly adjacent column must hold water
-        if (!this.hasAdjacentWater(chunk, localX, localZ, waterLevel, subChunkMinY)) continue
+        if (!this.hasAdjacentWater(chunk, localX, localZ, waterLevel, subChunkMinY, waterId)) continue
 
         // Large-scale zone noise groups reeds into overgrown stretches of bank
         const zoneNoise = (noise.noise2D((worldX + 2000) * zoneFrequency, (worldZ + 2000) * zoneFrequency) + 1) * 0.5
@@ -93,7 +96,7 @@ export class CattailFeature extends Feature {
           }
           // Anything solid but invalid (stone, sand, logs) ends the search - no
           // reeds on it, and nothing valid can be the surface beneath it
-          if (block !== BlockIds.AIR && block !== BlockIds.WATER) break
+          if (block !== BlockIds.AIR && block !== waterId) break
         }
 
         if (surfaceY === -1) continue
@@ -124,7 +127,8 @@ export class CattailFeature extends Feature {
     localX: number,
     localZ: number,
     waterLevel: number,
-    subChunkMinY: number
+    subChunkMinY: number,
+    waterId: number
   ): boolean {
     const waterLocalY = waterLevel - subChunkMinY
     if (waterLocalY < 0 || waterLocalY >= SUB_CHUNK_HEIGHT) return false
@@ -139,7 +143,7 @@ export class CattailFeature extends Feature {
       const nz = localZ + dz
       if (nx < 0 || nx >= CHUNK_SIZE_X || nz < 0 || nz >= CHUNK_SIZE_Z) continue
 
-      if (chunk.getBlockId(nx, waterLocalY, nz) === BlockIds.WATER) {
+      if (chunk.getBlockId(nx, waterLocalY, nz) === waterId) {
         return true
       }
     }

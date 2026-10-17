@@ -3,6 +3,7 @@ import { Entity } from './Entity.ts'
 import type { IEntityConfig } from './interfaces/IEntityConfig.ts'
 import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
 import type { IItem } from '../items/Item.ts'
+import { getPlayerAttackDamage, getPlayerAttackKnockback } from '../combat/PlayerAttack.ts'
 
 // Default movement constants
 const DEFAULT_WALK_SPEED = 2.0 // blocks per second
@@ -16,7 +17,6 @@ const DEFAULT_STUCK_TIME_THRESHOLD = 0.4 // seconds of being stuck before reacti
 
 // Default combat constants
 const DEFAULT_MAX_HEALTH = 10
-const DEFAULT_BASE_DAMAGE = 2 // Fist damage
 const DEFAULT_KNOCKBACK_HORIZONTAL = 6.0 // blocks/sec push away from player
 const DEFAULT_KNOCKBACK_VERTICAL = 5.0 // blocks/sec upward
 const DEFAULT_KNOCKBACK_STUN_TIME = 0.4 // seconds to disable AI after being hit
@@ -413,11 +413,9 @@ export abstract class PeacefulEntity extends Entity {
     if (!this.isAlive) return false
 
     // Calculate damage from held item
-    let damage = DEFAULT_BASE_DAMAGE
-    if (heldItem && 'toolStats' in heldItem) {
-      const toolItem = heldItem as { toolStats: { damage: number } }
-      damage = toolItem.toolStats.damage
-    }
+    const damage = getPlayerAttackDamage(heldItem)
+    // Weapon knockback x attack charge: scales the push and the hit-stun
+    const knockback = getPlayerAttackKnockback(heldItem)
 
     // Apply damage
     this.health -= damage
@@ -437,9 +435,9 @@ export abstract class PeacefulEntity extends Entity {
     // Apply knockback to physics body
     const body = this.getPhysicsBody()
     if (body) {
-      body.velocity.x = knockbackDir.x * this.knockbackHorizontal
-      body.velocity.z = knockbackDir.z * this.knockbackHorizontal
-      body.velocity.y = this.knockbackVertical
+      body.velocity.x = knockbackDir.x * this.knockbackHorizontal * knockback
+      body.velocity.z = knockbackDir.z * this.knockbackHorizontal * knockback
+      body.velocity.y = this.knockbackVertical * Math.min(1, knockback)
     }
 
     // Check death - start death animation instead of immediate kill
@@ -451,7 +449,7 @@ export abstract class PeacefulEntity extends Entity {
       this.fleeTimer = 0
     } else {
       // Only set flee/knockback if not dying
-      this.knockbackTimer = this.knockbackStunTime
+      this.knockbackTimer = this.knockbackStunTime * Math.min(1, knockback)
       this.fleeTimer = this.fleeDuration
       this.fleeDirection.copy(knockbackDir)
     }

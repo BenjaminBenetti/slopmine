@@ -51,6 +51,34 @@ import type { WorkerBiomeConfig, FeatureConfig, BiomeBlendData } from '../../wor
 import type { PersistenceManager } from '../../persistence/PersistenceManager.ts'
 import type { SubChunkLightInput } from '../lighting/LightEngine.ts'
 
+// Hell: Molten Wastes
+import { InferniumOreFeature } from './features/InferniumOreFeature.ts'
+
+// Hell: The Ossuary
+import { FossilFeature } from './features/ossuary/FossilFeature.ts'
+import { BoneSpireFeature } from './features/ossuary/BoneSpireFeature.ts'
+import { OssuaryScatterFeature } from './features/ossuary/OssuaryScatterFeature.ts'
+
+// Hell: Ember Grove
+import { GiantFungusFeature } from './features/embergrove/GiantFungusFeature.ts'
+import { EmberFloorFeature } from './features/embergrove/EmberFloorFeature.ts'
+
+// Hell: Crystal Abyss
+import { CrystalSpireFeature } from './features/crystal/CrystalSpireFeature.ts'
+import { CrystalGeodeFeature } from './features/crystal/CrystalGeodeFeature.ts'
+import { AbyssIslandFeature } from './features/crystal/AbyssIslandFeature.ts'
+import { CrystalScatterFeature } from './features/crystal/CrystalScatterFeature.ts'
+import { CrystalCoreFeature } from './features/crystal/CrystalCoreFeature.ts'
+
+// Hell: Cocytus
+import { FrozenLakeFeature } from './features/FrozenLakeFeature.ts'
+import { IceSpireFeature } from './features/IceSpireFeature.ts'
+import { FrozenLavafallFeature } from './features/FrozenLavafallFeature.ts'
+import { FrostCrystalFeature } from './features/FrostCrystalFeature.ts'
+
+// Dungeons (procedural castles)
+import { ProceduralDungeonFeature } from './dungeons/ProceduralDungeonFeature.ts'
+
 interface QueuedSubChunk {
   coordinate: ISubChunkCoordinate
   priority: number
@@ -89,6 +117,15 @@ interface LoadCenter {
    * already hold everything there is to see.)
    */
   readonly groundSubY: number | null
+  /**
+   * The camera is in the Hell cavern: it went below the cavern's rock ceiling
+   * (the bottom of the surface layer's fill) and hasn't climbed out of the
+   * ceiling's sub-chunk since (hysteresis: a player hovering at the ceiling
+   * doesn't churn the load set). Every in-range column then wants the whole
+   * cavern - layer 0 and the ceiling's sub-chunk - and no surface band (the
+   * surface is out of sight from there).
+   */
+  readonly cavern: boolean
 }
 
 /**
@@ -156,6 +193,7 @@ export class WorldGenerator {
   private playerChunkZ: bigint = 0n
   private playerSubY: number = 0 // Player's sub-chunk Y index (0-15)
   private playerGroundSubY: number | null = null // see LoadCenter.groundSubY
+  private playerInCavern: boolean = false // see LoadCenter.cavern
   private playerWorldY: number = 0 // Player's world Y position
   private initialized: boolean = false
 
@@ -203,9 +241,18 @@ export class WorldGenerator {
   private readonly columnUnloadedListeners: Array<(coordinate: IChunkCoordinate) => void> = []
   private readonly subChunkUnloadedListeners: Array<(coordinate: ISubChunkCoordinate) => void> = []
 
+  // See LoadCenter.cavern: the cavern's rock ceiling (Y), the highest
+  // sub-chunk of the cavern (the ceiling's) and the camera Y that leaves it
+  private readonly cavernCeilingY: number
+  private readonly cavernTopSubY: number
+  private readonly cavernExitY: number
+
   constructor(world: WorldManager, config?: Partial<IGenerationConfig>) {
     this.world = world
     this.config = new GenerationConfig(config)
+    this.cavernCeilingY = this.config.seaLevel - this.config.terrainThickness
+    this.cavernTopSubY = Math.floor(this.cavernCeilingY / SUB_CHUNK_HEIGHT)
+    this.cavernExitY = (this.cavernTopSubY + 1) * SUB_CHUNK_HEIGHT
   }
 
   /**
@@ -370,6 +417,67 @@ export class WorldGenerator {
       if (feature instanceof CharredMiningCampFeature) {
         return { type: 'charredMiningCamp', settings: feature.settings }
       }
+
+      // Hell: Molten Wastes
+      if (feature instanceof InferniumOreFeature) {
+        return { type: 'inferniumOre', settings: feature.settings }
+      }
+
+      // Hell: The Ossuary
+      if (feature instanceof FossilFeature) {
+        return { type: 'ossuaryFossil', settings: feature.settings }
+      }
+      if (feature instanceof BoneSpireFeature) {
+        return { type: 'ossuaryBoneSpire', settings: feature.settings }
+      }
+      if (feature instanceof OssuaryScatterFeature) {
+        return { type: 'ossuaryScatter', settings: feature.settings }
+      }
+
+      // Hell: Ember Grove
+      if (feature instanceof GiantFungusFeature) {
+        return { type: 'giantFungus', settings: feature.settings }
+      }
+      if (feature instanceof EmberFloorFeature) {
+        return { type: 'emberFloor', settings: feature.settings }
+      }
+
+      // Hell: Crystal Abyss
+      if (feature instanceof CrystalSpireFeature) {
+        return { type: 'crystalSpire', settings: feature.settings }
+      }
+      if (feature instanceof CrystalGeodeFeature) {
+        return { type: 'crystalGeode', settings: feature.settings }
+      }
+      if (feature instanceof AbyssIslandFeature) {
+        return { type: 'abyssIsland', settings: feature.settings }
+      }
+      if (feature instanceof CrystalScatterFeature) {
+        return { type: 'crystalScatter', settings: feature.settings }
+      }
+      if (feature instanceof CrystalCoreFeature) {
+        return { type: 'crystalCore', settings: feature.settings }
+      }
+
+      // Hell: Cocytus
+      if (feature instanceof FrozenLakeFeature) {
+        return { type: 'frozenLake', settings: feature.settings }
+      }
+      if (feature instanceof IceSpireFeature) {
+        return { type: 'iceSpire', settings: feature.settings }
+      }
+      if (feature instanceof FrozenLavafallFeature) {
+        return { type: 'frozenLavafall', settings: feature.settings }
+      }
+      if (feature instanceof FrostCrystalFeature) {
+        return { type: 'frostCrystal', settings: feature.settings }
+      }
+
+      // Dungeons (procedural castles)
+      if (feature instanceof ProceduralDungeonFeature) {
+        return { type: 'proceduralDungeon', settings: feature.config }
+      }
+
       throw new Error(`Unknown feature type: ${feature.constructor.name}`)
     })
 
@@ -482,19 +590,22 @@ export class WorldGenerator {
     const subYChanged = clampedPlayerSubY !== this.playerSubY
 
     // Capture the previous center before overwriting - needed for incremental updates.
-    const prevCenter: LoadCenter = { x: this.playerChunkX, z: this.playerChunkZ, subY: this.playerSubY, groundSubY: this.playerGroundSubY }
+    const prevCenter = this.getLoadCenter()
     const wasInitialized = this.initialized
 
     this.playerChunkX = playerChunk.x
     this.playerChunkZ = playerChunk.z
     this.playerSubY = clampedPlayerSubY
     this.playerWorldY = playerY
+    const cavern = this.playerInCavern ? playerY < this.cavernExitY : playerY < this.cavernCeilingY
+    const cavernChanged = cavern !== this.playerInCavern
+    this.playerInCavern = cavern
     const ground = this.computeGroundSubY()
     const groundChanged = ground !== this.playerGroundSubY
     this.playerGroundSubY = ground
 
     // Update queue on first call or when player moves to new chunk/sub-chunk
-    if (!wasInitialized || chunkChanged || subYChanged || groundChanged) {
+    if (!wasInitialized || chunkChanged || subYChanged || groundChanged || cavernChanged) {
       this.initialized = true
       // First initialization does a full rebuild; subsequent crosses update incrementally.
       this.updateSubChunkQueue(wasInitialized ? prevCenter : null)
@@ -636,7 +747,7 @@ export class WorldGenerator {
       let band: SubYRange | null | undefined
       for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
         if (!column.getSubChunk(subY)?.lightReady) continue
-        band ??= this.getColumnBand(Number(column.coordinate.x), Number(column.coordinate.z), center.subY)
+        band ??= this.getColumnBand(Number(column.coordinate.x), Number(column.coordinate.z), center)
         if (this.isSubChunkRetained(dx, dz, subY, center, band)) continue
         this.subChunksToUnload.add(createSubChunkKey(column.coordinate.x, column.coordinate.z, subY))
       }
@@ -645,13 +756,15 @@ export class WorldGenerator {
 
   /**
    * Whether a loaded sub-chunk stays resident: it is wanted, in its column's
-   * surface band, or inside the vertical ellipsoid widened by the unload
+   * surface band, in the cavern while the camera is (columns within the
+   * unload hysteresis), or inside the vertical ellipsoid widened by the unload
    * hysteresis (horizontally, as for columns) plus
    * VERTICAL_UNLOAD_HYSTERESIS_SUB_CHUNKS - so moving back and forth across a
    * sub-chunk boundary doesn't unload and reload a layer each time.
    */
   private isSubChunkRetained(dx: number, dz: number, subY: number, center: LoadCenter, band: SubYRange | null): boolean {
     if (isInBand(band, subY)) return true
+    if (center.cavern && subY <= this.cavernTopSubY && this.isColumnInRange(dx, dz, UNLOAD_HYSTERESIS_CHUNKS)) return true
     if (this.isSubChunkWanted(dx, dz, subY, center, band, 0)) return true
     const distance = this.config.chunkDistance + UNLOAD_HYSTERESIS_CHUNKS
     const vertical = this.config.getVerticalDistance() + VERTICAL_UNLOAD_HYSTERESIS_SUB_CHUNKS
@@ -668,7 +781,7 @@ export class WorldGenerator {
 
   /** See LoadCenter.groundSubY. */
   private computeGroundSubY(): number | null {
-    if (this.playerSubY < LAYER_BOUNDARY_SUB_CHUNK) return null
+    if (this.playerInCavern || this.playerSubY < LAYER_BOUNDARY_SUB_CHUNK) return null
     const band = this.getSurfaceBand(Number(this.playerChunkX), Number(this.playerChunkZ))
     const ground = Math.max(LAYER_BOUNDARY_SUB_CHUNK, Math.floor(band.minY / SUB_CHUNK_HEIGHT))
     return ground < this.playerSubY ? ground : null
@@ -694,7 +807,7 @@ export class WorldGenerator {
       const dx = Number(coordinate.x - center.x)
       const dz = Number(coordinate.z - center.z)
       if (!this.isColumnInRange(dx, dz, UNLOAD_HYSTERESIS_CHUNKS)) continue // its column goes as a whole
-      const band = this.getColumnBand(Number(coordinate.x), Number(coordinate.z), center.subY)
+      const band = this.getColumnBand(Number(coordinate.x), Number(coordinate.z), center)
       if (this.isSubChunkRetained(dx, dz, coordinate.subY, center, band)) continue
       if (!this.world.unloadSubChunk(coordinate)) continue
       unloaded++
@@ -771,7 +884,7 @@ export class WorldGenerator {
     const dz = Number(columnZ - center.z)
     if (!this.isColumnInRange(dx, dz, 0)) return
 
-    const band = this.getColumnBand(chunkX, chunkZ, center.subY)
+    const band = this.getColumnBand(chunkX, chunkZ, center)
     let addedAny = false
     for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
       if (!this.isSubChunkWanted(dx, dz, subY, center, band, 0)) continue
@@ -833,10 +946,10 @@ export class WorldGenerator {
       const bit = 1 << coordinate.subY
       const open = hasOpenColumn(blocks, this.groundBlocks)
       if (open !== ((bits & bit) !== 0)) {
-        const centerSubY = this.getLoadCenter().subY
-        const before = this.getColumnBand(chunkX, chunkZ, centerSubY)
+        const center = this.getLoadCenter()
+        const before = this.getColumnBand(chunkX, chunkZ, center)
         this.openSubChunks.set(key, open ? bits | bit : bits & ~bit)
-        const after = this.getColumnBand(chunkX, chunkZ, centerSubY)
+        const after = this.getColumnBand(chunkX, chunkZ, center)
         if (before && after && after.lo < before.lo) this.queueNewlyWanted(chunkX, chunkZ)
       }
     }
@@ -906,7 +1019,13 @@ export class WorldGenerator {
   }
 
   private getLoadCenter(): LoadCenter {
-    return { x: this.playerChunkX, z: this.playerChunkZ, subY: this.playerSubY, groundSubY: this.playerGroundSubY }
+    return {
+      x: this.playerChunkX,
+      z: this.playerChunkZ,
+      subY: this.playerSubY,
+      groundSubY: this.playerGroundSubY,
+      cavern: this.playerInCavern,
+    }
   }
 
   /** True if a column at chunk offset (dx, dz) is within load distance + slack. */
@@ -919,9 +1038,12 @@ export class WorldGenerator {
    * The single load rule shared by queueing (slack 0) and unloading (slack =
    * hysteresis). A sub-chunk is wanted when its column is in horizontal range
    * AND it lies inside the vertical ellipsoid around the player OR inside the
-   * column's surface band. The band guarantee matters for edge columns: the
-   * ellipsoid narrows to the player's own sub-chunk there, which on uneven
-   * terrain misses the ground entirely.
+   * column's surface band OR - while the camera is in the Hell cavern - inside
+   * the cavern (layer 0 and the ceiling's sub-chunk). The band guarantee
+   * matters for edge columns: the ellipsoid narrows to the player's own
+   * sub-chunk there, which on uneven terrain misses the ground entirely. The
+   * cavern's floor (dungeons, chasms) and ceiling are in view across the
+   * whole disk the same way.
    */
   private isSubChunkWanted(
     dx: number,
@@ -935,6 +1057,7 @@ export class WorldGenerator {
     const maxDist2 = distance * distance
     const horizontalDist2 = dx * dx + dz * dz
     if (horizontalDist2 > maxDist2) return false
+    if (center.cavern && subY <= this.cavernTopSubY) return true
 
     // Ellipsoid: Y is scaled so the vertical radius is getVerticalDistance()
     // (around the camera, and around the ground under it while flying)
@@ -950,8 +1073,8 @@ export class WorldGenerator {
   }
 
   /**
-   * Sub-chunk range of a column's surface band, or null when the player is in
-   * the underground layer (the surface is out of sight from there).
+   * Sub-chunk range of a column's surface band, or null while the camera is
+   * in the Hell cavern (the surface is out of sight from there).
    *
    * The top reaches the sub-chunk holding the air cell above the highest
    * surface block (getColumnTopY: tile/estimate band, plus decorations seen
@@ -962,8 +1085,8 @@ export class WorldGenerator {
    * faces never appear where only bands load (the disk edge, and everywhere
    * when flying high) - the terrain shows holes toward the sky.
    */
-  private getColumnBand(chunkX: number, chunkZ: number, centerSubY: number): SubYRange | null {
-    if (centerSubY < LAYER_BOUNDARY_SUB_CHUNK) return null
+  private getColumnBand(chunkX: number, chunkZ: number, center: LoadCenter): SubYRange | null {
+    if (center.cavern) return null
     const band = this.getSurfaceBand(chunkX, chunkZ)
     const lo = Math.max(LAYER_BOUNDARY_SUB_CHUNK, Math.floor(band.minY / SUB_CHUNK_HEIGHT))
     let top = this.getColumnTopY(chunkX, chunkZ)
@@ -1137,11 +1260,11 @@ export class WorldGenerator {
     // queued entry, current and previous centre): compute each once
     const bands = new Map<number, SubYRange | null>()
     const prevBands = new Map<number, SubYRange | null>()
-    const bandOf = (chunkX: number, chunkZ: number, centerSubY: number, memo: Map<number, SubYRange | null>): SubYRange | null => {
+    const bandOf = (chunkX: number, chunkZ: number, bandCenter: LoadCenter, memo: Map<number, SubYRange | null>): SubYRange | null => {
       const key = columnKey(chunkX, chunkZ)
       let band = memo.get(key)
       if (band === undefined) {
-        band = this.getColumnBand(chunkX, chunkZ, centerSubY)
+        band = this.getColumnBand(chunkX, chunkZ, bandCenter)
         memo.set(key, band)
       }
       return band
@@ -1156,7 +1279,7 @@ export class WorldGenerator {
         if (!this.isColumnInRange(coord.dx, coord.dz, 0)) continue
         const chunkX = center.x + BigInt(coord.dx)
         const chunkZ = center.z + BigInt(coord.dz)
-        const band = bandOf(Number(chunkX), Number(chunkZ), center.subY, bands)
+        const band = bandOf(Number(chunkX), Number(chunkZ), center, bands)
 
         for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
           if (!this.isSubChunkWanted(coord.dx, coord.dz, subY, center, band, 0)) continue
@@ -1182,7 +1305,7 @@ export class WorldGenerator {
       const { x, z, subY } = entry.coordinate
       const dx = Number(x - center.x)
       const dz = Number(z - center.z)
-      const band = this.isColumnInRange(dx, dz, 0) ? bandOf(Number(x), Number(z), center.subY, bands) : null
+      const band = this.isColumnInRange(dx, dz, 0) ? bandOf(Number(x), Number(z), center, bands) : null
       if (this.isSubChunkWanted(dx, dz, subY, center, band, 0)) {
         this.subChunkQueue[write++] = entry
       } else {
@@ -1199,12 +1322,12 @@ export class WorldGenerator {
       if (!this.isColumnInRange(coord.dx, coord.dz, 0)) continue
       const chunkX = center.x + BigInt(coord.dx)
       const chunkZ = center.z + BigInt(coord.dz)
-      const band = bandOf(Number(chunkX), Number(chunkZ), center.subY, bands)
+      const band = bandOf(Number(chunkX), Number(chunkZ), center, bands)
       // Offset of this column from the previous center
       const pdx = coord.dx + shiftX
       const pdz = coord.dz + shiftZ
       const prevBand = this.isColumnInRange(pdx, pdz, 0)
-        ? bandOf(Number(chunkX), Number(chunkZ), prevCenter.subY, prevBands)
+        ? bandOf(Number(chunkX), Number(chunkZ), prevCenter, prevBands)
         : null
 
       for (let subY = 0; subY < SUB_CHUNK_COUNT; subY++) {
@@ -1497,7 +1620,7 @@ export class WorldGenerator {
     const dx = Number(coordinate.x - center.x)
     const dz = Number(coordinate.z - center.z)
     if (!this.isColumnInRange(dx, dz, UNLOAD_HYSTERESIS_CHUNKS)) return false
-    const band = this.getColumnBand(Number(coordinate.x), Number(coordinate.z), center.subY)
+    const band = this.getColumnBand(Number(coordinate.x), Number(coordinate.z), center)
     return this.isSubChunkWanted(dx, dz, coordinate.subY, center, band, UNLOAD_HYSTERESIS_CHUNKS)
   }
 }

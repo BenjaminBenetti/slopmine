@@ -8,11 +8,8 @@ import { BlockIds } from '../../BlockIds.ts'
 import { BlockTags } from '../../tags/BlockTags.ts'
 import { ChestBlockItem } from '../../../../items/blocks/chest/ChestBlockItem.ts'
 import { ChestBlockState } from './ChestBlockState.ts'
-import {
-  CHEST_LOOT_RESOLVED_METADATA_BIT,
-  fillCharredCampChestLoot,
-  isNearCharredCampSignature,
-} from './ChestLoot.ts'
+import { CHEST_LOOT_RESOLVED_METADATA_BIT } from './ChestLoot.ts'
+import { fillChestFromTable, findChestLootTable } from '../../../loot/ChestLootRegistry.ts'
 import { BlockStateManager } from '../../../blockstate/BlockStateManager.ts'
 import { deleteBlockStateFromPersistence } from '../../../../persistence/index.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
@@ -150,8 +147,9 @@ export class ChestBlock extends SolidBlock {
    * - No state yet (fresh-generated chunk): create it.
    * - Loot not yet resolved (metadata bit clear — never true for a
    *   player-placed chest, onPlace stamps the bit): if the chest is empty
-   *   AND carries the charred-camp signature (CHARRED_LOG nearby), fill the
-   *   deterministic ore reward; otherwise it resolves to empty.
+   *   AND a registered loot table's signature block is nearby (see
+   *   ChestLootRegistry, e.g. CHARRED_LOG for charred mining camps), fill
+   *   that table's deterministic loot; otherwise it resolves to empty.
    * - Either way, set the resolved bit. setBlockMetadata marks the sub-chunk
    *   player-modified, so the bit (and thus the no-re-roll guarantee) and the
    *   filled state both persist across save/load. This also covers the chunk
@@ -171,8 +169,9 @@ export class ChestBlock extends SolidBlock {
     const metadata = world.getMetadata?.(x, y, z) ?? 0
     if ((metadata & CHEST_LOOT_RESOLVED_METADATA_BIT) !== 0) return
 
-    if (!state.hasData() && isNearCharredCampSignature(world, x, y, z)) {
-      fillCharredCampChestLoot(state, x, y, z)
+    if (!state.hasData()) {
+      const table = findChestLootTable(world, x, y, z)
+      if (table) fillChestFromTable(table, state, x, y, z)
     }
     world.setBlockMetadata?.(x, y, z, metadata | CHEST_LOOT_RESOLVED_METADATA_BIT)
   }

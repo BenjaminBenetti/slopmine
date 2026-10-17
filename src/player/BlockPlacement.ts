@@ -8,6 +8,7 @@ import { BlockRegistry } from '../world/blocks/BlockRegistry.ts'
 import { BlockFace } from '../world/interfaces/IBlock.ts'
 import { AABB } from '../physics/collision/AABB.ts'
 import { yawToFacing, hitFaceToFacing, setMetadataFacing, setMetadataUses3DRotation, setMetadataFlipped, BlockFacing } from '../world/blocks/BlockFacing.ts'
+import { gameEvents } from '../events/GameEvents.ts'
 
 /** Maximum reach distance for block placement */
 const MAX_REACH_DISTANCE = 5
@@ -108,9 +109,18 @@ export class BlockPlacement {
     const itemId = stack.item.id
     if (!itemId.endsWith('_block')) return
 
-    // Get the block ID from the item ID
+    // The block a BlockItem declares (blockName) wins: it differs from the
+    // "<block name>_block" id convention where that name is taken by another
+    // block (infernal_bricks_block places the player-grade
+    // crafted_infernal_bricks, not the force-6 bastion wall 'infernal_bricks')
+    // or where the item id is the block name itself (ore blocks: item and
+    // block 'iron_block'). Items without one fall back to the id convention.
+    const registry = BlockRegistry.getInstance()
     const blockName = itemId.slice(0, -6) // Remove "_block" suffix
-    const block = BlockRegistry.getInstance().getBlockByName(blockName)
+    const declaredName = (stack.item as { blockName?: unknown }).blockName
+    const block =
+      (typeof declaredName === 'string' ? registry.getBlockByName(declaredName) : undefined) ??
+      registry.getBlockByName(blockName)
     if (!block) return
 
     const blockId = block.properties.id
@@ -182,6 +192,15 @@ export class BlockPlacement {
     } else {
       stack.count -= 1
     }
+
+    gameEvents.emit({
+      type: 'block-placed',
+      blockId,
+      blockName: block.properties.name,
+      x: Number(placePos.x),
+      y: Number(placePos.y),
+      z: Number(placePos.z),
+    })
 
     // Notify listeners
     this.onBlockPlaced?.()

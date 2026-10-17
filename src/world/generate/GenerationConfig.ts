@@ -1,6 +1,21 @@
 const STORAGE_KEY = 'slopmine:worldConfig'
 
-export type BiomeType = 'plains' | 'grassy-hills' | 'desert' | 'volcanic' | 'jungle' | 'swamp' | 'pine-forest' | 'coastal-rainforest' | 'hell'
+export type BiomeType =
+  // Layer 1 (surface)
+  | 'plains'
+  | 'grassy-hills'
+  | 'desert'
+  | 'volcanic'
+  | 'jungle'
+  | 'swamp'
+  | 'pine-forest'
+  | 'coastal-rainforest'
+  // Layer 0 (the Hell layer)
+  | 'hell' // the Molten Wastes
+  | 'ossuary'
+  | 'ember-grove'
+  | 'crystal-abyss'
+  | 'cocytus'
 
 /**
  * Vertical layer boundary Y coordinate.
@@ -62,6 +77,15 @@ const DEFAULT_CONFIG: IGenerationConfig = {
   seaLevel: 240,
   terrainThickness: 100,
 }
+
+/**
+ * The Hell cavern's rock ceiling: the lowest Y of the surface layer's fill
+ * (sea level - terrain thickness; saved configs never override either). Y 128
+ * up to it is the cavern's open top. Shader constants (the cavern ceiling
+ * haze in DistanceFog) use this value; world generation derives the same Y
+ * from its config.
+ */
+export const HELL_CEILING_Y = DEFAULT_CONFIG.seaLevel - DEFAULT_CONFIG.terrainThickness
 
 export class GenerationConfig {
   private config: IGenerationConfig

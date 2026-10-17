@@ -3,6 +3,7 @@ import { PeacefulEntity } from './PeacefulEntity.ts'
 import type { IAggressiveEntityConfig } from './interfaces/IAggressiveEntityConfig.ts'
 import { AggressionMode } from './interfaces/IAggressiveEntityConfig.ts'
 import type { IItem } from '../items/Item.ts'
+import { getPlayerAttackDamage, getPlayerAttackKnockback } from '../combat/PlayerAttack.ts'
 
 // Default aggressive behavior constants
 const DEFAULT_DETECTION_RANGE = 16.0 // blocks
@@ -16,7 +17,6 @@ const DEFAULT_AGGRO_TIMEOUT = 5.0 // seconds to lose interest
 const DEFAULT_PROVOKED_DURATION = 10.0 // seconds of aggression when provoked
 
 // Damage constants
-const DEFAULT_BASE_DAMAGE = 2 // Fist damage
 
 // Stuck detection constants for chase behavior
 const CHASE_STUCK_MOVEMENT_RATIO = 0.2 // If moving less than 20% of expected, we're stuck
@@ -339,11 +339,9 @@ export abstract class AggressiveEntity extends PeacefulEntity {
     if (!this.isAlive) return false
 
     // Calculate damage from held item
-    let damage = DEFAULT_BASE_DAMAGE
-    if (heldItem && 'toolStats' in heldItem) {
-      const toolItem = heldItem as { toolStats: { damage: number } }
-      damage = toolItem.toolStats.damage
-    }
+    const damage = getPlayerAttackDamage(heldItem)
+    // Weapon knockback x attack charge: scales the push and the hit-stun
+    const knockback = getPlayerAttackKnockback(heldItem)
 
     // Apply damage
     this.health -= damage
@@ -362,9 +360,9 @@ export abstract class AggressiveEntity extends PeacefulEntity {
     // Apply knockback to physics body
     const body = this.getPhysicsBody()
     if (body) {
-      body.velocity.x = knockbackDir.x * this.knockbackHorizontal
-      body.velocity.z = knockbackDir.z * this.knockbackHorizontal
-      body.velocity.y = this.knockbackVertical
+      body.velocity.x = knockbackDir.x * this.knockbackHorizontal * knockback
+      body.velocity.z = knockbackDir.z * this.knockbackHorizontal * knockback
+      body.velocity.y = this.knockbackVertical * Math.min(1, knockback)
     }
 
     // Check death
@@ -376,7 +374,7 @@ export abstract class AggressiveEntity extends PeacefulEntity {
       this.aggressiveTimer = 0
     } else {
       // Trigger aggression (applies to both modes - if hit, become aggressive)
-      this.knockbackTimer = this.knockbackStunTime
+      this.knockbackTimer = this.knockbackStunTime * Math.min(1, knockback)
       this.setAggressive(true)
     }
 

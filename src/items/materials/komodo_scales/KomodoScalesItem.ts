@@ -17,6 +17,6 @@ export class KomodoScalesItem extends Item {
   }
 
   override get tags(): ReadonlyArray<string> {
-    return ['material', 'scales']
+    return ['material', 'scales', 'hide']
   }
 }

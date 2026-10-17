@@ -66,6 +66,9 @@ export class FirstPersonCameraControls implements CameraControls {
   private readonly tempForward = new THREE.Vector3()
   private readonly tempRight = new THREE.Vector3()
 
+  // Walking speed multipliers (status effects such as Frostbite); product of all
+  private readonly speedModifiers: Array<() => number> = []
+
   // External velocity from knockback, decays over time
   private readonly knockbackVelocity = new THREE.Vector3()
   private static readonly KNOCKBACK_DECAY = 8.0 // How fast knockback decays per second
@@ -241,6 +244,24 @@ export class FirstPersonCameraControls implements CameraControls {
   }
 
   /**
+   * Register a walking speed multiplier (e.g. slowness), read every tick.
+   * Flying is unaffected. Returns an unregister function.
+   */
+  addSpeedModifier(modifier: () => number): () => void {
+    this.speedModifiers.push(modifier)
+    return () => {
+      const index = this.speedModifiers.indexOf(modifier)
+      if (index >= 0) this.speedModifiers.splice(index, 1)
+    }
+  }
+
+  private getSpeedMultiplier(): number {
+    let multiplier = 1
+    for (const modifier of this.speedModifiers) multiplier *= modifier()
+    return Math.max(0, multiplier)
+  }
+
+  /**
    * Apply an external knockback impulse to the player.
    * This velocity is added to movement and decays over time.
    */
@@ -281,7 +302,7 @@ export class FirstPersonCameraControls implements CameraControls {
     // Normalize and apply movement speed to horizontal velocity
     if (this.tempDirection.lengthSq() > 0) {
       this.tempDirection.normalize()
-      this.tempDirection.multiplyScalar(this.movementSpeed)
+      this.tempDirection.multiplyScalar(this.movementSpeed * this.getSpeedMultiplier())
     }
 
     // Set horizontal velocity = movement + knockback

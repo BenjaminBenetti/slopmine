@@ -3,6 +3,7 @@ import { PeacefulEntity } from '../../PeacefulEntity.ts'
 import type { IPeacefulEntityConfig } from '../../PeacefulEntity.ts'
 import { MagmaBlockItem } from '../../../items/blocks/magma/MagmaBlockItem.ts'
 import { CoalItem } from '../../../items/ores/coal/CoalItem.ts'
+import { MagmaCreamItem } from '../../../items/materials/magma_cream/MagmaCreamItem.ts'
 import { optimizeEntityMesh } from '../../EntityMeshOptimizer.ts'
 
 // Magma slime colors - fiery, glowing appearance
@@ -26,6 +27,13 @@ const STUCK_TIME_THRESHOLD = 0.5 // Seconds of being stuck before high jump
 
 // Contact damage constants
 const CONTACT_DAMAGE = 2 // 1 heart per contact
+
+/**
+ * Hell-born slimes (Molten Wastes, the Pyre Tyrant's minions) are tougher
+ * than volcanic ones: health and contact damage multipliers.
+ */
+const HELL_HEALTH_MULTIPLIER = 2
+const HELL_CONTACT_DAMAGE = 4
 const CONTACT_COOLDOWN = 1.0 // Seconds between damage ticks
 const CONTACT_KNOCKBACK_HORIZONTAL = 4.0
 const CONTACT_KNOCKBACK_VERTICAL = 2.0
@@ -45,6 +53,9 @@ const SPLIT_IMPULSE_VERTICAL = 4.5
  * spawner caps see them uniformly.
  */
 export type MagmaSlimeSize = 'large' | 'small'
+
+/** Where the slime lives: the volcanic surface or the Hell layer (tougher). */
+export type MagmaSlimeVariant = 'volcanic' | 'hell'
 
 interface IMagmaSlimeSizeStats {
   meshScale: number
@@ -88,19 +99,27 @@ const SIZE_STATS: Record<MagmaSlimeSize, IMagmaSlimeSizeStats> = {
  */
 export interface IMagmaSlimeConfig extends IPeacefulEntityConfig {
   size?: MagmaSlimeSize
+  /** 'hell' = the tougher Hell-layer variant (2x health, 2x contact damage). Default 'volcanic'. */
+  variant?: MagmaSlimeVariant
 }
 
 /**
  * A magma slime entity that hops around volcanic biomes.
  * Deals contact damage to players who touch it.
- * Large slimes drop magma blocks and coal when killed, and split into
- * 2 small slimes; small slimes drop a single coal and do not split.
+ * Large slimes drop magma cream, coal and sometimes a magma block when
+ * killed, and split into 2 small slimes; small slimes may drop magma cream
+ * or coal and do not split.
  */
 export class MagmaSlimeEntity extends PeacefulEntity {
   readonly type = 'magma_slime'
 
   /** Size variant - large slimes split into small ones on death */
   readonly size: MagmaSlimeSize
+  /** Volcanic or Hell-born (split children inherit it) */
+  readonly variant: MagmaSlimeVariant
+  /** Split children this slime spawned (IEntity.spawnedChildren) */
+  readonly spawnedChildren: MagmaSlimeEntity[] = []
+  private readonly contactDamage: number
 
   // Per-size behavior stats
   private readonly hopCooldownMin: number
@@ -152,17 +171,25 @@ export class MagmaSlimeEntity extends PeacefulEntity {
       wanderMaxDistance: 6.0,
       wanderMinInterval: 2.0,
       wanderMaxInterval: 5.0,
-      maxHealth: stats.maxHealth,
+      maxHealth: stats.maxHealth * (config.variant === 'hell' ? HELL_HEALTH_MULTIPLIER : 1),
+      // Magma cream (fire resistance, hellbane gear) is the slime's prize:
+      // a large slime and its two children yield ~2-4 together
       drops:
         size === 'large'
           ? [
-              { createItem: () => new MagmaBlockItem(), minCount: 1, maxCount: 2 },
-              { createItem: () => new CoalItem(), minCount: 1, maxCount: 3 },
+              { createItem: () => new MagmaCreamItem(), minCount: 1, maxCount: 2 },
+              { createItem: () => new MagmaBlockItem(), minCount: 0, maxCount: 1 },
+              { createItem: () => new CoalItem(), minCount: 1, maxCount: 2 },
             ]
-          : [{ createItem: () => new CoalItem(), minCount: 1, maxCount: 1 }],
+          : [
+              { createItem: () => new MagmaCreamItem(), minCount: 0, maxCount: 1 },
+              { createItem: () => new CoalItem(), minCount: 0, maxCount: 1 },
+            ],
     })
 
     this.size = size
+    this.variant = config.variant ?? 'volcanic'
+    this.contactDamage = this.variant === 'hell' ? HELL_CONTACT_DAMAGE : CONTACT_DAMAGE
     this.hopCooldownMin = stats.hopCooldownMin
     this.hopCooldownMax = stats.hopCooldownMax
     this.idleHopChance = stats.idleHopChance
@@ -322,7 +349,7 @@ export class MagmaSlimeEntity extends PeacefulEntity {
       knockback.y = CONTACT_KNOCKBACK_VERTICAL
 
       // Apply damage
-      this.playerDamageCallback(CONTACT_DAMAGE, knockback)
+      this.playerDamageCallback(this.contactDamage, knockback)
       this.contactDamageCooldown = CONTACT_COOLDOWN
     }
   }
@@ -496,6 +523,7 @@ export class MagmaSlimeEntity extends PeacefulEntity {
           this.position.z + dirZ * SPLIT_OFFSET_DISTANCE
         ),
         size: 'small',
+        variant: this.variant,
       })
 
       // Launch outward so the children scatter instead of stacking
@@ -517,6 +545,7 @@ export class MagmaSlimeEntity extends PeacefulEntity {
         child.updatePlayerPosition(this.playerPositionRef)
       }
 
+      this.spawnedChildren.push(child)
       this.childSpawner(child)
     }
   }

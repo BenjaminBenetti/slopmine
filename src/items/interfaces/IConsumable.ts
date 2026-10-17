@@ -16,11 +16,31 @@ export interface IConsumable {
   readonly consumableStats: IConsumableStats
 
   /**
+   * Optional gate, checked when consumption would start: return false to
+   * refuse (the item is kept; tell the player why, e.g. a capped Infernal
+   * Heart). Omitted = always consumable.
+   */
+  canConsume?(playerHealth: IPlayerHealth): boolean
+
+  /**
    * Called when consumption is completed.
    * Implement to apply effects (healing, buffs, etc.).
    * @param playerHealth - The player's health system for healing
    */
   onConsume(playerHealth: IPlayerHealth): void
+
+  /**
+   * Reusable items (e.g. the Return Idol) set this to false: using one keeps
+   * the stack. Default (omitted): consumed.
+   */
+  readonly consumedOnUse?: boolean
+
+  /**
+   * Optional gate, checked every tick while the use button is held: false
+   * cancels the use (e.g. on cooldown, interrupted). Default: always usable.
+   * (canConsume is the one-shot gate when a use would start.)
+   */
+  canContinueUse?(): boolean
 }
 
 /**

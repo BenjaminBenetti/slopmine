@@ -1,3 +1,5 @@
+import { getHudCenterColumnBounds, HUD_COLUMN_GAP_PX, onHudLayout, setHudObstacle } from './hudLayout.ts'
+
 export interface FpsCounterOptions {
   updateIntervalMs?: number
   color?: string
@@ -106,6 +108,12 @@ function formatCount(n: number): string {
  * Creates a performance stats display fixed at the top-right corner of the screen.
  * Shows FPS, frame time, and CPU busy time.
  * Implemented as a simple DOM overlay above the WebGL canvas.
+ *
+ * show()/hide() (the debug mode) toggle `visibility`; `display` on `element`
+ * stays free for main.ts to hide the stats during loading. While shown, the
+ * stats and the biome mini-map are HUD obstacles: the top HUD columns
+ * (hudLayout.ts) flow below them. Long stat lines wrap rather than reach
+ * into the top-centre column, so the boss bar keeps its place.
  */
 export function createFpsCounterUI(
   parent: HTMLElement = document.body,
@@ -132,6 +140,15 @@ export function createFpsCounterUI(
 
   parent.appendChild(el)
 
+  // Stay right of the HUD's top-centre column (boss bar, compass)
+  const STATS_EDGE_PX = 10
+  const fitStatsWidth = (): void => {
+    const width = window.innerWidth - getHudCenterColumnBounds().right - HUD_COLUMN_GAP_PX - STATS_EDGE_PX
+    el.style.maxWidth = `${Math.max(160, Math.floor(width))}px`
+  }
+  fitStatsWidth()
+  const unsubscribeLayout = onHudLayout(fitStatsWidth)
+
   // Create biome mini-map element (top-left corner)
   const miniMapEl = document.createElement('div')
   miniMapEl.style.cssText = `
@@ -151,6 +168,13 @@ export function createFpsCounterUI(
   parent.appendChild(miniMapEl)
 
   let isVisible = true
+
+  /** Tell the HUD layout where the stats and mini-map are (nothing while hidden). */
+  const reportObstacles = (): void => {
+    const statsShown = isVisible && el.style.display !== 'none'
+    setHudObstacle('debug-stats', statsShown ? el.getBoundingClientRect() : null)
+    setHudObstacle('debug-minimap', isVisible ? miniMapEl.getBoundingClientRect() : null)
+  }
 
   let frameCount = 0
   let elapsedTime = 0
@@ -267,6 +291,7 @@ export function createFpsCounterUI(
           el.innerHTML = statsHtml
           lastStatsHtml = statsHtml
         }
+        reportObstacles()
 
         frameCount = 0
         elapsedTime = 0
@@ -377,19 +402,24 @@ export function createFpsCounterUI(
       if (miniMapHtml !== lastMiniMapHtml) {
         miniMapEl.innerHTML = miniMapHtml
         lastMiniMapHtml = miniMapHtml
+        reportObstacles()
       }
     },
 
     show(): void {
-      el.style.display = 'block'
+      el.style.visibility = ''
       miniMapEl.style.display = 'block'
       isVisible = true
+      reportObstacles()
     },
 
     hide(): void {
-      el.style.display = 'none'
+      // visibility, not display: main.ts re-shows `element` (display '') when
+      // loading ends, which used to reveal the stale "FPS: --" placeholder
+      el.style.visibility = 'hidden'
       miniMapEl.style.display = 'none'
       isVisible = false
+      reportObstacles()
     },
 
     toggle(): boolean {
@@ -412,6 +442,9 @@ export function createFpsCounterUI(
       if (miniMapEl.parentElement === parent) {
         parent.removeChild(miniMapEl)
       }
+      unsubscribeLayout()
+      setHudObstacle('debug-stats', null)
+      setHudObstacle('debug-minimap', null)
     },
   }
 }

@@ -39,7 +39,9 @@ async function loadImagePixelData(url: string): Promise<PixelData> {
       const canvas = document.createElement('canvas')
       canvas.width = TARGET_RESOLUTION
       canvas.height = TARGET_RESOLUTION
-      const ctx = canvas.getContext('2d')
+      // CPU-backed: a GPU canvas stalls on the getImageData readback below
+      // (seconds under SwiftShader, a visible hitch on first hold elsewhere)
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
       if (!ctx) {
         reject(new Error('Could not get canvas 2D context'))
         return

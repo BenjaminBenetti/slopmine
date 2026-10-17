@@ -8,6 +8,8 @@ export interface PlayerHealthConfig {
 export interface IPlayerHealth {
   readonly currentHealth: number
   readonly maxHealth: number
+  /** Permanent max-health bonus on top of the base (Infernal Hearts) */
+  readonly maxHealthBonus: number
   readonly isDead: boolean
   readonly isInvincible: boolean
 
@@ -15,6 +17,8 @@ export interface IPlayerHealth {
   takeEnvironmentalDamage(amount: number): void
   heal(amount: number): void
   setHealth(amount: number): void
+  /** Set the max-health bonus (max = base + bonus); clamps current health */
+  setMaxHealthBonus(bonus: number): void
   reset(): void
   update(deltaTime: number): void
   setOnHealthChanged(callback: (current: number, max: number) => void): void
@@ -27,13 +31,16 @@ type DeathCallback = () => void
 export class PlayerHealth implements IPlayerHealth {
   private _currentHealth: number
   private _maxHealth: number
+  private readonly _baseMaxHealth: number
+  private _maxHealthBonus = 0
   private _invincibilityDuration: number
   private _invincibilityTimer: number = 0
   private _onHealthChanged: HealthChangedCallback | null = null
   private _onDeath: DeathCallback | null = null
 
   constructor(config: PlayerHealthConfig = {}) {
-    this._maxHealth = config.maxHealth ?? 40
+    this._baseMaxHealth = config.maxHealth ?? 40
+    this._maxHealth = this._baseMaxHealth
     this._invincibilityDuration = config.invincibilityDuration ?? INVINCIBILITY_DURATION
     this._currentHealth = this._maxHealth
   }
@@ -44,6 +51,15 @@ export class PlayerHealth implements IPlayerHealth {
 
   get maxHealth(): number {
     return this._maxHealth
+  }
+
+  /** Max health without any bonus */
+  get baseMaxHealth(): number {
+    return this._baseMaxHealth
+  }
+
+  get maxHealthBonus(): number {
+    return this._maxHealthBonus
   }
 
   get isDead(): boolean {
@@ -103,6 +119,19 @@ export class PlayerHealth implements IPlayerHealth {
 
   setHealth(amount: number): void {
     this._currentHealth = Math.max(0, Math.min(this._maxHealth, amount))
+    this._onHealthChanged?.(this._currentHealth, this._maxHealth)
+  }
+
+  /**
+   * Set the permanent max-health bonus (max = base + bonus). Current health
+   * is clamped to the new max but never raised - heal separately.
+   */
+  setMaxHealthBonus(bonus: number): void {
+    const clamped = Number.isFinite(bonus) ? Math.max(0, bonus) : 0
+    if (clamped === this._maxHealthBonus) return
+    this._maxHealthBonus = clamped
+    this._maxHealth = this._baseMaxHealth + clamped
+    this._currentHealth = Math.min(this._currentHealth, this._maxHealth)
     this._onHealthChanged?.(this._currentHealth, this._maxHealth)
   }
 

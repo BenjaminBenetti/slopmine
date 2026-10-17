@@ -7,6 +7,7 @@ import type { SerializedApothecaryState, SerializedSlot } from '../../../../pers
 import { brewingRegistry } from '../../../../brewing/index.ts'
 import { getFuelValue, isFuel } from '../../../../brewing/BrewingConfig.ts'
 import { createItemFromId } from '../../../../persistence/ItemRegistry.ts'
+import { gameEvents } from '../../../../events/GameEvents.ts'
 
 // Local serialization helpers to avoid circular dependency with BlockStateSerializer
 function serializeSlotLocal(stack: IItemStack | null): SerializedSlot | null {
@@ -267,6 +268,7 @@ export class ApothecaryWorkbenchState implements ITickableBlockState {
     // Add result to output
     const result = recipe.createResult()
     const resultCount = recipe.resultCount
+    gameEvents.emit({ type: 'item-crafted', itemId: result.id, count: resultCount, station: 'apothecary' })
 
     if (!this.outputSlot) {
       this.outputSlot = { item: result, count: resultCount }

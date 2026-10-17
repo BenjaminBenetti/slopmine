@@ -98,6 +98,11 @@ export interface SerializedBlockState {
   position: { x: string; y: string; z: string }
   /** State-specific data (defined by each block state class) */
   data: unknown
+  /**
+   * Save requests only: the state is now empty - delete its stored record
+   * (never stored itself). See getBlockStatesToPersist.
+   */
+  removed?: true
 }
 
 /**
@@ -138,6 +143,8 @@ export type PersistenceWorkerRequest =
       blocks: Uint16Array
       metadata?: Uint8Array
       skyOpenAbove: boolean
+      /** Block states inside the sub-chunk, written in the same transaction (unload saves) */
+      blockStates?: SerializedBlockState[]
     }
   | {
       type: 'load-subchunk'
@@ -154,8 +161,21 @@ export type PersistenceWorkerRequest =
   | {
       type: 'save-inventory'
       inventory: SerializedInventory
+      /**
+       * Keyed player data written in the SAME transaction as the inventory
+       * (items move between the inventory and worn armor: saving one without
+       * the other loses or duplicates them).
+       */
+      playerData?: Array<{ key: string; data: unknown }>
     }
   | { type: 'load-inventory' }
+  | {
+      /** Keyed player data (journal progress, equipment, ...) in the player store. */
+      type: 'save-player-data'
+      key: string
+      data: unknown
+    }
+  | { type: 'load-player-data'; key: string }
   | {
       type: 'save-metadata'
       metadata: WorldMetadata
@@ -219,6 +239,8 @@ export type PersistenceWorkerResponse =
     }
   | { type: 'inventory-saved' }
   | { type: 'inventory-loaded'; inventory: SerializedInventory | null }
+  | { type: 'player-data-saved'; key: string }
+  | { type: 'player-data-loaded'; key: string; data: unknown }
   | { type: 'metadata-saved' }
   | { type: 'metadata-loaded'; metadata: WorldMetadata | null }
   | { type: 'batch-save-complete'; count: number }

@@ -1,6 +1,7 @@
 import { Item } from '../../Item.ts'
 import type { IConsumable, IConsumableStats } from '../../interfaces/IConsumable.ts'
 import type { IPlayerHealth } from '../../../player/PlayerHealth.ts'
+import { canDrinkHealingPotion, startHealingPotionCooldown } from '../HealingPotionCooldown.ts'
 
 /**
  * Healing Potion III - the strongest tier of health potion.
@@ -32,7 +33,13 @@ export class HealthPotion3Item extends Item implements IConsumable {
     return ['potion', 'consumable']
   }
 
+  /** Healing potions share a cooldown (HealingPotionCooldown). */
+  canConsume(): boolean {
+    return canDrinkHealingPotion()
+  }
+
   onConsume(playerHealth: IPlayerHealth): void {
     playerHealth.heal(this.healAmount)
+    startHealingPotionCooldown()
   }
 }

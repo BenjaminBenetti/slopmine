@@ -11,6 +11,18 @@ import { PineForestGenerator } from './PineForestGenerator.ts'
 import { CoastalRainforestGenerator } from './CoastalRainforestGenerator.ts'
 import { HellGenerator } from './HellGenerator.ts'
 
+// Hell: The Ossuary
+import { OssuaryGenerator } from './OssuaryGenerator.ts'
+
+// Hell: Ember Grove
+import { EmberGroveGenerator } from './EmberGroveGenerator.ts'
+
+// Hell: Crystal Abyss
+import { CrystalAbyssGenerator } from './CrystalAbyssGenerator.ts'
+
+// Hell: Cocytus
+import { CocytusGenerator } from './CocytusGenerator.ts'
+
 /**
  * Information about a registered biome.
  */
@@ -131,6 +143,42 @@ export class BiomeRegistry {
       frequency: hellGen.getBiomeProperties().frequency,
       layer: 0,
       createGenerator: (config) => new HellGenerator(config),
+    })
+
+    // Hell: The Ossuary
+    const ossuaryGen = new OssuaryGenerator(defaultConfig)
+    this.register({
+      type: 'ossuary',
+      frequency: ossuaryGen.getBiomeProperties().frequency,
+      layer: 0,
+      createGenerator: (config) => new OssuaryGenerator(config),
+    })
+
+    // Hell: Ember Grove
+    const emberGroveGen = new EmberGroveGenerator(defaultConfig)
+    this.register({
+      type: 'ember-grove',
+      frequency: emberGroveGen.getBiomeProperties().frequency,
+      layer: 0,
+      createGenerator: (config) => new EmberGroveGenerator(config),
+    })
+
+    // Hell: Crystal Abyss
+    const crystalAbyssGen = new CrystalAbyssGenerator(defaultConfig)
+    this.register({
+      type: 'crystal-abyss',
+      frequency: crystalAbyssGen.getBiomeProperties().frequency,
+      layer: 0,
+      createGenerator: (config) => new CrystalAbyssGenerator(config),
+    })
+
+    // Hell: Cocytus
+    const cocytusGen = new CocytusGenerator(defaultConfig)
+    this.register({
+      type: 'cocytus',
+      frequency: cocytusGen.getBiomeProperties().frequency,
+      layer: 0,
+      createGenerator: (config) => new CocytusGenerator(config),
     })
   }
 

@@ -159,6 +159,164 @@ export enum TextureId {
   SMOLDERING_STONE = 140,        // smoldering_stone.webp
   COLUMNAR_BASALT_SIDE = 141,    // columnar-basalt-side.webp
   COLUMNAR_BASALT_TOP = 142,     // columnar-basalt-top.webp
+
+  // Progression (journal, recipe sinks)
+  SLIME = 300,                   // slime.webp
+
+  // Weapons, tool tiers 6-7 and the Hellforge
+  // Hellforge faces (non-greedy instanced block: no texture-array layers)
+  HELLFORGE_FRONT = 330,         // hellforge-front.webp
+  HELLFORGE_SIDE = 331,          // hellforge-side.webp
+  HELLFORGE_TOP = 332,           // hellforge-top.webp
+
+  // Dungeons (guardian spawners, Sigil Compass)
+  GUARDIAN_SPAWNER_TOP = 310,        // guardian-spawner-top.webp (glowing summoning circle)
+  GUARDIAN_SPAWNER_SIDE = 311,       // guardian-spawner-side.webp (glowing rune band; also the bottom)
+  GUARDIAN_SPAWNER_SPENT_TOP = 312,  // guardian-spawner-spent-top.webp (cold, cracked)
+  GUARDIAN_SPAWNER_SPENT_SIDE = 313, // guardian-spawner-spent-side.webp (cold, cracked; also the bottom)
+  GARRISON_SPAWNER_TOP = 314,        // garrison-spawner-top.webp (iron floor grate, embers below)
+  GARRISON_SPAWNER_SIDE = 315,       // garrison-spawner-side.webp (iron-bound stone; also the bottom)
+
+  // Hell: Molten Wastes
+  INFERNIUM_ORE = 400,              // infernium-ore.webp
+  INFERNAL_BRICKS = 401,            // infernal-bricks.webp
+  CRACKED_INFERNAL_BRICKS = 402,    // cracked-infernal-bricks.webp
+  INFERNAL_BRICK_PILLAR_SIDE = 403, // infernal-brick-pillar-side.webp
+  INFERNAL_BRICK_PILLAR_TOP = 404,  // infernal-brick-pillar-top.webp
+  EMBER_GLYPH = 405,                // ember-glyph.webp
+  INFERNAL_BRAZIER = 406,           // custom geometry, coloured materials (no texture layer)
+  HELL_ASH = 407,                   // hell-ash.webp
+  INFERNAL_TILES = 408,             // infernal-tiles.webp
+  OBSIDIAN_BRICKS = 409,            // obsidian-bricks.webp
+  GILDED_INFERNAL_BRICKS = 410,     // gilded-infernal-bricks.webp
+  MAGMA_BRICKS = 411,               // magma-bricks.webp (emissive mortar)
+  SCORCHED_INFERNAL_BRICKS = 412,   // scorched-infernal-bricks.webp
+  CHARRED_PLANKS = 413,             // charred-planks.webp
+  // Custom geometry (no texture-array layer; stairs/slab reuse INFERNAL_BRICKS)
+  INFERNAL_IRON_BARS = 414,
+  INFERNAL_CHAIN = 415,
+  EMBER_LANTERN = 416,
+  INFERNAL_BANNER = 417,            // infernal-banner.webp (material map, not the array)
+  INFERNAL_ANVIL = 418,
+  WEAPON_RACK = 419,
+  INFERNAL_THRONE = 420,
+  INFERNAL_HOARD = 421,
+
+  // Hell: The Ossuary
+  // Greedy layers (10): 440-449
+  BONE_ASH = 440,                // bone-ash.webp
+  OSSIFIED_ROCK = 441,           // ossified-rock.webp
+  BONE_BLOCK_SIDE = 442,         // bone-block-side.webp
+  BONE_BLOCK_TOP = 443,          // bone-block-top.webp
+  SOUL_VEIN = 444,               // soul-vein.webp (emissive veins)
+  CATACOMB_BRICK = 445,          // catacomb-brick.webp
+  CATACOMB_SKULL_BRICK = 446,    // catacomb-skull-brick.webp
+  SOUL_LANTERN = 447,            // soul-lantern.webp (emissive)
+  SARCOPHAGUS_TOP = 448,         // sarcophagus-top.webp
+  SARCOPHAGUS_SIDE = 449,        // sarcophagus-side.webp
+  // Non-greedy (no array layer)
+  SOUL_TORCH = 450,              // custom geometry, colored materials (like TORCH)
+  BONE_PILE = 451,               // bone-pile.webp (transparent sprite)
+  SOUL_BLOOM = 452,              // soul-bloom.webp (transparent sprite)
+  // Catacombs kit (round 2): greedy layers 453-460 (8)
+  CRACKED_CATACOMB_BRICK = 453,  // cracked-catacomb-brick.webp
+  CATACOMB_TILE = 454,           // catacomb-tile.webp (also the altar's top)
+  CARVED_BONE_PILLAR = 455,      // carved-bone-pillar.webp (top/bottom reuse BONE_BLOCK_TOP)
+  BURIAL_NICHE = 456,            // burial-niche.webp
+  CRYPT_GRATE = 457,             // crypt-grate.webp (cutout)
+  CRYPT_ALTAR = 458,             // crypt-altar.webp
+  GILDED_RELIQUARY = 459,        // gilded-reliquary.webp
+  CATACOMB_FRIEZE = 460,         // catacomb-frieze.webp (top/bottom reuse CATACOMB_BRICK)
+  // Non-greedy (no array layer)
+  FUNERARY_URN = 461,            // custom geometry, coloured materials
+  SOUL_CANDELABRA = 462,         // custom geometry, coloured materials
+  CRYPT_COBWEB = 463,            // crypt-cobweb.webp (transparent sprite)
+  GRAVE_CANDLES = 464,           // custom geometry, coloured materials
+
+  // Hell: Ember Grove
+  EMBERWOOD_STEM_SIDE = 480,     // emberwood-stem.webp
+  EMBERWOOD_STEM_END = 481,      // emberwood-stem-end.webp
+  EMBERWOOD_PLANKS = 482,        // emberwood-planks.webp
+  EMBER_CAP = 483,               // ember-cap.webp (emissive spots)
+  EMBER_GILLS = 484,             // ember-gills.webp (emissive)
+  CRIMSON_MYCELIUM_TOP = 485,    // crimson-mycelium.webp
+  CRIMSON_MYCELIUM_SIDE = 486,   // crimson-mycelium-side.webp (bottom face = HELL_ROCK)
+  SHELF_FUNGUS = 487,            // shelf-fungus.webp
+  HIVE_ROOTBRICK = 488,          // hive-rootbrick.webp
+  HIVE_ROOT = 489,               // hive-root.webp
+  SPORE_SAC = 490,               // spore-sac.webp (emissive)
+  GLOWCAP = 491,                 // glowcap.webp (non-greedy sprite)
+  SPORE_STRAND = 492,            // spore-strand.webp (non-greedy sprite)
+  CRIMSON_SPROUTS = 493,         // crimson-sprouts.webp (non-greedy sprite)
+  // Sporeheart Hive kit
+  CHITIN_PLATE = 494,            // chitin-plate.webp
+  HIVE_MEMBRANE = 495,           // hive-membrane.webp (emissive veins)
+  BROOD_COMB = 496,              // brood-comb.webp (emissive larvae)
+  GILL_WALL = 497,               // gill-wall.webp (emissive)
+  ROOT_PILLAR_SIDE = 498,        // root-pillar.webp
+  ROOT_PILLAR_END = 499,         // root-pillar-end.webp
+  ROOT_LATTICE = 500,            // root-lattice.webp (cutout)
+  OVERGROWN_ROOTBRICK = 501,     // overgrown-rootbrick.webp
+  MYCELIAL_CARPET = 502,         // mycelial-carpet.webp
+  GLOWING_SAP = 503,             // glowing-sap.webp (emissive)
+  EGG_POD_CLUSTER = 504,         // egg-pods.webp (non-greedy sprite)
+  HANGING_TENDRILS = 505,        // hanging-tendrils.webp (non-greedy sprite)
+  GLOW_BULB = 506,               // non-greedy custom geometry, coloured materials (no texture)
+
+  // Hell: Crystal Abyss
+  ABYSSAL_STONE = 520,            // abyssal-stone.webp
+  PRISM_CRYSTAL = 521,            // prism-crystal.webp (emissive)
+  SPIRE_CRYSTAL = 522,            // spire-crystal.webp (emissive)
+  ROSE_CRYSTAL = 523,             // rose-crystal.webp (emissive)
+  GLITTERING_ABYSSAL_STONE = 524, // glittering-abyssal-stone.webp (emissive flecks)
+  GEODE_CRUST = 525,              // geode-crust.webp
+  POLISHED_ABYSSAL_STONE = 526,   // polished-abyssal-stone.webp (also sanctum tile)
+  ABYSSAL_BRICKS = 527,           // abyssal-bricks.webp
+  SANCTUM_BRICK = 528,            // sanctum-brick.webp (emissive seams)
+  CRYSTAL_LAMP = 529,             // crystal-lamp.webp (emissive)
+  PRISM_CLUSTER = 530,            // prism-cluster.webp (sprite, both cluster blocks)
+  INLAID_SANCTUM_TILE = 531,      // inlaid-sanctum-tile.webp (emissive inlay)
+  CARVED_SANCTUM_BRICK = 532,     // carved-sanctum-brick.webp (emissive gem)
+  SANCTUM_PILLAR_SIDE = 533,      // sanctum-pillar-side.webp (top/bottom: polished abyssal)
+  GILDED_SANCTUM_TRIM = 534,      // gilded-sanctum-trim.webp
+  MIRROR_PANEL = 535,             // mirror-panel.webp
+  PRISM_ROOF_TILE = 536,          // prism-roof-tile.webp
+  CRYSTAL_ARCHIVE = 537,          // crystal-archive.webp (emissive tablets)
+  CRYSTAL_GLASS = 538,            // crystal-glass.webp (non-greedy, blended)
+  SANCTUM_BANNER = 539,           // sanctum-banner.webp (non-greedy sprite)
+  PRISM_PEDESTAL = 540,           // non-greedy model (polished stone + crystal)
+  PRISM_LANTERN = 541,            // non-greedy model
+  LENS_APPARATUS = 542,           // non-greedy model
+
+  // Hell: Cocytus
+  BLACK_ICE = 560,               // black-ice.webp
+  RIMESTONE = 561,               // rimestone.webp
+  FROSTED_RIMESTONE_TOP = 562,   // frosted-rimestone.webp
+  FROSTED_RIMESTONE_SIDE = 563,  // frosted-rimestone-side.webp
+  ASH_SNOW = 564,                // ash-snow.webp
+  GLACIAL_ICE = 565,             // glacial-ice.webp
+  POLISHED_ICE = 566,            // polished-ice.webp
+  GLACIAL_BRICK = 567,           // glacial-brick.webp
+  RIME_CRYSTAL_ORE = 568,        // rime-crystal-ore.webp (emissive)
+  FROZEN_MAGMA = 569,            // frozen-magma.webp (emissive)
+  ENTOMBED_UPPER = 570,          // entombed-upper.webp (figure head half on black ice)
+  ENTOMBED_LOWER = 571,          // entombed-lower.webp (figure legs half on black ice)
+  FROST_CRYSTAL = 572,           // Non-greedy sprite (no texture-array layer)
+  ICICLE = 573,                  // Non-greedy sprite (no texture-array layer)
+  FROST_LANTERN = 574,           // Non-greedy model
+  RIME_BRAZIER = 575,            // Non-greedy model
+  CARVED_GLACIAL_BRICK = 576,    // carved-glacial-brick.webp
+  FROSTED_GLACIAL_BRICK = 577,   // frosted-glacial-brick.webp
+  ICE_PILLAR_SIDE = 578,         // ice-pillar-side.webp
+  ICE_PILLAR_END = 579,          // ice-pillar-end.webp
+  GLACIAL_TILES = 580,           // glacial-tiles.webp
+  RIME_GRATE = 581,              // rime-grate.webp (cutout)
+  RIME_GLYPH = 582,              // rime-glyph.webp (emissive)
+  FROSTBOUND_PLANKS = 583,       // frostbound-planks.webp
+  FROZEN_BOOKSHELF = 584,        // frozen-bookshelf.webp
+  FROZEN_BANNER = 585,           // Non-greedy sprite (no texture-array layer)
+  HANGING_FROST_LANTERN = 586,   // Non-greedy model
+  ICE_KNIGHT_STATUE = 587,       // Non-greedy model
 }
 
 // Cache for the face texture map
@@ -251,6 +409,59 @@ export const NON_GREEDY_BLOCK_IDS = new Set<number>([
   94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108,
   110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124,
   126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140,
+
+  // Weapons, tool tiers 6-7 and the Hellforge
+  BlockIds.HELLFORGE, // Hellforge - directional block with rotation
+
+  // Hell: Molten Wastes
+  205, // Infernal Brazier - custom fire-basket geometry
+  214, // Infernal brick stairs - custom stepped geometry
+  215, // Infernal brick slab - half-height geometry
+  216, // Infernal iron bars - thin grate geometry
+  217, // Infernal chain - hanging links
+  218, // Ember lantern - hanging cage
+  219, // Infernal banner - wall plate
+  220, // Infernal anvil
+  221, // Weapon rack
+  222, // Infernal throne
+  223, // Infernal hoard - floor heap
+
+  // Hell: The Ossuary
+  237, // Soul torch - custom slim geometry
+  239, // Bone pile - cross-billboard sprite
+  240, // Soul bloom - cross-billboard sprite
+  249, // Funerary urn - custom geometry
+  250, // Soul candelabra - custom geometry
+  251, // Crypt cobweb - cross-billboard sprite
+  252, // Grave candles - custom geometry
+
+  // Hell: Ember Grove
+  265, // Glowcap - cross billboard
+  266, // Shelf fungus - bracket plate
+  267, // Spore strand - hanging cross
+  268, // Crimson sprouts - cross billboard
+  282, // Egg pod cluster - cross billboard
+  283, // Hanging tendrils - hanging cross
+  284, // Glow bulb - hanging lamp geometry
+  285, // Emberwood stairs - stair geometry with rotation
+
+  // Hell: Crystal Abyss
+  301, 302, // Prism clusters - cross sprites
+  313, // Crystal glass - blended transparency
+  314, 315, 316, // Prism pedestal, prism lantern, lens apparatus - custom models
+  317, // Sanctum banner - hanging plane
+  318, // Sanctum stairs - custom geometry
+
+  // Hell: Cocytus
+  335, // Frost crystal - cross sprite
+  336, // Icicle - cross sprite
+  337, // Frost lantern - custom model
+  338, // Rime brazier - custom model
+  345, // Glacial brick stairs - stepped shape with facing
+  346, // Glacial brick slab - half height
+  347, // Frozen banner - hanging sprite with facing
+  348, // Hanging frost lantern - custom model
+  349, // Ice knight statue - custom model
 ])
 
 /**
