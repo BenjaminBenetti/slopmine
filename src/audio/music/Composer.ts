@@ -2,16 +2,17 @@
  * Generative composer: turns a mood and a seed into a piece, one chord span
  * at a time (the player asks for the next span shortly before it is due).
  *
- * Form: a pad-and-harmony intro phrase, melodic phrases built from two
- * motifs (A, then a varied B, then A again...), and an outro phrase that
- * settles on the tonic. A phrase is one pass through the chosen progression.
+ * Form: a pad-and-harmony intro (one or two spans), melodic phrases built
+ * from up to three motifs in a seeded order (AB, AABA, ABAC...), and an
+ * outro phrase that settles on the tonic. A phrase is one pass through the
+ * chosen progression; one middle phrase may carry the melody in thirds.
  * Melody notes on strong beats are chord tones; motifs are re-anchored to
  * each chord so they move with the harmony instead of clashing with it.
  * Pure (no Web Audio) - the same seed always writes the same piece.
  */
 
 import { createRng, type Rng } from '../synth/dsp.ts'
-import type { InstrumentId } from '../synth/instruments.ts'
+import { MONOPHONIC, type InstrumentId } from '../synth/instruments.ts'
 import type { MoodDef, PadStyle } from './MusicMoods.ts'
 
 export interface NoteEvent {
@@ -49,13 +50,21 @@ interface Motif {
   steps: number[]
 }
 
-const RHYTHMS: Record<'sparse' | 'medium' | 'dense', number[][]> = {
+type RhythmPools = Record<'sparse' | 'medium' | 'dense', number[][]>
+
+/** Motif rhythms (onset beats) for spans of 4/4 bars. */
+const RHYTHMS: RhythmPools = {
   sparse: [
     [0, 3],
     [0, 2, 5],
     [1, 4],
     [0, 4.5],
     [0, 3, 4],
+    [0, 2],
+    [0, 1.5, 4],
+    [0, 5],
+    [2, 4, 6],
+    [0, 3.5, 5],
   ],
   medium: [
     [0, 1, 2, 4],
@@ -63,16 +72,46 @@ const RHYTHMS: Record<'sparse' | 'medium' | 'dense', number[][]> = {
     [0, 2, 3, 5],
     [0.5, 1, 2, 4, 5],
     [0, 1, 3, 4, 6],
+    [0, 1, 2, 3, 4],
+    [0, 2, 2.5, 4, 6],
+    [0, 0.5, 2, 4],
+    [0, 1, 2.5, 4, 5],
+    [0, 3, 3.5, 4, 6],
   ],
   dense: [
     [0, 0.5, 1, 2, 3, 4, 6],
     [0, 1, 1.5, 2, 4, 5, 5.5, 6],
     [0, 1, 2, 2.5, 3, 4, 5, 6],
+    [0, 0.5, 1, 1.5, 2, 4, 5, 6],
+    [0, 1, 2, 3, 3.5, 4, 6, 7],
+    [0, 0.5, 2, 2.5, 4, 4.5, 6],
+  ],
+}
+
+/** Motif rhythms for spans of 3/4 bars (waltzes). */
+const TRIPLE_RHYTHMS: RhythmPools = {
+  sparse: [
+    [0, 3],
+    [0, 2, 3],
+    [0, 4.5],
+    [1, 3, 5],
+  ],
+  medium: [
+    [0, 1, 2, 3],
+    [0, 2, 3, 5],
+    [0, 1.5, 2, 3, 5],
+    [0, 3, 4, 5],
+    [0, 1, 2, 3, 4.5],
+  ],
+  dense: [
+    [0, 0.5, 1, 2, 3, 3.5, 4, 5],
+    [0, 1, 1.5, 2, 3, 4, 4.5, 5],
   ],
 }
 
 const STEP_CHOICES = [-2, -1, -1, -1, 0, 1, 1, 1, 2, 2, -3, 3, 4]
-const INTRO_SPANS = 2
+/** Which motif each phrase plays, cycled. */
+const FORMS = ['AB', 'AABA', 'ABAC', 'AABB', 'ABCB'] as const
 
 export class Composer {
   private readonly rng: Rng
@@ -80,8 +119,12 @@ export class Composer {
   private readonly spanSeconds: number
   private readonly beat: number
   private readonly totalSpans: number
-  private readonly motifA: Motif
-  private readonly motifB: Motif
+  private readonly motifs: Record<'A' | 'B' | 'C', Motif>
+  private readonly form: string
+  private readonly introSpans: number
+  /** The phrase whose melody is doubled a third below (-1: none). */
+  private readonly thirdsPhrase: number
+  private readonly triple: boolean
   private spanIndex = 0
   /** Last lead note as an absolute scale degree (relative to the tonic). */
   private leadDegree: number
@@ -100,8 +143,22 @@ export class Composer {
     this.totalSpans = Number.isFinite(lengthSeconds)
       ? Math.max(3, Math.round(lengthSeconds / (this.spanSeconds * phrase))) * phrase
       : Infinity
-    this.motifA = this.makeMotif()
-    this.motifB = this.rng() < 0.5 ? this.varyMotif(this.motifA) : this.makeMotif()
+    this.triple = mood.beatsPerChord % 3 === 0
+    const a = this.makeMotif()
+    const b = this.rng() < 0.5 ? this.varyMotif(a) : this.makeMotif()
+    this.motifs = { A: a, B: b, C: this.rng() < 0.5 ? this.varyMotif(b) : this.makeMotif() }
+    this.form = FORMS[Math.floor(this.rng() * FORMS.length)]
+    this.introSpans = this.rng() < 0.5 ? 1 : 2
+    const phrases = this.totalSpans / phrase
+    // Melody in thirds once, somewhere in the middle (every fourth phrase of an endless piece)
+    this.thirdsPhrase =
+      mood.lead && !MONOPHONIC.has(mood.lead.instrument) && this.rng() < 0.4
+        ? Number.isFinite(phrases)
+          ? phrases > 2
+            ? 1 + Math.floor(this.rng() * (phrases - 2))
+            : -1
+          : 3
+        : -1
     const lead = mood.lead
     this.leadDegree = lead ? this.nearestDegree((lead.range[0] + lead.range[1]) / 2) : 0
   }
@@ -119,8 +176,8 @@ export class Composer {
     const inPhrase = index % phraseLength
     const lastPhrase = Number.isFinite(this.totalSpans) && index >= this.totalSpans - phraseLength
     const finalSpan = index === this.totalSpans - 1
-    // Two spans of pad and harmony before the melody enters
-    const intro = index < INTRO_SPANS && Number.isFinite(this.totalSpans)
+    // Pad and harmony alone before the melody enters
+    const intro = index < this.introSpans && Number.isFinite(this.totalSpans)
     const root = finalSpan ? 0 : this.progression[inPhrase]
 
     const events: MusicEvent[] = []
@@ -137,9 +194,10 @@ export class Composer {
         // Settle on the tonic.
         this.addLeadNote(events, 0, this.fitDegree(0), lead.velocity * 0.8)
       } else {
-        const motif = phrase % 2 === 1 ? this.motifA : this.motifB
+        const motif = this.motifs[this.form[phrase % this.form.length] as 'A' | 'B' | 'C']
         const density = lastPhrase ? lead.density * 0.6 : lead.density
-        if (this.rng() < density || (inPhrase === 0 && this.rng() < 0.5)) this.addMelody(events, motif, chord, inPhrase === phraseLength - 1)
+        const thirds = Number.isFinite(this.totalSpans) ? phrase === this.thirdsPhrase : this.thirdsPhrase > 0 && phrase % 4 === this.thirdsPhrase
+        if (this.rng() < density || (inPhrase === 0 && this.rng() < 0.5)) this.addMelody(events, motif, chord, inPhrase === phraseLength - 1, thirds)
       }
     }
 
@@ -170,6 +228,7 @@ export class Composer {
     const fifth = this.voiceAbove(chord[2], rootMidi)
     const v = h.velocity
     const b = this.beat
+    const beats = this.mood.beatsPerChord
     const note = (beat: number, midi: number, vel: number): void => {
       let m = midi
       while (m > hi) m -= 12
@@ -217,6 +276,37 @@ export class Composer {
         for (let i = 0; i < 16; i++) note(i * 0.5, tones[i % tones.length], v * (i % 4 === 0 ? 1 : i % 2 === 0 ? 0.75 : 0.55))
         break
       }
+      case 'alberti':
+        // Fingerpicked: the thumb alternates root and fifth on the beat, fingers fill between.
+        for (let beat = 0; beat < beats; beat++) {
+          note(beat, beat % 2 === 0 ? rootMidi : fifth, v * (beat % 4 === 0 ? 1 : 0.75))
+          if (beat % 2 === 1 || this.rng() < 0.35) note(beat + 0.5, beat % 4 < 2 ? third + 12 : fifth + 12, v * 0.55)
+        }
+        break
+      case 'rolled': {
+        // Harp roll: the chord spread upward, then a lighter roll halfway through.
+        const roll = [rootMidi, fifth, third + 12, rootMidi + 12, fifth + 12]
+        roll.forEach((m, i) => note(i * 0.12, m, v * (1 - i * 0.08)))
+        if (this.rng() < 0.6) [third, fifth, rootMidi + 12].forEach((m, i) => note(beats / 2 + i * 0.1, m, v * 0.6))
+        break
+      }
+      case 'waltz':
+        // Oom-pah-pah: each bar's downbeat in the bass (root, then fifth), the chord on the two after.
+        for (let bar = 0; bar * 3 < beats; bar++) {
+          const down = bar * 3
+          note(down, bar % 2 === 0 ? rootMidi : fifth - 12 >= lo ? fifth - 12 : fifth, v)
+          for (const offbeat of [1, 2]) {
+            note(down + offbeat, third + 12, v * 0.5)
+            note(down + offbeat + 0.02, fifth + 12, v * 0.45)
+          }
+        }
+        break
+      case 'pedal': {
+        // The root repeated in eighths, accented 3 + 3 + 2.
+        const accents = [1, 0.5, 0.55, 0.85, 0.5, 0.55, 0.8, 0.5]
+        for (let i = 0; i < beats * 2; i++) note(i * 0.5, rootMidi, v * accents[i % accents.length])
+        break
+      }
     }
   }
 
@@ -224,8 +314,9 @@ export class Composer {
     const pulse = this.mood.pulse
     if (pulse) {
       const beats = final ? [0] : pulse.beats
+      const instrument = pulse.instrument ?? 'drum'
       beats.forEach((beat, i) => {
-        events.push({ kind: 'note', time: beat * this.beat, instrument: 'drum', midi: 0, velocity: pulse.level * (i === 0 ? 1 : 0.7), pan: 0 })
+        events.push({ kind: 'note', time: beat * this.beat, instrument, midi: 0, velocity: pulse.level * (i === 0 ? 1 : 0.7), pan: 0 })
       })
     }
     const ticks = this.mood.ticks
@@ -233,12 +324,12 @@ export class Composer {
       const count = Math.floor(this.mood.beatsPerChord / ticks.every)
       for (let i = 0; i < count; i++) {
         const accent = i % 4 === 2 ? 1 : i % 2 === 0 ? 0.6 : 0.4
-        events.push({ kind: 'note', time: i * ticks.every * this.beat, instrument: 'tick', midi: 0, velocity: ticks.level * accent, pan: 0.15 })
+        events.push({ kind: 'note', time: i * ticks.every * this.beat, instrument: ticks.instrument ?? 'tick', midi: 0, velocity: ticks.level * accent, pan: 0.15 })
       }
     }
   }
 
-  private addMelody(events: MusicEvent[], motif: Motif, chord: number[], phraseEnd: boolean): void {
+  private addMelody(events: MusicEvent[], motif: Motif, chord: number[], phraseEnd: boolean, thirds: boolean): void {
     const lead = this.mood.lead!
     // Anchor on the chord tone nearest the previous note, so lines move smoothly.
     let anchor = this.nearestChordDegree(this.leadDegree, chord)
@@ -246,7 +337,7 @@ export class Composer {
     onsets.forEach((beat, i) => {
       if (i > 0 && this.rng() < 0.12) return
       let degree = anchor + motif.steps[i]
-      const strong = beat % 2 === 0
+      const strong = this.triple ? beat % 3 === 0 : beat % 2 === 0
       if (strong || (phraseEnd && i === onsets.length - 1)) {
         const snapped = this.nearestChordDegree(degree, chord)
         // Snapping must not flatten a moving line into repeated notes
@@ -255,7 +346,9 @@ export class Composer {
       }
       degree = this.fitDegree(degree)
       const accent = strong ? 1 : 0.8
-      this.addLeadNote(events, beat * this.beat + this.jitter(), degree, lead.velocity * accent * this.humanize())
+      const time = beat * this.beat + this.jitter()
+      this.addLeadNote(events, time, degree, lead.velocity * accent * this.humanize())
+      if (thirds && this.degreeMidi(degree - 2) >= lead.range[0] - 5) this.addLeadNote(events, time + 0.01, degree - 2, lead.velocity * accent * 0.5)
       this.leadDegree = degree
       if (i === 0) anchor = degree - motif.steps[0]
     })
@@ -270,7 +363,8 @@ export class Composer {
 
   private makeMotif(): Motif {
     const density = this.mood.lead?.density ?? 0.3
-    const pool = density < 0.4 ? RHYTHMS.sparse : density < 0.6 ? RHYTHMS.medium : this.rng() < 0.7 ? RHYTHMS.medium : RHYTHMS.dense
+    const pools = this.triple ? TRIPLE_RHYTHMS : RHYTHMS
+    const pool = density < 0.4 ? pools.sparse : density < 0.6 ? pools.medium : this.rng() < 0.7 ? pools.medium : pools.dense
     const onsets = pool[Math.floor(this.rng() * pool.length)].filter((b) => b < this.mood.beatsPerChord)
     const steps = [0]
     for (let i = 1; i < onsets.length; i++) {

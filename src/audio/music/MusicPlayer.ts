@@ -10,7 +10,7 @@
 
 import { Composer, type NoteEvent, type PadEvent } from './Composer.ts'
 import type { MoodDef } from './MusicMoods.ts'
-import type { InstrumentId } from '../synth/instruments.ts'
+import { MONOPHONIC, PERCUSSION, type InstrumentId } from '../synth/instruments.ts'
 
 /** Notes render at 24 kHz: these instruments have nothing above ~11 kHz. */
 export const NOTE_SAMPLE_RATE = 24000
@@ -20,8 +20,18 @@ const INSTRUMENT_LOUDNESS: Record<InstrumentId, number> = {
   piano: -21,
   pluck: -23,
   bell: -25,
+  guitar: -23,
+  harp: -23,
+  rhodes: -22,
+  vibes: -25,
+  musicbox: -28,
+  handpan: -24,
+  flute: -24,
   drum: -23,
+  frame: -25,
   tick: -30,
+  rim: -31,
+  shaker: -33,
 }
 
 /** Linear level of one pad oscillator voice at pad level 1. */
@@ -45,7 +55,7 @@ export interface NoteSource {
 
 /** The rendered sample pitch serving `midi`. */
 export function noteSampleMidi(instrument: InstrumentId, midi: number): number {
-  if (instrument === 'drum' || instrument === 'tick') return 0
+  if (PERCUSSION.has(instrument)) return 0
   return 3 * Math.round(midi / 3)
 }
 
@@ -64,8 +74,14 @@ export function moodSampleKeys(mood: MoodDef): Array<[InstrumentId, number]> {
   }
   if (mood.lead) add(mood.lead.instrument, mood.lead.range[0], mood.lead.range[1])
   if (mood.harmony) add(mood.harmony.instrument, mood.harmony.range[0] - 12, mood.harmony.range[1])
-  if (mood.pulse) keys.set('drum:0', ['drum', 0])
-  if (mood.ticks) keys.set('tick:0', ['tick', 0])
+  for (const [layer, fallback] of [
+    [mood.pulse, 'drum'],
+    [mood.ticks, 'tick'],
+  ] as const) {
+    if (!layer) continue
+    const instrument = layer.instrument ?? fallback
+    keys.set(`${instrument}:0`, [instrument, 0])
+  }
   return [...keys.values()]
 }
 
@@ -85,6 +101,8 @@ export class MusicPiece {
   private finished = false
   private stopped = false
   private readonly liveNodes = new Set<AudioScheduledSourceNode>()
+  /** The sounding note of each monophonic instrument. */
+  private readonly monoVoices = new Map<InstrumentId, { source: AudioBufferSourceNode; gain: GainNode; start: number }>()
 
   constructor(
     private readonly context: BaseAudioContext,
@@ -196,13 +214,26 @@ export class MusicPiece {
       gain.disconnect()
       if (tail !== gain) tail.disconnect()
     })
-    source.start(Math.max(at, ctx.currentTime))
+    const start = Math.max(at, ctx.currentTime)
+    if (MONOPHONIC.has(event.instrument)) {
+      const previous = this.monoVoices.get(event.instrument)
+      if (previous && previous.start < start) {
+        previous.gain.gain.setTargetAtTime(0, start, 0.05)
+        try {
+          previous.source.stop(start + 0.4)
+        } catch {
+          // Already stopped.
+        }
+      }
+      this.monoVoices.set(event.instrument, { source, gain, start })
+    }
+    source.start(start)
   }
 
   private playPad(event: PadEvent, at: number): void {
     const ctx = this.context
     const start = Math.max(at, ctx.currentTime)
-    const attack = event.style === 'glass' ? 1.2 : 1.8
+    const attack = event.style === 'glass' ? 1.2 : event.style === 'string' ? 2.4 : 1.8
     const release = 2.4
     const end = start + event.duration
     const peak = PAD_VOICE_GAIN * event.level
@@ -216,7 +247,7 @@ export class MusicPiece {
     const filter = ctx.createBiquadFilter()
     filter.type = 'lowpass'
     filter.Q.value = 0.6
-    filter.frequency.value = { warm: 950, dark: 520, cold: 2600, glass: 4000, choir: 2400 }[event.style]
+    filter.frequency.value = { warm: 950, dark: 520, cold: 2600, glass: 4000, choir: 2400, string: 1500, reed: 1100, hollow: 650 }[event.style]
     let head: AudioNode = filter
     if (event.style === 'choir') {
       // Two vowel formants ("ah") over the oscillators.
@@ -246,7 +277,26 @@ export class MusicPiece {
       cold: [['triangle', -7, 1], ['triangle', 7, 1]],
       glass: [['sine', -3, 1], ['sine', 1200 + 4, 0.35]],
       choir: [['sawtooth', -6, 1], ['sawtooth', 6, 1]],
+      string: [['sawtooth', -9, 1], ['sawtooth', 8, 1], ['sawtooth', 1203, 0.2]],
+      reed: [['square', -3, 0.6], ['sawtooth', 4, 0.6]],
+      hollow: [['square', -4, 0.65], ['square', 5, 0.65]],
     }[event.style] as Array<[OscillatorType, number, number]>
+    // Strings: a slow shared vibrato (cents) on every voice.
+    let vibrato: GainNode | null = null
+    if (event.style === 'string') {
+      const lfo = ctx.createOscillator()
+      lfo.frequency.value = 4.6
+      const depth = ctx.createGain()
+      depth.gain.value = 7
+      lfo.connect(depth)
+      this.track(lfo, () => {
+        lfo.disconnect()
+        depth.disconnect()
+      })
+      lfo.start(start)
+      lfo.stop(stopAt)
+      vibrato = depth
+    }
     for (const midi of event.midis) {
       const freq = 440 * Math.pow(2, (midi - 69) / 12)
       for (const [type, cents, level] of shapes) {
@@ -254,6 +304,7 @@ export class MusicPiece {
         osc.type = type
         osc.frequency.value = freq
         osc.detune.value = cents
+        vibrato?.connect(osc.detune)
         const voiceGain = ctx.createGain()
         voiceGain.gain.value = level
         osc.connect(voiceGain)

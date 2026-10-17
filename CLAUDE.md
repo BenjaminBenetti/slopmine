@@ -1556,18 +1556,24 @@ player's hurt is a voiced cry, not a thump.
   environment: surface wind (sky light × altitude) vs cave hollowness, a bed mix per Hell biome,
   underwater; sparse positioned details (birds in vegetated biomes, swamp frogs, cave drips, lava
   pops, bone chimes, spore puffs, crystal pings, ice creaks)
-- `music/` - generative score, mostly silence. `MusicMoods.ts` (meadow / drift / dusk on the
-  surface, cave, one per Hell biome, dungeon, boss: scale, tempo, progressions, instruments, pad,
-  pacing), `Composer.ts` (pure + seeded: pad intro, two motifs re-anchored to each chord, harmony
-  styles, pulses, a tonic ending), `MusicPlayer.ts` (struck notes from samples rendered every 3
-  semitones at 24 kHz, pads/drones as live oscillators, 1.6 s lookahead; any BaseAudioContext, so a
-  piece renders offline), `MusicDirector.ts` (first piece 20-40 s in, then the mood's rest; a family
-  change - surface ↔ a Hell biome - fades out; castle mood within 56 blocks of an anchor; boss mood
-  at once while a guardian within 48 blocks is engaged; death silences it)
+- `music/` - generative score, mostly silence. `MusicMoods.ts` (22 moods, at least two per place
+  with different instruments: meadow / drift / dusk / wander / canopy / mirage on the surface,
+  cave / deep, two per Hell biome, dungeon / vigil, boss / onslaught - scale, tempo, progressions,
+  instruments, pad, pacing), `Composer.ts` (pure + seeded: a 1-2 span pad intro, up to three motifs
+  in a seeded form (AB, AABA, ABAC...) re-anchored to each chord, harmony styles incl. a 3/4 waltz,
+  sometimes a phrase in thirds, pulses, a tonic ending), `MusicPlayer.ts` (struck notes from samples
+  rendered every 3 semitones at 24 kHz, pads/drones as live oscillators, 1.6 s lookahead; monophonic
+  winds cut their previous note; any BaseAudioContext, so a piece renders offline),
+  `MusicDirector.ts` (each place's mood pool - surface weighted by biome - with the last pick 4×
+  less likely; first piece 20-40 s in, then the mood's rest; a family change - surface ↔ a Hell
+  biome - fades out; castle mood within 56 blocks of an anchor; boss mood at once while a guardian
+  within 48 blocks is engaged; death silences it). A new mood goes into its place's pool and is
+  level-matched to its siblings (render a minute offline: the pairs sit within ~1 dB RMS)
 - `synth/` - pure DSP (`dsp.ts`: seeded noise, biquads, modal resonators, dense random modes,
   grains, envelopes) and
-  recipes: `blockSounds.ts`, `sfxRecipes.ts`, `creatureVoices.ts`, `instruments.ts` (notes + reverb
-  impulses), `ambience.ts`; `recipes.ts` maps ids → renderers and measures loudness. They run in
+  recipes: `blockSounds.ts`, `sfxRecipes.ts`, `creatureVoices.ts`, `instruments.ts` (notes for piano, pluck,
+  bell, guitar, harp, rhodes, vibes, music box, handpan, ocarina and five unpitched percussion
+  voices, plus reverb impulses), `ambience.ts`; `recipes.ts` maps ids → renderers and measures loudness. They run in
   Node (`node --experimental-transform-types`) for analysis
 - `AudioSettings.ts` - master / music / effects / ambience 0-100 (defaults 100 / 60 / 100 / 60),
   `localStorage['slopmine:audioSettings']`, the pause menu's Audio page

@@ -1,5 +1,7 @@
 /**
  * Decides when music plays and in which mood - the score is mostly silence.
+ * Every place has a pool of moods (two or more); a pick avoids the mood that
+ * played last in the same place.
  *
  * - Surface and Hell: a piece every few minutes (first one ~half a minute in),
  *   long rests between pieces (the mood's `rest`). Crossing into another
@@ -30,25 +32,30 @@ export interface MusicContext {
 
 type Family = 'surface' | 'dungeon' | 'boss' | `hell:${string}`
 
-const HELL_MOODS: Record<string, MusicMood> = {
-  hell: 'molten',
-  ossuary: 'ossuary',
-  'ember-grove': 'embergrove',
-  'crystal-abyss': 'crystal',
-  cocytus: 'cocytus',
+const HELL_MOODS: Record<string, readonly MusicMood[]> = {
+  hell: ['molten', 'cinder'],
+  ossuary: ['ossuary', 'reliquary'],
+  'ember-grove': ['embergrove', 'mycelium'],
+  'crystal-abyss': ['crystal', 'prism'],
+  cocytus: ['cocytus', 'rime'],
 }
+const CAVE_MOODS: readonly MusicMood[] = ['cave', 'deep']
+const DUNGEON_MOODS: readonly MusicMood[] = ['dungeon', 'vigil']
+const BOSS_MOODS: readonly MusicMood[] = ['boss', 'onslaught']
 
-/** Surface mood weights per biome: [meadow, drift, dusk]. */
-const SURFACE_WEIGHTS: Record<string, [number, number, number]> = {
-  plains: [0.5, 0.35, 0.15],
-  'grassy-hills': [0.5, 0.35, 0.15],
-  'pine-forest': [0.35, 0.4, 0.25],
-  'coastal-rainforest': [0.3, 0.5, 0.2],
-  jungle: [0.35, 0.45, 0.2],
-  desert: [0.25, 0.35, 0.4],
-  swamp: [0.1, 0.3, 0.6],
-  volcanic: [0.05, 0.2, 0.75],
+const SURFACE_MOODS: readonly MusicMood[] = ['meadow', 'drift', 'dusk', 'wander', 'canopy', 'mirage']
+/** Surface mood weights per biome, in SURFACE_MOODS order. */
+const SURFACE_WEIGHTS: Record<string, readonly number[]> = {
+  plains: [0.3, 0.18, 0.07, 0.3, 0.07, 0.08],
+  'grassy-hills': [0.28, 0.18, 0.08, 0.3, 0.08, 0.08],
+  'pine-forest': [0.2, 0.24, 0.14, 0.24, 0.12, 0.06],
+  'coastal-rainforest': [0.16, 0.26, 0.1, 0.14, 0.28, 0.06],
+  jungle: [0.14, 0.22, 0.1, 0.1, 0.38, 0.06],
+  desert: [0.12, 0.14, 0.18, 0.12, 0.06, 0.38],
+  swamp: [0.05, 0.15, 0.35, 0.08, 0.17, 0.2],
+  volcanic: [0.03, 0.1, 0.42, 0.05, 0.05, 0.35],
 }
+const DEFAULT_SURFACE_WEIGHTS = [0.22, 0.2, 0.14, 0.2, 0.12, 0.12]
 
 const FIRST_PIECE_DELAY: [number, number] = [20, 40]
 
@@ -89,7 +96,8 @@ export class MusicDirector {
   private current: { piece: MusicPiece; family: Family; mood: MusicMood } | null = null
   private nextStartAt: number | null = null
   private starting = false
-  private lastSurfaceMood: MusicMood | null = null
+  /** The last mood picked from each pool (keyed by the pool's first mood). */
+  private readonly lastPicks = new Map<MusicMood, MusicMood>()
   private seed = Math.floor(Math.random() * 1e9)
   private warmedHell = false
 
@@ -108,8 +116,7 @@ export class MusicDirector {
     if (ctx.layer === 0 && !this.warmedHell) {
       // Render the castle and fight samples ahead of time, so a boss fight never starts silent.
       this.warmedHell = true
-      void this.notes.prepare(MOODS.dungeon, RenderPriority.BACKGROUND)
-      void this.notes.prepare(MOODS.boss, RenderPriority.BACKGROUND)
+      for (const id of [...DUNGEON_MOODS, ...BOSS_MOODS]) void this.notes.prepare(MOODS[id], RenderPriority.BACKGROUND)
     }
 
     const wanted: Family = ctx.bossEngaged ? 'boss' : ctx.inDungeon ? 'dungeon' : ctx.layer === 0 ? `hell:${ctx.biome}` : 'surface'
@@ -120,8 +127,8 @@ export class MusicDirector {
         this.stopCurrent(2.5)
         this.nextStartAt = now
       } else if (current.family === 'boss') {
+        this.nextStartAt = now + range(MOODS[current.mood].rest)
         this.stopCurrent(5)
-        this.nextStartAt = now + range(MOODS.boss.rest)
       } else {
         this.stopCurrent(6)
         this.nextStartAt = now + (wanted === 'dungeon' ? range([4, 8]) : range([10, 18]))
@@ -173,29 +180,35 @@ export class MusicDirector {
       engine.setMusicReverb(mood.reverb)
       piece.start()
       this.current = { piece, family, mood: moodId }
-      if (family === 'surface' && moodId !== 'cave') this.lastSurfaceMood = moodId
     } finally {
       this.starting = false
     }
   }
 
   private chooseMood(family: Family, ctx: MusicContext): MusicMood {
-    if (family === 'boss') return 'boss'
-    if (family === 'dungeon') return 'dungeon'
-    if (family !== 'surface') return HELL_MOODS[family.slice(5)] ?? 'molten'
-    if (ctx.underground) return 'cave'
-    const weights = [...(SURFACE_WEIGHTS[ctx.biome] ?? [0.4, 0.4, 0.2])]
-    const moods: MusicMood[] = ['meadow', 'drift', 'dusk']
-    // Avoid the same surface mood twice in a row.
-    const lastIdx = this.lastSurfaceMood ? moods.indexOf(this.lastSurfaceMood) : -1
-    if (lastIdx >= 0) weights[lastIdx] *= 0.25
-    const total = weights.reduce((a, b) => a + b, 0)
+    if (family === 'boss') return this.pick(BOSS_MOODS)
+    if (family === 'dungeon') return this.pick(DUNGEON_MOODS)
+    if (family !== 'surface') return this.pick(HELL_MOODS[family.slice(5)] ?? HELL_MOODS.hell)
+    if (ctx.underground) return this.pick(CAVE_MOODS)
+    return this.pick(SURFACE_MOODS, SURFACE_WEIGHTS[ctx.biome] ?? DEFAULT_SURFACE_WEIGHTS)
+  }
+
+  /** A weighted pick from a pool; the pool's last pick is four times less likely. */
+  private pick(moods: readonly MusicMood[], weights: readonly number[] = moods.map(() => 1)): MusicMood {
+    const last = this.lastPicks.get(moods[0])
+    const adjusted = moods.map((mood, i) => (mood === last ? weights[i] * 0.25 : weights[i]))
+    const total = adjusted.reduce((a, b) => a + b, 0)
     let r = Math.random() * total
+    let chosen = moods[moods.length - 1]
     for (let i = 0; i < moods.length; i++) {
-      r -= weights[i]
-      if (r <= 0) return moods[i]
+      r -= adjusted[i]
+      if (r <= 0) {
+        chosen = moods[i]
+        break
+      }
     }
-    return 'meadow'
+    this.lastPicks.set(moods[0], chosen)
+    return chosen
   }
 }
 
