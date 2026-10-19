@@ -132,6 +132,12 @@ export interface IEntity {
   readonly lastHitBlocked?: boolean
 
   /**
+   * True while the creature keeps silent - hidden or disguised (an orchid
+   * mantis folded into a flowering bush): no idle calls give it away.
+   */
+  readonly isQuiet?: boolean
+
+  /**
    * Entities this one put into the world itself (a slime's split children,
    * a shardling's fragments), so an owner that tracks it (a guardian's
    * minion) can clear them along with it.

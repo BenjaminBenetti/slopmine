@@ -1,10 +1,12 @@
 import { applyUIScale } from '../ui/uiScale.ts'
+import { MIN_ATTACK_CHARGE } from './PlayerAttack.ts'
 
 export interface AttackChargeIndicatorUI {
   readonly element: HTMLDivElement
   /**
    * Show the charge (0-1). The bar is only drawn while recovering
-   * (charge < 1) and `visible`; a full charge hides it.
+   * (charge < 1) and `visible`; a full charge hides it. The fill stays dim
+   * until a click can land a hit (MIN_ATTACK_CHARGE).
    */
   update(charge: number, visible: boolean): void
   destroy(): void
@@ -12,6 +14,8 @@ export interface AttackChargeIndicatorUI {
 
 const BAR_WIDTH_PX = 20
 const BAR_HEIGHT_PX = 3
+const FILL_READY = 'rgba(255, 255, 255, 0.92)'
+const FILL_RECOVERING = 'rgba(255, 255, 255, 0.4)'
 
 /**
  * A small attack-charge bar just under the crosshair (Minecraft 1.9 style).
@@ -39,7 +43,7 @@ export function createAttackChargeIndicator(parent: HTMLElement = document.body)
   const fill = document.createElement('div')
   fill.style.height = '100%'
   fill.style.width = '0%'
-  fill.style.background = 'rgba(255, 255, 255, 0.92)'
+  fill.style.background = FILL_RECOVERING
   fill.style.borderRadius = '1px'
   el.appendChild(fill)
 
@@ -47,6 +51,7 @@ export function createAttackChargeIndicator(parent: HTMLElement = document.body)
 
   let shown = false
   let lastPercent = -1
+  let lastCanHit = false
 
   return {
     element: el,
@@ -62,6 +67,11 @@ export function createAttackChargeIndicator(parent: HTMLElement = document.body)
       if (percent !== lastPercent) {
         lastPercent = percent
         fill.style.width = `${percent}%`
+      }
+      const canHit = charge >= MIN_ATTACK_CHARGE
+      if (canHit !== lastCanHit) {
+        lastCanHit = canHit
+        fill.style.background = canHit ? FILL_READY : FILL_RECOVERING
       }
     },
 

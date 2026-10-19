@@ -8,6 +8,12 @@ import { WorldLighting } from './renderer/WorldLighting.ts'
 import { Skybox } from './renderer/skybox/Skybox.ts'
 import { BiomeSkyboxManager } from './renderer/skybox/BiomeSkyboxManager.ts'
 import { BiomeAtmosphere } from './renderer/skybox/BiomeAtmosphere.ts'
+import { DayNightSky } from './renderer/skybox/DayNightSky.ts'
+import { worldClock } from './daynight/WorldClock.ts'
+import { setupDayNight } from './daynight/setupDayNight.ts'
+import { setupNightfall } from './nightfall/setupNightfall.ts'
+import { setupFireflies } from './fireflies/setupFireflies.ts'
+import { requestSleep } from './daynight/sleep.ts'
 import { DistanceFog } from './renderer/DistanceFog.ts'
 import { BlockOutline } from './renderer/BlockOutline.ts'
 import { updateLiquidMaterials, setLiquidReflectionColor } from './renderer/LiquidMaterials.ts'
@@ -51,6 +57,7 @@ import * as THREE from 'three'
 import { setTextureFiltering } from './renderer/TextureLoader.ts'
 import { setWorldDaylight, setWorldLightFloor } from './renderer/worldLightShader.ts'
 import { getChunkCutoutDepthMaterial, getChunkMaterial } from './renderer/ChunkMaterial.ts'
+import { advanceGlowTime } from './renderer/glowClock.ts'
 import { warmUpWorldShaders, type WarmupMaterial } from './renderer/ShaderWarmup.ts'
 import {
   PhysicsEngine,
@@ -710,11 +717,13 @@ playerHealth.setOnDeath(() => {
   }, 1500)
 })
 
-// Register bed sleep action (sets spawn point to player's current position)
+// Register bed sleep action (sets spawn point to player's current position;
+// at night on the surface, sleeps through to morning - see daynight/sleep.ts)
 blockActionRegistry.register(BlockIds.BED_HEAD, (worldX, worldY, worldZ) => {
   // Save player's current position as spawn point (they're standing next to the bed)
   // Respawn logic adds 0.5 to Y, so player spawns slightly above and falls down safely
   setBedSpawnPoint(playerBody.position.x, playerBody.position.y, playerBody.position.z)
+  requestSleep()
   
   // Show floating text above the bed
   FloatingTextManager.instance.spawn({
@@ -954,6 +963,15 @@ const fogColor = new THREE.Color()
 const skybox = new Skybox(atmosphere)
 skybox.setSunDirection(sunDirection)
 skybox.addTo(renderer.scene)
+
+// Time of day (surface only): sun and moon, light colour and strength, the
+// sky's twilight and night palette - multipliers on the biome atmosphere,
+// applied in the 'skybox' task; the clock itself runs in setupDayNight
+const dayNightSky = new DayNightSky()
+skybox.setDayNight(dayNightSky.state)
+const worldLightTint = new THREE.Color()
+/** 1 on the surface layer, 0 in Hell (eased): Hell has no day and night. */
+let surfaceWeight = 1
 
 // (The distance fog - created with the LOD block above, sized by
 // syncViewDistance() - fades the edge of the drawn world into this sky's
@@ -1362,8 +1380,14 @@ scheduler.createTask({
     // Update biome-based atmosphere target and ease toward it
     biomeSkyboxManager.update(playerBody.position.x, playerBody.position.y, playerBody.position.z)
     atmosphere.update(dt)
-    // Update skybox position and apply modifiers (sun disc follows the light)
-    skybox.setSunDirection(lighting.getSunDirection(sunDirection))
+    // Time of day on top of the biome atmosphere; the directional light
+    // follows the sun by day and the moon by night
+    const onSurface = playerBody.position.y >= LAYER_BOUNDARY_Y ? 1 : 0
+    surfaceWeight += (onSurface - surfaceWeight) * Math.min(1, dt * 2)
+    dayNightSky.update(worldClock.hour, surfaceWeight, atmosphere.horizonColor)
+    const dayNight = dayNightSky.state
+    lighting.setLightDirection(dayNight.lightDirection, dayNight.lightIntensity)
+    // Update skybox position and apply modifiers (sun, moon and stars follow the clock)
     skybox.update(renderer.camera, dt)
     // Fog matches the sky's final horizon color; biome tints the world light
     distanceFog.setColor(skybox.getHorizonColor(fogColor))
@@ -1371,13 +1395,16 @@ scheduler.createTask({
     distanceFog.update()
     // Submerged: the sky is beyond the liquid fog too
     skybox.setFogOverride(distanceFog.getOverrideColor())
-    lighting.setTint(atmosphere.lightTint)
-    heldItemRenderer.setLightTint(atmosphere.lightTint)
+    worldLightTint.copy(atmosphere.lightTint).multiply(dayNight.lightTint)
+    lighting.setTint(worldLightTint)
+    heldItemRenderer.setLightTint(worldLightTint)
     setWorldLightFloor(atmosphere.lightFloor)
-    setWorldDaylight(atmosphere.daylight)
+    setWorldDaylight(atmosphere.daylight * dayNight.daylight)
     // Liquids reflect the horizon sky at glancing angles; drift their textures
     setLiquidReflectionColor(fogColor)
     updateLiquidMaterials(dt)
+    // Bioluminescent block textures breathe and twinkle
+    advanceGlowTime(dt)
   },
 })
 
@@ -1656,6 +1683,35 @@ setupCrystalAbyss({ entityManager })
 
 // Hell: Cocytus
 setupCocytus()
+
+// Day and night: the overworld clock (saved with the player), nightfall and daybreak events
+const dayNightSystem = setupDayNight({ scheduler, persistence: persistenceManager })
+fpsCounter.setDayNightToggle(dayNightSystem.toggleNight)
+// Night creatures: each surface biome's night spawns, Ward Lanterns, what they sense
+setupNightfall({
+  entityManager,
+  entitySpawner,
+  camera: renderer.camera,
+  playerBody,
+  getHeldItem: () => {
+    const toolbar = playerState.inventory.toolbar
+    return toolbar.getStack(toolbar.selectedIndex)?.item ?? null
+  },
+  getPackedLight: (x, y, z) => world.getPackedLightFast(x, y, z),
+  ignitePlayer: (ticks) => environmentalDamage.ignite(ticks),
+  skipToMorning: dayNightSystem.skipToMorning,
+})
+// Fireflies over the swamp at night
+setupFireflies({
+  scheduler,
+  scene: renderer.scene,
+  camera: renderer.camera,
+  playerBody,
+  getViewportHeight: () => renderer.getRenderResolution().height,
+  getBlock: (x, y, z) => world.getBlockFast(x, y, z),
+  getPackedLight: (x, y, z) => world.getPackedLightFast(x, y, z),
+  getBiome: (x, z, y) => worldGenerator.getBiomeAtPosition(x, z, y),
+})
 
 // Sound: procedural effects, ambience and generative music (see src/audio)
 setupAudio({

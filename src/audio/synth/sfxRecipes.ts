@@ -790,4 +790,74 @@ export const SFX_RECIPES: Record<string, Recipe> = {
     chime(b, sr, [60, 67, 72, 76, 79], 0.12, 2.2, 0.45, 0.35)
     return finish(b, sr)
   },
+
+  // --- night creatures ------------------------------------------------------
+  'night.creak'(rng, sr) {
+    // The Stillwatcher, caught mid-step: its pole frame settles with a dry creak
+    const b = samples(0.5, sr)
+    creak(b, sr, rng, 0, 0.32, range(rng, 28, 40), range(rng, 340, 440), 0.9)
+    addGrains(b, sr, rng, { count: 30, start: 0.02, spread: 0.25, grainLength: [0.001, 0.003], freq: [2500, 7000], amp: 0.25, bunch: 1.5 })
+    return finish(b, sr, 200)
+  },
+  'night.flutter'(rng, sr) {
+    // A moth folding its wings into a dive: papery beats, then rushing air
+    const b = samples(0.55, sr)
+    for (let i = 0; i < 3; i++) {
+      addNoiseBurst(b, sr, rng, { start: i * 0.06, duration: 0.06, amp: 0.7 - i * 0.15, type: 'bandpass', freq: range(rng, 550, 800), q: 0.8, attack: 0.01, tau: 0.018, color: 'pink' })
+    }
+    whoosh(b, sr, rng, 0.12, 0.38, 700, 1900, 0.9, 0.7, 'pink')
+    return finish(b, sr, 180)
+  },
+  'night.rumble'(rng, sr) {
+    // Sand churning under the player's feet: something is coming up
+    const b = samples(1.1, sr)
+    addNoiseBurst(b, sr, rng, { duration: 1.0, amp: 0.7, type: 'lowpass', freq: (t) => 280 + 320 * t, attack: 0.35, tau: 0.6, color: 'brown' })
+    addGrains(b, sr, rng, { count: 90, spread: 1.0, grainLength: [0.001, 0.004], freq: [1200, 5000], amp: 0.45, bunch: 0.6 })
+    return finish(b, sr)
+  },
+  'night.erupt'(rng, sr) {
+    // The Sandmaw bursts out: a spray of sand over a heavy thump
+    const b = samples(1.2, sr)
+    thud(b, sr, rng, 95, 45, 0.1, 0.9)
+    addNoiseBurst(b, sr, rng, { duration: 0.7, amp: 0.8, type: 'bandpass', freq: (t) => 2600 - t * 2200, q: 0.6, attack: 0.004, tau: 0.18 })
+    addGrains(b, sr, rng, { count: 120, start: 0.03, spread: 0.9, grainLength: [0.001, 0.004], freq: [1000, 6000], amp: 0.4, bunch: 2 })
+    return finish(b, sr, 60)
+  },
+  'night.emberburst'(rng, sr) {
+    // The Ashwalker's breath of embers: a roaring gout, crackling out
+    const b = samples(0.9, sr)
+    whoosh(b, sr, rng, 0, 0.55, 500, 1800, 0.7, 0.9)
+    addNoiseBurst(b, sr, rng, { duration: 0.45, amp: 0.45, type: 'lowpass', freq: 600, attack: 0.02, tau: 0.15, color: 'brown' })
+    crackle(b, sr, rng, 40, 0.1, 0.7, 0.55)
+    return finish(b, sr, 80)
+  },
+  'night.hoof'(rng, sr) {
+    // A hoof scraping the earth: the Hollow Stag is about to charge
+    const b = samples(0.35, sr)
+    addNoiseBurst(b, sr, rng, { duration: 0.22, amp: 0.8, type: 'bandpass', freq: (t) => 1100 - t * 1800, q: 0.9, attack: 0.005, tau: 0.06 })
+    addGrains(b, sr, rng, { count: 26, spread: 0.22, grainLength: [0.002, 0.006], freq: [700, 3000], amp: 0.45, bunch: 1.4 })
+    return finish(b, sr, 150)
+  },
+  'night.slam'(rng, sr) {
+    // Antlers into a trunk at full gallop: a deep woody crack
+    const b = samples(1.1, sr)
+    thud(b, sr, rng, 80, 42, 0.12, 0.8)
+    woodKnock(b, sr, rng, { center: range(rng, 230, 290), decay: 0.06, amp: 1 })
+    addNoiseBurst(b, sr, rng, { start: 0.01, duration: 0.25, amp: 0.45, freq: (t) => 1200 - t * 2000, q: 1.6, tau: 0.06 })
+    addGrains(b, sr, rng, { count: 30, start: 0.05, spread: 0.6, grainLength: [0.003, 0.01], freq: [1500, 5000], amp: 0.3, bunch: 1.5 })
+    return finish(b, sr, 70)
+  },
+  'night.slash'(rng, sr) {
+    // A mantis scythe cutting the air, ending in a chitin click
+    const b = samples(0.3, sr)
+    whoosh(b, sr, rng, 0, 0.16, 1800, 5200, 1.2, 0.9)
+    addDenseModes(b, sr, rng, { count: 6, lo: 2500, hi: 6500, decay: 0.006, amp: 0.4, start: 0.13, tilt: 0.5 })
+    return finish(b, sr, 300)
+  },
+  'night.vanish'(rng, sr) {
+    // A night creature leaves with the dawn: a soft airy sigh
+    const b = samples(1.2, sr)
+    whoosh(b, sr, rng, 0, 1.0, 1400, 500, 0.8, 0.7, 'pink')
+    return finish(b, sr, 200)
+  },
 }

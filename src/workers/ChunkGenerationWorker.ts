@@ -30,6 +30,8 @@ import { RiverbankMudFeature, type RiverbankMudFeatureSettings } from '../world/
 import { JungleFernFeature, type JungleFernFeatureSettings } from '../world/generate/features/JungleFernFeature.ts'
 import { RiverbankClayFeature, type RiverbankClayFeatureSettings } from '../world/generate/features/RiverbankClayFeature.ts'
 import { CattailFeature, type CattailFeatureSettings } from '../world/generate/features/CattailFeature.ts'
+import { SubmergedPlantFeature, type SubmergedPlantFeatureSettings } from '../world/generate/features/SubmergedPlantFeature.ts'
+import { getCellLiquidFamily } from '../world/liquid/cellLiquid.ts'
 import { PineTreeFeature, type PineTreeFeatureSettings } from '../world/generate/features/PineTreeFeature.ts'
 import { GiantConiferFeature, type GiantConiferFeatureSettings } from '../world/generate/features/GiantConiferFeature.ts'
 import { VolcanoConeFeature, type VolcanoConeFeatureSettings } from '../world/generate/features/VolcanoConeFeature.ts'
@@ -172,6 +174,7 @@ export type FeatureConfig =
   | { type: 'jungleFern'; settings: JungleFernFeatureSettings }
   | { type: 'riverbankClay'; settings: RiverbankClayFeatureSettings }
   | { type: 'cattail'; settings: CattailFeatureSettings }
+  | { type: 'submergedPlant'; settings: SubmergedPlantFeatureSettings }
   | { type: 'hemp'; settings: HempFeatureSettings }
   | { type: 'pineTree'; settings: PineTreeFeatureSettings }
   | { type: 'giantConifer'; settings: GiantConiferFeatureSettings }
@@ -401,6 +404,8 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new RiverbankClayFeature(config.settings)
       case 'cattail':
         return new CattailFeature(config.settings)
+      case 'submergedPlant':
+        return new SubmergedPlantFeature(config.settings)
       case 'hemp':
         return new HempFeature(config.settings)
       case 'pineTree':
@@ -1335,13 +1340,14 @@ function getLodService(): LodWorkerService {
   if (!lodService) {
     // LOD surface blocks: greedy-meshed cubes and liquids. Skips cross
     // billboards (flowers, ferns), torches and other custom geometry.
-    // Liquids are marked separately so the builder finds the bed below.
+    // Liquids (and plants standing in them) are marked separately so the
+    // builder finds the bed below.
     const ids = BlockRegistry.getInstance().getAllBlockIds()
     const surfaceKind = new Uint8Array(Math.max(...ids) + 1)
     for (const id of ids) {
       const block = getBlock(id)
       if (id === 0) continue
-      if (block.properties.isLiquid) {
+      if (getCellLiquidFamily(block.properties)) {
         surfaceKind[id] = LOD_SURFACE_LIQUID
       } else if (block.isGreedyMeshable()) {
         surfaceKind[id] = LOD_SURFACE_SOLID

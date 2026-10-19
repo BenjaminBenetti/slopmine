@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeTaggedParts } from '../model_shared/mergeTaggedParts.ts'
 import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -15,7 +15,7 @@ const part = (w: number, h: number, y: number, material: number): THREE.BufferGe
   g.groups.forEach((group) => { group.materialIndex = material })
   return g
 }
-const urnGeometry = mergeGeometries([
+const urnGeometry = mergeTaggedParts([
   part(0.34, 0.08, -0.5, 1), // foot
   part(0.46, 0.14, -0.42, 0), // lower body
   part(0.56, 0.2, -0.28, 0), // belly
@@ -25,7 +25,7 @@ const urnGeometry = mergeGeometries([
   part(0.4, 0.06, 0.1, 1), // lid rim
   part(0.32, 0.06, 0.16, 0), // lid
   part(0.1, 0.07, 0.22, 1), // knob
-], true)
+])
 
 const urnMaterials = [
   new THREE.MeshLambertMaterial({ color: 0xcbbfa3 }), // bone-pale glazed clay

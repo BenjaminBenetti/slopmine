@@ -8,6 +8,13 @@ import type { IPhysicsBody } from '../../physics/interfaces/IPhysicsBody.ts'
 import type { EntitySpawnConfig } from './EntitySpawnConfig.ts'
 import { BlockTags } from '../../world/blocks/tags/BlockTags.ts'
 
+/**
+ * Extra spawn configs for a biome on top of its own `entitySpawns` (night
+ * creatures are registered by setupNightfall this way, so biome generators -
+ * also loaded by the generation workers - never import them).
+ */
+export type EntitySpawnProvider = (biome: string, layer: 0 | 1) => readonly EntitySpawnConfig[] | undefined
+
 // Spawning constants
 const SPAWN_CHECK_INTERVAL = 20.0 // seconds between spawn checks (faster cycle)
 const SPAWN_CHUNK_RADIUS = 6 // chunks from player to check for spawning (matches despawn distance)
@@ -40,6 +47,8 @@ export class EntitySpawner implements ITask {
   // Pre-allocated chunk offsets for the 9x9 grid around player
   private readonly chunkOffsets: Array<{ dx: number; dz: number }> = []
 
+  private readonly providers: EntitySpawnProvider[] = []
+
   // Pre-allocated result object
   private readonly taskResult: ITaskResult = {
     completed: true,
@@ -67,6 +76,11 @@ export class EntitySpawner implements ITask {
         this.chunkOffsets.push({ dx, dz })
       }
     }
+  }
+
+  /** Add a source of extra spawn configs per biome (see EntitySpawnProvider). */
+  addSpawnProvider(provider: EntitySpawnProvider): void {
+    this.providers.push(provider)
   }
 
   execute(deltaTime: number, _remainingBudgetMs: number): ITaskResult {
@@ -125,15 +139,25 @@ export class EntitySpawner implements ITask {
     const worldY = this.playerBody.position.y
     const spawnConfigs = this.worldGenerator.getEntitySpawnsAtPosition(worldX, worldZ, worldY)
 
-    if (!spawnConfigs || spawnConfigs.length === 0) {
-      return 0
-    }
-
     // Try to spawn entities based on configs
     let spawnsAttempted = 0
-    for (const config of spawnConfigs) {
-      if (this.trySpawnEntity(config, chunkX, chunkZ)) {
-        spawnsAttempted++
+    if (spawnConfigs) {
+      for (const config of spawnConfigs) {
+        if (this.trySpawnEntity(config, chunkX, chunkZ)) {
+          spawnsAttempted++
+        }
+      }
+    }
+    if (this.providers.length > 0) {
+      const { biome, layer } = this.worldGenerator.getBiomeAtPosition(worldX, worldZ, worldY)
+      for (const provider of this.providers) {
+        const extra = provider(biome, layer)
+        if (!extra) continue
+        for (const config of extra) {
+          if (this.trySpawnEntity(config, chunkX, chunkZ)) {
+            spawnsAttempted++
+          }
+        }
       }
     }
 
@@ -144,8 +168,20 @@ export class EntitySpawner implements ITask {
    * Try to spawn an entity based on the spawn config.
    */
   private trySpawnEntity(config: EntitySpawnConfig, chunkX: number, chunkZ: number): boolean {
+    // Out of reach: the chunk's nearest point is beyond the config's spawn distance
+    if (config.maxSpawnDistance !== undefined) {
+      const playerPos = this.playerBody.position
+      const nearX = Math.max(chunkX * CHUNK_SIZE, Math.min(playerPos.x, (chunkX + 1) * CHUNK_SIZE))
+      const nearZ = Math.max(chunkZ * CHUNK_SIZE, Math.min(playerPos.z, (chunkZ + 1) * CHUNK_SIZE))
+      if ((nearX - playerPos.x) ** 2 + (nearZ - playerPos.z) ** 2 > config.maxSpawnDistance ** 2) return false
+    }
+
     // Roll for spawn chance
     if (Math.random() > config.spawnRate) {
+      return false
+    }
+
+    if (config.condition && !config.condition()) {
       return false
     }
 
@@ -168,6 +204,9 @@ export class EntitySpawner implements ITask {
       (spawnPos.x - playerPos.x) ** 2 +
       (spawnPos.z - playerPos.z) ** 2
     if (distSq < MIN_SPAWN_DISTANCE ** 2) {
+      return false
+    }
+    if (config.maxSpawnDistance !== undefined && distSq > config.maxSpawnDistance ** 2) {
       return false
     }
 
@@ -236,6 +275,15 @@ export class EntitySpawner implements ITask {
         const lightLevel = this.worldManager.getLightLevelAtWorld(worldX, spawnY, worldZ)
         if (lightLevel < config.minLightLevel) continue
       }
+
+      // Sky and block light apart (night creatures: under the sky, away from torches)
+      if (config.minSkyLight !== undefined || config.maxBlockLight !== undefined) {
+        const packed = this.worldManager.getPackedLightFast(worldX, spawnY, worldZ)
+        if (config.minSkyLight !== undefined && packed >> 4 < config.minSkyLight) continue
+        if (config.maxBlockLight !== undefined && (packed & 15) > config.maxBlockLight) continue
+      }
+
+      if (config.veto?.(worldX, spawnY, worldZ)) continue
 
       // Valid position found
       this.tempPosition.set(worldX, spawnY, worldZ)

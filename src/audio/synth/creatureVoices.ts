@@ -182,6 +182,18 @@ function armorClatter(buf: Float32Array, sr: number, rng: Rng, start: number, pi
 
 const soft = BLOCK_SOUND_RECIPES.soft
 
+/** Dry straw rustling: a cloud of tiny high grains under a hushed hiss. */
+function strawRustle(buf: Float32Array, sr: number, rng: Rng, start: number, length: number, amp: number): void {
+  addGrains(buf, sr, rng, { start, count: Math.round(length * 160), spread: length, grainLength: [0.001, 0.004], freq: [2200, 7000], q: 1.2, amp, bunch: 1.3 })
+  addNoiseBurst(buf, sr, rng, { start, duration: length, amp: amp * 0.35, type: 'highpass', freq: 3000, attack: length * 0.2, tau: length * 0.35 })
+}
+
+/** One soft, papery wing beat: a puff of air with no pitch. */
+function wingBeat(buf: Float32Array, sr: number, rng: Rng, start: number, amp: number): void {
+  addNoiseBurst(buf, sr, rng, { start, duration: 0.07, amp, type: 'bandpass', freq: range(rng, 500, 750), q: 0.8, attack: 0.012, tau: 0.02, color: 'pink' })
+  addNoiseBurst(buf, sr, rng, { start: start + 0.01, duration: 0.05, amp: amp * 0.3, type: 'highpass', freq: 2500, attack: 0.008, tau: 0.012 })
+}
+
 export type VoiceArchetype =
   | 'cow'
   | 'pig'
@@ -214,6 +226,12 @@ export type VoiceArchetype =
   | 'boss-prism'
   | 'boss-frost'
   | 'boss-spore'
+  | 'straw'
+  | 'moth'
+  | 'ember'
+  | 'angler'
+  | 'bellow'
+  | 'burrower'
 
 export const CREATURE_VOICES: Record<VoiceArchetype, Partial<Record<VoiceKind, Recipe>>> = {
   cow: {
@@ -423,6 +441,119 @@ export const CREATURE_VOICES: Record<VoiceArchetype, Partial<Record<VoiceKind, R
     hurt: call({ length: [0.3, 0.38], pitch: [100, 115, 85], formants: OO, rough: 0.4, breath: 0.4 }),
     death: layer(call({ length: [1.3, 1.5], pitch: [95, 85, 45], formants: OO, rough: 0.4, breath: 0.45 }), BLOCK_SOUND_RECIPES.ice.break, 0.8),
     idle: ghost(1.4, 160, 200, 0.12),
+  },
+  // Night creatures
+  straw: {
+    // The Stillwatcher never cries out: its frame creaks, its straw rustles
+    hurt: (rng, sr) => {
+      const b = samples(0.4, sr)
+      strawRustle(b, sr, rng, 0, 0.25, 0.7)
+      creak(b, sr, rng, 0.02, 0.2, range(rng, 45, 60), range(rng, 380, 480), 0.5)
+      return finish(b, sr)
+    },
+    death: (rng, sr) => {
+      const b = samples(1.4, sr)
+      creak(b, sr, rng, 0, 0.7, range(rng, 25, 35), range(rng, 300, 380), 0.8)
+      strawRustle(b, sr, rng, 0.5, 0.8, 0.8)
+      return finish(b, sr)
+    },
+    idle: (rng, sr) => {
+      const b = samples(0.8, sr)
+      strawRustle(b, sr, rng, 0, 0.5, 0.5)
+      creak(b, sr, rng, range(rng, 0.1, 0.3), 0.3, range(rng, 30, 40), range(rng, 320, 420), 0.45)
+      return finish(b, sr)
+    },
+  },
+  moth: {
+    hurt: (rng, sr) => {
+      const b = samples(0.35, sr)
+      voice(b, sr, rng, { length: 0.08, f0: (t) => 1500 + 900 * Math.min(1, t / 0.03), formants: EH, amp: 0.6, breath: 0.5 })
+      wingBeat(b, sr, rng, 0.02, 0.8)
+      wingBeat(b, sr, rng, 0.12, 0.6)
+      return finish(b, sr)
+    },
+    death: (rng, sr) => {
+      const b = samples(0.9, sr)
+      for (let i = 0; i < 5; i++) wingBeat(b, sr, rng, i * range(rng, 0.08, 0.13), 0.9 - i * 0.15)
+      addGrains(b, sr, rng, { count: 40, start: 0.15, spread: 0.6, grainLength: [0.001, 0.003], freq: [3000, 7000], amp: 0.25 })
+      return finish(b, sr)
+    },
+    idle: (rng, sr) => {
+      // A soft double flap
+      const b = samples(0.35, sr)
+      wingBeat(b, sr, rng, 0, 1)
+      wingBeat(b, sr, rng, range(rng, 0.11, 0.15), 0.8)
+      return finish(b, sr)
+    },
+  },
+  ember: {
+    hurt: (rng, sr) => {
+      const b = samples(0.5, sr)
+      addNoiseBurst(b, sr, rng, { duration: 0.3, amp: 0.6, type: 'highpass', freq: 2600, attack: 0.01, tau: 0.08 })
+      addGrains(b, sr, rng, { count: 26, spread: 0.35, grainLength: [0.001, 0.004], freq: [1500, 6000], amp: 0.6, bunch: 1.5 })
+      voice(b, sr, rng, { length: 0.25, f0: (t) => 95 - t * 60, formants: GROWL, amp: 0.4, rough: 0.6, roughRate: 28, breath: 0.8 })
+      return finish(b, sr)
+    },
+    death: (rng, sr) => {
+      const b = samples(1.8, sr)
+      voice(b, sr, rng, { length: 1.1, f0: (t) => 80 * Math.pow(0.6, t / 1.1), formants: GROWL, amp: 0.6, rough: 0.5, roughRate: 22, breath: 1.0 })
+      addGrains(b, sr, rng, { count: 70, start: 0.2, spread: 1.4, grainLength: [0.001, 0.005], freq: [800, 5000], amp: 0.4, bunch: 1 })
+      addNoiseBurst(b, sr, rng, { start: 0.6, duration: 0.9, amp: 0.35, type: 'lowpass', freq: 900, attack: 0.05, tau: 0.3, color: 'brown' })
+      return finish(b, sr)
+    },
+    idle: (rng, sr) => {
+      // A low, breathy rasp with a crackle of embers
+      const b = samples(1.0, sr)
+      voice(b, sr, rng, { length: 0.8, f0: (t) => 72 + 8 * Math.sin(t * 5), formants: GROWL, amp: 0.5, rough: 0.55, roughRate: 26, breath: 1.1, attack: 0.15 })
+      addGrains(b, sr, rng, { count: 18, spread: 0.85, grainLength: [0.001, 0.003], freq: [1800, 6000], amp: 0.35, bunch: 1 })
+      return finish(b, sr)
+    },
+  },
+  angler: {
+    hurt: call({ length: [0.2, 0.28], pitch: [130, 150, 95], formants: OO, rough: 0.7, roughRate: 22, breath: 0.3 }),
+    death: (rng, sr) => {
+      const b = samples(1.5, sr)
+      voice(b, sr, rng, { length: 0.9, f0: (t) => 110 * Math.pow(0.55, t / 0.9), formants: OO, amp: 0.7, rough: 0.6, roughRate: 18, breath: 0.4 })
+      for (let i = 0; i < 16; i++) {
+        const at = 0.3 + Math.pow(rng(), 0.8) * 1.0
+        const f = range(rng, 180, 520)
+        addSine(b, sr, (t) => f * (1 + 1.4 * (t / 0.04)), (t) => range(rng, 0.15, 0.35) * Math.exp(-t / 0.015), at, 0.06)
+      }
+      return finish(b, sr)
+    },
+    idle: (rng, sr) => {
+      // A deep bullfrog croak: a pulsed, throaty "rrrum"
+      const b = samples(0.9, sr)
+      voice(b, sr, rng, { length: 0.55, f0: (t) => 88 + 14 * Math.sin((Math.PI * t) / 0.55), formants: OO, amp: 0.8, rough: 0.85, roughRate: 17, breath: 0.15, attack: 0.05 })
+      return finish(b, sr)
+    },
+  },
+  bellow: {
+    hurt: call({ length: [0.25, 0.32], pitch: [120, 135, 90], formants: OO, rough: 0.35, breath: 0.45 }),
+    death: call({ length: [1.4, 1.7], pitch: [130, 115, 55], formants: OO, rough: 0.3, breath: 0.6, vibrato: 0.03, vibratoRate: 5 }),
+    // A long, hollow moan through the trees
+    idle: call({ length: [1.3, 1.7], pitch: [105, 128, 92], formants: OO, rough: 0.25, breath: 0.7, vibrato: 0.025, vibratoRate: 4.5, attack: 0.3 }),
+  },
+  burrower: {
+    hurt: (rng, sr) => {
+      const b = samples(0.5, sr)
+      voice(b, sr, rng, { length: 0.3, f0: (t) => 110 - t * 80, formants: GROWL, amp: 0.6, rough: 0.8, roughRate: 34, breath: 0.4 })
+      addGrains(b, sr, rng, { count: 20, spread: 0.3, grainLength: [0.002, 0.006], freq: [900, 3500], amp: 0.4, bunch: 1 })
+      return finish(b, sr)
+    },
+    death: (rng, sr) => {
+      const b = samples(1.8, sr)
+      voice(b, sr, rng, { length: 1.0, f0: (t) => 95 * Math.pow(0.5, t / 1.0), formants: GROWL, amp: 0.7, rough: 0.7, roughRate: 26, breath: 0.4 })
+      addNoiseBurst(b, sr, rng, { start: 0.5, duration: 1.1, amp: 0.45, type: 'highpass', freq: 1800, attack: 0.2, tau: 0.45 })
+      return finish(b, sr)
+    },
+    idle: (rng, sr) => {
+      // A low growl from under the ground
+      const b = samples(1.0, sr)
+      addNoiseBurst(b, sr, rng, { duration: 0.85, amp: 0.6, type: 'lowpass', freq: 260, attack: 0.15, tau: 0.35, color: 'brown' })
+      voice(b, sr, rng, { length: 0.7, f0: (t) => 60 + 6 * Math.sin(t * 7), formants: GROWL, amp: 0.45, rough: 0.8, roughRate: 22, breath: 0.3, attack: 0.15 })
+      return finish(b, sr)
+    },
   },
   'boss-spore': {
     hurt: call({ length: [0.3, 0.38], pitch: [130, 150, 100], formants: GROWL, rough: 0.5, breath: 0.4 }),

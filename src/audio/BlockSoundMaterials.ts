@@ -16,6 +16,7 @@ const OVERRIDES: Record<string, BlockSoundMaterial> = {
   rime_glyph: 'stone',
   ember_glyph: 'stone',
   cactus: 'soft',
+  lanternweed: 'leaves', // not a lantern
   tnt: 'cloth',
   mycelial_carpet: 'cloth',
   crypt_cobweb: 'cloth',
@@ -50,8 +51,8 @@ const KEYWORD_RULES: ReadonlyArray<[BlockSoundMaterial, readonly string[]]> = [
   ['bone', ['bone', 'skull', 'shell', 'chitin']],
   ['metal', ['iron', 'gold', 'copper', 'anvil', 'grate', 'bars', 'chain', 'brazier', 'lantern', 'candelabra', 'spawner', 'hoard', 'reliquary', 'apparatus']],
   ['cloth', ['banner', 'carpet', 'wool']],
-  ['soft', ['mushroom', '_cap', 'glowcap', 'fungus', 'spore_sac', 'membrane', 'slime', 'brood_comb', 'egg_pod', 'gill', 'glow_bulb', 'glowing_sap', 'morel']],
-  ['leaves', ['leaves', 'needles', 'vine', '_fern', 'flower', 'sprout', 'cattail', 'wheat', 'hemp', 'herb', 'sapling', 'tendril', 'bush', 'strand', 'bloom', 'cobweb']],
+  ['soft', ['mushroom', '_cap', 'glowcap', 'glimmercap', 'fungus', 'spore_sac', 'membrane', 'slime', 'brood_comb', 'egg_pod', 'gill', 'glow_bulb', 'glowing_sap', 'morel']],
+  ['leaves', ['leaves', 'needles', 'vine', '_fern', 'flower', 'sprout', 'cattail', 'wheat', 'hemp', 'herb', 'sapling', 'tendril', 'bush', 'strand', 'bloom', 'cobweb', 'kelp']],
   ['grass', ['grass', 'mycelium', 'podzol', 'moss']],
   ['soil', ['dirt', 'mud', 'clay']],
   ['wood', ['log', 'plank', 'wood', 'door', 'fence', 'table', 'chair', 'shelf', 'ladder', 'chest', 'bench', 'stump', 'stem', 'torch', 'root', 'stick', 'weapon_rack', 'campfire', 'bookshelf', 'tap']],

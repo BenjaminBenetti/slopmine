@@ -59,6 +59,23 @@ export interface IBlockProperties {
    */
   readonly isFallingLiquid?: boolean
   /**
+   * The liquid family this block always stands in (a waterlogged plant:
+   * glowkelp). Never set together with isLiquid. To everything the player
+   * sees the cell is a full source of that liquid - meshing (the liquid's
+   * faces, culling against it), light (diffuse, like the liquid), the
+   * underwater overlay, swim sounds - and breaking the block leaves the
+   * source behind (`getVacatedBlockId`). Liquid physics sees a wall.
+   * `getCellLiquidFamily` (liquid/cellLiquid.ts) answers both cases.
+   */
+  readonly submergedIn?: string
+  /**
+   * Light a glowing submerged block scatters into the liquid around it after
+   * dark (linear RGB per cell): the liquid's surface above and beside it
+   * glows softly, fading with depth (LiquidMeshTable `buildLiquidGlowEntries`,
+   * the mesh worker's corner glow, LiquidMaterials).
+   */
+  readonly scatterGlow?: readonly [number, number, number]
+  /**
    * Seconds between scheduled ticks for this block type. When set (together
    * with onScheduledTick), the block is scheduled for a tick whenever it or a
    * direct neighbor changes at runtime. The actual delay is jittered around
@@ -258,6 +275,20 @@ export interface IMultiMeshBlock extends IBlock {
  */
 export function isMultiMeshBlock(block: IBlock): block is IMultiMeshBlock {
   return 'getMultiMeshParts' in block && typeof (block as IMultiMeshBlock).getMultiMeshParts === 'function'
+}
+
+/**
+ * A block whose world instances each carry a glow halo - a soft sphere of
+ * light in the water around a glowing plant (GlowHaloMaterial.ts). Drawn by
+ * chunk meshes as an extra instanced mesh after the liquids; item displays
+ * ignore it.
+ */
+export interface IGlowHaloBlock extends IBlock {
+  getGlowHalo(): IBlockMeshPart
+}
+
+export function hasGlowHalo(block: IBlock): block is IGlowHaloBlock {
+  return typeof (block as Partial<IGlowHaloBlock>).getGlowHalo === 'function'
 }
 
 /**

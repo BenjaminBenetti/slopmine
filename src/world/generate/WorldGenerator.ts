@@ -32,6 +32,7 @@ import { RiverbankMudFeature } from './features/RiverbankMudFeature.ts'
 import { JungleFernFeature } from './features/JungleFernFeature.ts'
 import { RiverbankClayFeature } from './features/RiverbankClayFeature.ts'
 import { CattailFeature } from './features/CattailFeature.ts'
+import { SubmergedPlantFeature } from './features/SubmergedPlantFeature.ts'
 import { PineTreeFeature } from './features/PineTreeFeature.ts'
 import { GiantConiferFeature } from './features/GiantConiferFeature.ts'
 import { VolcanoConeFeature } from './features/VolcanoConeFeature.ts'
@@ -268,6 +269,12 @@ export class WorldGenerator {
     return biomeRegistry.selectBiomeForLayer(regionX, regionZ, this.config.seed, layer)
   }
 
+  /** The biome and vertical layer at a world position (the layer from the Y). */
+  getBiomeAtPosition(worldX: number, worldZ: number, worldY: number): { biome: BiomeType; layer: 0 | 1 } {
+    const layer = getLayerForSubChunk(Math.floor(worldY / SUB_CHUNK_HEIGHT))
+    return { biome: this.getBiomeForChunk(Math.floor(worldX / 32), Math.floor(worldZ / 32), layer), layer }
+  }
+
   /**
    * Get entity spawn configurations for a world position.
    * Returns the spawn configs from the biome at that position.
@@ -371,6 +378,9 @@ export class WorldGenerator {
       }
       if (feature instanceof CattailFeature) {
         return { type: 'cattail', settings: feature.settings }
+      }
+      if (feature instanceof SubmergedPlantFeature) {
+        return { type: 'submergedPlant', settings: feature.settings }
       }
       if (feature instanceof PineTreeFeature) {
         return { type: 'pineTree', settings: feature.settings }

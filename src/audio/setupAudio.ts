@@ -30,6 +30,7 @@ import { PlayerSoundTracker, type PlayerSoundSources } from './PlayerSoundTracke
 import { SoundBank } from './SoundBank.ts'
 import { setSoundSink, type SoundPosition, type SoundSink } from './SoundHooks.ts'
 import { getDeferredSoundIds, getPreloadSoundIds, getSoundDef, getVoiceSoundIds, type SoundId } from './SoundLibrary.ts'
+import { worldClock } from '../daynight/WorldClock.ts'
 
 export interface AudioDeps {
   scheduler: TaskScheduler
@@ -190,7 +191,7 @@ export function setupAudio(deps: AudioDeps): void {
     const candidates = deps.entityManager.getEntitiesNear(listenerPos, IDLE_RADIUS)
     for (const guardian of getEngagedGuardians()) candidates.push(guardian)
     for (const entity of candidates) {
-      if (!entity.isAlive || entity.isDying) continue
+      if (!entity.isAlive || entity.isDying || entity.isQuiet) continue
       const voice = getEntityVoice(entity.type)
       if (!voice || voice.idleEvery <= 0) continue
       if (voice.boss && !getEngagedGuardians().has(entity as never)) continue
@@ -230,7 +231,7 @@ export function setupAudio(deps: AudioDeps): void {
         const outdoors = layer === 0 ? 0 : deps.getSkyLight(listenerPos.x, listenerPos.y, listenerPos.z) / 15
         engine.setMuffled(submergedIn === 'lava' ? 0.75 : submergedIn ? 1 : 0)
         engine.setEnvironmentReverb(submergedIn ? 0.15 : layer === 0 ? (inDungeon ? 0.42 : 0.32) : 0.05 + 0.27 * (1 - outdoors))
-        ambience.update({ layer, biome, outdoors, cameraY: listenerPos.y, submergedIn }, envDt)
+        ambience.update({ layer, biome, outdoors, cameraY: listenerPos.y, submergedIn, night: layer === 1 ? worldClock.nightAmount : 0 }, envDt)
       }
 
       dungeonTimer -= dt
@@ -250,6 +251,7 @@ export function setupAudio(deps: AudioDeps): void {
           underground: layer === 1 && deps.getSkyLight(listenerPos.x, listenerPos.y, listenerPos.z) < 4 && listenerPos.y < 236,
           inDungeon,
           bossEngaged: isBossEngaged(),
+          night: worldClock.nightAmount > 0.5,
         }
         music.update(ctx)
       }
@@ -267,7 +269,7 @@ function liquidAt(player: PlayerSoundSources, x: number, y: number, z: number): 
   const id = player.getBlockId(x, y, z)
   if (id === 0) return null
   const props = BlockRegistry.getInstance().getBlock(id).properties
-  return props.isLiquid ? (props.liquidFamily ?? 'water') : null
+  return props.isLiquid ? (props.liquidFamily ?? 'water') : props.submergedIn ?? null
 }
 
 /** What opening/closing a block's UI sounds like. */

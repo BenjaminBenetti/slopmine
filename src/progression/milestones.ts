@@ -12,9 +12,11 @@ import {
   obtain,
   obtainAll,
   obtainTagged,
+  on,
   placed,
   reachedDepth,
 } from './MilestoneTypes.ts'
+import { NIGHT_CREATURE_TYPES, NIGHT_TROPHIES } from '../nightfall/NightCreatureTypes.ts'
 
 /**
  * The Journal: Slopmine's progression arc (DESIGN §1) as chapters of
@@ -136,6 +138,57 @@ export const JOURNAL_CHAPTERS: readonly ChapterDef[] = [
         requires: ['forge'],
         optional: true,
         triggers: [obtain(...COOKED_FOODS), crafted(COOKED_FOODS)],
+      },
+    ],
+  },
+  // -------------------------------------------------------------------------
+  {
+    id: 'nightfall',
+    title: 'Nightfall',
+    blurb: 'When the sun goes down, the surface belongs to something else.',
+    accent: '#7d8fe0',
+    milestones: [
+      {
+        id: 'first_night',
+        stage: 75,
+        title: 'Long Night',
+        flavour: 'The dark has teeth. You saw the sun rise anyway.',
+        hint: 'Live through a night on the surface without dying. Night creatures never rise in torchlight or under a roof: a small hut with a torch inside is a safe bed for the night.',
+        icon: 'torch_block',
+        optional: true,
+        triggers: [on('daybreak', (e) => e.survived)],
+      },
+      {
+        id: 'night_hunter',
+        stage: 120,
+        title: 'Night Hunter',
+        flavour: 'Whatever it was, it bleeds.',
+        hint: 'Slay a night creature. Every surface biome has its own: scarecrows that move when unwatched, moths drawn to torches, things under the sand, in the bog, between the trees...',
+        icon: 'witchstraw',
+        optional: true,
+        triggers: [killed({ types: NIGHT_CREATURE_TYPES })],
+      },
+      {
+        id: 'ward_lantern',
+        stage: 140,
+        title: 'Keep the Dark at Bay',
+        flavour: 'They will not come near the light of their own kind.',
+        hint: 'Craft a Ward Lantern (2 night trophies, 1 iron bar, 1 torch) and place it: no night creature rises within 32 blocks.',
+        icon: 'ward_lantern_block',
+        requires: ['night_hunter'],
+        optional: true,
+        triggers: [obtain('ward_lantern_block'), placed('ward_lantern')],
+      },
+      {
+        id: 'night_trophies',
+        stage: 300,
+        title: 'Things That Go Bump',
+        flavour: 'Every nightmare of the surface, catalogued.',
+        hint: 'Collect a trophy from every night creature: witchstraw (plains), moth dust (forests), sandmaw fang (desert), cinder core (volcanic), angler lure (swamp), ghost antler (pine forest) and mantis scythe (jungle).',
+        icon: 'ghost_antler',
+        requires: ['night_hunter'],
+        optional: true,
+        triggers: [obtainAll(...NIGHT_TROPHIES)],
       },
     ],
   },

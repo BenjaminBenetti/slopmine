@@ -151,6 +151,39 @@ export const AMBIENCE_BEDS: Record<string, Recipe> = {
       return wind
     })
   },
+  'bed.night'(rng, sr) {
+    // A summer night: a few crickets at their own pace and distance over a
+    // faint, low breeze
+    return loop(sr, (n) => {
+      const out = pinkNoise(n, rng)
+      biquad(out, sr, 'lowpass', 380, 0.6)
+      for (let i = 0; i < n; i++) out[i] *= 0.18
+      const crickets = 7
+      for (let c = 0; c < crickets; c++) {
+        const carrier = range(rng, 3900, 5200)
+        const period = range(rng, 0.55, 1.15)
+        const pulses = 2 + Math.floor(rng() * 3)
+        const level = range(rng, 0.12, 0.45) * (c < 2 ? 1.4 : 1)
+        const swell = slowWalk(rng, n, sr, 0.08)
+        let at = rng() * period
+        while (at < n / sr) {
+          // Some chirps skipped, so the rhythm breathes
+          if (rng() < 0.85) {
+            for (let p = 0; p < pulses; p++) {
+              const start = Math.floor((at + p * 0.034) * sr)
+              const len = Math.floor(0.022 * sr)
+              for (let k = 0; k < len && start + k < n; k++) {
+                const env = Math.sin((Math.PI * k) / len)
+                out[start + k] += Math.sin((2 * Math.PI * carrier * k) / sr) * env * level * (0.4 + 0.6 * swell[start + k])
+              }
+            }
+          }
+          at += period * range(rng, 0.92, 1.08)
+        }
+      }
+      return out
+    })
+  },
   'bed.underwater'(rng, sr) {
     return loop(sr, (n) => {
       const low = brownNoise(n, rng)
@@ -248,6 +281,29 @@ export const AMBIENCE_DETAILS: Record<string, Recipe> = {
         rough: 0.8,
         roughRate: 45,
         breath: 0.1,
+      })
+    }
+    return finish(b, sr)
+  },
+  'amb.owl'(rng, sr) {
+    // A distant owl: "hoo ... hoo-hoo"
+    const b = samples(1.6, sr)
+    const f = range(rng, 330, 390)
+    const hoots: [number, number][] = [[0, 0.28], [0.62, 0.14], [0.82, 0.32]]
+    for (const [start, length] of hoots) {
+      voice(b, sr, rng, {
+        start,
+        length,
+        f0: (t) => f * (1 + 0.06 * Math.sin((Math.PI * t) / length)) * (1 - 0.05 * (t / length)),
+        formants: [
+          [380, 5, 1],
+          [800, 7, 0.25],
+          [2300, 9, 0.05],
+        ],
+        amp: 1,
+        breath: 0.5,
+        attack: length * 0.3,
+        release: length * 0.45,
       })
     }
     return finish(b, sr)

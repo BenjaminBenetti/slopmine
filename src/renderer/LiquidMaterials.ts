@@ -4,6 +4,7 @@ import { LIGHT_CURVE_DEFINES } from './lightCurve.ts'
 import { loadBlockTexture } from './TextureLoader.ts'
 import { SKY_HORIZON_HEX } from './skybox/BiomeAtmosphere.ts'
 import { daylightUniform, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment } from './worldLightShader.ts'
+import { DARK_GLOW_GLSL } from './EmissiveTextures.ts'
 
 /**
  * Shared liquid surface materials. Each liquid family (water, lava, swamp
@@ -21,7 +22,16 @@ import { daylightUniform, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLig
  * other geometry drawn with these materials (block icons) must carry white
  * vertex colors (= full light) - build it with withWhiteVertexColors() or
  * use liquidCubeGeometry.
+ *
+ * Chunk liquid meshes also carry LIQUID_GLOW_ATTRIBUTE: the light glowing
+ * plants below scatter up through the water (linear RGB per vertex, from the
+ * mesh worker's corner glow), shown on the surface after dark like the
+ * plants' own dark-only glow. Every geometry drawn with these materials
+ * carries it (zeros), so no stale default attribute value can leak in.
  */
+
+/** Vertex attribute: scatter glow of submerged plants (normalized RGB bytes). */
+export const LIQUID_GLOW_ATTRIBUTE = 'liquidGlow'
 
 export interface LiquidMaterialOptions {
   readonly opacity: number
@@ -96,6 +106,12 @@ float liquidFresnel = gl_FrontFacing ? pow( 1.0 - saturate( dot( normal, normali
 float liquidSkyLight = slopLightShape( vColor.r * 15.0 );
 outgoingLight = mix( outgoingLight, liquidReflectColor * liquidSkyLight, liquidFresnel );
 diffuseColor.a = mix( diffuseColor.a, 1.0, liquidFresnel );
+// Light scattered up from glowing plants below: after the Fresnel mix (it
+// comes out of the water, it isn't reflected), only in the dark, shimmering
+// with the drifting ripple texels (the glitter mask) like light through water,
+// and stronger at glancing angles (a longer path through the lit water)
+float liquidGlowPath = min( 2.2, 1.0 / max( abs( dot( normal, normalize( vViewPosition ) ) ), 0.01 ) );
+outgoingLight += vLiquidGlow * liquidGlowPath * ( 0.6 + 0.8 * specularStrength ) * slopDarkGlow( slopLightShape( vColor.r * 15.0 ) * uDaylight );
 #include <opaque_fragment>
 `
 
@@ -132,8 +148,11 @@ export function createLiquidMaterial(textureUrl: string, options: LiquidMaterial
     shader.uniforms.liquidGlitterLuma = glitterLuma
     shader.uniforms.uDaylight = daylightUniform
     shader.uniforms.uLightFloor = lightFloorUniform
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\nattribute vec3 ${LIQUID_GLOW_ATTRIBUTE};\nvarying vec3 vLiquidGlow;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\nvLiquidGlow = ${LIQUID_GLOW_ATTRIBUTE};`)
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform vec3 liquidReflectColor;\nuniform float liquidReflectivity;\nuniform vec2 liquidGlitterLuma;\n${WORLD_LIGHT_FRAGMENT_PARS}`)
+      .replace('#include <common>', `#include <common>\nuniform vec3 liquidReflectColor;\nuniform float liquidReflectivity;\nuniform vec2 liquidGlitterLuma;\nvarying vec3 vLiquidGlow;\n${WORLD_LIGHT_FRAGMENT_PARS}\n${DARK_GLOW_GLSL}`)
       .replace('#include <map_pars_fragment>', `#include <map_pars_fragment>\n${CRISP_TEXEL_SAMPLING_GLSL}`)
       .replace('#include <map_fragment>', CRISP_MAP)
       .replace('#include <color_fragment>', '')
@@ -142,7 +161,7 @@ export function createLiquidMaterial(textureUrl: string, options: LiquidMaterial
       .replace('#include <opaque_fragment>', FRESNEL_REFLECTION)
   }
   // Same patch for every liquid; per-family values live in uniforms
-  material.customProgramCacheKey = () => 'liquid-surface-v3'
+  material.customProgramCacheKey = () => 'liquid-surface-v4'
 
   animatedLiquids.push({ material, texture, options })
   return material
@@ -169,10 +188,14 @@ export function updateLiquidMaterials(deltaTime: number): void {
   }
 }
 
-/** Add an all-white vertex color attribute so the liquid materials render it at full light. */
+/**
+ * Add an all-white vertex color attribute so the liquid materials render it
+ * at full light (and an empty scatter glow).
+ */
 export function withWhiteVertexColors(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   const count = geometry.getAttribute('position').count
   geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3).fill(1), 3))
+  geometry.setAttribute(LIQUID_GLOW_ATTRIBUTE, new THREE.BufferAttribute(new Uint8Array(count * 3), 3, true))
   return geometry
 }
 

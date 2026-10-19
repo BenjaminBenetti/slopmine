@@ -317,6 +317,20 @@ export enum TextureId {
   FROZEN_BANNER = 585,           // Non-greedy sprite (no texture-array layer)
   HANGING_FROST_LANTERN = 586,   // Non-greedy model
   ICE_KNIGHT_STATUE = 587,       // Non-greedy model
+
+  // Day and night
+  WARD_LANTERN = 588,            // Non-greedy model
+  FOXFIRE_MUSHROOM = 589,        // foxfire_mushroom.webp
+  FOXFIRE_MUSHROOM_CAP = 590,    // foxfire_mushroom_cap.webp (emissive)
+  AMBER_MUSHROOM = 591,          // amber_mushroom.webp
+  AMBER_MUSHROOM_CAP = 592,      // amber_mushroom_cap.webp (emissive)
+  GLOWMOSS_TOP = 593,            // glowmoss_top.webp (emissive specks)
+  GLOWMOSS_SIDE = 594,           // glowmoss_side.webp (emissive specks)
+  GLIMMERCAP = 595,              // Non-greedy sprite (no texture-array layer)
+  LUMEN_FERN = 596,              // Non-greedy sprite (no texture-array layer)
+  GLOWKELP = 597,                // Non-greedy sprite (no texture-array layer)
+  GLOWKELP_TOP = 598,            // Non-greedy sprite (no texture-array layer)
+  LANTERNWEED = 599,             // Non-greedy sprite (no texture-array layer)
 }
 
 // Cache for the face texture map

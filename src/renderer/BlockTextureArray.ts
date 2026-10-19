@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { TextureId } from '../world/blocks/FaceTextureRegistry.ts'
 import { getTextureUrls } from './TextureAtlas.ts'
+import { getEmissiveMapUrls } from './EmissiveTextures.ts'
 import {
   enableNearestTextureAnisotropy, getAnisotropy, getTextureFiltering, minFilterForMode, onTextureFilteringChange,
 } from './TextureLoader.ts'
@@ -16,6 +17,9 @@ import { CHUNK_MAX_TEXTURE_LAYER } from './ChunkVertexFormat.ts'
  * Texels with alpha 0 get their RGB dilated from the nearest visible texels,
  * so mipmaps of cutout textures (leaves) keep their colour instead of
  * averaging in black.
+ *
+ * Glow maps of emissive textures (EmissiveTextures.ts `map`) go into a second,
+ * small array (`glowMaps`, layer 0 black) sampled the same way.
  */
 
 /** Edge length of every layer; source images are scaled to it (nearest). */
@@ -28,6 +32,11 @@ export interface BlockTextureArray {
   readonly texture: THREE.DataArrayTexture
   /** TextureId → layer index */
   readonly layers: ReadonlyMap<number, number>
+  /** Glow maps of emissive textures; `layers`: TextureId → glow map layer (from 1). */
+  readonly glowMaps: {
+    readonly texture: THREE.DataArrayTexture
+    readonly layers: ReadonlyMap<number, number>
+  }
 }
 
 let globalTextureArray: BlockTextureArray | null = null
@@ -176,7 +185,45 @@ export async function buildBlockTextureArray(textureIds: Iterable<number>): Prom
     layers.set(entries[i][0], layer)
   }
 
+  // Glow maps of the emissive textures in this array
+  const glowEntries: Array<[number, string]> = []
+  for (const [id, url] of getEmissiveMapUrls()) {
+    if (layers.has(id)) glowEntries.push([id, url])
+  }
+  glowEntries.sort((a, b) => a[0] - b[0])
+  const glowData = new Uint8Array(layerBytes * (glowEntries.length + 1))
+  const glowImages = await Promise.all(glowEntries.map(async ([id, url]) => {
+    try {
+      return await loadImage(url)
+    } catch {
+      console.warn(`Glow map of block texture ${id} failed to load: ${url}`)
+      return null
+    }
+  }))
+  const glowLayers = new Map<number, number>()
+  for (let i = 0; i < glowEntries.length; i++) {
+    const img = glowImages[i]
+    if (!img) continue
+    writeImageLayer(ctx, img, glowData, (i + 1) * layerBytes)
+    glowLayers.set(glowEntries[i][0], i + 1)
+  }
+  const glowTexture = new THREE.DataArrayTexture(glowData, BLOCK_TEXTURE_SIZE, BLOCK_TEXTURE_SIZE, glowEntries.length + 1)
+  configureArrayTexture(glowTexture)
+
   const texture = new THREE.DataArrayTexture(data, BLOCK_TEXTURE_SIZE, BLOCK_TEXTURE_SIZE, layerCount)
+  configureArrayTexture(texture)
+
+  globalTextureArray = { texture, layers, glowMaps: { texture: glowTexture, layers: glowLayers } }
+  onTextureFilteringChange((mode) => {
+    for (const t of [texture, glowTexture]) {
+      t.minFilter = minFilterForMode(mode)
+      t.needsUpdate = true // re-upload with the new filter
+    }
+  })
+  return globalTextureArray
+}
+
+function configureArrayTexture(texture: THREE.DataArrayTexture): void {
   texture.format = THREE.RGBAFormat
   texture.type = THREE.UnsignedByteType
   texture.colorSpace = THREE.SRGBColorSpace
@@ -194,13 +241,6 @@ export async function buildBlockTextureArray(textureIds: Iterable<number>): Prom
   texture.generateMipmaps = true
   texture.anisotropy = getAnisotropy()
   texture.needsUpdate = true
-
-  globalTextureArray = { texture, layers }
-  onTextureFilteringChange((mode) => {
-    texture.minFilter = minFilterForMode(mode)
-    texture.needsUpdate = true // re-upload with the new filter
-  })
-  return globalTextureArray
 }
 
 /**

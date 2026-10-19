@@ -345,6 +345,9 @@ import { SanctumStairsBlockItem } from '../items/blocks/sanctum_stairs/SanctumSt
 // Hell: Cocytus
 import { registerCocytusItems } from '../items/cocytus/registerCocytusItems.ts'
 
+// Day and night
+import { registerNightfallItems } from '../items/nightfall/registerNightfallItems.ts'
+
 type ItemFactory = () => IItem
 
 // Map of item IDs to factory functions
@@ -731,6 +734,9 @@ export function initializeItemRegistry(): void {
 
   // Hell: Cocytus
   registerCocytusItems(registerItemFactory)
+
+  // Day and night
+  registerNightfallItems(registerItemFactory)
 
   console.log(`Item registry initialized with ${itemFactories.size} items`)
 }

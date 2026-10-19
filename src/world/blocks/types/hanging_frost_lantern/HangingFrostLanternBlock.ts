@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeTaggedParts } from '../model_shared/mergeTaggedParts.ts'
 import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -13,7 +13,7 @@ import { cellBox } from '../cocytus_shared/CrossSpriteGeometry.ts'
 const IRON = 0
 const CORE = 1
 
-const geometry = mergeGeometries([
+const geometry = mergeTaggedParts([
   cellBox(0.46, 0.62, 0.48, 0.08, 0.38, 0.04, IRON), // chain links
   cellBox(0.48, 0.62, 0.46, 0.04, 0.38, 0.08, IRON),
   cellBox(0.38, 0.56, 0.38, 0.24, 0.06, 0.24, IRON), // cap
@@ -23,7 +23,7 @@ const geometry = mergeGeometries([
   cellBox(0.64, 0.12, 0.64, 0.06, 0.44, 0.06, IRON),
   cellBox(0.28, 0.06, 0.28, 0.44, 0.06, 0.44, IRON), // base
   cellBox(0.35, 0.13, 0.35, 0.3, 0.4, 0.3, CORE), // rime-ice core
-], true)
+])
 
 const ironMaterial = new THREE.MeshLambertMaterial({ color: 0x3b4250 })
 const coreMaterial = new THREE.MeshBasicMaterial({ color: 0xaeeeff })

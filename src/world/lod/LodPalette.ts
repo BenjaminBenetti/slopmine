@@ -135,6 +135,17 @@ export function composeLodPalette(
     writeColor(top, id, applyLook(topColor ?? sideColor ?? NEUTRAL_GREY, look), shade * TOP_SHADE)
     writeColor(side, id, applyLook(sideColor ?? topColor ?? NEUTRAL_GREY, look), shade * SIDE_SHADE)
   }
+  // A submerged plant (glowkelp) is its liquid from afar (LOD reads its cell as liquid)
+  for (const id of blockIds) {
+    const family = getBlock(id).properties.submergedIn
+    const source = family ? blockIds.find((other) => {
+      const p = getBlock(other).properties
+      return p.isLiquid && p.liquidFamily === family && p.liquidLevel === 8 && !p.isFallingLiquid
+    }) : undefined
+    if (source === undefined) continue
+    top.copyWithin(id * 3, source * 3, source * 3 + 3)
+    side.copyWithin(id * 3, source * 3, source * 3 + 3)
+  }
   return { top, side }
 }
 

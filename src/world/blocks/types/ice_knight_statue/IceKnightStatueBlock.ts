@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeTaggedParts } from '../model_shared/mergeTaggedParts.ts'
 import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -18,7 +18,7 @@ import glacialIceTexUrl from '../glacial_ice/assets/glacial-ice.webp'
 const ICE = 0
 const DARK = 1
 
-const geometry = mergeGeometries([
+const geometry = mergeTaggedParts([
   cellBox(0.1, 0, 0.1, 0.8, 0.12, 0.8, DARK), // plinth slab
   // kneeling legs: right knee down (shin along the floor), left knee up
   cellBox(0.52, 0.12, 0.18, 0.18, 0.16, 0.5, ICE), // right shin on the ground
@@ -41,7 +41,7 @@ const geometry = mergeGeometries([
   cellBox(0.34, 0.78, 0.78, 0.32, 0.05, 0.08, DARK),
   cellBox(0.47, 0.83, 0.79, 0.06, 0.16, 0.06, DARK),
   cellBox(0.46, 0.99, 0.78, 0.08, 0.06, 0.08, ICE),
-], true)
+])
 
 const iceTexture = loadBlockTexture(glacialIceTexUrl)
 const iceMaterial = new THREE.MeshLambertMaterial({ map: iceTexture, color: 0xe6f1fa })

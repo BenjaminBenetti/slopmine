@@ -10,13 +10,21 @@ export const STRENGTH_DAMAGE_PER_LEVEL = 0.3
 
 /**
  * Damage share of an uncharged hit. Damage scales with charge as
- * `MIN + (1 - MIN) * charge^2` (Minecraft 1.9 style): a hit at 30 % charge
- * does under a fifth of a full one, and spam-clicking never out-damages timed
- * hits (even at 15 clicks/s it stays below full-charge DPS).
+ * `MIN + (1 - MIN) * charge^2` (Minecraft 1.9 style): a hit at 60 % charge
+ * does under half of a full one, and spam-clicking never out-damages timed
+ * hits (no hit lands before MIN_ATTACK_CHARGE anyway).
  */
 const UNCHARGED_DAMAGE_SHARE = 0.1
 /** Knockback (and hit-stun) share of an uncharged hit, same curve. */
 const UNCHARGED_IMPACT_SHARE = 0.2
+
+/**
+ * The arm's hard recovery, as a share of the held item's cooldown: a click
+ * before it lands no hit at all (sword 0.25 s - at most 4 hits a second,
+ * fist 0.2 s, axe 0.4 s). Past it, damage keeps scaling with charge, so
+ * clicking as fast as allowed still does less than timed hits.
+ */
+export const MIN_ATTACK_CHARGE = 0.5
 
 /**
  * Attack cooldown bookkeeping: one timer for the player's arm, the game time
@@ -45,6 +53,11 @@ export function getPlayerAttackCharge(heldItem: IItem | null | undefined): numbe
 /** True once the held item's attack is fully charged. */
 export function isPlayerAttackReady(heldItem: IItem | null | undefined): boolean {
   return getPlayerAttackCharge(heldItem) >= 1
+}
+
+/** True once the arm has recovered enough to land a hit (MIN_ATTACK_CHARGE). */
+export function canPlayerAttack(heldItem: IItem | null | undefined): boolean {
+  return getPlayerAttackCharge(heldItem) >= MIN_ATTACK_CHARGE
 }
 
 /**

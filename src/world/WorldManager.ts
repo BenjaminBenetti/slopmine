@@ -11,7 +11,7 @@ import { BlockIds } from './blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, CHUNK_HEIGHT, ChunkState, SUB_CHUNK_VOLUME, SUB_CHUNK_COUNT } from './interfaces/IChunk.ts'
 import type { IChunkMesh } from '../renderer/interfaces/IChunkMesh.ts'
 import { GreedyChunkMesh } from '../renderer/GreedyChunkMesh.ts'
-import { buildLiquidMeshEntries, type LiquidMeshEntry } from './meshing/LiquidMeshTable.ts'
+import { buildLiquidGlowEntries, buildLiquidMeshEntries, type LiquidGlowEntry, type LiquidMeshEntry } from './meshing/LiquidMeshTable.ts'
 import type { SubChunkOpacityCache } from '../renderer/SubChunkOpacityCache.ts'
 import GreedyMeshWorker from '../workers/GreedyMeshWorker.ts?worker'
 import type { GreedyMeshRequest, GreedyMeshResponse, GreedyMeshError } from '../workers/GreedyMeshWorker.ts'
@@ -138,6 +138,7 @@ export class WorldManager implements IModifiedChunkProvider {
   private textureLayerEntries: Array<[number, number]> = []
   private nonGreedyBlockIds: number[] = []
   private liquidBlockEntries: LiquidMeshEntry[] = []
+  private liquidGlowEntries: LiquidGlowEntry[] = []
   // Track which workers have received the initialization data
   private readonly workersInitialized: Set<number> = new Set()
 
@@ -264,6 +265,8 @@ export class WorldManager implements IModifiedChunkProvider {
     this.nonGreedyBlockIds = allBlockIds.filter((id) => !getBlock(id).isGreedyMeshable())
     // Liquid face-rule table (family + level per liquid block, from block properties)
     this.liquidBlockEntries = buildLiquidMeshEntries(getBlock, allBlockIds)
+    // Glowing water plants: the light they scatter into the water around them
+    this.liquidGlowEntries = buildLiquidGlowEntries(getBlock, allBlockIds)
 
     // Reset per-worker flags so workers get updated map on next request
     this.workersInitialized.clear()
@@ -1373,6 +1376,7 @@ export class WorldManager implements IModifiedChunkProvider {
       textureLayerEntries: needsInit ? this.textureLayerEntries : undefined,
       nonGreedyBlockIds: needsInit ? this.nonGreedyBlockIds : undefined,
       liquidBlockEntries: needsInit ? this.liquidBlockEntries : undefined,
+      liquidGlowEntries: needsInit ? this.liquidGlowEntries : undefined,
     }
 
     // Mark this worker as initialized

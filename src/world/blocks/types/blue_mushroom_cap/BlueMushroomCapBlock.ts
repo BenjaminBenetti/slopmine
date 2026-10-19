@@ -13,8 +13,8 @@ import blueMushroomCapTexUrl from './assets/blue_mushroom_cap.webp'
 
 // Register texture
 registerTextureUrl(TextureId.BLUE_MUSHROOM_CAP, blueMushroomCapTexUrl)
-// Emissive: the whole cap is bioluminescent
-registerEmissiveTexture(TextureId.BLUE_MUSHROOM_CAP, { strength: 0.45, threshold: 0.0 })
+// Emissive: the whole cap is bioluminescent, breathing slowly
+registerEmissiveTexture(TextureId.BLUE_MUSHROOM_CAP, { strength: 0.45, threshold: 0.0, pulse: { amount: 0.3, grain: 'wave' } })
 
 const blueMushroomCapTexture = loadBlockTexture(blueMushroomCapTexUrl)
 const blueMushroomCapMaterial = new THREE.MeshLambertMaterial({ map: blueMushroomCapTexture })

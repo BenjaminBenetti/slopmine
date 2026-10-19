@@ -60,6 +60,13 @@ export type GameEvent =
   | { type: 'guardian-defeated'; guardianId: string; x: number; y: number; z: number }
   /** A status effect started or was refreshed on the player. */
   | { type: 'effect-applied'; effectId: string; durationSeconds: number }
+  /** Night fell on the overworld (`day` = the day it belongs to, from 1). */
+  | { type: 'nightfall'; day: number }
+  /**
+   * The sun rose. `day` = the new day; `survived` when the player saw the whole
+   * night through without dying.
+   */
+  | { type: 'daybreak'; day: number; survived: boolean }
 
 export type GameEventType = GameEvent['type']
 export type GameEventOf<T extends GameEventType> = Extract<GameEvent, { type: T }>

@@ -77,6 +77,15 @@ const ENTITY_VOICES: Record<string, EntityVoice> = {
   prism_acolyte: V('humanoid', 'flesh', 1.12, 16),
   rime_archer: V('humanoid', 'flesh', 1, 18),
 
+  // Night creatures (the surface after dark)
+  stillwatcher: V('straw', 'soft', 1, 22),
+  duskmoth: V('moth', 'soft', 1, 9),
+  sandmaw: V('burrower', 'shell', 1, 16),
+  ashwalker: V('ember', 'stone', 1, 16),
+  mire_angler: V('angler', 'flesh', 1, 14),
+  hollow_stag: V('bellow', 'flesh', 1, 22),
+  orchid_mantis: V('insect', 'shell', 1.3, 20),
+
   // Guardians (a blocked hit: invulnerable, warded or shielded)
   bone_king: V('boss-bone', 'bone', 1, 9, { boss: true, shield: 'bone' }),
   pyre_tyrant: V('boss-fire', 'stone', 1, 9, { boss: true, shield: 'stone' }),

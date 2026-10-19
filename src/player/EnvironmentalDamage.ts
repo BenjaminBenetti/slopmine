@@ -165,6 +165,17 @@ export class EnvironmentalDamage {
     }
   }
 
+  /**
+   * Set the player alight from another source (an ash creature's blow): the
+   * same burn as after leaving lava, for at least `ticks` ticks. Fire
+   * immunity never ignites.
+   */
+  ignite(ticks: number = BURN_TICK_COUNT): void {
+    if (this.isFireImmune()) return
+    if (this.burnTicksRemaining === 0) this.burnTickAccumulator = 0
+    this.burnTicksRemaining = Math.max(this.burnTicksRemaining, Math.floor(ticks))
+  }
+
   /** Clear all environmental state (call on respawn/teleport). */
   reset(): void {
     this.inLava = false

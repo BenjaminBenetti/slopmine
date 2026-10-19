@@ -165,7 +165,7 @@ export class PlayerSoundTracker {
     const id = this.src.getBlockId(x, y, z)
     if (id === 0) return null
     const props = BlockRegistry.getInstance().getBlock(id).properties
-    return props.isLiquid ? (props.liquidFamily ?? 'water') : null
+    return props.isLiquid ? (props.liquidFamily ?? 'water') : props.submergedIn ?? null
   }
 
   private updateConsumption(dt: number): void {

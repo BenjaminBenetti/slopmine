@@ -82,7 +82,7 @@ export function getLightTables(): LightTables {
     const props = registry.getBlock(id).properties
     if (props.isOpaque) {
       opacity[id] = OPACITY_OPAQUE
-    } else if (props.isLiquid || props.lightBlocking > 0 || props.blocksVerticalLight) {
+    } else if (props.isLiquid || props.submergedIn || props.lightBlocking > 0 || props.blocksVerticalLight) {
       opacity[id] = OPACITY_DIFFUSE
     } else {
       opacity[id] = OPACITY_CLEAR

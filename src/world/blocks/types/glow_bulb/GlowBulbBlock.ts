@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeTaggedParts } from '../model_shared/mergeTaggedParts.ts'
 import type { IBlockProperties, BlockFace, IWorld } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -18,14 +18,14 @@ function buildBulbGeometry(): THREE.BufferGeometry {
     for (const grp of g.groups) grp.materialIndex = group
     return g
   }
-  return mergeGeometries([
+  return mergeTaggedParts([
     part(0.1, 0.3, 0.1, 0, 0.35, 0, 0),         // stalk from the ceiling
     part(0.38, 0.1, 0.38, 0, 0.17, 0, 0),       // cap collar
     part(0.34, 0.34, 0.34, 0, -0.04, 0, 1),     // bulb
     part(0.22, 0.12, 0.22, 0, -0.26, 0, 1),     // bulb tip
     part(0.08, 0.08, 0.08, 0.2, -0.02, 0.05, 1), // nodules
     part(0.08, 0.08, 0.08, -0.18, 0.06, -0.12, 1),
-  ], true)
+  ])
 }
 
 const geometry = buildBulbGeometry()

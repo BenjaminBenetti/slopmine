@@ -50,6 +50,7 @@ export class WorldLighting {
   private readonly shadowFrustumSize: number
   private readonly sunDistance: number = 150
   private readonly sunDirection: THREE.Vector3 = new THREE.Vector3()
+  private readonly baseSunIntensity: number
 
   // Untinted base colors; setTint() multiplies these (biome light tint).
   private readonly baseSunColor: THREE.Color
@@ -72,6 +73,7 @@ export class WorldLighting {
     } = options
 
     this.shadowFrustumSize = shadowFrustumSize
+    this.baseSunIntensity = sunIntensity
     this.ambient = new THREE.AmbientLight(ambientColor, ambientIntensity)
     this.sun = new THREE.DirectionalLight(sunColor, sunIntensity)
     this.hemisphere = new THREE.HemisphereLight(skyColor, groundColor, hemisphereIntensity)
@@ -118,6 +120,16 @@ export class WorldLighting {
     this.sunDirection.set(x, Math.max(y, 10 / this.sunDistance), z).normalize()
 
     this.sun.position.copy(this.sunDirection).multiplyScalar(this.sunDistance)
+  }
+
+  /**
+   * Point the directional light along a direction (toward the light: the sun
+   * by day, the moon by night - see DayNightSky) at a share of its full
+   * strength. Cheap - call every frame.
+   */
+  setLightDirection(direction: THREE.Vector3, intensityScale: number = 1): void {
+    this.sunDirection.copy(direction).normalize()
+    this.sun.intensity = this.baseSunIntensity * intensityScale
   }
 
   /** Normalized direction toward the sun (the light travels opposite to it). */

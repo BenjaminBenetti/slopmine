@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeTaggedParts } from '../model_shared/mergeTaggedParts.ts'
 import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -14,7 +14,7 @@ const IRON = 0
 const CORE = 1
 const HEIGHT = 0.7
 
-const geometry = mergeGeometries([
+const geometry = mergeTaggedParts([
   cellBox(0.22, 0, 0.22, 0.56, 0.08, 0.56, IRON), // base plate
   cellBox(0.22, 0.08, 0.22, 0.07, 0.48, 0.07, IRON), // corner posts
   cellBox(0.71, 0.08, 0.22, 0.07, 0.48, 0.07, IRON),
@@ -23,7 +23,7 @@ const geometry = mergeGeometries([
   cellBox(0.2, 0.56, 0.2, 0.6, 0.07, 0.6, IRON), // cap
   cellBox(0.4, 0.63, 0.4, 0.2, 0.07, 0.2, IRON), // finial
   cellBox(0.31, 0.1, 0.31, 0.38, 0.44, 0.38, CORE), // rime-ice core
-], true)
+])
 
 const ironMaterial = new THREE.MeshLambertMaterial({ color: 0x3b4250 })
 const coreMaterial = new THREE.MeshBasicMaterial({ color: 0xaeeeff })

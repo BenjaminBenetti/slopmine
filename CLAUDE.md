@@ -54,7 +54,9 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
    `setupProgression`, `setupBoneMeal`/`setupSlimeBounce`, `setupPlayerCombat`, `setupHellforge`,
    `setupArmorSystem`, `setupAlchemy` (must come after 'skybox': ember sight post-adjusts the light
    floor it sets), `setupDungeons`, one `setup<Biome>()` per Hell biome (castle tier loot tables,
-   garrisons, guardian, procedural locator), and last `setupAudio` (sound - see `src/audio/`).
+   garrisons, guardian, procedural locator), `setupDayNight` + `setupNightfall` + `setupFireflies`
+   (the overworld clock, night creatures, beds, fireflies - see `src/daynight/`), and last
+   `setupAudio` (sound - see `src/audio/`).
    A new system exposes a `setupX(deps)` in its own module; keep main.ts edits to the call
 
 ### System Interaction Diagram
@@ -79,7 +81,7 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
         ├─► CRITICAL: Camera, Physics, Mining, Atmosphere ('skybox'), Block Outline, Liquid Overlay,
         │             status effects + behaviours, combat cooldown, journal, biome-entry events,
         │             boss bar / Sigil Compass / dungeon-entered probe ('dungeons-hud'),
-        │             guardian + garrison spawners ('dungeons'), sound ('audio')
+        │             guardian + garrison spawners ('dungeons'), clock ('world-clock'), sound ('audio')
         ├─► HIGH: Lighting (LightEngine queue)
         ├─► NORMAL: World Gen (+ feature work / sub-chunk unloads), LOD queue/apply, block systems,
         │           entities (EntityManager)
@@ -120,7 +122,7 @@ The core module provides the game loop infrastructure and frame budget managemen
   (atmosphere/sky/fog/daylight, block outline, underwater overlay - skipped frames showed stale sky),
   plus cheap gameplay clocks/polls: 'status-effects', 'alchemy-effects', 'player-combat',
   'progression', 'slime-bounce', 'biome-entry-events', 'dungeons-hud', 'dungeons' (spawners),
-  'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
+  'world-clock' (time of day), 'fireflies', 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
   tasks registered late starve for long stretches while the world streams, so anything the player must see promptly
   (a timer, a toast, a boss bar) goes here - and stays cheap (poll at 1-2 Hz inside the task)
 - `HIGH` (1): Can defer briefly - the budgeted light queue ('lighting')
@@ -147,15 +149,18 @@ Three.js-based rendering with optimized voxel mesh handling.
 - `GreedyChunkMesh.ts` - Builds a sub-chunk's meshes from the greedy mesh worker result (greedy quads + instanced non-greedy blocks + liquids)
 - `ChunkMaterial.ts` / `ChunkVertexFormat.ts` - Chunk materials (Lambert + onBeforeCompile: texture array, smooth light, AO) and the 12-byte packed vertex format
 - `lightCurve.ts` / `worldLightShader.ts` - THE light level → brightness curve (Minecraft-style, 1 level per block; block light uses a brighter `BLOCK_LIGHT_LIFT` and a warm `BLOCK_LIGHT_COLOR`) and its shader side, with the global `daylight` and `uLightFloor` (light where no sky/block light reaches) uniforms; every world-lit surface (chunks, instanced blocks, liquids, LOD, held item, entities) uses them
-- `EmissiveTextures.ts` - Registry of glowing block textures (`registerEmissiveTexture(textureId, {strength, threshold})`, called next to `registerTextureUrl`): the chunk shader adds their hot texels as emissive light, so emitters (magma, ember veins, mushroom caps) glow in the dark instead of being lit only by their neighbours
+- `EmissiveTextures.ts` - Registry of glowing block textures (`registerEmissiveTexture(textureId, {strength, threshold, map?, darkOnly?, pulse?})`, called next to `registerTextureUrl`): the chunk shader adds their hot texels as emissive light, so emitters (magma, ember veins, mushroom caps) glow in the dark instead of being lit only by their neighbours. `map` (a glow map URL: per-texel glow colour, black = none; loaded into `BlockTextureArray.glowMaps`) replaces the threshold and the texel colour, so a surface can look plain by day and glow in another colour; `darkOnly` (bioluminescence) fades the glow out wherever sky light × daylight is bright (`DARK_GLOW_GLSL`: none in the open by day, full at night, in shade and underground) - glowmoss is muddy grass by day. `pulse: { amount, grain }` makes the glow live: `speck` twinkles every texel on its own clock (glowmoss spores), `wave` drifts slow waves of light across the surface (the swamp's glowing mushroom caps); the clock is `glowTimeUniform` (`glowClock.ts`, `advanceGlowTime` in the 'skybox' task; swaying water plants share it). Emissive textures only glow on greedy faces; an instanced (non-greedy) glowing block uses a Lambert `emissiveMap` instead (glowcap, glimmercap, lumen fern, glowkelp, lanternweed: a separate `*_glow.webp` holds only the parts that glow, in their glow colour), made dark-only with `makeGlowDarkOnly` (`BioluminescentMaterial.ts`, instanced draws only). Material patches like it test `shader.instancing` / `shader.instancingColor` in JS, never `#ifdef USE_INSTANCING_COLOR` in a fragment shader (three defines that in the vertex shader only), and compose `customProgramCacheKey` with the one already set (two blocks with equal material parameters but different patches would otherwise share one program); GLSL `smoothstep` needs edge0 < edge1 (write `1.0 - smoothstep(a, b, x)` for a falling edge - reversed edges are undefined)
+- `GlowHaloMaterial.ts` - `createGlowHalo({ color, radius, lift })`: soft additive spheres of light around glowing water plants (see Liquids, glow halos)
+- `SwayingPlantMaterial.ts` - `makeSwayInCurrent(material, { amplitude, speed })`: instanced water plants wave in the current, by world height and column, so stacked kelp segments bend as one strand
 - `InstancedBlockLight.ts` - World light for instanced blocks (instanceColor carries light levels, see Miniature block displays)
 - `interfaces/IChunkMesh.ts` - `IChunkMesh`, the sub-chunk mesh as culling and debug wireframes see it
 - `FrustumCuller.ts` - First-pass visibility culling via AABB-frustum intersection
 - `SoftwareOcclusionCuller.ts` - Second-pass CPU depth buffer occlusion (256×128)
 - `BlockTextureArray.ts` - One `DataArrayTexture` layer per greedy face texture (tiles across merged quads, no bleeding); minification follows the Texture Filtering setting (`TextureLoader.setTextureFiltering`: crisp `NearestMipmapLinear` default, or smooth trilinear), anisotropy 16. Magnification is LINEAR on the sampler and made pixel-crisp in the shader (`crispTexelSampling.ts`: sample at the texel centre with the true UV gradients) - never force anisotropy onto a NEAREST-magnified texture: ANGLE/D3D11 (Windows) and SwiftShader then interpolate magnified texels, which is why three.js skips it. `loadBlockTexture` textures (instanced blocks, held items) stay NEAREST-magnified and get anisotropy only where a startup probe (`anisotropyProbe.ts`) shows the backend keeps them crisp; liquid textures magnify linearly and sample through `slopCrispTexel` like the array
 - `TextureAtlas.ts` - Texture URL registry (`registerTextureUrl` / `getTextureUrls`)
-- `WorldLighting.ts` - Warm directional sun (fixed 10am, `getSunDirection()`), cool hemisphere/ambient fill, biome light tint (`setTint`), shadows (PCF soft)
-- `skybox/Skybox.ts` - Colour-managed sky dome shader (gradient, sun disc/halo, drifting noise clouds); `fog: false`, pinned to the far plane, renderOrder 500 (drawn after world geometry); `getHorizonColor()` is the fog colour
+- `WorldLighting.ts` - Directional light (the sun by day, the moon by night: `setLightDirection(dir, strength)`, `getSunDirection()`), cool hemisphere/ambient fill, light tint (`setTint`: biome × time of day), shadows (PCF soft)
+- `skybox/Skybox.ts` - Colour-managed sky dome shader (gradient, sun disc/halo, moon, stars, twilight glow, drifting noise clouds); `fog: false`, pinned to the far plane, renderOrder 500 (drawn after world geometry); `getHorizonColor()` is the fog colour (time of day included)
+- `skybox/DayNightSky.ts` - Hour of day → sun/moon directions, the directional light (follows the sun, then the moon; elevation clamped), daylight and light-tint multipliers, the sky's night palette and twilight; eased to "no change" off the surface layer (Hell has no day or night)
 - `skybox/BiomeAtmosphere.ts` / `BiomeSkyboxManager.ts` - Per-biome sky/fog/light state (`SkyboxSettings` in `BiomeProperties`: colours in sRGB, light multipliers linear), blended across biome borders and eased (see Atmosphere below)
 - `DistanceFog.ts` - Owns the scene's ONE persistent `THREE.Fog` (never swapped - that recompiles every material): spherical edge fade + absolute aerial haze (1500 blocks in clear air ÷ biome `fogDensity`^1.5), so the long (LOD) view gets depth and hazy biomes tint rather than erase it, + the cavern ceiling haze (smoke under the Hell ceiling, density 0.12/block at Y 140 falling off over 8 blocks, none above it - shader constants, integrated along each view ray; the ceiling straight up is ~62% haze); `setViewDistance(blocks)` (applies immediately), `setColor`, `setDensity`, `setOverride` (underwater: haze + far)
 - `LiquidMaterials.ts` - One shared animated material per liquid family (water, swamp water, lava): liquid vertex colours carry light LEVELS `(sky/15, block/15, 1)` shaded with the world light model at render time (white = full light for icons), texture drift, sun glitter + Fresnel horizon reflection
@@ -214,7 +219,10 @@ plain scene lights. Glowing blocks add emissive texels via `EmissiveTextures.ts`
 'skybox' task eases it toward the camera biome's `SkyboxSettings` (`BiomeSkyboxManager`, blended
 across biome borders) and pushes it to the sky dome, `DistanceFog` (colour =
 `skybox.getHorizonColor()`, density), `WorldLighting.setTint`, the held item, the liquid Fresnel
-colour, and the daylight/light-floor uniforms.
+colour, and the daylight/light-floor uniforms. The time of day (`DayNightSky`, from `worldClock`)
+multiplies on top: daylight × `dayNight.daylight` (night 0.15), light tint × `dayNight.lightTint`
+(warm low sun, cool moonlight), the directional light along `dayNight.lightDirection`, and the
+sky's night palette/twilight - weighted by a surface factor eased from the player's layer.
 - `SkyboxSettings` (in `BiomeProperties`). Authored in sRGB (perceptual): `brightness` and the
   colours `tint`, `fogColor`, `undergroundFogColor`, `lightTint`, `clouds.color`. Linear: `minimumLight`
   (light floor as an RGB multiplier of albedo, e.g. the Molten Wastes' red ember glow (0.33, 0.15, 0.1),
@@ -252,7 +260,30 @@ value, `LIQUID_SIDE_CLIP_SHIFT` in ChunkVertexFormat.ts). Falling liquids (ids 7
 liquid faces of their family. Which blocks are liquids, and their family and level, come from
 the block properties (`isLiquid`, `liquidFamily`, `liquidLevel`): `buildLiquidMeshEntries`
 (`src/world/meshing/LiquidMeshTable.ts`) builds the worker's table, sent with each mesh worker's
-first job, and `GreedyChunkMesh` checks `isLiquid` - a new liquid needs no id list. Non-chunk geometry drawn with these materials (icons) must carry WHITE vertex colours
+first job, and `GreedyChunkMesh` checks `isLiquid` - a new liquid needs no id list.
+**Submerged blocks** (`submergedIn: '<family>'`, never with `isLiquid`: glowkelp, lanternweed) stand in a
+full source of that liquid: the table lists them as a level-8 source of the family with a
+`drawAs` id, and the worker emits the cell twice - the plant instance and its liquid's source (so the
+water's faces and culling are unchanged around a plant); light treats them as diffuse, the
+underwater overlay, swim sounds, fireflies and LOD (surface kind + palette) as the liquid
+(`getCellLiquidFamily`, `src/world/liquid/cellLiquid.ts`); breaking one leaves the source
+(`getVacatedBlockId`, used by `BlockInteraction`); liquid physics sees a wall.
+**Scatter glow:** a submerged block with `scatterGlow` (linear RGB) lights the water around it after
+dark. The mesh worker gives every liquid TOP face 4 corner glow colours (each of the 3×3 columns
+around it sums the glow sources from the surface down, ×0.7 per cell, ≤ 6 cells, saturating; a
+corner averages its 4 columns - smooth, blurred one block, seamless across sub-chunks since it
+reads only the padded volume) in `nonGreedyLiquidGlow`; `buildLiquidMesh` writes them into the
+`liquidGlow` vertex attribute (`LIQUID_GLOW_ATTRIBUTE`, zero on every other liquid geometry -
+`withWhiteVertexColors` adds it, so no stale default attribute leaks in) and the liquid shader adds
+it after the Fresnel mix, dark-only, shimmering with the ripple texels and stronger at glancing angles
+(longer path through lit water). No per-frame cost; sub-chunks without glow sources skip it.
+**Glow halos:** the surface alone left the water dark seen from the side or from below, so a glowing
+plant also implements `IGlowHaloBlock` (`getGlowHalo()`, `GlowHaloMaterial.ts`): chunk meshes draw an
+extra instanced mesh of camera-facing additive discs, one per plant (key `blockId * 100 + 99`,
+renderOrder 2 - after the liquids, depth-tested, no depth write: in full under water, hidden by the
+surface from above, a crown's halo rising out of it glows over the pool). Dark-only per instance
+light, faded 14-30 blocks, collapsed off screen by day. Halo colours are display values added as is
+(no colour-space conversion) and must stay faint: dozens overlap along a ray through a kelp forest. Non-chunk geometry drawn with these materials (icons) must carry WHITE vertex colours
 (`withWhiteVertexColors`, `liquidCubeGeometry`).
 
 ---
@@ -394,7 +425,8 @@ Block type definitions using flyweight pattern (stateless singletons).
 - `BlockIds.ts` - Enum of all block IDs (0=AIR; 1-162 base game, 163 slime, 170-171 guardian
   spawners, 172 garrison spawner, 180 Hellforge, 200-223 Molten Wastes, 230-252 Ossuary, 260-285
   Ember Grove, 290-318 Crystal Abyss, 320-349 Cocytus - each Hell range includes its castle kit's
-  blocks; highest 349). Shared registration files are grouped by header comments per feature area
+  blocks; 350-369 day and night (350 Ward Lantern, 351-360 swamp bioluminescence: foxfire and amber
+  mushroom stems/caps, glowmoss, glimmercap, lumen fern, glowkelp + its crown, lanternweed); highest 360). Shared registration files are grouped by header comments per feature area
   (`// Hell: Cocytus`) - add new entries to their area's group
 - `BlockRegistry.ts` - Singleton registry mapping IDs to block instances
 - `FaceTextureRegistry.ts` - Maps block+face to TextureId for greedy meshing. Greedy side faces
@@ -410,9 +442,13 @@ Block type definitions using flyweight pattern (stateless singletons).
 derives the mesh worker's non-greedy list and the texture-array contents from that method;
 `NON_GREEDY_BLOCK_IDS` in FaceTextureRegistry is only the worker's pre-init default and is
 incomplete - don't rely on it.
+**Box models:** a non-greedy block built from boxes tagged with material indices (`cellBox`,
+`withMaterialIndex`) merges them with `mergeTaggedParts` (`types/model_shared/`), never
+`mergeGeometries(parts, true)` - that numbers groups by part, so every part past the material count
+draws nothing.
 **Texture-layer budget:** every distinct greedy face texture costs one `BlockTextureArray` layer;
 the limit is 255 (`CHUNK_MAX_TEXTURE_LAYER`, building throws above it; layer 0 = missing texture).
-150 are used (54 base game, 96 expansion - the boot log's `Block texture array built with N layers`
+156 are used (54 base game, 102 expansion - the boot log's `Block texture array built with N layers`
 counts them, layer 0 excluded). TextureId values may exceed 255 (layers are compacted),
 so reuse one texture across faces/blocks where it reads fine (crafted infernal bricks, sanctum tile
 and the crystal cores share their source block's layers). Non-greedy blocks cost no layer.
@@ -456,7 +492,10 @@ post-processing pitfalls. Rules that bite most often:
 the block's own faces are lit by its neighbours' lower light. A block that should visibly glow
 (magma, ember veins, bioluminescent caps) also registers its face texture with
 `registerEmissiveTexture()` (`src/renderer/EmissiveTextures.ts`): hot texels above the threshold
-become emissive in the chunk shader. Torch 13, campfire 14, resin torch 15; magma/hell magma 8.
+become emissive in the chunk shader. Torch 13, campfire 14, resin torch 15, Ward Lantern 15; magma/hell magma 8; the swamp's glowing
+mushroom caps (blue, purple, foxfire, amber) 15 and their stems 2, glimmercap 5, lumen fern 4,
+lanternweed 4; glowmoss and glowkelp emit nothing (emissive only - whole carpets and kelp forests
+cost no light work, and blue glow would come out as warm block light).
 Hell lighting comes from emitters (no skylight): crystal lamp, frost lantern, infernal/rime braziers
 15, soul lantern 14, spore sac 13, soul torch, frost crystal and prism crystal 11, other ores and
 crystals 3-7; castle lights: hanging frost lantern 15, ember/prism lanterns 14, soul candelabra and
@@ -1060,6 +1099,8 @@ direct call.
 | `dungeon-entered` | dungeonId, biome, x/y/z | `DungeonTracker` (once per dungeon per session) |
 | `guardian-defeated` | guardianId, x/y/z | `GuardianEntity` death |
 | `effect-applied` | effectId, durationSeconds | `StatusEffects.apply` (a start or a refresh that took effect) |
+| `nightfall` | day | `setupDayNight` 'world-clock' (the sun ≈ 7° below the horizon) |
+| `daybreak` | day (the new one), survived (no death since nightfall) | `setupDayNight` (sunrise, or waking in a bed) |
 
 ---
 
@@ -1120,6 +1161,9 @@ Idol and effects HUD), registered after 'skybox'. HUD info (name, colour, buff/d
   multiplies its own knockback/hit-stun by `getPlayerAttackKnockback(heldItem)`. Damage = profile ×
   (0.1 + 0.9·charge²) × (1 + 0.3·strength); knockback share 0.2 + 0.8·charge². One arm clock:
   charge = time since the last hit / the HELD item's cooldown (swapping never skips recovery).
+  No hit lands below `MIN_ATTACK_CHARGE` (0.5: sword 0.25 s, at most 4 hits/s) - `canPlayerAttack`
+  gates a click in `BlockInteraction` (a click held through the lockout lands when it ends; holding
+  the button re-hits only at full charge); the charge bar stays dim until then.
   `BlockInteraction.hitEntity` calls `registerPlayerAttack` after the hit (restarts the clock,
   plays the swing); `resetPlayerAttack` on death.
 - `WeaponProfiles.ts` - Melee profiles: swords carry `weaponStats` (`IWeaponStats`: attackDamage,
@@ -1208,8 +1252,9 @@ crystal).
 
 ### `src/progression/` - Journal
 
-- `milestones.ts` - Declarative data: 9 chapters (First Steps, Metal Ages, Arms & Armor, Alchemy,
-  The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 65 milestones. Chapter and
+- `milestones.ts` - Declarative data: 10 chapters (First Steps, Nightfall, Metal Ages, Arms & Armor,
+  Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 69 milestones (Nightfall's
+  four are optional side goals). Chapter and
   milestone ids are persisted - never rename. `stage` orders the arc: the "next goal" is the
   unlocked, unfinished, non-optional milestone with the lowest stage. `requires` must be TRUE
   implications (completing a milestone completes its prerequisites silently). `legacy` milestones
@@ -1461,9 +1506,12 @@ Worked example: `kits/reference/ReferenceKeepKit.ts` (dev only - deliberately NO
   distance 2 a zero radius removed guardians, projectiles and drops right after spawning).
 - `spawning/EntitySpawner.ts` (LOW) + `EntitySpawnConfig.ts` - Mobs come from the biome's
   `entitySpawns` (`entityType`, `spawnRate` roll, `minY`/`maxY`, `maxNearby` - counts every loaded
-  entity of the type, light bounds, `validGroundBlocks`, `searchFromSky`, `createEntity`); the layer
-  is picked from the player's Y, ground searched near the player's Y, ≥ 24 blocks away. Underground
-  spawns never set `searchFromSky` and keep `minY`/`maxY` inside the cavern.
+  entity of the type, light bounds, `validGroundBlocks`, `searchFromSky`, `createEntity`) plus any
+  `addSpawnProvider((biome, layer) => configs)` (night creatures: biome generators are also loaded by
+  workers, so main-thread-only spawns go through a provider); `condition`, `maxSpawnDistance`,
+  `minSkyLight`/`maxBlockLight` and `veto` narrow a config. The layer is picked from the player's Y,
+  ground searched near the player's Y, ≥ 24 blocks away. Underground spawns never set
+  `searchFromSky` and keep `minY`/`maxY` inside the cavern.
 - `PlayerDamageHandler.ts` - Entity → player damage (see Player Damage)
 - `AggressiveEntity.ts` / `PeacefulEntity.ts` - Config-driven mobs; `onPlayerInteract` takes damage
   and knockback from `getPlayerAttackDamage` / `getPlayerAttackKnockback`
@@ -1501,6 +1549,86 @@ once-guarded `getDrops()`. Entity `type` strings are matched by journal mileston
 | Frozen Citadel | `frozen_knight` 45 / 10 + Frostbite (ice shield: frontal hits 30 %); `rime_archer` 26 / 7 ice shard + Frostbite | 50 guard (2 knights), 51 archers (2), 52 patrol (knight + archer), 53 warden (2 knights + archer), 54 frost wraiths (2), 55 the damned (2 ice revenants) |
 
 ---
+
+### `src/daynight/`, `src/nightfall/`, `src/fireflies/` - Day, Night, Night Creatures, Glow
+
+The overworld has a 20-minute day: 12 real minutes from 06:00 to 18:00, 8 from 18:00 to 06:00
+(night hours pass faster). Only the surface layer sees it; the clock runs everywhere.
+
+- `daynight/WorldClock.ts` - THE clock, `worldClock` (pure data, no three.js): `hour`, `day` (from 1,
+  ticks over at 06:00), `time` (seconds since 06:00, saved), `sunElevation`, `nightAmount` (0-1,
+  smooth), `isNight` (sun < ≈-7° until sunrise, with hysteresis - night creature time), `advance`,
+  `set`/`setHour`; `sunDirectionAt`/`moonDirectionAt` (sun rises at +X, tilted toward +Z). New worlds
+  and old saves start at 07:00.
+- `daynight/setupDayNight.ts` - the CRITICAL 'world-clock' task (held until the saved time loaded),
+  keyed player data `daynight` (`{ version, time, day }`), `nightfall`/`daybreak` events, and
+  `skipToMorning()` (to 06:15 - sleeping), `toggleNight()` (debug: the "Make night / Make day"
+  button above the performance overlay's stats - to 21:00, or to morning without counting the night
+  as survived). `daynight/sleep.ts`: the bed (E on `BED_HEAD`, main.ts)
+  calls `requestSleep()`; setupNightfall's handler refuses while a night creature is within 16
+  blocks, else fades to black (`ui/SleepFade.ts`) and skips the night. Sleeping only on the surface.
+- The sky/light side is `renderer/skybox/DayNightSky.ts` (see Atmosphere under `src/renderer/`).
+- `nightfall/setupNightfall.ts` - each surface biome's night creatures as an `EntitySpawner`
+  provider: only while `worldClock.isNight`, 24-64 blocks from the player, `searchFromSky`, sky light
+  ≥ 8 (never under a roof), block light ≤ 7 (torches keep them away), outside every Ward Lantern's
+  reach, at most 6 night creatures alive; registers `NightSenses` (player gaze from the camera,
+  carried light from the held block item's `lightLevel`, block light, `EnvironmentalDamage.ignite`),
+  the sleep handler and the nightfall notice. `NightCreatureTypes.ts`: the entity types and trophy
+  item ids (plain data for the journal). `WardLanterns.ts`: loaded Ward Lanterns (reported by their
+  block entity) - `isWarded(x, y, z)` within 32 blocks horizontally, 48 vertically.
+- `entities/night/` - the creatures. Every one uses `DawnRetreat` (`NightCreature.ts`): after
+  sunrise each waits 2-24 s, plays its own exit and removes itself with no drops (drops only come from
+  the player's killing hit); it can't be hit and doesn't attack while leaving. `NightSenses.ts` is
+  the hook for what they sense beyond the usual entity wiring (no-ops until registered).
+
+| Creature (type) | Biomes | HP / hit | How it hunts | Trophy (`night_trophy`) |
+|-----------------|--------|----------|--------------|-------------------------|
+| Stillwatcher (`stillwatcher`) | plains, grassy hills | 30 / 5 | scarecrow; frozen (no move, no attack, no knockback) while the player looks at it (55°, line of sight), fast when unwatched; creaks when caught | `witchstraw` |
+| Duskmoth (`duskmoth`) | plains, hills, pine forest, coastal rainforest, jungle, swamp | 12 / 3 | flies; notices from 40 blocks if the player carries a light or stands in block light ≥ 8 (else 10), erratic loops, telegraphed swoops | `moth_dust` |
+| Sandmaw (`sandmaw`) | desert | 36 / 8 + launch | swims under sand/sandstone (spines only), telegraphed eruption under the player; hittable only while reared; can't strike a player on stone | `sandmaw_fang` |
+| Ashwalker (`ashwalker`) | volcanic | 40 / 6 + ignite | slow, kindles (faster) under 35 % HP; ember-burst cone (5 'fire' + ignite) after a 0.8 s windup | `cinder_core` (fuel 24, brews fire resistance) |
+| Mire Angler (`mire_angler`) | swamp | 44 / 9 + pull | lurks in water/mud with a glowing lure, lunges within 5 blocks, the bite pulls toward its lair | `angler_lure` |
+| Hollow Stag (`hollow_stag`) | pine forest | 50 / 9 | circles, paws (1.2 s telegraph), charges at 14 b/s; slamming a trunk stuns it 2.5 s (+50 % damage taken) | `ghost_antler` |
+| Orchid Mantis (`orchid_mantis`) | jungle, coastal rainforest | 28 / 4+4 | disguised as a flowering bush (`isQuiet`) until the player is within 6 blocks; hop-lunges, double slash, hops back | `mantis_scythe` |
+
+Trophies: any two make a **Ward Lantern** (+ iron bar + torch; `WARD_LANTERN` 350, light 15, no night
+spawns within 32 blocks); `moth_dust` ×2 also brews ember sight, `cinder_core` fire resistance
+(`crafting/recipes/NightfallRecipes.ts`). Journal chapter Nightfall (optional milestones: survive a
+night, slay a night creature, a Ward Lantern, every trophy).
+
+**A new night creature:** an entity in `entities/night/<name>/` using `DawnRetreat`, an entry in
+`NIGHT_CREATURES` (setupNightfall) and `NIGHT_CREATURE_TYPES`, its trophy item (tag `night_trophy`,
+registered in `items/nightfall/registerNightfallItems.ts`), an `EntityVoices` entry.
+
+**Swamp bioluminescence** (the night is when it shows): the swamp's giant mushrooms are red (34 %,
+no glow), blue, purple, foxfire (green) and amber (16-17 % each; `MUSHROOM_KINDS` in
+SwampGenerator). Each glowing mushroom's site carries a ragged **glowmoss** carpet (radius 3-6)
+written by the worker's terrain fill - `mushroomSite()` is pure, so the fill and the main-thread
+decoration agree on where mushrooms grow - plus sparse noise patches; glimmercaps grow in the moss
+and lumen ferns all over the floor (two `FlowerPatchFeature`s with different grid sizes - its salts
+are fixed, so equal grids would share patch centres). Caps breathe (`wave` pulse). The ground cover hides by day: glowmoss is muddy
+grass with a few pale specks, glimmercaps are dusty little mushrooms, lumen ferns plain ferns -
+their glow maps (dark-only) light up after dark: twinkling turquoise spores over a faint teal sheen,
+pink caps, cyan fiddleheads. Glowmoss lights only itself (no block light: block light is warm torch
+light, and carpets of emitters would cost light work), so night creatures still spawn on it.
+The pools glow too (`SubmergedPlantFeature`, a worker feature after the water fill): **glowkelp**
+strands (`GLOWKELP` stalk segments under a `GLOWKELP_TOP` crown, 60 % reaching the topmost water
+cell so their fronds break the murky surface) in zoned forests, and **lanternweed** beds on the
+mud - both submerged blocks (see Liquids), olive plants by day; after dark kelp bladders glow
+electric blue over a faint blue sheen on the blades, lanternweed pods gold. Both sway in the
+current (`makeSwayInCurrent`), are cutouts in the opaque pass (never `transparent`: the water's
+surface must always draw over them), are placed only into a swamp water source on support, and
+float loose (drop their item, leave water) a segment at a time when their support goes
+(`SubmergedPlantBlock`, scheduled ticks). A placed glowkelp segment becomes a fresh crown. Their
+light scatters up through the pool (`scatterGlow`, see Liquids): the surface over a kelp forest
+glows blue, over lanternweed gold - and each plant's glow halo lights the water around it.
+
+**Fireflies** (`src/fireflies/`): `FireflySwarm` is one GPU point cloud (200 points, additive, no
+fog, renderOrder 510) around the player; the CPU only picks each firefly's anchor (open ground in a
+firefly biome, sky light ≥ 7, 0.4-3 blocks up, 12 picks per frame, re-picked after a 25-70 s life or
+when left behind) and the shader wanders, blinks and fades them. `setupFireflies` (CRITICAL
+'fireflies' task): visible share = `worldClock.nightAmount` × surface weight; swamp only
+(`FIREFLY_DENSITY` per biome - an anchor outside the swamp is rejected).
 
 ### `src/audio/` - Sound (effects, ambience, music)
 
@@ -1547,15 +1675,18 @@ player's hurt is a voiced cry, not a thump.
   the creature's `hurt` reaction; a blocked hit (`IEntity.lastHitBlocked`, set by shielded knights,
   the crystal sentinel and warded/armoured guardians while handling the hit) plays its `shield`
   material and no cry. A type missing here is silent (hits sound as flesh). An archetype's voices
-  render when such an entity first enters the world (EntityManager callback)
+  render when such an entity first enters the world (EntityManager callback). An entity whose
+  `isQuiet` is true (a disguised mantis) makes no idle calls
 - `PlayerSoundTracker.ts` - polled player sounds: footsteps (stride 2.2 + 0.1·speed blocks, material
   underfoot, corners probed at edges), jump, landing (impact > 4 b/s; the heavy thud only when
   `calculateFallDamage` > 0 and not onto slime), ladders,
   splash/swim/lava, eat/drink cadence, Return Idol channel (cut on cancel), hotbar tick, respawn chime
 - `AmbienceController.ts` - looping beds (22.05 kHz, -31 dBFS at weight 1) crossfaded by
-  environment: surface wind (sky light × altitude) vs cave hollowness, a bed mix per Hell biome,
-  underwater; sparse positioned details (birds in vegetated biomes, swamp frogs, cave drips, lava
-  pops, bone chimes, spore puffs, crystal pings, ice creaks)
+  environment: surface wind (sky light × altitude, calmer at night) vs cave hollowness, the night's
+  cricket chorus (per-biome weight × `worldClock.nightAmount`), a bed mix per Hell biome,
+  underwater; sparse positioned details (birds by day and owls at night in vegetated biomes, swamp
+  frogs - more often after dark, cave drips, lava pops, bone chimes, spore puffs, crystal pings, ice
+  creaks)
 - `music/` - generative score, mostly silence. `MusicMoods.ts` (22 moods, at least two per place
   with different instruments: meadow / drift / dusk / wander / canopy / mirage on the surface,
   cave / deep, two per Hell biome, dungeon / vigil, boss / onslaught - scale, tempo, progressions,
@@ -1564,8 +1695,8 @@ player's hurt is a voiced cry, not a thump.
   sometimes a phrase in thirds, pulses, a tonic ending), `MusicPlayer.ts` (struck notes from samples
   rendered every 3 semitones at 24 kHz, pads/drones as live oscillators, 1.6 s lookahead; monophonic
   winds cut their previous note; any BaseAudioContext, so a piece renders offline),
-  `MusicDirector.ts` (each place's mood pool - surface weighted by biome - with the last pick 4×
-  less likely; first piece 20-40 s in, then the mood's rest; a family change - surface ↔ a Hell
+  `MusicDirector.ts` (each place's mood pool - surface weighted by biome, and at night toward
+  drift/dusk - with the last pick 4× less likely; first piece 20-40 s in, then the mood's rest; a family change - surface ↔ a Hell
   biome - fades out; castle mood within 56 blocks of an anchor; boss mood at once while a guardian
   within 48 blocks is engaged; death silences it). A new mood goes into its place's pool and is
   level-matched to its siblings (render a minute offline: the pairs sit within ~1 dB RMS)
@@ -1598,7 +1729,8 @@ DOM-based overlays rendered above the WebGL canvas.
 - `Inventory.ts` - Grid inventory overlay (10×8); the panel (plus crafting / recipe book / block
   UI beside it) is centred above the raised toolbar and zoomed down to fit small windows
 - `CraftingPanel.ts` - 3×2 crafting grid + recipe list
-- `FpsCounter.ts` - Performance stats overlay (incl. light queue and the `LOD:` far-terrain line)
+- `FpsCounter.ts` - Performance stats overlay (incl. light queue and the `LOD:` far-terrain line,
+  the clock) and the day/night debug button above it (clickable with the inventory or pause menu open)
 - `SettingsMenu.ts` - Pause menu with settings pages (Render Distance, Far Terrain, Texture Filtering, shadows, ...)
 - `LoadingScreen.ts` - World generation progress
 - `Crosshair.ts` - Center screen crosshair
@@ -1624,7 +1756,8 @@ DOM-based overlays rendered above the WebGL canvas.
 - 30: Crosshair, FPS counter, top HUD columns (journal line, effects, boss bar, compass)
 - 34: Toasts (above the HUD, under open panels - never cover the crafting grid)
 - 35: Inventory overlay
-- 40: Toolbar (raised during inventory)
+- 40: Toolbar (raised during inventory), pause menu
+- 41: Day/night debug button (above the inventory and pause backdrops, so it can be clicked)
 - 45: Journal book
 - 1000: Loading screen, drag ghost
 

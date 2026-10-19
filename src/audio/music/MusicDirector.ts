@@ -28,6 +28,8 @@ export interface MusicContext {
   underground: boolean
   inDungeon: boolean
   bossEngaged: boolean
+  /** Night on the overworld: the calmer, darker surface moods are favoured. */
+  night: boolean
 }
 
 type Family = 'surface' | 'dungeon' | 'boss' | `hell:${string}`
@@ -56,6 +58,8 @@ const SURFACE_WEIGHTS: Record<string, readonly number[]> = {
   volcanic: [0.03, 0.1, 0.42, 0.05, 0.05, 0.35],
 }
 const DEFAULT_SURFACE_WEIGHTS = [0.22, 0.2, 0.14, 0.2, 0.12, 0.12]
+/** At night, multipliers on the surface weights (SURFACE_MOODS order): less meadow and wander, more drift and dusk. */
+const NIGHT_SURFACE_SCALE = [0.3, 1.7, 1.9, 0.35, 1.0, 1.0]
 
 const FIRST_PIECE_DELAY: [number, number] = [20, 40]
 
@@ -190,7 +194,8 @@ export class MusicDirector {
     if (family === 'dungeon') return this.pick(DUNGEON_MOODS)
     if (family !== 'surface') return this.pick(HELL_MOODS[family.slice(5)] ?? HELL_MOODS.hell)
     if (ctx.underground) return this.pick(CAVE_MOODS)
-    return this.pick(SURFACE_MOODS, SURFACE_WEIGHTS[ctx.biome] ?? DEFAULT_SURFACE_WEIGHTS)
+    const weights = SURFACE_WEIGHTS[ctx.biome] ?? DEFAULT_SURFACE_WEIGHTS
+    return this.pick(SURFACE_MOODS, ctx.night ? weights.map((w, i) => w * NIGHT_SURFACE_SCALE[i]) : weights)
   }
 
   /** A weighted pick from a pool; the pool's last pick is four times less likely. */

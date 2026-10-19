@@ -13,8 +13,8 @@ import purpleMushroomCapTexUrl from './assets/purple_mushroom_cap.webp'
 
 // Register texture
 registerTextureUrl(TextureId.PURPLE_MUSHROOM_CAP, purpleMushroomCapTexUrl)
-// Emissive: the whole cap glows, brightest in its spots
-registerEmissiveTexture(TextureId.PURPLE_MUSHROOM_CAP, { strength: 0.6, threshold: 0.0 })
+// Emissive: the whole cap glows, brightest in its spots, breathing slowly
+registerEmissiveTexture(TextureId.PURPLE_MUSHROOM_CAP, { strength: 0.6, threshold: 0.0, pulse: { amount: 0.3, grain: 'wave' } })
 
 const purpleMushroomCapTexture = loadBlockTexture(purpleMushroomCapTexUrl)
 const purpleMushroomCapMaterial = new THREE.MeshLambertMaterial({ map: purpleMushroomCapTexture })

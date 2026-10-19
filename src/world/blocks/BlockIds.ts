@@ -333,4 +333,17 @@ export enum BlockIds {
   FROZEN_BANNER = 347,           // hanging frozen banner (2 tall, facing metadata)
   HANGING_FROST_LANTERN = 348,   // frost lantern on a chain, hangs from the block above (light 15)
   ICE_KNIGHT_STATUE = 349,       // kneeling ice-knight statue (decor)
+
+  // Day and night (350-359)
+  WARD_LANTERN = 350,            // lantern hung with night trophies: no night creature rises within 32 blocks (light 15)
+  FOXFIRE_MUSHROOM = 351,        // swamp giant mushroom stem, green family (light 2)
+  FOXFIRE_MUSHROOM_CAP = 352,    // glowing lime-spotted cap (light 15, emissive)
+  AMBER_MUSHROOM = 353,          // swamp giant mushroom stem, amber family (light 2)
+  AMBER_MUSHROOM_CAP = 354,      // glowing gold-freckled cap (light 15, emissive)
+  GLOWMOSS = 355,                // swamp floor moss with twinkling spore specks (emissive, no block light)
+  GLIMMERCAP = 356,              // tuft of tiny pink-glowing mushrooms (plant, light 5)
+  LUMEN_FERN = 357,              // fern with glowing cyan fiddleheads (plant, light 4)
+  GLOWKELP = 358,                // swamp pool kelp stalk, stands in swamp water; blue-glowing bladders (plant)
+  GLOWKELP_TOP = 359,            // glowkelp crown, the end of a strand (plant)
+  LANTERNWEED = 360,             // pond-bed weed in swamp water with gold-glowing pods (plant, light 4)
 }

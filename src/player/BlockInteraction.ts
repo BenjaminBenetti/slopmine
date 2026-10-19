@@ -8,12 +8,12 @@ import type { IEntity } from '../entities/interfaces/IEntity.ts'
 import type { IItem } from '../items/Item.ts'
 import { BlockRaycaster, type IBlockRaycastHit } from './BlockRaycaster.ts'
 import { MiningOverlay } from '../renderer/MiningOverlay.ts'
-import { BlockIds } from '../world/blocks/BlockIds.ts'
+import { getVacatedBlockId } from '../world/liquid/LiquidRegistry.ts'
 import { calculateMiningDamage, describeRequiredTool } from './MiningDamage.ts'
 import { hasToolStats, HAND_STATS } from '../items/interfaces/IToolStats.ts'
 import { FloatingTextManager } from '../ui/floating-text/index.ts'
 import { gameEvents } from '../events/GameEvents.ts'
-import { getPlayerAttackCharge, isPlayerAttackReady, registerPlayerAttack } from '../combat/PlayerAttack.ts'
+import { canPlayerAttack, getPlayerAttackCharge, isPlayerAttackReady, registerPlayerAttack } from '../combat/PlayerAttack.ts'
 import { playBlockSound, playSound } from '../audio/SoundHooks.ts'
 
 /** Maximum reach distance for block interaction */
@@ -137,10 +137,12 @@ export class BlockInteraction {
 
       if (entityDist < blockDist) {
         // Entity in front - never mine the block behind it. A click hits
-        // once; holding the button hits again whenever the attack is fully
-        // charged (see src/combat/PlayerAttack.ts)
+        // once, as soon as the arm has recovered past its minimum (a click
+        // released before that lands nothing); holding the button hits again
+        // whenever the attack is fully charged (see src/combat/PlayerAttack.ts)
         this.cancelMining()
-        if (!this.hasHitEntityThisClick || isPlayerAttackReady(this.getHeldItem())) {
+        const heldItem = this.getHeldItem()
+        if (this.hasHitEntityThisClick ? isPlayerAttackReady(heldItem) : canPlayerAttack(heldItem)) {
           this.hitEntity(entityHit.entity)
           this.hasHitEntityThisClick = true
         }
@@ -397,8 +399,9 @@ export class BlockInteraction {
       block.onBreak(this.worldManager, worldX, worldY, worldZ)
     }
 
-    // Set block to air (automatically queues affected sub-chunk for remeshing)
-    this.worldManager.setBlock(worldX, worldY, worldZ, BlockIds.AIR)
+    // Set block to air - or the water a submerged plant stood in
+    // (automatically queues affected sub-chunk for remeshing)
+    this.worldManager.setBlock(worldX, worldY, worldZ, getVacatedBlockId(block))
 
     // Hide overlay and reset state
     this.miningOverlay.hide()

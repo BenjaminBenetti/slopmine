@@ -7,6 +7,8 @@ import { CliffFeature } from '../features/CliffFeature.ts'
 import { OreFeature } from '../features/OreFeature.ts'
 import { HerbFeature } from '../features/HerbFeature.ts'
 import { CattailFeature } from '../features/CattailFeature.ts'
+import { FlowerPatchFeature } from '../features/FlowerPatchFeature.ts'
+import { SubmergedPlantFeature } from '../features/SubmergedPlantFeature.ts'
 import type { Chunk } from '../../chunks/Chunk.ts'
 import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
@@ -19,9 +21,33 @@ import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 
 /**
- * Swamp biome with mud surface, clay subsurface, and scattered mushrooms.
- * Features murky water pools at low elevations.
+ * Swamp biome with mud surface, clay subsurface, and scattered giant
+ * mushrooms - most of them bioluminescent (blue, purple, foxfire green,
+ * amber), their glowmoss mycelium spreading around their feet with glimmercaps
+ * and lumen ferns in it. Features murky water pools at low elevations.
  */
+
+/** Giant mushroom kinds: stem, cap, share of the mushrooms, and whether it glows. */
+const MUSHROOM_KINDS: readonly { stem: number; cap: number; share: number; glows: boolean }[] = [
+  { stem: BlockIds.MUSHROOM, cap: BlockIds.MUSHROOM_CAP, share: 0.34, glows: false },
+  { stem: BlockIds.BLUE_MUSHROOM, cap: BlockIds.BLUE_MUSHROOM_CAP, share: 0.17, glows: true },
+  { stem: BlockIds.PURPLE_MUSHROOM, cap: BlockIds.PURPLE_MUSHROOM_CAP, share: 0.17, glows: true },
+  { stem: BlockIds.FOXFIRE_MUSHROOM, cap: BlockIds.FOXFIRE_MUSHROOM_CAP, share: 0.16, glows: true },
+  { stem: BlockIds.AMBER_MUSHROOM, cap: BlockIds.AMBER_MUSHROOM_CAP, share: 0.16, glows: true },
+]
+
+/** Glowmoss carpet radius around a glowing mushroom (blocks, before the ragged edge). */
+const MOSS_CARPET_MIN_RADIUS = 3
+const MOSS_CARPET_EXTRA_RADIUS = 3
+
+/** Ground a giant mushroom or swamp plant may stand on. */
+const MUSHROOM_GROUND: readonly number[] = [BlockIds.MUDDY_GRASS, BlockIds.MUD, BlockIds.CLAY, BlockIds.GLOWMOSS]
+
+interface MushroomSite {
+  readonly x: number
+  readonly z: number
+  readonly kind: (typeof MUSHROOM_KINDS)[number]
+}
 export class SwampGenerator extends BiomeGenerator {
   protected readonly properties: BiomeProperties = {
     name: 'swamp',
@@ -96,7 +122,26 @@ export class SwampGenerator extends BiomeGenerator {
         minPatchSize: 2,
         maxPatchSize: 5,
         gridSize: 14,
-        validGroundBlocks: [BlockIds.MUDDY_GRASS],
+        validGroundBlocks: [BlockIds.MUDDY_GRASS, BlockIds.GLOWMOSS],
+      }),
+      // Glimmercap tufts in the glowmoss (grid sizes differ from the fern's:
+      // FlowerPatchFeature salts are fixed, so equal grids would share centres)
+      new FlowerPatchFeature({
+        density: 12,
+        minPatchSize: 3,
+        maxPatchSize: 7,
+        gridSize: 5,
+        flowerBlockIds: [BlockIds.GLIMMERCAP],
+        validGroundBlocks: [BlockIds.GLOWMOSS],
+      }),
+      // Lumen ferns all over the swamp floor
+      new FlowerPatchFeature({
+        density: 7,
+        minPatchSize: 1,
+        maxPatchSize: 3,
+        gridSize: 7,
+        flowerBlockIds: [BlockIds.LUMEN_FERN],
+        validGroundBlocks: [BlockIds.MUDDY_GRASS, BlockIds.GLOWMOSS],
       }),
       // Cattail reeds on the mud banks of the swamp pools (surface slow
       // falling ingredient); after the clay mounds so they root on both
@@ -107,6 +152,30 @@ export class SwampGenerator extends BiomeGenerator {
         zoneFrequency: 0.02,
         zoneThreshold: 0.4,
         density: 0.55,
+        // The defaults plus glowmoss, which carpets some of the banks
+        validGroundBlocks: [BlockIds.GRASS, BlockIds.DIRT, BlockIds.MUD, BlockIds.CLAY, BlockIds.GLOWMOSS],
+      }),
+      // Glowkelp forests and lanternweed beds in the pools (after the reeds,
+      // which check the water line for open water)
+      new SubmergedPlantFeature({
+        waterLevel: 234,
+        waterBlockId: BlockIds.SWAMP_WATER,
+        validBedBlocks: [BlockIds.MUD, BlockIds.CLAY, BlockIds.MUDDY_GRASS, BlockIds.DIRT],
+        strands: {
+          stalkBlockId: BlockIds.GLOWKELP,
+          topBlockId: BlockIds.GLOWKELP_TOP,
+          minDepth: 2,
+          surfaceChance: 0.6,
+          zoneFrequency: 0.035,
+          zoneThreshold: 0.55,
+          density: 0.32,
+        },
+        bedPlant: {
+          blockId: BlockIds.LANTERNWEED,
+          zoneFrequency: 0.05,
+          zoneThreshold: 0.5,
+          density: 0.22,
+        },
       }),
     ],
     caves: {
@@ -202,6 +271,51 @@ export class SwampGenerator extends BiomeGenerator {
   private readonly MUSHROOM_GRID_SIZE = 10
 
   /**
+   * The giant mushroom of the placement cell at (cellWorldX, cellWorldZ), if
+   * the cell has one: a jittered grid anchored to each chunk's origin. Pure,
+   * so the worker's terrain fill (glowmoss carpets) and the main-thread
+   * decorations agree on where the mushrooms grow.
+   */
+  private mushroomSite(cellWorldX: number, cellWorldZ: number): MushroomSite | null {
+    const gridSize = this.MUSHROOM_GRID_SIZE
+    const x = cellWorldX + Math.floor(this.positionRandom(cellWorldX, cellWorldZ, 1) * gridSize)
+    const z = cellWorldZ + Math.floor(this.positionRandom(cellWorldX, cellWorldZ, 2) * gridSize)
+    if (this.positionRandom(x, z, 0) > this.properties.treeDensity / (gridSize * gridSize)) return null
+    let pick = this.positionRandom(x, z, 200)
+    for (const kind of MUSHROOM_KINDS) {
+      pick -= kind.share
+      if (pick < 0) return { x, z, kind }
+    }
+    return { x, z, kind: MUSHROOM_KINDS[MUSHROOM_KINDS.length - 1] }
+  }
+
+  /** Every mushroom site of a chunk (its placement cells). */
+  private chunkMushroomSites(chunkWorldX: number, chunkWorldZ: number, out: MushroomSite[]): void {
+    for (let localX = 0; localX < CHUNK_SIZE_X; localX += this.MUSHROOM_GRID_SIZE) {
+      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ += this.MUSHROOM_GRID_SIZE) {
+        const site = this.mushroomSite(chunkWorldX + localX, chunkWorldZ + localZ)
+        if (site) out.push(site)
+      }
+    }
+  }
+
+  /**
+   * Whether the swamp floor at a column is glowmoss: a ragged carpet around
+   * each glowing mushroom (its mycelium) and sparse patches of its own.
+   */
+  private isGlowmossAt(worldX: number, worldZ: number, glowingSites: readonly MushroomSite[], noise: SimplexNoise): boolean {
+    const edge = noise.noise2D(worldX * 0.21 + 91.7, worldZ * 0.21 - 13.3) * 1.5
+    for (const site of glowingSites) {
+      const radius = MOSS_CARPET_MIN_RADIUS + this.positionRandom(site.x, site.z, 210) * MOSS_CARPET_EXTRA_RADIUS
+      const dx = worldX - site.x
+      const dz = worldZ - site.z
+      if (Math.sqrt(dx * dx + dz * dz) < radius + edge) return true
+    }
+    const patch = noise.noise2D(worldX * 0.031 - 47.1, worldZ * 0.031 + 22.9) + 0.35 * noise.noise2D(worldX * 0.11 + 5.3, worldZ * 0.11 + 71.2)
+    return patch > 0.78
+  }
+
+  /**
    * Fill terrain with mud, clay, and stone layers.
    */
   protected fillChunk(
@@ -213,6 +327,20 @@ export class SwampGenerator extends BiomeGenerator {
   ): void {
     const coord = chunk.coordinate
     const terrainFloor = this.config.seaLevel - this.config.terrainThickness
+
+    // Glowing mushrooms whose moss carpet can reach this chunk (their cells are
+    // anchored to each chunk, so look one chunk around)
+    const glowingSites: MushroomSite[] = []
+    const chunkWorldX = Number(coord.x) * CHUNK_SIZE_X
+    const chunkWorldZ = Number(coord.z) * CHUNK_SIZE_Z
+    for (let cx = -1; cx <= 1; cx++) {
+      for (let cz = -1; cz <= 1; cz++) {
+        this.chunkMushroomSites(chunkWorldX + cx * CHUNK_SIZE_X, chunkWorldZ + cz * CHUNK_SIZE_Z, glowingSites)
+      }
+    }
+    for (let i = glowingSites.length - 1; i >= 0; i--) {
+      if (!glowingSites[i].kind.glows) glowingSites.splice(i, 1)
+    }
 
     for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
       for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
@@ -234,9 +362,12 @@ export class SwampGenerator extends BiomeGenerator {
         if (mudStartY >= minY && mudStartY <= maxY && mudStartY >= terrainFloor) {
           const localY = mudStartY - minY
           const waterLevel = this.properties.water?.waterLevel ?? 234
-          // Use exposed mud within 2 blocks of water level for muddy shoreline
+          // Use exposed mud within 2 blocks of water level for muddy shoreline;
+          // glowmoss grows over anything above the water, banks included
           const isNearWater = height <= waterLevel + 2
-          chunk.setBlockId(localX, localY, localZ, isNearWater ? BlockIds.MUD : BlockIds.MUDDY_GRASS)
+          const isMossy = height >= waterLevel && this.isGlowmossAt(worldX, worldZ, glowingSites, noise)
+          const surface = isMossy ? BlockIds.GLOWMOSS : isNearWater ? BlockIds.MUD : BlockIds.MUDDY_GRASS
+          chunk.setBlockId(localX, localY, localZ, surface)
         }
 
         // Below surface: mud
@@ -286,60 +417,21 @@ export class SwampGenerator extends BiomeGenerator {
     world: IDecorationWorld
   ): Promise<void> {
     const coord = subChunk.coordinate
-    const mushroomDensity = this.properties.treeDensity
-    const gridSize = this.MUSHROOM_GRID_SIZE
-
-    // Sub-chunk Y bounds
     const minSubY = Number(coord.subY) * SUB_CHUNK_HEIGHT
     const maxSubY = minSubY + SUB_CHUNK_HEIGHT - 1
 
+    const sites: MushroomSite[] = []
+    this.chunkMushroomSites(Number(coord.x) * CHUNK_SIZE_X, Number(coord.z) * CHUNK_SIZE_Z, sites)
+
     let mushroomsPlaced = 0
-
-    // Check each cell in a grid pattern for potential mushroom positions
-    for (let localX = 0; localX < CHUNK_SIZE_X; localX += gridSize) {
-      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ += gridSize) {
-        const worldCoord = localToWorld(coord, { x: localX, y: 0, z: localZ })
-        const worldX = Number(worldCoord.x)
-        const worldZ = Number(worldCoord.z)
-
-        // Use jittered grid for more natural placement
-        const jitterX = Math.floor(
-          this.positionRandom(worldX, worldZ, 1) * gridSize
-        )
-        const jitterZ = Math.floor(
-          this.positionRandom(worldX, worldZ, 2) * gridSize
-        )
-
-        const mushroomWorldX = worldX + jitterX
-        const mushroomWorldZ = worldZ + jitterZ
-
-        // Probability check for mushroom placement
-        const mushroomChance = this.positionRandom(mushroomWorldX, mushroomWorldZ, 0)
-        const threshold = mushroomDensity / (gridSize * gridSize)
-
-        if (mushroomChance > threshold) continue
-
-        // Get ground height at mushroom position
-        const groundHeight = this.getHeightAt(mushroomWorldX, mushroomWorldZ)
-        const mushroomBaseY = groundHeight + 1
-
-        // Only place mushroom if its base is within this sub-chunk
-        if (mushroomBaseY < minSubY || mushroomBaseY > maxSubY) continue
-
-        const baseX = BigInt(mushroomWorldX)
-        const baseY = BigInt(mushroomBaseY)
-        const baseZ = BigInt(mushroomWorldZ)
-
-        // Check if we can place the mushroom
-        if (this.canPlaceMushroom(world, baseX, baseY, baseZ)) {
-          this.placeMushroom(world, baseX, baseY, baseZ)
-          mushroomsPlaced++
-
-          // Yield every 5 mushrooms to prevent frame blocking
-          if (mushroomsPlaced % 5 === 0) {
-            await this.yieldToEventLoop()
-          }
-        }
+    for (const site of sites) {
+      const mushroomBaseY = this.getHeightAt(site.x, site.z) + 1
+      // Only place mushroom if its base is within this sub-chunk
+      if (mushroomBaseY < minSubY || mushroomBaseY > maxSubY) continue
+      if (this.tryPlaceMushroom(world, site, mushroomBaseY)) {
+        mushroomsPlaced++
+        // Yield every 5 mushrooms to prevent frame blocking
+        if (mushroomsPlaced % 5 === 0) await this.yieldToEventLoop()
       }
     }
 
@@ -355,57 +447,30 @@ export class SwampGenerator extends BiomeGenerator {
     world: IDecorationWorld
   ): Promise<void> {
     const coord = chunk.coordinate
-    const mushroomDensity = this.properties.treeDensity
-    const gridSize = this.MUSHROOM_GRID_SIZE
+    const sites: MushroomSite[] = []
+    this.chunkMushroomSites(Number(coord.x) * CHUNK_SIZE_X, Number(coord.z) * CHUNK_SIZE_Z, sites)
 
     let mushroomsPlaced = 0
-
-    // Check each cell in a grid pattern for potential mushroom positions
-    for (let localX = 0; localX < CHUNK_SIZE_X; localX += gridSize) {
-      for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ += gridSize) {
-        const worldCoord = localToWorld(coord, { x: localX, y: 0, z: localZ })
-        const worldX = Number(worldCoord.x)
-        const worldZ = Number(worldCoord.z)
-
-        // Use jittered grid for more natural placement
-        const jitterX = Math.floor(
-          this.positionRandom(worldX, worldZ, 1) * gridSize
-        )
-        const jitterZ = Math.floor(
-          this.positionRandom(worldX, worldZ, 2) * gridSize
-        )
-
-        const mushroomWorldX = worldX + jitterX
-        const mushroomWorldZ = worldZ + jitterZ
-
-        // Probability check for mushroom placement
-        const mushroomChance = this.positionRandom(mushroomWorldX, mushroomWorldZ, 0)
-        const threshold = mushroomDensity / (gridSize * gridSize)
-
-        if (mushroomChance > threshold) continue
-
-        // Get ground height at mushroom position
-        const groundHeight = this.getHeightAt(mushroomWorldX, mushroomWorldZ)
-
-        const baseX = BigInt(mushroomWorldX)
-        const baseY = BigInt(groundHeight + 1)
-        const baseZ = BigInt(mushroomWorldZ)
-
-        // Check if we can place the mushroom
-        if (this.canPlaceMushroom(world, baseX, baseY, baseZ)) {
-          this.placeMushroom(world, baseX, baseY, baseZ)
-          mushroomsPlaced++
-
-          // Yield every 5 mushrooms to prevent frame blocking
-          if (mushroomsPlaced % 5 === 0) {
-            await this.yieldToEventLoop()
-          }
-        }
+    for (const site of sites) {
+      if (this.tryPlaceMushroom(world, site, this.getHeightAt(site.x, site.z) + 1)) {
+        mushroomsPlaced++
+        // Yield every 5 mushrooms to prevent frame blocking
+        if (mushroomsPlaced % 5 === 0) await this.yieldToEventLoop()
       }
     }
 
     // Final yield after mushroom generation
     await this.yieldToEventLoop()
+  }
+
+  /** Grow the site's mushroom with its base at `baseY` if the ground suits it. */
+  private tryPlaceMushroom(world: IDecorationWorld, site: MushroomSite, baseY: number): boolean {
+    const x = BigInt(site.x)
+    const y = BigInt(baseY)
+    const z = BigInt(site.z)
+    if (!this.canPlaceMushroom(world, x, y, z)) return false
+    this.placeMushroom(world, x, y, z, site.kind)
+    return true
   }
 
   /**
@@ -418,9 +483,8 @@ export class SwampGenerator extends BiomeGenerator {
     y: bigint,
     z: bigint
   ): boolean {
-    // Check that the block below is muddy grass, mud, or clay (typical swamp ground)
-    const blockBelow = world.getBlockId(x, y - 1n, z)
-    if (blockBelow !== BlockIds.MUDDY_GRASS && blockBelow !== BlockIds.MUD && blockBelow !== BlockIds.CLAY) return false
+    // Typical swamp ground below (muddy grass, mud, clay or glowmoss)
+    if (!MUSHROOM_GROUND.includes(world.getBlockId(x, y - 1n, z))) return false
 
     // Check that base position is air
     const blockAt = world.getBlockId(x, y, z)
@@ -463,31 +527,16 @@ export class SwampGenerator extends BiomeGenerator {
   /**
    * Place a giant mushroom at the given location.
    * Creates a tall stem with a wide cap on top.
-   * Randomly selects between regular, blue, and purple mushroom types.
    */
   private placeMushroom(
     world: IDecorationWorld,
     x: bigint,
     y: bigint,
-    z: bigint
+    z: bigint,
+    kind: MushroomSite['kind']
   ): void {
-    // Determine mushroom type based on position (regular, blue, or purple)
-    const typeRandom = this.positionRandom(Number(x), Number(z), 200)
-    let stemBlock: number
-    let capBlock: number
-    if (typeRandom < 0.5) {
-      // 50% regular mushrooms
-      stemBlock = BlockIds.MUSHROOM
-      capBlock = BlockIds.MUSHROOM_CAP
-    } else if (typeRandom < 0.75) {
-      // 25% blue mushrooms
-      stemBlock = BlockIds.BLUE_MUSHROOM
-      capBlock = BlockIds.BLUE_MUSHROOM_CAP
-    } else {
-      // 25% purple mushrooms
-      stemBlock = BlockIds.PURPLE_MUSHROOM
-      capBlock = BlockIds.PURPLE_MUSHROOM_CAP
-    }
+    const stemBlock = kind.stem
+    const capBlock = kind.cap
 
     // Determine height based on position (4-12 blocks)
     const heightRandom = this.positionRandom(Number(x), Number(z), 100)

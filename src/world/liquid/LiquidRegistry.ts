@@ -4,7 +4,7 @@
  */
 
 import { BlockRegistry } from '../blocks/BlockRegistry.ts'
-import type { BlockId } from '../interfaces/IBlock.ts'
+import type { BlockId, IBlock } from '../interfaces/IBlock.ts'
 import { BlockIds } from '../blocks/BlockIds.ts'
 
 export class LiquidRegistry {
@@ -89,6 +89,15 @@ export function getLiquidBlockId(family: string, level: number): BlockId {
  */
 export function getLiquidSourceBlockId(family: string): BlockId {
   return LiquidRegistry.getInstance().getSourceBlockId(family)
+}
+
+/**
+ * What a block leaves behind when it is broken: the source of the liquid a
+ * submerged block (glowkelp) stands in, else air.
+ */
+export function getVacatedBlockId(block: IBlock): BlockId {
+  const family = block.properties.submergedIn
+  return family ? getLiquidSourceBlockId(family) : BlockIds.AIR
 }
 
 /**

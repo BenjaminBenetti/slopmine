@@ -1,4 +1,5 @@
 import { getHudCenterColumnBounds, HUD_COLUMN_GAP_PX, onHudLayout, setHudObstacle } from './hudLayout.ts'
+import { worldClock } from '../daynight/WorldClock.ts'
 
 export interface FpsCounterOptions {
   updateIntervalMs?: number
@@ -84,12 +85,17 @@ export interface FpsCounterUI {
   setEntityStats(stats: EntityStats): void
   setFarTerrainStats(stats: FarTerrainStats): void
   setBiomeMiniMap(data: BiomeMiniMapData): void
+  /** Show the day/night debug button, which calls `toggle` (setupDayNight's toggleNight). */
+  setDayNightToggle(toggle: () => void): void
   show(): void
   hide(): void
   toggle(): boolean
   readonly visible: boolean
   destroy(): void
 }
+
+/** Height of the day/night debug button above the stats. */
+const TIME_BUTTON_HEIGHT_PX = 22
 
 /**
  * Format large numbers with K/M suffix.
@@ -114,6 +120,10 @@ function formatCount(n: number): string {
  * stats and the biome mini-map are HUD obstacles: the top HUD columns
  * (hudLayout.ts) flow below them. Long stat lines wrap rather than reach
  * into the top-centre column, so the boss bar keeps its place.
+ *
+ * Above the stats sits a debug button that flips between day and night. It
+ * is clickable whenever the cursor is free (inventory or pause menu open),
+ * so it sits above their backdrops.
  */
 export function createFpsCounterUI(
   parent: HTMLElement = document.body,
@@ -123,9 +133,11 @@ export function createFpsCounterUI(
   const color = options.color ?? '#ffffff'
   const fontSize = options.fontSize ?? '13px'
 
+  let isVisible = true
+
   const el = document.createElement('div')
   el.style.position = 'fixed'
-  el.style.top = '10px'
+  el.style.top = `${10 + TIME_BUTTON_HEIGHT_PX + 6}px`
   el.style.right = '10px'
   el.style.fontFamily = 'monospace'
   el.style.fontSize = fontSize
@@ -139,6 +151,50 @@ export function createFpsCounterUI(
   el.innerHTML = 'FPS: --<br>UPS: --<br>Frame: --<br>CPU: --'
 
   parent.appendChild(el)
+
+  // Day/night debug button, above the stats
+  const timeButton = document.createElement('button')
+  timeButton.type = 'button'
+  timeButton.tabIndex = -1 // never keeps focus: Space (jump) would press it again
+  timeButton.title = 'Debug: by day skip to 21:00, at night to morning. Click while the inventory or pause menu is open.'
+  timeButton.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    height: ${TIME_BUTTON_HEIGHT_PX}px;
+    padding: 0 8px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #ffffff;
+    background: rgba(20, 24, 40, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 3px;
+    cursor: pointer;
+    z-index: 41;
+    display: none;
+  `
+  parent.appendChild(timeButton)
+  let dayNightToggle: (() => void) | null = null
+  let lastTimeButtonLabel = ''
+  const refreshTimeButton = (): void => {
+    const show = dayNightToggle !== null && isVisible && el.style.display !== 'none'
+    timeButton.style.display = show ? '' : 'none'
+    const label = worldClock.isNight ? '\u2600 Make day' : '\u263E Make night'
+    if (label !== lastTimeButtonLabel) {
+      lastTimeButtonLabel = label
+      timeButton.textContent = label
+    }
+  }
+  // mousedown: no focus, and no backdrop/drag handler sees it
+  timeButton.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+  })
+  timeButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    dayNightToggle?.()
+    refreshTimeButton()
+  })
 
   // Stay right of the HUD's top-centre column (boss bar, compass)
   const STATS_EDGE_PX = 10
@@ -167,12 +223,12 @@ export function createFpsCounterUI(
   `
   parent.appendChild(miniMapEl)
 
-  let isVisible = true
-
   /** Tell the HUD layout where the stats and mini-map are (nothing while hidden). */
   const reportObstacles = (): void => {
+    refreshTimeButton()
     const statsShown = isVisible && el.style.display !== 'none'
     setHudObstacle('debug-stats', statsShown ? el.getBoundingClientRect() : null)
+    setHudObstacle('debug-time', timeButton.style.display !== 'none' ? timeButton.getBoundingClientRect() : null)
     setHudObstacle('debug-minimap', isVisible ? miniMapEl.getBoundingClientRect() : null)
   }
 
@@ -231,8 +287,11 @@ export function createFpsCounterUI(
         const cpuPercent = Math.min(100, (avgCpuTime / frameBudgetMs) * 100)
 
         const posLine = `X: <span style="color:#00ff00">${playerX.toFixed(1)}</span>  Y: <span style="color:#ff0000">${playerY.toFixed(1)}</span>  Z: <span style="color:#ffff00">${playerZ.toFixed(1)}</span>`
+        const hour = worldClock.hour
+        const clock = `${String(Math.floor(hour)).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`
         const lines = [
           posLine,
+          `Time: ${clock}, day ${worldClock.day}${worldClock.isNight ? ' (night)' : ''}`,
           `FPS: ${fps}`,
           `UPS: ${ups}`,
           `Frame: ${avgFrameTime.toFixed(1)}ms`,
@@ -406,6 +465,11 @@ export function createFpsCounterUI(
       }
     },
 
+    setDayNightToggle(toggle: () => void): void {
+      dayNightToggle = toggle
+      reportObstacles()
+    },
+
     show(): void {
       el.style.visibility = ''
       miniMapEl.style.display = 'block'
@@ -442,8 +506,12 @@ export function createFpsCounterUI(
       if (miniMapEl.parentElement === parent) {
         parent.removeChild(miniMapEl)
       }
+      if (timeButton.parentElement === parent) {
+        parent.removeChild(timeButton)
+      }
       unsubscribeLayout()
       setHudObstacle('debug-stats', null)
+      setHudObstacle('debug-time', null)
       setHudObstacle('debug-minimap', null)
     },
   }

@@ -286,6 +286,19 @@ import { SanctumStairsBlock } from './types/sanctum_stairs/SanctumStairsBlock.ts
 // Hell: Cocytus
 import { registerCocytusBlocks } from './types/cocytus_shared/registerCocytusBlocks.ts'
 
+// Day and night
+import { WardLanternBlock } from './types/ward_lantern/WardLanternBlock.ts'
+import { FoxfireMushroomBlock } from './types/foxfire_mushroom/FoxfireMushroomBlock.ts'
+import { FoxfireMushroomCapBlock } from './types/foxfire_mushroom_cap/FoxfireMushroomCapBlock.ts'
+import { AmberMushroomBlock } from './types/amber_mushroom/AmberMushroomBlock.ts'
+import { AmberMushroomCapBlock } from './types/amber_mushroom_cap/AmberMushroomCapBlock.ts'
+import { GlowmossBlock } from './types/glowmoss/GlowmossBlock.ts'
+import { GlimmercapBlock } from './types/glimmercap/GlimmercapBlock.ts'
+import { LumenFernBlock } from './types/lumen_fern/LumenFernBlock.ts'
+import { GlowkelpBlock } from './types/glowkelp/GlowkelpBlock.ts'
+import { GlowkelpTopBlock } from './types/glowkelp_top/GlowkelpTopBlock.ts'
+import { LanternweedBlock } from './types/lanternweed/LanternweedBlock.ts'
+
 /**
  * Register all default block types.
  * Block properties are defined in each block class file (single source of truth).
@@ -622,4 +635,17 @@ export function registerDefaultBlocks(): void {
 
   // Hell: Cocytus
   registerCocytusBlocks()
+
+  // Day and night
+  registerBlock(new WardLanternBlock())
+  registerBlock(new FoxfireMushroomBlock())
+  registerBlock(new FoxfireMushroomCapBlock())
+  registerBlock(new AmberMushroomBlock())
+  registerBlock(new AmberMushroomCapBlock())
+  registerBlock(new GlowmossBlock())
+  registerBlock(new GlimmercapBlock())
+  registerBlock(new LumenFernBlock())
+  registerBlock(new GlowkelpBlock())
+  registerBlock(new GlowkelpTopBlock())
+  registerBlock(new LanternweedBlock())
 }

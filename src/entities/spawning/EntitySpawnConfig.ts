@@ -60,6 +60,24 @@ export interface EntitySpawnConfig {
    */
   searchFromSky?: boolean
 
+  /** Spawn only while this holds (e.g. night creatures: only at night). */
+  condition?: () => boolean
+
+  /** Spawn no further than this many blocks (horizontally) from the player. */
+  maxSpawnDistance?: number
+
+  /**
+   * Minimum sky light (0-15) at the spawn cell: under (mostly) open sky -
+   * a roofed hut keeps a night creature from rising inside it.
+   */
+  minSkyLight?: number
+
+  /** Maximum block light (0-15) at the spawn cell: torches keep night creatures away. */
+  maxBlockLight?: number
+
+  /** Refuse a spawn position (e.g. within a Ward Lantern's reach). */
+  veto?: (x: number, y: number, z: number) => boolean
+
   /**
    * Factory function to create the entity at the given position.
    */

@@ -65,6 +65,9 @@ import { crystalAbyssRecipes } from './CrystalAbyssRecipes.ts'
 // Hell: Cocytus
 import { cocytusHandRecipes } from './CocytusRecipes.ts'
 
+// Day and night
+import { nightfallHandRecipes, nightfallBrewingRecipes } from './NightfallRecipes.ts'
+
 /**
  * Register all default recipes.
  * Call this at startup.
@@ -233,6 +236,10 @@ export function registerDefaultRecipes(): void {
   for (const recipe of cocytusHandRecipes) {
     recipeRegistry.register(recipe)
   }
+
+  // Day and night
+  for (const recipe of nightfallHandRecipes) recipeRegistry.register(recipe)
+  for (const recipe of nightfallBrewingRecipes) brewingRegistry.register(recipe)
 }
 
 export { woodToolRecipes } from './WoodToolRecipes.ts'

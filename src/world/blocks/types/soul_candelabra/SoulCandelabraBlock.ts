@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeTaggedParts } from '../model_shared/mergeTaggedParts.ts'
 import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -14,7 +14,7 @@ const box = (w: number, h: number, d: number, x: number, y: number, z: number, m
   return g
 }
 // Iron foot and stem, a crossbar with three bone candles under soul flames
-const candelabraGeometry = mergeGeometries([
+const candelabraGeometry = mergeTaggedParts([
   box(0.4, 0.06, 0.4, 0, -0.47, 0, 0), // foot
   box(0.2, 0.06, 0.2, 0, -0.41, 0, 0),
   box(0.07, 0.7, 0.07, 0, -0.04, 0, 0), // stem
@@ -27,7 +27,7 @@ const candelabraGeometry = mergeGeometries([
   box(0.08, 0.1, 0.08, -0.28, 0.58, 0, 2), // flames
   box(0.08, 0.1, 0.08, 0, 0.6, 0, 2),
   box(0.08, 0.1, 0.08, 0.28, 0.58, 0, 2),
-], true)
+])
 
 const candelabraMaterials = [
   new THREE.MeshLambertMaterial({ color: 0x3c3d42 }), // wrought iron

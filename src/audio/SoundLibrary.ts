@@ -150,6 +150,18 @@ export const SOUND_DEFS = defs({
   'boss.phase': { variants: 1, loudness: -22, bus: 'sfx', maxVoices: 1, ref: 8, range: 64 },
   'boss.defeat': { variants: 1, loudness: -21, bus: 'ui', maxVoices: 1 },
 
+  // Night creatures (their voices are voice.<archetype>.*; see EntityVoices)
+  'night.creak': { variants: 3, loudness: -31, bus: 'sfx', pitch: 1.5, maxVoices: 2, minInterval: 0.4, ref: 3, range: 24 },
+  'night.flutter': { variants: 2, loudness: -31, bus: 'sfx', pitch: 1.5, maxVoices: 3, ref: 3, range: 24 },
+  'night.rumble': { variants: 2, loudness: -27, bus: 'sfx', pitch: 1, maxVoices: 2, ref: 4, range: 28 },
+  'night.erupt': { variants: 2, loudness: -24, bus: 'sfx', pitch: 1, maxVoices: 2, ref: 5, range: 40 },
+  'night.emberburst': { variants: 2, loudness: -26, bus: 'sfx', pitch: 1, maxVoices: 2, ref: 4, range: 32 },
+  'night.splash': { recipe: 'player.splash', variants: 2, loudness: -26, bus: 'sfx', pitch: 1, maxVoices: 2, ref: 4, range: 32 },
+  'night.hoof': { variants: 2, loudness: -31, bus: 'sfx', pitch: 1.5, maxVoices: 2, minInterval: 0.25, ref: 3, range: 28 },
+  'night.slam': { variants: 2, loudness: -24, bus: 'sfx', pitch: 1, maxVoices: 2, ref: 5, range: 40 },
+  'night.slash': { variants: 3, loudness: -30, bus: 'sfx', pitch: 1.5, maxVoices: 3, minInterval: 0.08, ref: 3, range: 24 },
+  'night.vanish': { variants: 2, loudness: -33, bus: 'sfx', pitch: 2, maxVoices: 3, ref: 3, range: 24 },
+
   // Ambience details (beds are handled by AmbienceController)
   'amb.drip': { variants: 4, loudness: -33, bus: 'ambience', pitch: 2, maxVoices: 2, ref: 3, range: 30 },
   'amb.lavapop': { variants: 3, loudness: -31, bus: 'ambience', pitch: 2, maxVoices: 2, ref: 3, range: 30 },
@@ -159,6 +171,7 @@ export const SOUND_DEFS = defs({
   'amb.sporepuff': { variants: 3, loudness: -35, bus: 'ambience', pitch: 2, maxVoices: 2, ref: 3, range: 30 },
   'amb.bird': { variants: 4, loudness: -35, bus: 'ambience', pitch: 2, maxVoices: 2, ref: 3, range: 30 },
   'amb.frog': { variants: 3, loudness: -33, bus: 'ambience', pitch: 2, maxVoices: 2, ref: 3, range: 30 },
+  'amb.owl': { variants: 2, loudness: -36, bus: 'ambience', pitch: 1.5, maxVoices: 1, ref: 3, range: 30 },
   'amb.distantrumble': { variants: 2, loudness: -30, bus: 'ambience', pitch: 2, maxVoices: 1, ref: 3, range: 30 },
 })
 

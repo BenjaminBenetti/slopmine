@@ -3,6 +3,7 @@ import type { WorldManager } from '../world/index.ts'
 import type { DistanceFog, FogOverride } from './DistanceFog.ts'
 import { lightLevelsToColor } from './lightCurve.ts'
 import { getWorldDaylight, getWorldLightFloor } from './worldLightShader.ts'
+import { getCellLiquidFamily } from '../world/liquid/cellLiquid.ts'
 
 /**
  * Types of liquid families that can be detected
@@ -123,10 +124,10 @@ export class LiquidOverlay {
     // Get block at camera position
     const block = world.getBlock(x, y, z)
 
-    // Check if block is a liquid with a known family
+    // Check if block is a liquid (or a plant standing in one) with a known family
     let liquidFamily: LiquidFamily | null = null
-    if (block.properties.isLiquid && block.properties.liquidFamily) {
-      const family = block.properties.liquidFamily
+    const family = getCellLiquidFamily(block.properties)
+    if (family) {
       if (family === 'water' || family === 'lava' || family === 'swamp_water') {
         liquidFamily = family
       }
@@ -197,7 +198,7 @@ export class LiquidOverlay {
     const y = Math.floor(cameraPosition.y)
     const z = Math.floor(cameraPosition.z)
     let surfaceY = y + 1
-    while (surfaceY < y + SURFACE_SCAN_LIMIT && world.getBlockFast(x, surfaceY, z).properties.liquidFamily === family) {
+    while (surfaceY < y + SURFACE_SCAN_LIMIT && getCellLiquidFamily(world.getBlockFast(x, surfaceY, z).properties) === family) {
       surfaceY++
     }
     const daylight = getWorldDaylight()

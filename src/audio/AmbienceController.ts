@@ -17,7 +17,7 @@ const BED_LOUDNESS = -31
 /** Crossfade time constant between environments (seconds). */
 const BED_FADE = 1.6
 
-export type BedId = 'bed.wind' | 'bed.cave' | 'bed.hell' | 'bed.ossuary' | 'bed.embergrove' | 'bed.crystal' | 'bed.cocytus' | 'bed.underwater'
+export type BedId = 'bed.wind' | 'bed.night' | 'bed.cave' | 'bed.hell' | 'bed.ossuary' | 'bed.embergrove' | 'bed.crystal' | 'bed.cocytus' | 'bed.underwater'
 
 export interface AmbienceContext {
   layer: 0 | 1
@@ -27,6 +27,8 @@ export interface AmbienceContext {
   cameraY: number
   /** Liquid family the camera is in, or null. */
   submergedIn: string | null
+  /** 0 by day .. 1 at night (the overworld clock; the surface only). */
+  night: number
 }
 
 interface Bed {
@@ -45,6 +47,21 @@ interface DetailRule {
 }
 
 const VEGETATED = new Set(['plains', 'grassy-hills', 'pine-forest', 'coastal-rainforest', 'jungle'])
+
+/** How many crickets sing at night in each surface biome (bed weight). */
+const NIGHT_CHORUS: Record<string, number> = {
+  plains: 0.85,
+  'grassy-hills': 0.8,
+  'pine-forest': 0.55,
+  'coastal-rainforest': 0.7,
+  jungle: 0.9,
+  swamp: 0.75,
+  desert: 0.3,
+  volcanic: 0,
+}
+
+/** Where owls call at night. */
+const OWL_BIOMES = new Set(['pine-forest', 'coastal-rainforest', 'jungle', 'grassy-hills'])
 
 const HELL_BEDS: Record<string, Partial<Record<BedId, number>>> = {
   hell: { 'bed.hell': 1 },
@@ -111,8 +128,12 @@ export class AmbienceController {
     const open = ctx.outdoors
     // Wind grows with altitude above sea level (240).
     const height = Math.max(0, Math.min(1, (ctx.cameraY - 250) / 120))
+    // Nights are calmer: less wind, crickets in the grass (fading with altitude)
+    const night = ctx.night
+    const chorus = (NIGHT_CHORUS[ctx.biome] ?? 0.5) * (1 - 0.8 * height)
     return {
-      'bed.wind': open * (0.45 + 0.55 * height),
+      'bed.wind': open * (0.45 + 0.55 * height) * (1 - 0.3 * night),
+      'bed.night': open * night * chorus,
       'bed.cave': (1 - open) * (ctx.cameraY < 236 ? 0.9 : 0.4),
     }
   }
@@ -122,8 +143,10 @@ export class AmbienceController {
     if (ctx.layer === 0) {
       rules.push(...(HELL_DETAILS[ctx.biome] ?? []))
     } else if (ctx.outdoors > 0.6) {
-      if (VEGETATED.has(ctx.biome) && ctx.cameraY < 330) rules.push({ id: 'amb.bird', every: 16 })
-      if (ctx.biome === 'swamp') rules.push({ id: 'amb.frog', every: 11 })
+      // Birds sing by day, owls call at night; swamp frogs are loudest after dark
+      if (VEGETATED.has(ctx.biome) && ctx.cameraY < 330 && ctx.night < 0.4) rules.push({ id: 'amb.bird', every: 16 })
+      if (OWL_BIOMES.has(ctx.biome) && ctx.cameraY < 330 && ctx.night > 0.6) rules.push({ id: 'amb.owl', every: 38 })
+      if (ctx.biome === 'swamp') rules.push({ id: 'amb.frog', every: ctx.night > 0.5 ? 6 : 11 })
     } else if (ctx.outdoors < 0.25 && ctx.cameraY < 236) {
       rules.push({ id: 'amb.drip', every: 8 }, { id: 'amb.distantrumble', every: 60 })
     }
