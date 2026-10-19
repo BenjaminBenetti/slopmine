@@ -18,6 +18,7 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
+import { coastalRainforestGroundCover } from '../features/natureGroundCover.ts'
 
 /** Water surface Y for this biome; kept at 238 to match the other surface biomes. */
 const WATER_LEVEL = 238
@@ -153,6 +154,8 @@ export class CoastalRainforestGenerator extends BiomeGenerator {
         patchRadius: 3,
         validGroundBlocks: [BlockIds.GRASS, BlockIds.MOSS],
       }),
+      // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
+      coastalRainforestGroundCover(),
     ],
     caves: {
       enabled: true,

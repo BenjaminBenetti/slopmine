@@ -1,10 +1,13 @@
 import * as THREE from 'three'
+import { isHarvestableBlock } from '../world/interfaces/IBlock.ts'
+import { isPlantable } from '../items/interfaces/IPlantable.ts'
+import { isConsumable } from '../items/interfaces/IConsumable.ts'
 import type { WorldManager } from '../world/WorldManager.ts'
 import type { IPlayerState } from './PlayerState.ts'
 import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
 import type { ItemConsumption } from './ItemConsumption.ts'
 import { BlockRaycaster } from './BlockRaycaster.ts'
-import { BlockRegistry } from '../world/blocks/BlockRegistry.ts'
+import { BlockRegistry, getBlock } from '../world/blocks/BlockRegistry.ts'
 import { BlockFace } from '../world/interfaces/IBlock.ts'
 import { AABB } from '../physics/collision/AABB.ts'
 import { yawToFacing, hitFaceToFacing, setMetadataFacing, setMetadataUses3DRotation, setMetadataFlipped, BlockFacing } from '../world/blocks/BlockFacing.ts'
@@ -105,9 +108,11 @@ export class BlockPlacement {
 
     if (!stack) return
 
-    // Check if item is a block type (ends with "_block")
+    // Block items end with "_block"; plantable items (seeds, carrots...)
+    // name the crop block they plant
     const itemId = stack.item.id
-    if (!itemId.endsWith('_block')) return
+    const plantable = isPlantable(stack.item)
+    if (!itemId.endsWith('_block') && !plantable) return
 
     // The block a BlockItem declares (blockName) wins: it differs from the
     // "<block name>_block" id convention where that name is taken by another
@@ -117,7 +122,7 @@ export class BlockPlacement {
     // block 'iron_block'). Items without one fall back to the id convention.
     const registry = BlockRegistry.getInstance()
     const blockName = itemId.slice(0, -6) // Remove "_block" suffix
-    const declaredName = (stack.item as { blockName?: unknown }).blockName
+    const declaredName = plantable ? stack.item.plantsBlock : (stack.item as { blockName?: unknown }).blockName
     const block =
       (typeof declaredName === 'string' ? registry.getBlockByName(declaredName) : undefined) ??
       registry.getBlockByName(blockName)
@@ -128,9 +133,14 @@ export class BlockPlacement {
     // Raycast to find target block
     const hit = this.raycaster.castFromCamera(this.camera, this.maxReachDistance)
     if (!hit) return
+    // Right-click on a berry or forage bush harvests it (setupFarming)
+    if (isHarvestableBlock(getBlock(hit.blockId))) return
 
-    // Calculate placement position from hit face
-    const placePos = this.getPlacementPosition(hit.worldX, hit.worldY, hit.worldZ, hit.face)
+    // Calculate placement position from hit face - aimed at grass or a
+    // flower, the block goes into that cell instead
+    const placePos = getBlock(hit.blockId).properties.replaceable
+      ? { x: hit.worldX, y: hit.worldY, z: hit.worldZ }
+      : this.getPlacementPosition(hit.worldX, hit.worldY, hit.worldZ, hit.face)
 
     // Check if placement would overlap with player
     if (this.wouldOverlapPlayer(placePos.x, placePos.y, placePos.z)) return
@@ -185,6 +195,9 @@ export class BlockPlacement {
     }
 
     // Note: Block entity is created automatically by setBlock() if the block supports it
+
+    // A planted carrot isn't eaten too (the same press would start eating it)
+    if (isConsumable(stack.item)) this.itemConsumption?.endPress()
 
     // Decrease item stack count
     if (stack.count <= 1) {

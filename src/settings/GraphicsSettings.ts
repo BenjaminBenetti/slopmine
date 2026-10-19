@@ -12,6 +12,10 @@ export const LOD_DISTANCE_OPTIONS: readonly LodDistance[] = [12, 16, 20, 24, 32]
 export const TEXTURE_FILTERING_OPTIONS = ['crisp', 'smooth'] as const
 export type TextureFiltering = (typeof TEXTURE_FILTERING_OPTIONS)[number]
 
+/** Grass, flowers and doodads: drawn to full distance, nearer (cheaper), or not at all. */
+export const FOLIAGE_DETAIL_OPTIONS = ['full', 'near', 'off'] as const
+export type FoliageDetail = (typeof FOLIAGE_DETAIL_OPTIONS)[number]
+
 export interface IGraphicsSettings {
   cullingEnabled: boolean
   resolutionPreset: ResolutionPreset
@@ -23,6 +27,8 @@ export interface IGraphicsSettings {
   lodDistance: LodDistance
   /** Block texture minification style (applied by TextureLoader.setTextureFiltering). */
   textureFiltering: TextureFiltering
+  /** Plant detail (applied by FoliageRenderer.setFoliageDetail). */
+  foliageDetail: FoliageDetail
 }
 
 const DEFAULT_SETTINGS: IGraphicsSettings = {
@@ -34,6 +40,7 @@ const DEFAULT_SETTINGS: IGraphicsSettings = {
   lodEnabled: true,
   lodDistance: 24,
   textureFiltering: 'crisp',
+  foliageDetail: 'full',
 }
 
 export class GraphicsSettings {
@@ -115,6 +122,15 @@ export class GraphicsSettings {
     this.save()
   }
 
+  get foliageDetail(): FoliageDetail {
+    return this.settings.foliageDetail
+  }
+
+  set foliageDetail(value: FoliageDetail) {
+    this.settings.foliageDetail = value
+    this.save()
+  }
+
   private load(): IGraphicsSettings {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
@@ -126,6 +142,9 @@ export class GraphicsSettings {
         }
         if (!TEXTURE_FILTERING_OPTIONS.includes(settings.textureFiltering)) {
           settings.textureFiltering = DEFAULT_SETTINGS.textureFiltering
+        }
+        if (!FOLIAGE_DETAIL_OPTIONS.includes(settings.foliageDetail)) {
+          settings.foliageDetail = DEFAULT_SETTINGS.foliageDetail
         }
         return settings
       }

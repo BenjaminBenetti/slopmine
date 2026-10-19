@@ -51,11 +51,12 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
    water never stalls on a program link; add new shared world materials to `worldWarmupMaterials`
 9. **Gameplay wiring** (the "Depth expansion wiring" block near the end of main.ts, after the core
    tasks): chest loot tables, the 'status-effects' and 'biome-entry-events' tasks, then
-   `setupProgression`, `setupBoneMeal`/`setupSlimeBounce`, `setupPlayerCombat`, `setupHellforge`,
+   `setupProgression`, `setupBoneMeal`/`setupFarming`/`setupSlimeBounce`, `setupPlayerCombat`, `setupHellforge`,
    `setupArmorSystem`, `setupAlchemy` (must come after 'skybox': ember sight post-adjusts the light
    floor it sets), `setupDungeons`, one `setup<Biome>()` per Hell biome (castle tier loot tables,
-   garrisons, guardian, procedural locator), `setupDayNight` + `setupNightfall` + `setupFireflies`
-   (the overworld clock, night creatures, beds, fireflies - see `src/daynight/`), and last
+   garrisons, guardian, procedural locator), `setupDayNight` + `setupNightfall` + `setupFireflies` +
+   `setupButterflies` (the overworld clock, night creatures, beds, fireflies, daytime insects - see
+   `src/daynight/`), and last
    `setupAudio` (sound - see `src/audio/`).
    A new system exposes a `setupX(deps)` in its own module; keep main.ts edits to the call
 
@@ -122,11 +123,11 @@ The core module provides the game loop infrastructure and frame budget managemen
   (atmosphere/sky/fog/daylight, block outline, underwater overlay - skipped frames showed stale sky),
   plus cheap gameplay clocks/polls: 'status-effects', 'alchemy-effects', 'player-combat',
   'progression', 'slime-bounce', 'biome-entry-events', 'dungeons-hud', 'dungeons' (spawners),
-  'world-clock' (time of day), 'fireflies', 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
+  'world-clock' (time of day), 'fireflies', 'butterflies', 'farming-input', 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
   tasks registered late starve for long stretches while the world streams, so anything the player must see promptly
   (a timer, a toast, a boss bar) goes here - and stays cheap (poll at 1-2 Hz inside the task)
 - `HIGH` (1): Can defer briefly - the budgeted light queue ('lighting')
-- `NORMAL` (2): Background work - world generation, LOD tiles/meshes, block systems, entities
+- `NORMAL` (2): Background work - world generation, LOD tiles/meshes, block systems (incl. 'random-block-ticks'), entities
 - `LOW` (3): Lowest priority - liquid physics, mob spawning (`EntitySpawner`)
 
 **Frame Budget Algorithm:**
@@ -153,6 +154,14 @@ Three.js-based rendering with optimized voxel mesh handling.
 - `GlowHaloMaterial.ts` - `createGlowHalo({ color, radius, lift })`: soft additive spheres of light around glowing water plants (see Liquids, glow halos)
 - `SwayingPlantMaterial.ts` - `makeSwayInCurrent(material, { amplitude, speed })`: instanced water plants wave in the current, by world height and column, so stacked kelp segments bend as one strand
 - `InstancedBlockLight.ts` - World light for instanced blocks (instanceColor carries light levels, see Miniature block displays)
+- `foliage/FoliageRenderer.ts` - The batched foliage renderer: every foliage block (`FoliageSpec` - grass, flowers, bushes,
+  crops, ground doodads) in a sub-chunk is ONE instanced draw (`FoliageBatch`, built in `GreedyChunkMesh` from the
+  worker's non-greedy lists), so plant variety and density cost no draw calls. Sprites in their own DataArrayTexture
+  (`buildFoliageTextures`, after the block array - no texture-array layers), glow maps in a second; 3 base quads (two
+  crossed planes + one flat) where each instance collapses the shape it doesn't use; per instance, hashed from the
+  cell: sprite variant, yaw, offset, size. World light levels per instance (normal straight up: a tuft shades like its
+  ground), wind sway at the tips (`glowTimeUniform`), faded out by its view distance in the vertex shader;
+  `updateFoliageVisibility` (Renderer.render) hides whole meshes beyond reach
 - `interfaces/IChunkMesh.ts` - `IChunkMesh`, the sub-chunk mesh as culling and debug wireframes see it
 - `FrustumCuller.ts` - First-pass visibility culling via AABB-frustum intersection
 - `SoftwareOcclusionCuller.ts` - Second-pass CPU depth buffer occlusion (256×128)
@@ -426,7 +435,9 @@ Block type definitions using flyweight pattern (stateless singletons).
   spawners, 172 garrison spawner, 180 Hellforge, 200-223 Molten Wastes, 230-252 Ossuary, 260-285
   Ember Grove, 290-318 Crystal Abyss, 320-349 Cocytus - each Hell range includes its castle kit's
   blocks; 350-369 day and night (350 Ward Lantern, 351-360 swamp bioluminescence: foxfire and amber
-  mushroom stems/caps, glowmoss, glimmercap, lumen fern, glowkelp + its crown, lanternweed); highest 360). Shared registration files are grouped by header comments per feature area
+  mushroom stems/caps, glowmoss, glimmercap, lumen fern, glowkelp + its crown, lanternweed); 361-449
+  nature (361-402 wild plants and doodads, 403-408 forage bushes, 409 oak sapling, 410-411 farmland,
+  412-435 crops, 436-437 embers and volcanic rocks, 438-447 young stages of seed-grown bushes); highest 447). Shared registration files are grouped by header comments per feature area
   (`// Hell: Cocytus`) - add new entries to their area's group
 - `BlockRegistry.ts` - Singleton registry mapping IDs to block instances
 - `FaceTextureRegistry.ts` - Maps block+face to TextureId for greedy meshing. Greedy side faces
@@ -448,7 +459,7 @@ incomplete - don't rely on it.
 draws nothing.
 **Texture-layer budget:** every distinct greedy face texture costs one `BlockTextureArray` layer;
 the limit is 255 (`CHUNK_MAX_TEXTURE_LAYER`, building throws above it; layer 0 = missing texture).
-156 are used (54 base game, 102 expansion - the boot log's `Block texture array built with N layers`
+158 are used (54 base game, 104 expansion - the boot log's `Block texture array built with N layers`
 counts them, layer 0 excluded). TextureId values may exceed 255 (layers are compacted),
 so reuse one texture across faces/blocks where it reads fine (crafted infernal bricks, sanctum tile
 and the crystal cores share their source block's layers). Non-greedy blocks cost no layer.
@@ -535,6 +546,14 @@ shared geometry/materials). Rules:
   instance's (sky, block) light levels, and `InstancedBlockLight.ts` patches
   the shared material for instanced variants only (so displays are
   untouched). Don't use `instanceColor` as a colour with block materials.
+
+**Random Block Ticks (`src/world/blocktick/RandomBlockTicks.ts`, the NORMAL 'random-block-ticks' task from
+`setupFarming`):** blocks with `onRandomTick()` within 6 chunks of the player are visited at random, each about
+once per `RANDOM_TICK_INTERVAL` (20 s); the hook rolls a chance (crops grow, forage bushes and berry bushes
+regrow, saplings grow into trees, farmland dries and wets). Nothing is saved or scheduled, so worldgen and
+reloaded blocks tick like placed ones (scheduled ticks are lost on reload - growth belongs here). Each
+sub-chunk's tickable cells are listed by a scan of its block array (6 scans per run) and re-listed when its
+`dataVersion` changes.
 
 **Scheduled Block Ticks (`src/world/blocktick/ScheduledBlockTicks.ts`):**
 
@@ -922,6 +941,13 @@ AABB-based collision detection with swept volume resolution.
 | EYE_HEIGHT | 1.62 | Camera offset |
 
 **Collision Resolution:**
+0. A body that starts the step overlapping blocks (spawned into a hillside, pushed into a trunk) is pushed
+   out first: `CollisionDetector.findClearOffset` - the smallest shift up or along one horizontal axis
+   (≤ 1.1 blocks) that clears it; otherwise every axis clips to zero and it is frozen for good. Faces
+   that only touch never overlap (a body placed exactly on a block top can walk off it).
+   `PhysicsEngine.fitBody` uses the same search: `EntityManager` fits every entity entering the world
+   (≤ 1.5 blocks), and `EntitySpawner` drops a spawn that only fits further than 0.6 blocks away
+   (it centres spawns in their cell, on the solid block under any plants)
 1. Calculate desired movement: `velocity × deltaTime`
 2. Expand AABB by velocity (swept volume)
 3. Query solid blocks in swept region
@@ -974,7 +1000,7 @@ Player state, controls, and block interactions.
 | E | Interact with targeted block, else toggle inventory; closes any open overlay |
 | J | Journal (also from the inventory sidebar); J / E / Esc close it |
 | Left Click | Mine block (hold); attack an entity in front (held: re-hits whenever fully charged) |
-| Right Click | Place block; held armor: wear it (swaps the worn piece); bone meal on a crop/bush: grow one stage |
+| Right Click | Place block (aimed at grass or a flower: into its cell); pick a ripe berry/forage bush; plant seeds/carrots/potatoes on farmland; held armor: wear it (swaps the worn piece); hoe on grass/dirt: till farmland (hold to keep tilling); bone meal on a crop/bush/sapling: grow it, on bare ground: sprout grass and flowers |
 | Right Click (hold) | Consume food / potion / Infernal Heart; channel the Return Idol (3 s) |
 
 **Mining Formula:**
@@ -1031,7 +1057,9 @@ items/
 ```
 
 **Tool Tiers:** Wood → Stone → Iron → Steel → Diamond → Infernium → Hellbane (tier = `demolitionForce`
-1-7; infernium and hellbane tools, swords and armor are forged at the Hellforge)
+1-7; infernium and hellbane tools, swords and armor are forged at the Hellforge). Hoes (`tools/hoe/`,
+wood-diamond hand-crafted (2 heads + 2 sticks), infernium and hellbane forged at the Hellforge) till farmland
+(see Nature; hold right-click to keep tilling) and cut leaves fast.
 
 `ItemTags.HIDE` marks the hides that make leather armor (wolf/bear pelt, alligator leather, komodo
 scales). Recipe ingredients may name a tag (`{ tag, count }`) instead of an item id.
@@ -1178,7 +1206,7 @@ Idol and effects HUD), registered after 'skybox'. HUD info (name, colour, buff/d
 | Sword damage (0.5 s, kb 1.0) | 4 | 5 | 6 | 7 | 8 | 10 | 13 |
 
 Axe = sword + 1 (0.8 s, kb 1.3 - the slow heavy hitter), pickaxe = sword − 2 (0.65 s), shovel =
-sword − 3 (0.6 s).
+sword − 3 (0.6 s), hoe = sword − 3 (0.55 s, kb 0.8).
 
 ---
 
@@ -1246,15 +1274,15 @@ lists them as station 'hellforge'); weapon/tool recipes in `HellforgeRecipes.ts`
 sword 2, helmet 3, chest 5, legs 4, boots 2); tier 7 = infernium item + 1 sigil + 2 ingots + 2
 biome material (sword/chest: ember sigil + magma cream; helmet/axe: bone sigil + soul shard;
 legs/shovel: spore sigil + glowcap; pickaxe: prism sigil + prism shard; boots: rime sigil + rime
-crystal).
+crystal; hoe: rime sigil + rime crystal). Hoes: diamond hoe + 2 ingots → infernium hoe.
 
 ---
 
 ### `src/progression/` - Journal
 
-- `milestones.ts` - Declarative data: 10 chapters (First Steps, Nightfall, Metal Ages, Arms & Armor,
-  Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 69 milestones (Nightfall's
-  four are optional side goals). Chapter and
+- `milestones.ts` - Declarative data: 11 chapters (First Steps, Green Thumb, Nightfall, Metal Ages, Arms &
+  Armor, Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 74 milestones (Green
+  Thumb's five and Nightfall's four are optional side goals). Chapter and
   milestone ids are persisted - never rename. `stage` orders the arc: the "next goal" is the
   unlocked, unfinished, non-optional milestone with the lowest stage. `requires` must be TRUE
   implications (completing a milestone completes its prerequisites silently). `legacy` milestones
@@ -1358,7 +1386,7 @@ recovery, range, phases, weight, line of sight; one attack at a time, weighted p
 | 5 | Rime Sovereign (`rime_sovereign`) | Frozen Citadel (`frozen_citadel`) | 500 | 0.66, 0.33 | frost nova ('magic' + Frostbite II), ice armor, two ice revenants (any standable spot) | rime crystals, diamonds, frost lanterns |
 
 Sigils: `ember_sigil`, `bone_sigil`, `spore_sigil`, `prism_sigil`, `rime_sigil` - every guardian
-drops 2, so one castle of each kind covers the 8 Hellbane recipes. Activation radius/height (set in
+drops 2, so one castle of each kind covers the 9 Hellbane recipes. Activation radius/height (set in
 each `setup<Biome>()`, tuned to the boss module) / `arenaRadius`: Pyre Tyrant 11/8 / 13, Bone King
 13/5 / 17, Sporemother 8/6 / 11, Prism Warden default 12/8 / 13, Rime Sovereign 10/6 / 12 (passed by
 `setupCocytus`).
@@ -1630,6 +1658,73 @@ when left behind) and the shader wanders, blinks and fades them. `setupFireflies
 'fireflies' task): visible share = `worldClock.nightAmount` × surface weight; swamp only
 (`FIREFLY_DENSITY` per biome - an anchor outside the swamp is rejected).
 
+**Butterflies and dragonflies** (`src/butterflies/`): the daytime counterpart of the fireflies. `ButterflySwarm` is one
+GPU point cloud (110 butterflies + 12 dragonflies, opaque cutouts with dithered fade, fogged, dimmed by `daylightUniform`,
+renderOrder 510) around the player; the CPU only picks anchors (butterflies: open ground with sky light ≥ 12, preferring
+plants, 0.5-2.5 blocks up; dragonflies: water / swamp-water source surfaces) and the shaders animate and draw them
+procedurally (no textures: flapping wing pairs, darting dragonflies facing their flight). `setupButterflies` (CRITICAL
+'butterflies' task): visible share = (1 − `worldClock.nightAmount`) × surface weight; `BUTTERFLY_DENSITY` per biome
+(jungle 0.07 - Ben's "good amount"; hills/coastal 0.015, pine/swamp 0.01 - the odd one; none on the plains, in
+the desert or the volcanic lands).
+
+### Nature: wild plants, ground cover, farming (`src/farming/`, `blocks/types/{foliage_shared,wild_plants,crops,forage_shared,farmland}/`)
+
+The overworld is carpeted with life, and plants grow.
+- **Foliage blocks** (`FoliageBlock`, `foliage_shared/FoliageBlock.ts`; spec in `blocks/foliage/FoliageSpec.ts`): a plant
+  or doodad drawn by the foliage renderer (see `src/renderer/`). Never solid, mined instantly, `replaceable`
+  (a placement aimed at it goes INTO its cell - `BlockPlacement`; liquids flow into it and wash it away -
+  `LiquidPhysicsAlgorithm.isOpenCell`); pops off (dropping what it drops) when its ground goes - a
+  scheduled support tick, so worldgen plants cost nothing until something changes next to them. Options:
+  sprites (variants), shape (`cross` | `flat`), size, sway, jitter, scale variation, view distance, glow
+  map (dark-only or not), `ground` / `floatsOn` (lily pads on water), `drops`. Display (icon, held,
+  dropped) is a plain cross/flat mesh of the first sprite. A new sprite: bottom-aligned 64×64 cutout
+  filling the lower `height` of the square (cross) or the whole square (flat), from the Codex white/
+  magenta-background workflow (generate-texture skill), alpha binarised at 0.5.
+- **Wild plants** (`wild_plants/wildPlantBlocks.ts`, one data table, assets in `wild_plants/assets/`): grasses
+  (short/tall/jungle/dry/beach/frosted/ash, sedge), flowers (daisy, dandelion, lavender, foxglove, heather,
+  orchid, heliconia, fireweed, sea thrift, bog cotton, desert marigold, ember lily - glows, light 6), bushes
+  and ferns (wild bush, bracken, salal, elephant ear, horsetail, dead bush, tumbleweed, barrel cactus, aloe),
+  mushrooms (toadstool, edible brown mushrooms), flat doodads (pebbles, twigs, leaf/needle litter, cinders,
+  obsidian shards, beach shells, driftwood, volcanic rocks, glowing embers, lily pads, water lilies). Grass drops wheat seeds now and then;
+  twigs/dead bushes/driftwood sticks, needle litter pinecones, shells a sea shell, aloe leaves; flowers and
+  bushes drop themselves (`PlantBlockItem`, one generic block item; `items/nature/registerNatureItems.ts`).
+- **Ground cover** (`generate/features/GroundCoverFeature.ts` + per-biome layers in `natureGroundCover.ts`): appended
+  LAST to every overworld biome's features (after trees and structures - it only fills open ground). Per
+  column, layers are tried in order (rare finds, doodads, noise-zoned flower fields and patches, then the
+  grass carpet), one plant per column. Play feedback: only the jungle is lush; elsewhere low grass is a light
+  scatter and knee-to-face plants (tall grass, bracken, foxgloves) only gather in small rare patches; the
+  desert has half the scatter; the volcanic lands grow almost nothing (rocks, glowing embers, cinders,
+  obsidian, a few ember lilies), on the surface found near the blended height (looking through
+  canopies). A column whose ground is the top row of the sub-chunk below is handled by the sub-chunk
+  above through `FeatureContext.getTerrainTopBelow` (the worker fills that terrain lazily) - otherwise flat
+  land at a sub-chunk's top Y came out bare. Main-thread decorations (oaks, cacti, giant mushrooms) treat
+  ground cover as open (`isOpenForDecoration`) and overwrite it.
+- **Farming**: hoes till grass/dirt/podzol/mud/moss/snowy grass into `FARMLAND` (`setupFarming`, right-click - held,
+  it keeps tilling every 0.22 s (CRITICAL 'farming-input' task); moist
+  `FARMLAND_MOIST` at once within 4 blocks of water; farmland re-checks its water on random ticks). Crops
+  (`crops/CropBlock.ts` + `cropBlocks.ts`): wheat, hemp, herb (3 stages, the original crops, now random-tick
+  grown) and carrot, potato, tomato, onion, strawberry, pumpkin (4 stages) - foliage blocks planted only on
+  farmland (seed items are `IPlantable`: `plantsBlock`; an edible plantable is planted when aimed at farmland,
+  eaten otherwise - `ItemConsumption.endPress`), grown by random ticks (`stageSeconds` on moist farmland, ×0.6
+  dry, ×0.35 wild), bone meal grows a stage (`IGrowableBlock.grow`). Young crops drop their seed, ripe ones
+  the harvest (produce + seeds). Wild ripe crops grow in rare ground-cover patches (carrots/onions/pumpkins
+  in the plains, potatoes in the hills, tomatoes in the jungle, strawberries in the forests).
+- **Forage bushes** (`forage_shared/ForageBushBlock.ts`): blueberry (pine forest), prickly pear (desert), pineapple
+  (jungle) - ripe/picked pairs like the berry bush; every ripe bush (`IHarvestableBlock`, berry bush included) is
+  picked with E or right-click (`setupFarming`; `BlockPlacement` places nothing on a bush), random ticks regrow.
+- **Seeds for every wild food plant**: blueberries, prickly pears, pineapples, aloe leaves and berries each craft
+  into 2 seeds (`NatureRecipes`), planted on farmland as `ForageSproutBlock` young stages (`<name>_1`, `<name>_2`,
+  `forage_shared/ForageSproutBlock.ts`) that grow into the bush (or aloe); grown bushes stand on farmland too.
+- **Saplings**: oak leaves drop oak saplings (6%, mined or decaying); `OakSaplingBlock` grows an `OakTree` on
+  grass/dirt/podzol. Pine saplings and berry bushes also regrow on random ticks now (their scheduled ticks
+  were lost on reload).
+- **Food** (`items/food/`): carrot 2, potato 1 → baked potato 6 (forge), tomato 2, onion 1, strawberry 2,
+  blueberries 2, prickly pear 3, pineapple 4, aloe leaf 3 (cures poison), mushroom stew 6, vegetable stew 12
+  (bowl + carrot + potato + onion), pumpkin pie 9 (pumpkin + 2 ground wheat). Bone meal on bare ground
+  sprouts grass and flowers by the ground block.
+- **Existing worlds**: generated sub-chunks are saved once and never regenerate, so ground cover only
+  appears in newly generated land.
+
 ### `src/audio/` - Sound (effects, ambience, music)
 
 Every sound is procedural: recipes in `synth/` render samples in `AudioSynthWorker` at startup or
@@ -1778,6 +1873,7 @@ User-configurable graphics options with localStorage persistence.
 | lodEnabled | boolean | true | Toggle (Far Terrain: Off) |
 | lodDistance | number | 24 | 12, 16, 20, 24, 32 chunks (only ≥ chunkDistance + 2 offered) |
 | textureFiltering | string | 'crisp' | crisp (`NearestMipmapLinear`, pixel art), smooth (trilinear); applied live via `setTextureFiltering` |
+| foliageDetail | string | 'full' | Plants: full, near (view distances ×0.55 - much less overdraw), off; applied live via `setFoliageDetail` (FoliageRenderer) |
 
 **Persistence:** Auto-saves to `localStorage['slopmine:graphicsSettings']` on every change.
 

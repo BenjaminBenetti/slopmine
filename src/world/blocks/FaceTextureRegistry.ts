@@ -331,6 +331,10 @@ export enum TextureId {
   GLOWKELP = 597,                // Non-greedy sprite (no texture-array layer)
   GLOWKELP_TOP = 598,            // Non-greedy sprite (no texture-array layer)
   LANTERNWEED = 599,             // Non-greedy sprite (no texture-array layer)
+
+  // Nature
+  FARMLAND_TOP = 600,            // farmland.webp (sides and bottom: dirt)
+  FARMLAND_MOIST_TOP = 601,      // farmland_moist.webp
 }
 
 // Cache for the face texture map

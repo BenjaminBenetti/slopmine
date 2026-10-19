@@ -25,6 +25,8 @@ export class ItemConsumption {
 
   /** Whether right mouse button is currently held */
   private isMouseDown = false
+  /** The held press was used up by another action (see endPress). */
+  private pressEnded = false
 
   /** Current consumption progress (0.0 to 1.0) */
   private consumptionProgress = 0
@@ -56,7 +58,7 @@ export class ItemConsumption {
    * @param deltaTime - Time since last frame in seconds
    */
   update(deltaTime: number): void {
-    if (!this.isMouseDown) {
+    if (!this.isMouseDown || this.pressEnded) {
       return
     }
 
@@ -177,11 +179,21 @@ export class ItemConsumption {
     this.isMouseDown = true
   }
 
+  /**
+   * The current right-click press did something else with the item (planted
+   * a carrot): don't start eating it until the button is pressed again.
+   */
+  endPress(): void {
+    this.pressEnded = true
+    this.cancelConsumption()
+  }
+
   private onMouseUp = (event: MouseEvent): void => {
     // Only handle right mouse button
     if (event.button !== 2) return
 
     this.isMouseDown = false
+    this.pressEnded = false
     this.cancelConsumption()
   }
 
@@ -189,6 +201,7 @@ export class ItemConsumption {
     // Cancel consumption if pointer lock is released
     if (document.pointerLockElement !== this.domElement) {
       this.isMouseDown = false
+      this.pressEnded = false
       this.cancelConsumption()
     }
   }

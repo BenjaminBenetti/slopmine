@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { FoliageSpec, IFoliageBlock } from '../../foliage/FoliageSpec.ts'
 import type { IBlockProperties, IWorld } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -101,7 +102,20 @@ const SAPLING_TICK_INTERVAL = 20
  * The grown tree is placed with metadata 0 (no persistent bit), so it can be
  * felled by chopping the trunk and its canopy decays like a natural tree.
  */
-export class PineSaplingBlock extends TransparentBlock {
+export class PineSaplingBlock extends TransparentBlock implements IFoliageBlock {
+  /** Drawn by the batched foliage renderer (one draw per sub-chunk, wind sway); displays keep the cross mesh. */
+  readonly foliage: FoliageSpec = {
+    sprites: [pineSaplingTexUrl],
+    shape: 'cross',
+    width: 0.7,
+    height: 0.8,
+    spriteHeight: 1,
+    sway: 0.4,
+    jitter: 0.2,
+    scaleVariation: 0.12,
+    viewDistance: 96,
+  }
+
   readonly properties: IBlockProperties = {
     id: BlockIds.PINE_SAPLING,
     name: 'pine_sapling',
@@ -196,6 +210,14 @@ export class PineSaplingBlock extends TransparentBlock {
 
     buildPineTree(world, x, y, z, trunkHeight)
     return false
+  }
+
+  /**
+   * Random ticks grow it too: scheduled ticks aren't saved, so a sapling
+   * planted before a reload would otherwise stop growing until disturbed.
+   */
+  onRandomTick(world: IWorld, x: bigint, y: bigint, z: bigint): void {
+    this.onScheduledTick(world, x, y, z)
   }
 
   getDrops(): IItem[] {

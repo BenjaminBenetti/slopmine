@@ -1,4 +1,5 @@
 import type { IWorld } from '../../../interfaces/IBlock.ts'
+import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { PERSISTENT_PLACED_METADATA_BIT } from '../../BlockFacing.ts'
@@ -72,8 +73,15 @@ export abstract class LeafBlock extends TransparentBlock {
     if (this.isLogReachable(world, x, y, z)) return false
 
     playBlockSound(this.properties.id, 'break', { x: Number(x) + 0.5, y: Number(y) + 0.5, z: Number(z) + 0.5 }, { volume: 0.35 })
+    const drops = this.getDecayDrops()
+    if (drops.length > 0) world.spawnBlockDrops?.(x, y, z, drops)
     world.setBlock(x, y, z, BlockIds.AIR)
     return false
+  }
+
+  /** What a decaying leaf lets fall (a sapling now and then; default nothing). */
+  protected getDecayDrops(): IItem[] {
+    return []
   }
 
   /**

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { updateFoliageVisibility } from './foliage/FoliageRenderer.ts'
 import { FrustumCuller } from './FrustumCuller.ts'
 import { SoftwareOcclusionCuller, type SoftwareOcclusionStats } from './SoftwareOcclusionCuller.ts'
 import type { IChunkMesh } from './interfaces/IChunkMesh.ts'
@@ -235,6 +236,7 @@ export class Renderer {
         }
       }
     }
+    updateFoliageVisibility(this.camera)
     this.renderer.render(this.scene, this.camera)
   }
 

@@ -9,6 +9,8 @@ import { InferniumAxeItem } from '../items/tools/axe/InferniumAxeItem.ts'
 import { HellbaneAxeItem } from '../items/tools/axe/HellbaneAxeItem.ts'
 import { InferniumShovelItem } from '../items/tools/shovel/InferniumShovelItem.ts'
 import { HellbaneShovelItem } from '../items/tools/shovel/HellbaneShovelItem.ts'
+import { InferniumHoeItem } from '../items/tools/hoe/InferniumHoeItem.ts'
+import { HellbaneHoeItem } from '../items/tools/hoe/HellbaneHoeItem.ts'
 
 /**
  * The Hellforge station itself, crafted by hand once the first infernium is
@@ -115,16 +117,39 @@ export const hellbaneShovelRecipe: IRecipe = {
   resultCount: 1,
 }
 
+export const inferniumHoeRecipe: IRecipe = {
+  id: 'infernium_hoe',
+  name: 'Infernium Hoe',
+  ingredients: [{ itemId: 'diamond_hoe', count: 1 }, { itemId: 'infernium_ingot', count: 2 }],
+  createResult: () => new InferniumHoeItem(),
+  resultCount: 1,
+}
+
+export const hellbaneHoeRecipe: IRecipe = {
+  id: 'hellbane_hoe',
+  name: 'Hellbane Hoe',
+  ingredients: [
+    { itemId: 'infernium_hoe', count: 1 },
+    { itemId: 'rime_sigil', count: 1 },
+    { itemId: 'infernium_ingot', count: 2 },
+    { itemId: 'rime_crystal', count: 2 },
+  ],
+  createResult: () => new HellbaneHoeItem(),
+  resultCount: 1,
+}
+
 /** Weapons-stream Hellforge recipes (armor registers its own pieces). */
 export const hellforgeWeaponRecipes: IRecipe[] = [
   inferniumSwordRecipe,
   inferniumPickaxeRecipe,
   inferniumAxeRecipe,
   inferniumShovelRecipe,
+  inferniumHoeRecipe,
   hellbaneSwordRecipe,
   hellbanePickaxeRecipe,
   hellbaneAxeRecipe,
   hellbaneShovelRecipe,
+  hellbaneHoeRecipe,
 ]
 
 /** Register the weapon/tool recipes above into the Hellforge registry. */

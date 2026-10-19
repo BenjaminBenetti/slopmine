@@ -13,6 +13,7 @@ import { worldClock } from './daynight/WorldClock.ts'
 import { setupDayNight } from './daynight/setupDayNight.ts'
 import { setupNightfall } from './nightfall/setupNightfall.ts'
 import { setupFireflies } from './fireflies/setupFireflies.ts'
+import { setupButterflies } from './butterflies/setupButterflies.ts'
 import { requestSleep } from './daynight/sleep.ts'
 import { DistanceFog } from './renderer/DistanceFog.ts'
 import { BlockOutline } from './renderer/BlockOutline.ts'
@@ -54,9 +55,10 @@ import { biomeRegistry, BIOME_REGION_SIZE } from './world/generate/biomes/BiomeR
 import { LAYER_BOUNDARY_Y } from './world/generate/GenerationConfig.ts'
 import { GraphicsSettings } from './settings/index.ts'
 import * as THREE from 'three'
-import { setTextureFiltering } from './renderer/TextureLoader.ts'
+import { setTextureFiltering, whenBlockTexturesLoaded } from './renderer/TextureLoader.ts'
 import { setWorldDaylight, setWorldLightFloor } from './renderer/worldLightShader.ts'
 import { getChunkCutoutDepthMaterial, getChunkMaterial } from './renderer/ChunkMaterial.ts'
+import { getFoliageMaterial, setFoliageDetail } from './renderer/foliage/FoliageRenderer.ts'
 import { advanceGlowTime } from './renderer/glowClock.ts'
 import { warmUpWorldShaders, type WarmupMaterial } from './renderer/ShaderWarmup.ts'
 import {
@@ -83,7 +85,6 @@ import { setWoodworkingBenchBlockTickManager } from './world/blocks/types/woodwo
 import { blockUIRegistry, blockActionRegistry, createForgeUI, createApothecaryWorkbenchUI, createWoodworkingBenchUI, createChestUI, createShelfUI } from './ui/blockui/index.ts'
 import type { ShelfBlockState } from './world/blocks/types/shelf_shared/ShelfBlockState.ts'
 import { DOOR_TOGGLE_PAIRS, toggleDoor } from './world/blocks/types/door_shared/DoorToggle.ts'
-import { harvestBerryBush } from './world/blocks/types/berry_bush_berries/BerryBushLadenBlock.ts'
 import { collectResin } from './world/blocks/types/resin_tap/ResinTapBlock.ts'
 import { GATE_TOGGLE_PAIRS, toggleFenceGate } from './world/blocks/types/fence_gate_shared/FenceGateToggle.ts'
 import { TRAPDOOR_TOGGLE_PAIRS, toggleTrapdoor } from './world/blocks/types/trapdoor_shared/TrapdoorToggle.ts'
@@ -130,6 +131,7 @@ import { charredCampLootTable } from './world/blocks/types/chest/ChestLoot.ts'
 import { setupProgression } from './progression/setupProgression.ts'
 import { setupBoneMeal } from './progression/BoneMeal.ts'
 import { setupSlimeBounce } from './progression/SlimeBounce.ts'
+import { setupFarming } from './farming/setupFarming.ts'
 
 // Weapons, tool tiers 6-7 and the Hellforge
 import { setupPlayerCombat } from './combat/setupPlayerCombat.ts'
@@ -232,6 +234,7 @@ const graphicsSettings = new GraphicsSettings()
 renderer.setGraphicsSettings(graphicsSettings)
 // Block texture filtering (crisp/smooth), before any block texture is uploaded
 setTextureFiltering(graphicsSettings.textureFiltering)
+setFoliageDetail(graphicsSettings.foliageDetail)
 // Volume settings (persisted to localStorage; the audio system starts near the end)
 const audioSettings = new AudioSettings()
 
@@ -328,6 +331,7 @@ await world.waitForGenerationWorkerReady()
 console.log('[main] Generation worker ready, starting chunk loading')
 
 // Generate block icons for UI after textures are loaded
+await whenBlockTexturesLoaded()
 BlockIconGenerator.getInstance().generateAllIcons(renderer.renderer)
 
 // Build recipe book index after all recipes are registered and icons are generated
@@ -488,6 +492,7 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
     // Re-upload block textures with the new minification filter
     setTextureFiltering(mode)
   },
+  onFoliageDetailChange: (detail) => setFoliageDetail(detail),
   onSave: async () => {
     // Manual save triggered from pause menu (never before the stored state was read)
     if (!savedPlayerStateLoaded) return
@@ -813,15 +818,6 @@ for (const pair of TRAPDOOR_TOGGLE_PAIRS) {
   blockActionRegistry.register(pair.closedId, toggleWithGuard)
   blockActionRegistry.register(pair.openId, toggleWithGuard)
 }
-
-// Berry bush harvest (E): swap laden bush -> picked-clean, scatter berries.
-// The setBlock swap preserves metadata (arg omitted) and auto-schedules the regrow tick.
-blockActionRegistry.register(BlockIds.BERRY_BUSH_BERRIES, (x, y, z) => {
-  const items = harvestBerryBush(world, x, y, z)
-  if (items.length === 0) return false
-  world.spawnBlockDrops(x, y, z, items)
-  return true
-})
 
 // Resin tap collection (E): collect stored resin, then re-schedule the fill tick
 // (a full tap goes dormant; collection must wake it).
@@ -1582,6 +1578,16 @@ setupBoneMeal({
     updateHeldItem()
   },
 })
+// Farming and wild growth: random ticks, hoe tilling, picking forage bushes
+setupFarming({
+  scheduler,
+  domElement: renderer.renderer.domElement,
+  camera: renderer.camera,
+  world,
+  playerState,
+  playerBody,
+  itemConsumption,
+})
 setupSlimeBounce({
   scheduler,
   playerBody,
@@ -1712,6 +1718,17 @@ setupFireflies({
   getPackedLight: (x, y, z) => world.getPackedLightFast(x, y, z),
   getBiome: (x, z, y) => worldGenerator.getBiomeAtPosition(x, z, y),
 })
+// Butterflies over the meadows and dragonflies over the water by day
+setupButterflies({
+  scheduler,
+  scene: renderer.scene,
+  camera: renderer.camera,
+  playerBody,
+  getViewportHeight: () => renderer.getRenderResolution().height,
+  getBlock: (x, y, z) => world.getBlockFast(x, y, z),
+  getPackedLight: (x, y, z) => world.getPackedLightFast(x, y, z),
+  getBiome: (x, z, y) => worldGenerator.getBiomeAtPosition(x, z, y),
+})
 
 // Sound: procedural effects, ambience and generative music (see src/audio)
 setupAudio({
@@ -1752,6 +1769,8 @@ function worldWarmupMaterials(): WarmupMaterial[] {
     const material = getBlock(id).getInstanceMaterial()
     materials.push({ material: Array.isArray(material) ? material[0] : material })
   }
+  const foliage = getFoliageMaterial()
+  if (foliage) materials.push({ material: foliage })
   return materials
 }
 

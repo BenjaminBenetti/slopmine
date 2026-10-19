@@ -103,12 +103,6 @@ import { BlueMushroomBlock } from './types/blue_mushroom/BlueMushroomBlock.ts'
 import { BlueMushroomCapBlock } from './types/blue_mushroom_cap/BlueMushroomCapBlock.ts'
 import { PurpleMushroomBlock } from './types/purple_mushroom/PurpleMushroomBlock.ts'
 import { PurpleMushroomCapBlock } from './types/purple_mushroom_cap/PurpleMushroomCapBlock.ts'
-import { Wheat1Block } from './types/wheat/Wheat1Block.ts'
-import { Wheat2Block } from './types/wheat/Wheat2Block.ts'
-import { Wheat3Block } from './types/wheat/Wheat3Block.ts'
-import { Herb1Block } from './types/herb/Herb1Block.ts'
-import { Herb2Block } from './types/herb/Herb2Block.ts'
-import { Herb3Block } from './types/herb/Herb3Block.ts'
 import { HellRockBlock } from './types/hell_rock/HellRockBlock.ts'
 import { HellMagmaBlock } from './types/hell_magma/HellMagmaBlock.ts'
 import { CorruptedHellRockBlock } from './types/corrupted_hell_rock/CorruptedHellRockBlock.ts'
@@ -120,9 +114,6 @@ import { BlueFlowerBlock } from './types/blue_flower/BlueFlowerBlock.ts'
 import { RedFlowerBlock } from './types/red_flower/RedFlowerBlock.ts'
 import { JungleFernBlock } from './types/jungle_fern/JungleFernBlock.ts'
 import { LadderBlock } from './types/ladder/LadderBlock.ts'
-import { Hemp1Block } from './types/hemp/Hemp1Block.ts'
-import { Hemp2Block } from './types/hemp/Hemp2Block.ts'
-import { Hemp3Block } from './types/hemp/Hemp3Block.ts'
 import { BedHeadBlock } from './types/bed_head/BedHeadBlock.ts'
 import { BedFootBlock } from './types/bed_foot/BedFootBlock.ts'
 import { RopeLadderBlock } from './types/rope_ladder/RopeLadderBlock.ts'
@@ -285,6 +276,7 @@ import { SanctumStairsBlock } from './types/sanctum_stairs/SanctumStairsBlock.ts
 
 // Hell: Cocytus
 import { registerCocytusBlocks } from './types/cocytus_shared/registerCocytusBlocks.ts'
+import { registerNatureBlocks } from './types/nature_shared/registerNatureBlocks.ts'
 
 // Day and night
 import { WardLanternBlock } from './types/ward_lantern/WardLanternBlock.ts'
@@ -384,12 +376,6 @@ export function registerDefaultBlocks(): void {
   registerBlock(new SwampWaterFallingBlock())
 
   // Crop blocks
-  registerBlock(new Wheat1Block())
-  registerBlock(new Wheat2Block())
-  registerBlock(new Wheat3Block())
-  registerBlock(new Herb1Block())
-  registerBlock(new Herb2Block())
-  registerBlock(new Herb3Block())
 
   // Hell biome blocks
   registerBlock(new HellRockBlock())
@@ -412,9 +398,6 @@ export function registerDefaultBlocks(): void {
   registerBlock(new RopeLadderBlock())
 
   // Hemp blocks
-  registerBlock(new Hemp1Block())
-  registerBlock(new Hemp2Block())
-  registerBlock(new Hemp3Block())
 
   // Furniture blocks
   registerBlock(new BedHeadBlock())
@@ -648,4 +631,7 @@ export function registerDefaultBlocks(): void {
   registerBlock(new GlowkelpBlock())
   registerBlock(new GlowkelpTopBlock())
   registerBlock(new LanternweedBlock())
+
+  // Nature
+  registerNatureBlocks()
 }

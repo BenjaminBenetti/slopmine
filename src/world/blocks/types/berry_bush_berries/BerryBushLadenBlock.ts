@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import type { IBlockProperties, IWorld } from '../../../interfaces/IBlock.ts'
+import type { FoliageSpec, IFoliageBlock } from '../../foliage/FoliageSpec.ts'
+import type { IBlockProperties, IHarvestableBlock, IWorld } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
 import { BlockIds } from '../../BlockIds.ts'
@@ -53,7 +54,20 @@ export function harvestBerryBush(world: IWorld, x: bigint, y: bigint, z: bigint)
  * picked-clean variant, which regrows), or break it for the berries.
  * No scheduled tick - only the picked-clean variant ticks.
  */
-export class BerryBushLadenBlock extends TransparentBlock {
+export class BerryBushLadenBlock extends TransparentBlock implements IFoliageBlock, IHarvestableBlock {
+  /** Drawn by the batched foliage renderer (one draw per sub-chunk, wind sway); displays keep the cross mesh. */
+  readonly foliage: FoliageSpec = {
+    sprites: [berryBushBerriesTexUrl],
+    shape: 'cross',
+    width: 0.9,
+    height: 0.8,
+    spriteHeight: 1,
+    sway: 0.2,
+    jitter: 0.2,
+    scaleVariation: 0.12,
+    viewDistance: 112,
+  }
+
   readonly properties: IBlockProperties = {
     id: BlockIds.BERRY_BUSH_BERRIES,
     name: 'berry_bush_berries',
@@ -96,6 +110,12 @@ export class BerryBushLadenBlock extends TransparentBlock {
       new THREE.Vector3(0.05, 0, 0.05),
       new THREE.Vector3(0.95, 0.8, 0.95)
     )
+  }
+
+  /** E or right-click: pick the berries, leaving the bush to regrow. */
+  harvest(world: IWorld, x: bigint, y: bigint, z: bigint): IItem[] | null {
+    const items = harvestBerryBush(world, x, y, z)
+    return items.length > 0 ? items : null
   }
 
   getDrops(): IItem[] {

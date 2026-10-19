@@ -9,6 +9,7 @@ import type { IItem } from '../items/Item.ts'
 import { BlockRaycaster, type IBlockRaycastHit } from './BlockRaycaster.ts'
 import { MiningOverlay } from '../renderer/MiningOverlay.ts'
 import { getVacatedBlockId } from '../world/liquid/LiquidRegistry.ts'
+import { getBlock } from '../world/blocks/BlockRegistry.ts'
 import { calculateMiningDamage, describeRequiredTool } from './MiningDamage.ts'
 import { hasToolStats, HAND_STATS } from '../items/interfaces/IToolStats.ts'
 import { FloatingTextManager } from '../ui/floating-text/index.ts'
@@ -134,8 +135,10 @@ export class BlockInteraction {
     if (entityHit) {
       const entityDist = entityHit.distance
       const blockDist = blockHit?.distance ?? Infinity
+      // Grass and flowers never shield a mob standing in them
+      const blockIsCover = blockHit !== null && getBlock(blockHit.blockId).properties.replaceable === true
 
-      if (entityDist < blockDist) {
+      if (entityDist < blockDist || blockIsCover) {
         // Entity in front - never mine the block behind it. A click hits
         // once, as soon as the arm has recovered past its minimum (a click
         // released before that lands nothing); holding the button hits again

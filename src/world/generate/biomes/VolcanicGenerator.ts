@@ -19,6 +19,7 @@ import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { MagmaSlimeEntity } from '../../../entities/animals/magma_slime/index.ts'
 import { KomodoDragonEntity } from '../../../entities/animals/komodo_dragon/index.ts'
+import { volcanicGroundCover } from '../features/natureGroundCover.ts'
 
 /**
  * Volcanic biome with basalt surface, magma subsurface, and lava pools.
@@ -159,6 +160,8 @@ export class VolcanicGenerator extends BiomeGenerator {
         maxHeight: 60,
         minBaseHeight: 242, // above lava lakes (Y=238) and their shores
       }),
+      // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
+      volcanicGroundCover(),
     ],
     caves: {
       enabled: true,

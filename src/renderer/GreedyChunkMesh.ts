@@ -13,6 +13,8 @@ import {
 } from './ChunkVertexFormat.ts'
 import { prepareInstancedBlockMaterial, writeInstanceLight } from './InstancedBlockLight.ts'
 import { LIQUID_GLOW_ATTRIBUTE } from './LiquidMaterials.ts'
+import { FoliageBatch, releaseFoliageMesh } from './foliage/FoliageRenderer.ts'
+import { isFoliageBlock } from '../world/blocks/foliage/FoliageSpec.ts'
 import { getMetadataFacing, getMetadataUses3DRotation, getMetadataFlipped, facingToEuler } from '../world/blocks/BlockFacing.ts'
 
 // Fallback when the block texture array isn't ready (should not happen: it is
@@ -63,6 +65,7 @@ function packedLightToColor(packed: number): typeof lightColor {
 export class GreedyChunkMesh implements IChunkMesh {
   private readonly meshes: THREE.Mesh[] = []
   private readonly instancedMeshes: Map<BlockId, THREE.InstancedMesh> = new Map()
+  private foliageMesh: THREE.Mesh | null = null
   private readonly group: THREE.Group = new THREE.Group()
 
   readonly chunkCoordinate: IChunkCoordinate
@@ -190,6 +193,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     const matrix = new THREE.Matrix4()
     const faceVisMap = new Map(nonGreedyFaceVisibility)
     const liquidGlowMap = new Map(nonGreedyLiquidGlow)
+    const foliage = new FoliageBatch()
 
     for (let i = 0; i < nonGreedyBlocks.length; i++) {
       const [blockId, positions] = nonGreedyBlocks[i]
@@ -201,6 +205,12 @@ export class GreedyChunkMesh implements IChunkMesh {
       if (count === 0) continue
 
       const block = getBlock(blockId)
+
+      // Grass, flowers, doodads: every kind shares the sub-chunk's one foliage mesh
+      if (isFoliageBlock(block)) {
+        foliage.add(blockId, block, positions, lights)
+        continue
+      }
 
       // Check if this is a liquid block with face visibility data
       if (block.properties.isLiquid && faceVis) {
@@ -236,6 +246,17 @@ export class GreedyChunkMesh implements IChunkMesh {
         haloMesh.castShadow = false
         haloMesh.receiveShadow = false
       }
+    }
+
+    const foliageMesh = foliage.build(
+      Number(this.chunkCoordinate.x) * CHUNK_SIZE_X,
+      this.subY * SUB_CHUNK_HEIGHT,
+      Number(this.chunkCoordinate.z) * CHUNK_SIZE_Z
+    )
+    if (foliageMesh) {
+      this.foliageMesh = foliageMesh
+      this.meshes.push(foliageMesh)
+      this.group.add(foliageMesh)
     }
   }
 
@@ -545,6 +566,10 @@ export class GreedyChunkMesh implements IChunkMesh {
    * frees instanceMatrix / instanceColor (WebGLObjects).
    */
   dispose(): void {
+    if (this.foliageMesh) {
+      releaseFoliageMesh(this.foliageMesh)
+      this.foliageMesh = null
+    }
     for (const mesh of this.meshes) {
       mesh.geometry.dispose()
       // Do NOT dispose mesh.material - chunk and liquid materials are shared

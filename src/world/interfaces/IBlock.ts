@@ -84,6 +84,12 @@ export interface IBlockProperties {
    * runtime change.
    */
   readonly tickInterval?: number
+  /**
+   * Grass, flowers and ground doodads: placing a block into this cell, or a
+   * liquid flowing into it, replaces it (a placement aimed at it goes into
+   * its cell, not beside it). Never solid.
+   */
+  readonly replaceable?: boolean
 }
 
 /**
@@ -195,6 +201,16 @@ export interface IBlock {
   onScheduledTick?(world: IWorld, x: bigint, y: bigint, z: bigint): boolean
 
   /**
+   * Random tick (world/blocktick/RandomBlockTicks.ts): while within a few
+   * chunks of the player, every block with this hook is visited about once
+   * per RANDOM_TICK_INTERVAL seconds at random - crops grow, bushes regrow,
+   * saplings grow into trees, farmland dries. Needs no saved state: worldgen
+   * and reloaded blocks tick like placed ones. Keep it cheap and rarely
+   * effective (roll a chance).
+   */
+  onRandomTick?(world: IWorld, x: bigint, y: bigint, z: bigint): void
+
+  /**
    * Get items dropped when this block is broken.
    * Block handles any random drop logic internally.
    */
@@ -289,6 +305,32 @@ export interface IGlowHaloBlock extends IBlock {
 
 export function hasGlowHalo(block: IBlock): block is IGlowHaloBlock {
   return typeof (block as Partial<IGlowHaloBlock>).getGlowHalo === 'function'
+}
+
+/**
+ * A block that grows in stages (crops, regrowing bushes, saplings): bone
+ * meal calls grow() for one step.
+ */
+export interface IGrowableBlock extends IBlock {
+  /** Advance one growth step at this position; false if it can't grow further (nothing happens). */
+  grow(world: IWorld, x: bigint, y: bigint, z: bigint): boolean
+}
+
+export function isGrowableBlock(block: IBlock): block is IGrowableBlock {
+  return typeof (block as Partial<IGrowableBlock>).grow === 'function'
+}
+
+/**
+ * A plant picked without breaking it (ripe berry and forage bushes): E or
+ * right-click harvests it (setupFarming) and it regrows.
+ */
+export interface IHarvestableBlock extends IBlock {
+  /** Pick it: the items for the player (the block becomes its picked state), or null if not ripe. */
+  harvest(world: IWorld, x: bigint, y: bigint, z: bigint): IItem[] | null
+}
+
+export function isHarvestableBlock(block: IBlock): block is IHarvestableBlock {
+  return typeof (block as Partial<IHarvestableBlock>).harvest === 'function'
 }
 
 /**

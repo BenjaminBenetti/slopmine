@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { FoliageSpec, IFoliageBlock } from '../../foliage/FoliageSpec.ts'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -65,7 +66,20 @@ const blueFlowerMaterial = new THREE.MeshLambertMaterial({
   side: THREE.DoubleSide,
 })
 
-export class BlueFlowerBlock extends TransparentBlock {
+export class BlueFlowerBlock extends TransparentBlock implements IFoliageBlock {
+  /** Drawn by the batched foliage renderer (one draw per sub-chunk, wind sway); displays keep the cross mesh. */
+  readonly foliage: FoliageSpec = {
+    sprites: [blueFlowerTexUrl],
+    shape: 'cross',
+    width: 0.5,
+    height: 0.45,
+    spriteHeight: 1,
+    sway: 0.6,
+    jitter: 0.2,
+    scaleVariation: 0.12,
+    viewDistance: 72,
+  }
+
   readonly properties: IBlockProperties = {
     id: BlockIds.BLUE_FLOWER,
     name: 'blue_flower',

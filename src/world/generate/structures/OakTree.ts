@@ -1,5 +1,6 @@
 import type { WorldManager } from '../../WorldManager.ts'
 import type { IDecorationWorld } from '../IDecorationWorld.ts'
+import { isOpenForDecoration } from '../IDecorationWorld.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 
 export interface TreeParams {
@@ -84,7 +85,7 @@ export class OakTree {
     // Check trunk area is clear
     for (let dy = 0; dy < params.trunkHeight; dy++) {
       if (
-        world.getBlockId(baseX, baseY + BigInt(dy), baseZ) !== BlockIds.AIR
+        !isOpenForDecoration(world.getBlockId(baseX, baseY + BigInt(dy), baseZ))
       ) {
         return false
       }

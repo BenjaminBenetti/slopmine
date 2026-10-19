@@ -73,11 +73,19 @@ export function isFallingLiquid(blockId: BlockId): boolean {
 }
 
 /**
+ * Air, or a plant liquid washes away (grass, flowers, doodads - `replaceable`):
+ * liquid flows into it.
+ */
+function isOpenCell(blockId: BlockId): boolean {
+  return blockId === BlockIds.AIR || getBlock(blockId).properties.replaceable === true
+}
+
+/**
  * Check if a block is solid (can't flow into).
- * A block is solid if it's not air and not a liquid.
+ * A block is solid if it's not open (air, washable plants) and not a liquid.
  */
 export function isSolid(blockId: BlockId): boolean {
-  return blockId !== BlockIds.AIR && !isLiquidBlock(blockId)
+  return !isOpenCell(blockId) && !isLiquidBlock(blockId)
 }
 
 /**
@@ -184,7 +192,7 @@ export function processLiquidBlock(
     }
 
     // Still fed: continue the fall downward
-    if (belowId === BlockIds.AIR) {
+    if (isOpenCell(belowId)) {
       if (accessor.setBlock(x, y - 1, z, getFallingLiquidBlockId(family))) {
         queueColumn(x, z)
         return true
@@ -233,7 +241,7 @@ export function processLiquidBlock(
   }
 
   // === STEP 1: FLOW DOWN ===
-  if (belowId === BlockIds.AIR) {
+  if (isOpenCell(belowId)) {
     // Flow down into air as FALLING liquid: full-looking but not a source,
     // so cutting the stream above drains the column instead of leaving a
     // permanent pillar of water.
@@ -275,7 +283,7 @@ export function processLiquidBlock(
         const nLevel = getLiquidLevel(nId)
 
         // Can spread into air
-        if (nId === BlockIds.AIR) {
+        if (isOpenCell(nId)) {
           if (accessor.setBlock(n.x, y, n.z, spreadBlockId)) {
             changed = true
             queueColumn(n.x, n.z) // Queue neighbor chunk for processing

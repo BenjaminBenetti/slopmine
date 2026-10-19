@@ -22,6 +22,7 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/I
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
+import { plainsGroundCover } from '../features/natureGroundCover.ts'
 
 /**
  * Grassy plains biome with gentle rolling hills and scattered oak trees.
@@ -124,6 +125,8 @@ export class PlainsGenerator extends BiomeGenerator {
         gridSize: 12,
         flowerBlockIds: [BlockIds.YELLOW_FLOWER, BlockIds.BLUE_FLOWER, BlockIds.RED_FLOWER],
       }),
+      // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
+      plainsGroundCover(),
     ],
     caves: {
       enabled: true,

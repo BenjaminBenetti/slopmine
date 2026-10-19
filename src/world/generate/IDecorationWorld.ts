@@ -1,3 +1,5 @@
+import { BlockIds } from '../blocks/BlockIds.ts'
+import { getBlock } from '../blocks/BlockRegistry.ts'
 import type { BlockId } from '../interfaces/IBlock.ts'
 
 /**
@@ -14,4 +16,13 @@ import type { BlockId } from '../interfaces/IBlock.ts'
 export interface IDecorationWorld {
   getBlockId(x: bigint, y: bigint, z: bigint): BlockId
   setBlock(x: bigint, y: bigint, z: bigint, blockId: BlockId, metadata?: number): boolean
+}
+
+/**
+ * Whether a decoration (tree trunk, cactus, giant mushroom) may take this
+ * cell: air, or ground cover the worker placed first (grass, flowers -
+ * `replaceable`), which the decoration simply overwrites.
+ */
+export function isOpenForDecoration(id: BlockId): boolean {
+  return id === BlockIds.AIR || getBlock(id).properties.replaceable === true
 }

@@ -23,6 +23,8 @@ const SLOT_INTERVAL = SPAWN_CHECK_INTERVAL / CHUNKS_PER_CYCLE // ~0.12s per chun
 const MIN_SPAWN_DISTANCE = 24 // minimum distance from player to spawn
 const CHUNK_SIZE = 32 // blocks per chunk
 const DEFAULT_MAX_NEARBY = 8 // default max entities of one type nearby
+const SPAWN_FEET_CLEARANCE = 0.02 // feet this far above the ground block's top
+const SPAWN_FIT_SHIFT = 0.6 // a spawn that only fits further away than this is dropped
 
 /**
  * Entity spawner that spawns entities based on biome configurations.
@@ -210,8 +212,13 @@ export class EntitySpawner implements ITask {
       return false
     }
 
-    // Create and add entity
+    // Create and add entity - only where its whole body fits: a mob that
+    // starts inside a block can't move (a cow is 2.2 blocks long)
     const entity = config.createEntity(spawnPos)
+    if (!this.entityManager.fitEntity(entity, SPAWN_FIT_SHIFT)) {
+      entity.dispose()
+      return false
+    }
     this.entityManager.addEntity(entity)
 
     return true
@@ -232,16 +239,15 @@ export class EntitySpawner implements ITask {
     const playerY = this.playerBody.position.y
 
     for (let i = 0; i < attempts; i++) {
-      const localX = Math.random() * CHUNK_SIZE
-      const localZ = Math.random() * CHUNK_SIZE
-      const worldX = chunkX * CHUNK_SIZE + localX
-      const worldZ = chunkZ * CHUNK_SIZE + localZ
+      // Cell centre: the body is checked against the blocks around it
+      const worldX = chunkX * CHUNK_SIZE + Math.floor(Math.random() * CHUNK_SIZE) + 0.5
+      const worldZ = chunkZ * CHUNK_SIZE + Math.floor(Math.random() * CHUNK_SIZE) + 0.5
 
       // Player-relative search finds cavern floors in underground biomes but
       // cannot see surfaces above the player's feet; searchFromSky configs
       // (surface creatures on raised structures, e.g. bears on den mounds)
       // scan down through the tree canopy instead.
-      const groundY = config.searchFromSky
+      const foundY = config.searchFromSky
         ? this.findSurfaceGroundY(Math.floor(worldX), Math.floor(worldZ))
         : this.worldManager.getGroundNearY(
             BigInt(Math.floor(worldX)),
@@ -249,9 +255,14 @@ export class EntitySpawner implements ITask {
             Math.floor(playerY)
           )
 
+      if (foundY === null) continue
+      // Stand on the solid block under any grass, flowers or snow cover
+      const groundY = this.solidGroundBelow(worldX, Number(foundY), worldZ)
       if (groundY === null) continue
 
-      const spawnY = Number(groundY) + 1.25 // Spawn slightly above ground to avoid clipping
+      // Feet just above the ground; the entity is fitted to the blocks around
+      // it before it enters the world (slabs, steps, overhangs)
+      const spawnY = groundY + 1 + SPAWN_FEET_CLEARANCE
 
       // Check Y range constraints
       const minY = config.minY ?? 0
@@ -260,7 +271,7 @@ export class EntitySpawner implements ITask {
 
       // Check ground block constraint if specified (e.g. beach creatures on sand)
       if (config.validGroundBlocks !== undefined) {
-        const groundBlockId = this.worldManager.getBlockIdFast(worldX, Number(groundY), worldZ)
+        const groundBlockId = this.worldManager.getBlockIdFast(worldX, groundY, worldZ)
         if (!config.validGroundBlocks.includes(groundBlockId)) continue
       }
 
@@ -290,6 +301,14 @@ export class EntitySpawner implements ITask {
       return this.tempPosition.clone()
     }
 
+    return null
+  }
+
+  /** The first solid block at or up to 3 below y (plants and cover are not ground), or null. */
+  private solidGroundBelow(worldX: number, y: number, worldZ: number): number | null {
+    for (let groundY = y; groundY >= y - 3; groundY--) {
+      if (this.worldManager.getBlockFast(worldX, groundY, worldZ).properties.isSolid) return groundY
+    }
     return null
   }
 

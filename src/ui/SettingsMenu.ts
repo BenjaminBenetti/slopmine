@@ -1,6 +1,6 @@
 import { applyUIScale } from './uiScale.ts'
 import { MAX_CHUNK_DISTANCE, type GenerationConfig } from '../world/generate/GenerationConfig.ts'
-import { LOD_DISTANCE_OPTIONS, type GraphicsSettings, type ResolutionPreset, type FramerateLimit, type ShadowMapSize, type LodDistance, type TextureFiltering } from '../settings/index.ts'
+import { LOD_DISTANCE_OPTIONS, type GraphicsSettings, type ResolutionPreset, type FramerateLimit, type ShadowMapSize, type LodDistance, type TextureFiltering, type FoliageDetail } from '../settings/index.ts'
 import { LOD_MIN_MARGIN_CHUNKS } from '../world/lod/LodTypes.ts'
 import type { AudioSettingKey, AudioSettings } from '../audio/AudioSettings.ts'
 import { playSound } from '../audio/SoundHooks.ts'
@@ -24,6 +24,7 @@ export interface SettingsMenuUIOptions {
   onShadowMapSizeChange?: (size: ShadowMapSize) => void
   /** Called when the texture filtering setting changes */
   onTextureFilteringChange?: (mode: TextureFiltering) => void
+  onFoliageDetailChange?: (detail: FoliageDetail) => void
   /** Called when the user clicks "Save Game" - returns a promise that resolves when save is complete */
   onSave?: () => Promise<void>
   /** Called when the user confirms "New Game" - should clear saved data and reload */
@@ -467,6 +468,48 @@ export function createSettingsMenuUI(
     filteringContainer.appendChild(filteringLabel)
     filteringContainer.appendChild(filteringSelect)
     panel.appendChild(filteringContainer)
+
+    // Plants dropdown: grass, flowers and doodads at full distance, nearer, or off
+    const foliageContainer = document.createElement('div')
+    foliageContainer.style.marginBottom = '1.5rem'
+    foliageContainer.style.display = 'flex'
+    foliageContainer.style.alignItems = 'center'
+    foliageContainer.style.justifyContent = 'space-between'
+
+    const foliageLabel = document.createElement('label')
+    foliageLabel.textContent = 'Plants'
+    foliageLabel.style.fontSize = '0.9rem'
+    foliageLabel.htmlFor = 'foliage-detail-select'
+
+    const foliageSelect = document.createElement('select')
+    foliageSelect.id = 'foliage-detail-select'
+    foliageSelect.style.cssText = filteringSelect.style.cssText
+
+    const foliageOptions: { value: FoliageDetail; label: string }[] = [
+      { value: 'full', label: 'Full' },
+      { value: 'near', label: 'Near' },
+      { value: 'off', label: 'Off' },
+    ]
+    for (const opt of foliageOptions) {
+      const option = document.createElement('option')
+      option.value = opt.value
+      option.textContent = opt.label
+      option.style.background = 'rgba(30, 30, 30, 1)'
+      if (opt.value === graphicsSettings.foliageDetail) {
+        option.selected = true
+      }
+      foliageSelect.appendChild(option)
+    }
+
+    foliageSelect.addEventListener('change', () => {
+      const detail = foliageSelect.value as FoliageDetail
+      graphicsSettings.foliageDetail = detail
+      options.onFoliageDetailChange?.(detail)
+    })
+
+    foliageContainer.appendChild(foliageLabel)
+    foliageContainer.appendChild(foliageSelect)
+    panel.appendChild(foliageContainer)
 
     // FPS Limit dropdown
     const fpsContainer = document.createElement('div')

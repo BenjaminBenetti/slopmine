@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { FoliageSpec, IFoliageBlock } from '../../foliage/FoliageSpec.ts'
 import type { IBlockProperties } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -65,7 +66,20 @@ const jungleFernMaterial = new THREE.MeshLambertMaterial({
   side: THREE.DoubleSide,
 })
 
-export class JungleFernBlock extends TransparentBlock {
+export class JungleFernBlock extends TransparentBlock implements IFoliageBlock {
+  /** Drawn by the batched foliage renderer (one draw per sub-chunk, wind sway); displays keep the cross mesh. */
+  readonly foliage: FoliageSpec = {
+    sprites: [jungleFernTexUrl],
+    shape: 'cross',
+    width: 0.9,
+    height: 0.4,
+    spriteHeight: 1,
+    sway: 0.7,
+    jitter: 0.2,
+    scaleVariation: 0.12,
+    viewDistance: 64,
+  }
+
   readonly properties: IBlockProperties = {
     id: BlockIds.JUNGLE_FERN,
     name: 'jungle_fern',

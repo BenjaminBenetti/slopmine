@@ -68,6 +68,9 @@ import { cocytusHandRecipes } from './CocytusRecipes.ts'
 // Day and night
 import { nightfallHandRecipes, nightfallBrewingRecipes } from './NightfallRecipes.ts'
 
+// Nature
+import { natureHandRecipes, natureSmeltingRecipes } from './NatureRecipes.ts'
+
 /**
  * Register all default recipes.
  * Call this at startup.
@@ -240,6 +243,10 @@ export function registerDefaultRecipes(): void {
   // Day and night
   for (const recipe of nightfallHandRecipes) recipeRegistry.register(recipe)
   for (const recipe of nightfallBrewingRecipes) brewingRegistry.register(recipe)
+
+  // Nature
+  for (const recipe of natureHandRecipes) recipeRegistry.register(recipe)
+  for (const recipe of natureSmeltingRecipes) smeltingRegistry.register(recipe)
 }
 
 export { woodToolRecipes } from './WoodToolRecipes.ts'

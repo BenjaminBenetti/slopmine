@@ -48,7 +48,14 @@ const COOKED_FOODS = [
   'cooked_morel',
   'cooked_fiddleheads',
   'bread',
+  'baked_potato',
+  'pumpkin_pie',
+  'mushroom_stew',
+  'vegetable_stew',
 ]
+
+/** Produce that only comes from (wild or farmed) crops of the Nature Update. */
+const FARM_PRODUCE = ['carrot', 'potato', 'onion', 'tomato', 'strawberry', 'pumpkin']
 
 /** Hell layer: everything below Y 128 */
 const HELL_TOP_Y = 128
@@ -138,6 +145,66 @@ export const JOURNAL_CHAPTERS: readonly ChapterDef[] = [
         requires: ['forge'],
         optional: true,
         triggers: [obtain(...COOKED_FOODS), crafted(COOKED_FOODS)],
+      },
+    ],
+  },
+  // -------------------------------------------------------------------------
+  {
+    id: 'green_thumb',
+    title: 'Green Thumb',
+    blurb: 'The overworld is alive. Tend it, and it will feed you.',
+    accent: '#6fae4a',
+    milestones: [
+      {
+        id: 'breaking_ground',
+        stage: 60,
+        title: 'Breaking Ground',
+        flavour: 'Neat rows of dark earth, waiting.',
+        hint: 'Craft a hoe (2 planks, 2 sticks) and right-click grass or dirt with it to till farmland. Farmland near water stays moist, and crops grow fastest there.',
+        icon: 'wood_hoe',
+        optional: true,
+        triggers: [placed('farmland')],
+      },
+      {
+        id: 'first_harvest',
+        stage: 80,
+        title: 'First Harvest',
+        flavour: 'Grown with your own two hands. Mostly.',
+        hint: 'Find a wild crop - carrots and onions on the plains, potatoes in the hills, tomatoes in the jungle, strawberries in the forests - and harvest it for seeds, or grow your own on farmland.',
+        icon: 'carrot',
+        optional: true,
+        triggers: [obtain(...FARM_PRODUCE)],
+      },
+      {
+        id: 'tree_planter',
+        stage: 90,
+        title: 'Tree Planter',
+        flavour: 'Somebody will sit in its shade.',
+        hint: 'Plant a sapling. Oak leaves sometimes drop oak saplings; pinecones craft into pine saplings. Bone meal can hurry them along.',
+        icon: 'oak_sapling_block',
+        optional: true,
+        triggers: [placed('oak_sapling', 'pine_sapling')],
+      },
+      {
+        id: 'forager',
+        stage: 110,
+        title: 'Forager',
+        flavour: 'The wild has a pantry, if you know where to look.',
+        hint: 'Pick blueberries in the pine forest, prickly pears in the desert and a pineapple in the jungle: right-click (or E) a ripe plant. They grow back, and their fruit breaks down into seeds for your farm.',
+        icon: 'blueberries',
+        optional: true,
+        triggers: [obtainAll('blueberries', 'prickly_pear_fruit', 'pineapple')],
+      },
+      {
+        id: 'farm_to_table',
+        stage: 130,
+        title: 'Farm to Table',
+        flavour: 'Carrot, potato, onion. The best meal a farm can make.',
+        hint: 'Craft a vegetable stew: a bowl (3 planks make four), a carrot, a potato and an onion.',
+        icon: 'vegetable_stew',
+        requires: ['first_harvest'],
+        optional: true,
+        triggers: [obtain('vegetable_stew'), crafted(['vegetable_stew'])],
       },
     ],
   },

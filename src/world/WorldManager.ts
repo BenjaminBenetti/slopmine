@@ -17,6 +17,8 @@ import GreedyMeshWorker from '../workers/GreedyMeshWorker.ts?worker'
 import type { GreedyMeshRequest, GreedyMeshResponse, GreedyMeshError } from '../workers/GreedyMeshWorker.ts'
 import { buildFaceTextureMap } from './blocks/FaceTextureRegistry.ts'
 import { buildBlockTextureArray, serializeTextureLayers, applyBlockTextureAnisotropy } from '../renderer/BlockTextureArray.ts'
+import { buildFoliageTextures } from '../renderer/foliage/FoliageRenderer.ts'
+import { isFoliageBlock } from './blocks/foliage/FoliageSpec.ts'
 import { buildNeighborShell, type NeighborShell } from './meshing/MeshNeighborShell.ts'
 import { SubChunk } from './chunks/SubChunk.ts'
 import { ChunkColumn } from './chunks/ChunkColumn.ts'
@@ -287,6 +289,10 @@ export class WorldManager implements IModifiedChunkProvider {
     this.textureLayerEntries = serializeTextureLayers()
     this.workersInitialized.clear()
     console.log(`Block texture array built with ${this.textureLayerEntries.length} layers`)
+    // Grass, flowers and doodads: their own sprite array (no texture-array layers)
+    const foliageBlocks = this.nonGreedyBlockIds.map((id) => getBlock(id)).filter(isFoliageBlock)
+    const sprites = await buildFoliageTextures(foliageBlocks)
+    console.log(`Foliage sprites built: ${sprites} sprites for ${foliageBlocks.length} blocks`)
   }
 
   /**
@@ -1615,6 +1621,11 @@ export class WorldManager implements IModifiedChunkProvider {
    */
   getMetadata(x: bigint, y: bigint, z: bigint): number {
     return this.getBlockMetadata(x, y, z)
+  }
+
+  /** The loaded column at chunk coordinates (cx, cz), if any. Allocation-free. */
+  getColumnFast(cx: number, cz: number): ChunkColumn | undefined {
+    return this.chunkManager.getColumnFast(cx, cz)
   }
 
   /**

@@ -7,6 +7,7 @@ import { BlockTags } from '../../tags/BlockTags.ts'
 import { loadBlockTexture } from '../../../../renderer/TextureLoader.ts'
 import { registerTextureUrl } from '../../../../renderer/TextureAtlas.ts'
 import { OakLeavesBlockItem } from '../../../../items/blocks/oak_leaves/OakLeavesBlockItem.ts'
+import { PlantBlockItem } from '../../../../items/blocks/plants/PlantBlockItem.ts'
 import { TextureId } from '../../FaceTextureRegistry.ts'
 import oakLeavesTexUrl from './assets/oak-leaves.webp'
 
@@ -21,6 +22,9 @@ const oakLeavesMaterial = new THREE.MeshLambertMaterial({
   alphaTest: 0.5,
   side: THREE.DoubleSide,
 })
+
+/** Chance a mined or decaying oak leaf drops an oak sapling. */
+const OAK_SAPLING_CHANCE = 0.06
 
 export class OakLeavesBlock extends LeafBlock {
   readonly properties: IBlockProperties = {
@@ -46,6 +50,12 @@ export class OakLeavesBlock extends LeafBlock {
   }
 
   getDrops(): IItem[] {
-    return [new OakLeavesBlockItem()]
+    return Math.random() < OAK_SAPLING_CHANCE
+      ? [new OakLeavesBlockItem(), new PlantBlockItem('oak_sapling', 'Oak Sapling')]
+      : [new OakLeavesBlockItem()]
+  }
+
+  protected getDecayDrops(): IItem[] {
+    return Math.random() < OAK_SAPLING_CHANCE ? [new PlantBlockItem('oak_sapling', 'Oak Sapling')] : []
   }
 }

@@ -10,11 +10,13 @@ import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
 import type { IDecorationWorld } from '../IDecorationWorld.ts'
+import { isOpenForDecoration } from '../IDecorationWorld.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
+import { desertGroundCover } from '../features/natureGroundCover.ts'
 
 /**
  * Desert biome with sand surface, sandstone subsurface, and scattered cacti.
@@ -100,6 +102,8 @@ export class DesertGenerator extends BiomeGenerator {
         ySpread: 4,
         replaceableBlocks: [BlockIds.STONE],
       }),
+      // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
+      desertGroundCover(),
     ],
     caves: {
       enabled: true,
@@ -509,16 +513,16 @@ export class DesertGenerator extends BiomeGenerator {
     // Check that all cactus blocks would be in air
     for (let i = 0; i < height; i++) {
       const blockAt = world.getBlockId(x, y + BigInt(i), z)
-      if (blockAt !== BlockIds.AIR) return false
+      if (!isOpenForDecoration(blockAt)) return false
     }
 
     // Check that there are no adjacent blocks (cacti need space)
     for (let i = 0; i < height; i++) {
       const cy = y + BigInt(i)
-      if (world.getBlockId(x + 1n, cy, z) !== BlockIds.AIR) return false
-      if (world.getBlockId(x - 1n, cy, z) !== BlockIds.AIR) return false
-      if (world.getBlockId(x, cy, z + 1n) !== BlockIds.AIR) return false
-      if (world.getBlockId(x, cy, z - 1n) !== BlockIds.AIR) return false
+      if (!isOpenForDecoration(world.getBlockId(x + 1n, cy, z))) return false
+      if (!isOpenForDecoration(world.getBlockId(x - 1n, cy, z))) return false
+      if (!isOpenForDecoration(world.getBlockId(x, cy, z + 1n))) return false
+      if (!isOpenForDecoration(world.getBlockId(x, cy, z - 1n))) return false
     }
 
     return true

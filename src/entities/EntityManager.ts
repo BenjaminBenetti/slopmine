@@ -41,6 +41,9 @@ export interface EntityManagerConfig {
  * - Provides spatial queries (getEntitiesNear)
  * - Implements ITask for TaskScheduler integration
  */
+/** Furthest an entity placed inside blocks is moved out when it enters the world (blocks). */
+const SPAWN_FIT_SHIFT = 1.5
+
 export class EntityManager implements ITask {
   readonly id = 'entity-manager'
   readonly priority = TaskPriority.NORMAL
@@ -506,6 +509,19 @@ export class EntityManager implements ITask {
     return this.taskResult
   }
 
+  /**
+   * Move an entity's physics body out of any block it overlaps, by at most
+   * `maxShift` blocks (see PhysicsEngine.fitBody). True when it is clear (or
+   * has no body); false leaves it where it was.
+   */
+  fitEntity(entity: IEntity, maxShift: number): boolean {
+    const body = entity.getPhysicsBody()
+    if (!body || !this.physicsEngine) return true
+    if (!this.physicsEngine.fitBody(body, maxShift)) return false
+    entity.position.copy(body.position)
+    return true
+  }
+
   private processAdditions(): void {
     for (const entity of this.entitiesToAdd) {
       this.spawnEntity(entity)
@@ -528,6 +544,9 @@ export class EntityManager implements ITask {
 
     const physicsBody = entity.getPhysicsBody()
     if (physicsBody && this.physicsEngine) {
+      // Whatever placed it (spawner, garrison, pack leader, splitting slime),
+      // never let a body start inside a block: it couldn't move
+      this.fitEntity(entity, SPAWN_FIT_SHIFT)
       this.physicsEngine.addBody(physicsBody)
     }
 

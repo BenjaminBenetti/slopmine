@@ -33,6 +33,19 @@ const OVERRIDES: Record<string, BlockSoundMaterial> = {
   bed_foot: 'cloth',
   emberwood_stem: 'wood',
   pinecone: 'wood',
+  // Nature: wild plants rustle (grass tufts are plants, not the grass block;
+  // 'ash' would read as sand), doodads sound like what they are
+  short_grass: 'leaves', tall_grass: 'leaves', jungle_grass: 'leaves', dry_grass: 'leaves',
+  beach_grass: 'leaves', frosted_grass: 'leaves', ash_grass: 'leaves', sedge: 'leaves',
+  clover: 'leaves', daisy: 'leaves', dandelion: 'leaves', lavender: 'leaves', foxglove: 'leaves',
+  heather: 'leaves', bracken: 'leaves', horsetail: 'leaves', bog_cotton: 'leaves', orchid: 'leaves',
+  heliconia: 'leaves', elephant_ear: 'leaves', sea_thrift: 'leaves', salal: 'leaves', aloe: 'leaves',
+  fireweed: 'leaves', ember_lily: 'leaves', desert_marigold: 'leaves', lily_pad: 'leaves',
+  water_lily: 'leaves', tumbleweed: 'leaves', leaf_litter: 'leaves', needle_litter: 'leaves',
+  pineapple_plant: 'leaves', pineapple_plant_ripe: 'leaves', pineapple_plant_1: 'leaves', pineapple_plant_2: 'leaves',
+  aloe_1: 'leaves', aloe_2: 'leaves', prickly_pear_1: 'soft', prickly_pear_2: 'soft',
+  barrel_cactus: 'soft', prickly_pear: 'soft', prickly_pear_ripe: 'soft', toadstool: 'soft',
+  pebbles: 'gravel', cinders: 'gravel', twigs: 'wood', obsidian_shards: 'glass', embers: 'gravel', volcanic_rocks: 'gravel',
 }
 
 /**
@@ -52,7 +65,7 @@ const KEYWORD_RULES: ReadonlyArray<[BlockSoundMaterial, readonly string[]]> = [
   ['metal', ['iron', 'gold', 'copper', 'anvil', 'grate', 'bars', 'chain', 'brazier', 'lantern', 'candelabra', 'spawner', 'hoard', 'reliquary', 'apparatus']],
   ['cloth', ['banner', 'carpet', 'wool']],
   ['soft', ['mushroom', '_cap', 'glowcap', 'glimmercap', 'fungus', 'spore_sac', 'membrane', 'slime', 'brood_comb', 'egg_pod', 'gill', 'glow_bulb', 'glowing_sap', 'morel']],
-  ['leaves', ['leaves', 'needles', 'vine', '_fern', 'flower', 'sprout', 'cattail', 'wheat', 'hemp', 'herb', 'sapling', 'tendril', 'bush', 'strand', 'bloom', 'cobweb', 'kelp']],
+  ['leaves', ['leaves', 'needles', 'vine', '_fern', 'flower', 'sprout', 'cattail', 'wheat', 'hemp', 'herb', 'sapling', 'tendril', 'bush', 'strand', 'bloom', 'cobweb', 'kelp', 'carrot', 'potato', 'tomato', 'onion', 'strawberry', 'pumpkin']],
   ['grass', ['grass', 'mycelium', 'podzol', 'moss']],
   ['soil', ['dirt', 'mud', 'clay']],
   ['wood', ['log', 'plank', 'wood', 'door', 'fence', 'table', 'chair', 'shelf', 'ladder', 'chest', 'bench', 'stump', 'stem', 'torch', 'root', 'stick', 'weapon_rack', 'campfire', 'bookshelf', 'tap']],

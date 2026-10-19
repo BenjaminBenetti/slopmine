@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { FoliageSpec, IFoliageBlock } from '../../foliage/FoliageSpec.ts'
 import type { IBlockProperties, IWorld } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -67,7 +68,20 @@ const morelMaterial = new THREE.MeshLambertMaterial({
  * Morel mushroom - a small cross-billboard forage fungus that grows on
  * podzol patches on the pine-forest floor. Break to collect the morel.
  */
-export class MorelMushroomBlock extends TransparentBlock {
+export class MorelMushroomBlock extends TransparentBlock implements IFoliageBlock {
+  /** Drawn by the batched foliage renderer (one draw per sub-chunk, wind sway); displays keep the cross mesh. */
+  readonly foliage: FoliageSpec = {
+    sprites: [morelTexUrl],
+    shape: 'cross',
+    width: 0.5,
+    height: 0.45,
+    spriteHeight: 1,
+    sway: 0.0,
+    jitter: 0.2,
+    scaleVariation: 0.12,
+    viewDistance: 64,
+  }
+
   readonly properties: IBlockProperties = {
     id: BlockIds.MOREL_MUSHROOM,
     name: 'morel_mushroom',

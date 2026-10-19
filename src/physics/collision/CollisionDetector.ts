@@ -8,6 +8,22 @@ import { EPSILON, STEP_HEIGHT } from '../constants.ts'
  * Handles collision detection and resolution between physics bodies and the world.
  * Uses a swept AABB approach with axis-by-axis resolution.
  */
+/** Furthest a body that starts a step inside blocks is pushed out (blocks). */
+const MAX_PUSH_OUT = 1.1
+
+const PUSH_DIRECTIONS: ReadonlyArray<readonly ['x' | 'y' | 'z', number]> = [
+  ['y', 1], ['x', 1], ['x', -1], ['z', 1], ['z', -1],
+]
+
+/** Boxes overlap by more than EPSILON on all three axes (touching or grazing is clear). */
+function overlaps(a: AABB, b: AABB): boolean {
+  return (
+    a.min.x < b.max.x - EPSILON && a.max.x > b.min.x + EPSILON &&
+    a.min.y < b.max.y - EPSILON && a.max.y > b.min.y + EPSILON &&
+    a.min.z < b.max.z - EPSILON && a.max.z > b.min.z + EPSILON
+  )
+}
+
 export class CollisionDetector {
   // Pre-allocated to avoid per-frame GC pressure
   private readonly tempOffset = new THREE.Vector3()
@@ -31,7 +47,89 @@ export class CollisionDetector {
     hitGround: false,
   }
 
+  // Push-out scratch
+  private readonly pushOffset = new THREE.Vector3()
+  private readonly probeRegion = new AABB(new THREE.Vector3(), new THREE.Vector3())
+  private probeAABBsPool: AABB[] = []
+
   constructor(private readonly world: IPhysicsWorld) {}
+
+  /**
+   * The smallest shift (straight up, or along one horizontal axis, at most
+   * `maxShift` blocks) that leaves the boxes overlapping no block - for a body
+   * spawned or pushed into blocks. Writes it into `out` (zero when the boxes
+   * are already clear) and returns false when no such shift exists.
+   */
+  findClearOffset(aabbs: readonly AABB[], maxShift: number, out: THREE.Vector3): boolean {
+    out.set(0, 0, 0)
+    if (aabbs.length === 0) return true
+    const region = this.probeRegion
+    region.min.copy(aabbs[0].min)
+    region.max.copy(aabbs[0].max)
+    for (const aabb of aabbs) {
+      region.min.min(aabb.min)
+      region.max.max(aabb.max)
+    }
+    region.min.addScalar(-maxShift)
+    region.max.addScalar(maxShift)
+    const blocks = this.world.getBlockCollisions(region)
+    if (!this.overlapsAny(aabbs, aabbs.length, blocks)) return true
+
+    while (this.probeAABBsPool.length < aabbs.length) {
+      this.probeAABBsPool.push(new AABB(new THREE.Vector3(), new THREE.Vector3()))
+    }
+    let best = Infinity
+    // Up first: on a tie the body rises out of the ground rather than sliding
+    for (const [axis, sign] of PUSH_DIRECTIONS) {
+      // Grow the shift until nothing overlaps: clearing one block can push the
+      // body into the next (a step up a hillside)
+      let shift = 0
+      for (let iteration = 0; iteration < 4 && shift <= maxShift; iteration++) {
+        for (let i = 0; i < aabbs.length; i++) {
+          const probe = this.probeAABBsPool[i]
+          probe.min.copy(aabbs[i].min)
+          probe.max.copy(aabbs[i].max)
+          probe.min[axis] += shift * sign
+          probe.max[axis] += shift * sign
+        }
+        const needed = this.pushNeeded(this.probeAABBsPool, aabbs.length, blocks, axis, sign)
+        if (needed === 0) {
+          if (shift < best) {
+            best = shift
+            out.set(0, 0, 0)
+            out[axis] = shift * sign
+          }
+          break
+        }
+        shift += needed
+      }
+    }
+    return best !== Infinity
+  }
+
+  /** True when any of the first `count` boxes overlaps a block (touching faces don't count). */
+  private overlapsAny(aabbs: readonly AABB[], count: number, blocks: readonly AABB[]): boolean {
+    for (let i = 0; i < count; i++) {
+      for (const block of blocks) {
+        if (overlaps(aabbs[i], block)) return true
+      }
+    }
+    return false
+  }
+
+  /** How far the boxes must move along axis × sign to clear every block they overlap now (0 = clear). */
+  private pushNeeded(aabbs: readonly AABB[], count: number, blocks: readonly AABB[], axis: 'x' | 'y' | 'z', sign: number): number {
+    let needed = 0
+    for (let i = 0; i < count; i++) {
+      const aabb = aabbs[i]
+      for (const block of blocks) {
+        if (!overlaps(aabb, block)) continue
+        const depth = sign > 0 ? block.max[axis] - aabb.min[axis] : aabb.max[axis] - block.min[axis]
+        needed = Math.max(needed, depth + 2 * EPSILON)
+      }
+    }
+    return needed
+  }
 
   /**
    * Resolve movement with collision detection for a single AABB.
@@ -95,7 +193,22 @@ export class CollisionDetector {
     }
 
     // Query all potentially colliding blocks
-    const blockAABBs = this.world.getBlockCollisions(this.sweptAABB)
+    let blockAABBs = this.world.getBlockCollisions(this.sweptAABB)
+
+    // A body that already overlaps blocks (spawned into a hillside, pushed
+    // into a trunk) is clipped to zero movement on every axis - frozen for
+    // good. Push it out to the nearest clear spot first, then resolve the
+    // movement from there (the overlap test reuses the broad-phase results,
+    // so a clear body pays only the test).
+    if (this.overlapsAny(aabbs, aabbs.length, blockAABBs)) {
+      // (the probe reuses the world's result pool: query the swept box again)
+      if (this.findClearOffset(aabbs, MAX_PUSH_OUT, this.pushOffset)) {
+        for (const aabb of aabbs) aabb.translateInPlace(this.pushOffset)
+        this.sweptAABB.min.add(this.pushOffset)
+        this.sweptAABB.max.add(this.pushOffset)
+      }
+      blockAABBs = this.world.getBlockCollisions(this.sweptAABB)
+    }
 
     // Track current position of all AABBs - reuse pool to avoid allocation
     while (this.currentAABBsPool.length < aabbs.length) {
@@ -376,13 +489,14 @@ export class CollisionDetector {
       a2 = 'y'
     }
 
-    // Check if there's overlap on the other two axes
-    // Use strict inequality (<, >) to handle edge-touching cases correctly
+    // Check if there's overlap on the other two axes. Faces that only touch
+    // don't overlap: a body standing exactly on a block top (placed there,
+    // not settled by gravity) must still walk off it sideways
     if (
-      aabb.max[a1] < block.min[a1] ||
-      aabb.min[a1] > block.max[a1] ||
-      aabb.max[a2] < block.min[a2] ||
-      aabb.min[a2] > block.max[a2]
+      aabb.max[a1] <= block.min[a1] ||
+      aabb.min[a1] >= block.max[a1] ||
+      aabb.max[a2] <= block.min[a2] ||
+      aabb.min[a2] >= block.max[a2]
     ) {
       // No overlap on perpendicular axes, no collision possible
       return distance

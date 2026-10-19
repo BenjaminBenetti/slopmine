@@ -34,6 +34,13 @@ export interface FeatureContext {
    * Optional: absent outside the worker pipeline.
    */
   readonly getBiomeNameAt?: (worldX: number, worldZ: number) => string
+  /**
+   * The terrain block (biome fill, before caves and features) on the top row
+   * of the sub-chunk BELOW this one, at a local column - for surface plants
+   * whose ground lies just under this sub-chunk's floor. Computed lazily (one
+   * extra terrain fill per sub-chunk that asks). Optional: worker only.
+   */
+  readonly getTerrainTopBelow?: (localX: number, localZ: number) => number
   /** Frame budget for yielding to prevent blocking (optional in worker) */
   readonly frameBudget?: FrameBudget
 }

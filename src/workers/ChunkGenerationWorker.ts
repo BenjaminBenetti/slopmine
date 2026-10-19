@@ -31,6 +31,7 @@ import { JungleFernFeature, type JungleFernFeatureSettings } from '../world/gene
 import { RiverbankClayFeature, type RiverbankClayFeatureSettings } from '../world/generate/features/RiverbankClayFeature.ts'
 import { CattailFeature, type CattailFeatureSettings } from '../world/generate/features/CattailFeature.ts'
 import { SubmergedPlantFeature, type SubmergedPlantFeatureSettings } from '../world/generate/features/SubmergedPlantFeature.ts'
+import { GroundCoverFeature, type GroundCoverSettings } from '../world/generate/features/GroundCoverFeature.ts'
 import { getCellLiquidFamily } from '../world/liquid/cellLiquid.ts'
 import { PineTreeFeature, type PineTreeFeatureSettings } from '../world/generate/features/PineTreeFeature.ts'
 import { GiantConiferFeature, type GiantConiferFeatureSettings } from '../world/generate/features/GiantConiferFeature.ts'
@@ -175,6 +176,7 @@ export type FeatureConfig =
   | { type: 'riverbankClay'; settings: RiverbankClayFeatureSettings }
   | { type: 'cattail'; settings: CattailFeatureSettings }
   | { type: 'submergedPlant'; settings: SubmergedPlantFeatureSettings }
+  | { type: 'groundCover'; settings: GroundCoverSettings }
   | { type: 'hemp'; settings: HempFeatureSettings }
   | { type: 'pineTree'; settings: PineTreeFeatureSettings }
   | { type: 'giantConifer'; settings: GiantConiferFeatureSettings }
@@ -406,6 +408,8 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new CattailFeature(config.settings)
       case 'submergedPlant':
         return new SubmergedPlantFeature(config.settings)
+      case 'groundCover':
+        return new GroundCoverFeature(config.settings)
       case 'hemp':
         return new HempFeature(config.settings)
       case 'pineTree':
@@ -1195,6 +1199,21 @@ async function generateSubChunk(
     return (cfg ?? biomeData.primary).name
   }
 
+  // Terrain of the sub-chunk below, filled on first use (ground cover whose
+  // ground is that sub-chunk's top row)
+  let terrainBelow: WorkerSubChunk | null = null
+  const getTerrainTopBelow = (localX: number, localZ: number): number => {
+    if (!terrainBelow) {
+      const volume = CHUNK_SIZE_X * CHUNK_SIZE_Z * SUB_CHUNK_HEIGHT
+      terrainBelow = new WorkerSubChunk(chunkX, chunkZ, subY - 1, new Uint16Array(volume), new Uint8Array(volume))
+      generateSubChunkTerrain(
+        terrainBelow, noise, seed, seaLevel, terrainThickness,
+        minWorldY - SUB_CHUNK_HEIGHT, minWorldY - 1, biomeData, getHeight
+      )
+    }
+    return terrainBelow.getBlockId(localX, SUB_CHUNK_HEIGHT - 1, localZ)
+  }
+
   // Create feature context for this sub-chunk
   const featureContext: FeatureContext = {
     chunk: subChunk,
@@ -1213,6 +1232,7 @@ async function generateSubChunk(
     getBaseHeightAt: getHeight,
     isSurfaceCarvedAt,
     getBiomeNameAt,
+    getTerrainTopBelow: subY > 0 ? getTerrainTopBelow : undefined,
   }
 
   // Apply all features

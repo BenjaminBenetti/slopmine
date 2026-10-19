@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import type { IPhysicsBody } from './interfaces/IPhysicsBody.ts'
 import type { IPhysicsWorld } from './interfaces/IPhysicsWorld.ts'
 import { CollisionDetector } from './collision/CollisionDetector.ts'
@@ -64,6 +65,7 @@ export class PhysicsEngine {
   private readonly world: IPhysicsWorld
   private readonly bodies: Set<IPhysicsBody> = new Set()
   private readonly simStates: Map<IPhysicsBody, BodySimState> = new Map()
+  private readonly fitOffset = new THREE.Vector3()
 
   constructor(world: IPhysicsWorld, config: PhysicsEngineConfig = {}) {
     this.gravity = config.gravity ?? GRAVITY
@@ -86,6 +88,18 @@ export class PhysicsEngine {
         noSleep: false,
       })
     }
+  }
+
+  /**
+   * Move a body out of any block it overlaps, by the smallest shift up or
+   * sideways of at most `maxShift` blocks (spawns, children, teleports - a
+   * body placed inside a block can't move). Returns false, leaving the body
+   * where it is, when it can't be freed that close.
+   */
+  fitBody(body: IPhysicsBody, maxShift: number): boolean {
+    if (!this.collisionDetector.findClearOffset(body.getAABBs(), maxShift, this.fitOffset)) return false
+    body.position.add(this.fitOffset)
+    return true
   }
 
   /**

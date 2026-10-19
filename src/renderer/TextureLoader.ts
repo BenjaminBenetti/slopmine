@@ -25,6 +25,18 @@ let filteringMode: TextureFilteringMode = 'crisp'
 
 /** Block textures this loader created (their minFilter follows the mode). */
 const loadedTextures = new Set<THREE.Texture>()
+
+/** Image loads started by loadBlockTexture that haven't finished (or failed) yet. */
+const pendingLoads = new Set<Promise<void>>()
+
+/**
+ * Resolves once every block texture requested so far has loaded (or failed):
+ * block icons are rendered from these textures, and one drawn before its
+ * image arrived would stay blank.
+ */
+export async function whenBlockTexturesLoaded(): Promise<void> {
+  while (pendingLoads.size > 0) await Promise.all([...pendingLoads])
+}
 const filteringListeners = new Set<(mode: TextureFilteringMode) => void>()
 
 /** The three.js minification filter for a filtering mode. */
@@ -144,7 +156,14 @@ export function loadBlockTexture(url: string): THREE.Texture {
     return new THREE.Texture()
   }
 
-  const texture = loader.load(url)
+  let settle: () => void = () => {}
+  const pending = new Promise<void>((resolve) => { settle = resolve })
+  pendingLoads.add(pending)
+  const done = (): void => {
+    pendingLoads.delete(pending)
+    settle()
+  }
+  const texture = loader.load(url, done, undefined, done)
 
   // Keep pixelated look when magnified (close up)
   texture.magFilter = THREE.NearestFilter

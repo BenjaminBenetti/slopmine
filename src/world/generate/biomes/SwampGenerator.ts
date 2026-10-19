@@ -14,11 +14,13 @@ import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../../WorldManager.ts'
 import type { IDecorationWorld } from '../IDecorationWorld.ts'
+import { isOpenForDecoration } from '../IDecorationWorld.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
+import { swampGroundCover } from '../features/natureGroundCover.ts'
 
 /**
  * Swamp biome with mud surface, clay subsurface, and scattered giant
@@ -177,6 +179,8 @@ export class SwampGenerator extends BiomeGenerator {
           density: 0.22,
         },
       }),
+      // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
+      swampGroundCover(),
     ],
     caves: {
       enabled: true,
@@ -488,7 +492,7 @@ export class SwampGenerator extends BiomeGenerator {
 
     // Check that base position is air
     const blockAt = world.getBlockId(x, y, z)
-    if (blockAt !== BlockIds.AIR) return false
+    if (!isOpenForDecoration(blockAt)) return false
 
     return true
   }
@@ -507,7 +511,7 @@ export class SwampGenerator extends BiomeGenerator {
     // Check vertical clearance for stem
     for (let h = 0; h < height; h++) {
       const blockAt = world.getBlockId(x, y + BigInt(h), z)
-      if (blockAt !== BlockIds.AIR) return false
+      if (!isOpenForDecoration(blockAt)) return false
     }
 
     // Check clearance for cap
@@ -517,7 +521,7 @@ export class SwampGenerator extends BiomeGenerator {
         const dist = Math.abs(dx) + Math.abs(dz)
         if (dist > capRadius + 1) continue
         const blockAt = world.getBlockId(x + BigInt(dx), capY, z + BigInt(dz))
-        if (blockAt !== BlockIds.AIR) return false
+        if (!isOpenForDecoration(blockAt)) return false
       }
     }
 

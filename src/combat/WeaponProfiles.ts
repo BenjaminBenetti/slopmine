@@ -17,7 +17,7 @@ import { hasToolStats } from '../items/interfaces/IToolStats.ts'
 export type WeaponMaterial = 'wood' | 'stone' | 'iron' | 'steel' | 'diamond' | 'infernium' | 'hellbane'
 
 /** Item shapes with their own attack rules. */
-export type WeaponKind = 'sword' | 'axe' | 'pickaxe' | 'shovel'
+export type WeaponKind = 'sword' | 'axe' | 'pickaxe' | 'shovel' | 'hoe'
 
 /** Damage of a fully charged sword hit, per material. */
 export const SWORD_DAMAGE: Readonly<Record<WeaponMaterial, number>> = {
@@ -50,6 +50,8 @@ const KIND_RULES: Readonly<Record<WeaponKind, KindRule>> = {
   axe: { damageOffset: 1, attackCooldown: 0.8, knockback: 1.3 },
   pickaxe: { damageOffset: -2, attackCooldown: 0.65, knockback: 0.9 },
   shovel: { damageOffset: -3, attackCooldown: 0.6, knockback: 1.0 },
+  // A farm tool: light, quick, barely a weapon
+  hoe: { damageOffset: -3, attackCooldown: 0.55, knockback: 0.8 },
 }
 
 const MATERIALS: readonly WeaponMaterial[] = ['wood', 'stone', 'iron', 'steel', 'diamond', 'infernium', 'hellbane']

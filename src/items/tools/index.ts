@@ -29,3 +29,13 @@ export { SteelAxeItem } from './axe/SteelAxeItem.ts'
 export { DiamondAxeItem } from './axe/DiamondAxeItem.ts'
 export { InferniumAxeItem } from './axe/InferniumAxeItem.ts'
 export { HellbaneAxeItem } from './axe/HellbaneAxeItem.ts'
+
+// Hoe
+export { HoeItem } from './hoe/HoeItem.ts'
+export { WoodHoeItem } from './hoe/WoodHoeItem.ts'
+export { StoneHoeItem } from './hoe/StoneHoeItem.ts'
+export { IronHoeItem } from './hoe/IronHoeItem.ts'
+export { SteelHoeItem } from './hoe/SteelHoeItem.ts'
+export { DiamondHoeItem } from './hoe/DiamondHoeItem.ts'
+export { InferniumHoeItem } from './hoe/InferniumHoeItem.ts'
+export { HellbaneHoeItem } from './hoe/HellbaneHoeItem.ts'

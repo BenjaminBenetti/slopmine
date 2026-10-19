@@ -21,6 +21,7 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../../interfaces/IChunk.ts'
 import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
+import { jungleGroundCover } from '../features/natureGroundCover.ts'
 
 /**
  * Jungle biome with grass surface, dirt subsurface, tall trees, and hanging vines.
@@ -180,6 +181,8 @@ export class JungleGenerator extends BiomeGenerator {
         minVineLength: 2,
         maxVineLength: 10,    // Longer vines for big trees
       }),
+      // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
+      jungleGroundCover(),
     ],
     caves: {
       enabled: true,
@@ -204,6 +207,9 @@ export class JungleGenerator extends BiomeGenerator {
       waterLevel: 238,
       frequency: 0.3, // More water in jungle
       minDepth: 2,
+      sandBlock: BlockIds.MUD, // Muddy lake beds (no grass under water)
+      sandDepth: 2,
+      shoreRadius: 0,
     },
     terrainConfig: {
       layers: [

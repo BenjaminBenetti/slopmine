@@ -33,6 +33,7 @@ import { JungleFernFeature } from './features/JungleFernFeature.ts'
 import { RiverbankClayFeature } from './features/RiverbankClayFeature.ts'
 import { CattailFeature } from './features/CattailFeature.ts'
 import { SubmergedPlantFeature } from './features/SubmergedPlantFeature.ts'
+import { GroundCoverFeature } from './features/GroundCoverFeature.ts'
 import { PineTreeFeature } from './features/PineTreeFeature.ts'
 import { GiantConiferFeature } from './features/GiantConiferFeature.ts'
 import { VolcanoConeFeature } from './features/VolcanoConeFeature.ts'
@@ -378,6 +379,9 @@ export class WorldGenerator {
       }
       if (feature instanceof CattailFeature) {
         return { type: 'cattail', settings: feature.settings }
+      }
+      if (feature instanceof GroundCoverFeature) {
+        return { type: 'groundCover', settings: feature.settings }
       }
       if (feature instanceof SubmergedPlantFeature) {
         return { type: 'submergedPlant', settings: feature.settings }

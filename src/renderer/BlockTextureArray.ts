@@ -41,7 +41,7 @@ export interface BlockTextureArray {
 
 let globalTextureArray: BlockTextureArray | null = null
 
-function loadImage(url: string): Promise<HTMLImageElement> {
+export function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve(img)
@@ -68,7 +68,7 @@ function writeMissingTexture(data: Uint8Array, offset: number): void {
  * Copy an image into a layer, flipping rows so layer row 0 is the image's
  * bottom (texture v points up the face, like a flipY texture).
  */
-function writeImageLayer(ctx: CanvasRenderingContext2D, img: HTMLImageElement, data: Uint8Array, offset: number): void {
+export function writeImageLayer(ctx: CanvasRenderingContext2D, img: HTMLImageElement, data: Uint8Array, offset: number): void {
   const size = BLOCK_TEXTURE_SIZE
   ctx.clearRect(0, 0, size, size)
   ctx.drawImage(img, 0, 0, size, size)
@@ -84,7 +84,7 @@ function writeImageLayer(ctx: CanvasRenderingContext2D, img: HTMLImageElement, d
  * Fill the RGB of fully transparent texels from their visible neighbours,
  * growing outward one ring per pass (wrapping, since layers repeat).
  */
-function dilateTransparentTexels(data: Uint8Array, offset: number): void {
+export function dilateTransparentTexels(data: Uint8Array, offset: number): void {
   const size = BLOCK_TEXTURE_SIZE
   const texels = size * size
   const filled = new Uint8Array(texels)

@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import type { FoliageSpec, IFoliageBlock } from '../../foliage/FoliageSpec.ts'
+import { RANDOM_TICK_INTERVAL } from '../../../blocktick/RandomBlockTicks.ts'
 import type { IBlockProperties, IWorld } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -24,6 +26,9 @@ export const BERRY_BUSH_VALID_GROUND: ReadonlySet<number> = new Set([
   BlockIds.DIRT,
   BlockIds.PODZOL,
   BlockIds.SNOWY_GRASS,
+  // grown from berry seeds
+  BlockIds.FARMLAND,
+  BlockIds.FARMLAND_MOIST,
 ])
 
 /**
@@ -83,7 +88,20 @@ const berryBushMaterial = new THREE.MeshLambertMaterial({
  * harvesting the laden variant swaps it to this block, and that setBlock
  * change queues the regrow tick automatically (see ScheduledBlockTicks).
  */
-export class BerryBushBlock extends TransparentBlock {
+export class BerryBushBlock extends TransparentBlock implements IFoliageBlock {
+  /** Drawn by the batched foliage renderer (one draw per sub-chunk, wind sway); displays keep the cross mesh. */
+  readonly foliage: FoliageSpec = {
+    sprites: [berryBushTexUrl],
+    shape: 'cross',
+    width: 0.9,
+    height: 0.8,
+    spriteHeight: 1,
+    sway: 0.2,
+    jitter: 0.2,
+    scaleVariation: 0.12,
+    viewDistance: 112,
+  }
+
   readonly properties: IBlockProperties = {
     id: BlockIds.BERRY_BUSH,
     name: 'berry_bush',
@@ -140,10 +158,11 @@ export class BerryBushBlock extends TransparentBlock {
   }
 
   /**
-   * Regrow tick: self-break if the ground below is invalid, otherwise become
-   * the laden variant. The setBlock swap omits the metadata arg, so existing
-   * metadata (including persistent bit 7) is preserved. Always returns false:
-   * the laden bush doesn't tick, and a broken bush is gone.
+   * Regrow tick (after picking): self-break, dropping the bush, if the
+   * ground below is invalid, otherwise become the laden variant. The setBlock
+   * swap omits the metadata arg, so existing metadata (including persistent
+   * bit 7) is preserved. Always returns false: the laden bush doesn't tick,
+   * and a broken bush is gone.
    */
   onScheduledTick(world: IWorld, x: bigint, y: bigint, z: bigint): boolean {
     const below = world.getBlockId
@@ -151,12 +170,21 @@ export class BerryBushBlock extends TransparentBlock {
       : world.getBlock(x, y - 1n, z).properties.id
 
     if (!BERRY_BUSH_VALID_GROUND.has(below)) {
+      world.spawnBlockDrops?.(x, y, z, this.getDrops())
       world.setBlock(x, y, z, BlockIds.AIR)
       return false
     }
 
     world.setBlock(x, y, z, BlockIds.BERRY_BUSH_BERRIES)
     return false
+  }
+
+  /**
+   * Random ticks regrow it too: scheduled ticks aren't saved, so a bush
+   * picked before a reload would otherwise stay bare until disturbed.
+   */
+  onRandomTick(world: IWorld, x: bigint, y: bigint, z: bigint): void {
+    if (Math.random() < RANDOM_TICK_INTERVAL / BERRY_BUSH_REGROW_INTERVAL / 2) this.onScheduledTick(world, x, y, z)
   }
 
   getDrops(): IItem[] {
