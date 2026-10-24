@@ -16,6 +16,7 @@ import { setupFireflies } from './fireflies/setupFireflies.ts'
 import { setupButterflies } from './butterflies/setupButterflies.ts'
 import { CaveAtmosphere } from './caves/CaveAtmosphere.ts'
 import { setupCaves } from './caves/setupCaves.ts'
+import { setupPointsOfInterest } from './pois/setupPointsOfInterest.ts'
 import { requestSleep } from './daynight/sleep.ts'
 import { DistanceFog } from './renderer/DistanceFog.ts'
 import { BlockOutline } from './renderer/BlockOutline.ts'
@@ -62,6 +63,7 @@ import { setWorldDaylight, setWorldLightFloor } from './renderer/worldLightShade
 import { getChunkCutoutDepthMaterial, getChunkMaterial } from './renderer/ChunkMaterial.ts'
 import { getFoliageMaterial, setFoliageDetail } from './renderer/foliage/FoliageRenderer.ts'
 import { advanceGlowTime } from './renderer/glowClock.ts'
+import { updateFlickerLights } from './renderer/FlickerLights.ts'
 import { warmUpWorldShaders, type WarmupMaterial } from './renderer/ShaderWarmup.ts'
 import {
   PhysicsEngine,
@@ -1414,8 +1416,9 @@ scheduler.createTask({
     // Liquids reflect the horizon sky at glancing angles; drift their textures
     setLiquidReflectionColor(fogColor)
     updateLiquidMaterials(dt)
-    // Bioluminescent block textures breathe and twinkle
+    // Bioluminescent block textures breathe and twinkle; fires flicker
     advanceGlowTime(dt)
+    updateFlickerLights(renderer.camera.position)
   },
 })
 
@@ -1753,6 +1756,18 @@ setupCaves({
   seed: worldGenerator.getConfig().seed,
   getSurfaceBiome: (x, z) =>
     biomeRegistry.selectBiomeForLayer(Math.floor(x / (BIOME_REGION_SIZE * 32)), Math.floor(z / (BIOME_REGION_SIZE * 32)), worldGenerator.getConfig().seed, 1),
+})
+
+// Underground points of interest: discovery, the Delver's Compass, their chest loot (see src/pois)
+setupPointsOfInterest({
+  scheduler,
+  persistenceManager,
+  playerState,
+  playerPosition: playerBody.position,
+  camera: renderer.camera,
+  entitySpawner,
+  isLoading: () => isLoading,
+  isPlayerDead: () => playerHealth.isDead,
 })
 
 // Sound: procedural effects, ambience and generative music (see src/audio)

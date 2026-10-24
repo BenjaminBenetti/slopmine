@@ -32,6 +32,7 @@ import { RiverbankClayFeature, type RiverbankClayFeatureSettings } from '../worl
 import { CattailFeature, type CattailFeatureSettings } from '../world/generate/features/CattailFeature.ts'
 import { SubmergedPlantFeature, type SubmergedPlantFeatureSettings } from '../world/generate/features/SubmergedPlantFeature.ts'
 import { CAVE_MASK_SIZE } from '../world/generate/caves/CaveMask.ts'
+import { placeCavePois } from '../world/generate/caves/pois/placeCavePois.ts'
 import { dressCaves, scatterRockBlobs } from '../world/generate/caves/CaveDressing.ts'
 import { caveBiomeAt, type CaveBiomeSample } from '../world/generate/caves/CaveBiomes.ts'
 import { GroundCoverFeature, type GroundCoverSettings } from '../world/generate/features/GroundCoverFeature.ts'
@@ -1293,6 +1294,19 @@ async function generateSubChunk(
     }
     if (caveMask) dressCaves(subChunk, caveMask, dressing)
     scatterRockBlobs(subChunk, dressing)
+    // Phase 4.57: the underground points of interest (caves/pois/) - ruins,
+    // treasure, lairs - drawn over the dressed caves
+    if (options.caves && getCaveSample) {
+      const sampleAt = getCaveSample
+      placeCavePois(subChunk, {
+        ...dressing,
+        seed,
+        getHeight,
+        probe: (x0, y0, z0, sx, sy, sz) => getCaveCarver(seed).probeRegion(x0, y0, z0, sx, sy, sz, sampleAt, getHeight),
+        surfaceBiomeAt: getBiomeNameAt,
+        caveBiomeAt: dressing.caveBiomeAt,
+      })
+    }
   }
 
   // Phase 4.6: the Hell cavern's dark rock ceiling - the bottom layers of the

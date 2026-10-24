@@ -34,6 +34,8 @@ export interface IBlockProperties {
   readonly isLiquid: boolean
   readonly hardness: number
   readonly lightLevel: number
+  /** Firelight: its block light flickers and is oranger (a shader effect on what it lights, renderer/FlickerLights.ts). */
+  readonly lightFlicker?: boolean
   readonly lightBlocking: number
   /**
    * Light can't pass through this block vertically (up or down), though the
@@ -271,7 +273,10 @@ export interface IBlock {
  */
 export interface IBlockMeshPart {
   geometry: THREE.BufferGeometry
-  material: THREE.Material
+  /** One material, or one per geometry group (group i draws with material[i]). */
+  material: THREE.Material | THREE.Material[]
+  /** False keeps the part out of shadow maps (cutout flames: the depth pass would draw whole quads). */
+  castShadow?: boolean
 }
 
 /**

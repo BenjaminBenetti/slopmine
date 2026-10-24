@@ -191,6 +191,43 @@ export class CaveCarver {
   }
 
   /**
+   * Carve a free-standing box of the world into a fresh volume and return it
+   * (index `(y * sizeZ + z) * sizeX + x`, from the box's min corner): STONE
+   * where rock stays, AIR where a cave or the open air above the surface is,
+   * the flood block where the carve floods. The same cells the generator
+   * carves there (the lattice is world-aligned), so a structure spanning
+   * several sub-chunks can read the caves around it before they exist (cave
+   * points of interest).
+   */
+  probeRegion(
+    originX: number,
+    originY: number,
+    originZ: number,
+    sizeX: number,
+    sizeY: number,
+    sizeZ: number,
+    getSampleAt: CaveSampleGetter,
+    getHeightAt: HeightGetter
+  ): Uint16Array {
+    const volume = new Uint16Array(sizeX * sizeY * sizeZ)
+    for (let z = 0; z < sizeZ; z++) {
+      for (let x = 0; x < sizeX; x++) {
+        const surface = getHeightAt(originX + x, originZ + z)
+        for (let y = 0; y < sizeY && originY + y <= surface; y++) volume[(y * sizeZ + z) * sizeX + x] = BlockIds.STONE
+      }
+    }
+    const access: BlockAccess = {
+      getBlockId: (x, y, z) => volume[(y * sizeZ + z) * sizeX + x],
+      setBlockId: (x, y, z, id) => {
+        volume[(y * sizeZ + z) * sizeX + x] = id
+        return true
+      },
+    }
+    this.carveRegion(access, originX, originZ, originY, originY + sizeY - 1, originY, getSampleAt, getHeightAt, sizeX, sizeZ)
+    return volume
+  }
+
+  /**
    * Carve caves into a full chunk column (legacy full-chunk path).
    * World Y equals storage Y for full chunks, so the Y offset is 0.
    */

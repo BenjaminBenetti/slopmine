@@ -8,6 +8,7 @@ import {
 } from './worldLightShader.ts'
 import { CHUNK_LIGHT_SCALE } from './ChunkVertexFormat.ts'
 import { glowTimeUniform } from './glowClock.ts'
+import { FLICKER_GLSL, flickerSourcesUniform } from './FlickerLights.ts'
 
 /**
  * Materials for greedy chunk meshes (chunk-only; never shared with item
@@ -59,6 +60,8 @@ varying vec3 vBlockUv;
 varying vec3 vBlockLight;
 varying vec3 vSlopWorld;
 varying vec3 vSlopNormal;
+varying vec3 vSlopFlicker;
+${FLICKER_GLSL}
 const vec3 SLOP_FACE_NORMALS[ 6 ] = vec3[ 6 ](
   vec3( 0.0, 1.0, 0.0 ), vec3( 0.0, -1.0, 0.0 ),
   vec3( 0.0, 0.0, -1.0 ), vec3( 0.0, 0.0, 1.0 ),
@@ -89,6 +92,7 @@ const VERTEX_VARYINGS = /* glsl */ `
 vBlockUv = aTex.xyz;
 vBlockLight = vec3( aLight.xy * ${(1 / CHUNK_LIGHT_SCALE).toFixed(6)}, aLight.z * ${(1 / 255).toFixed(8)} );
 vSlopWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+vSlopFlicker = slopFlicker( vSlopWorld );
 vSlopNormal = SLOP_FACE_NORMALS[ int( aTex.w + 0.5 ) ];
 `
 
@@ -101,6 +105,7 @@ varying vec3 vBlockUv;
 varying vec3 vBlockLight;
 varying vec3 vSlopWorld;
 varying vec3 vSlopNormal;
+varying vec3 vSlopFlicker;
 float slopHash13( vec3 p3 ) {
   p3 = fract( p3 * 0.1031 );
   p3 += dot( p3, p3.zyx + 31.32 );
@@ -165,7 +170,7 @@ const FRAGMENT_GLOW = /* glsl */ `
 
 const FRAGMENT_LIGHT = /* glsl */ `
 #include <aomap_fragment>
-${worldLightFragment('vBlockLight.x', 'vBlockLight.y', 'vBlockLight.z')}
+${worldLightFragment('vBlockLight.x', 'vBlockLight.y', 'vBlockLight.z', 'vSlopFlicker')}
 `
 
 function patchChunkShader(
@@ -180,6 +185,7 @@ function patchChunkShader(
   shader.uniforms.uGlowTime = glowTimeUniform
   shader.uniforms.uDaylight = daylightUniform
   shader.uniforms.uLightFloor = lightFloorUniform
+  shader.uniforms.uFlickerSources = flickerSourcesUniform
 
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>\n${VERTEX_PARS}`)

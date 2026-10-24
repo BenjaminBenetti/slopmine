@@ -171,7 +171,7 @@ const PLAIN_CAVE: CaveDressingSpec = {
 }
 
 /** Highest lava level of any cave biome (sub-chunks above it skip the lava pass). */
-const MAX_LAVA_LEVEL = Math.max(...Object.values(DRESSINGS).map((d) => d.lavaLevel ?? -Infinity))
+export const MAX_LAVA_LEVEL = Math.max(...Object.values(DRESSINGS).map((d) => d.lavaLevel ?? -Infinity))
 
 /** Zone strength a magma chamber needs for its lava lake (lakes keep off the zone's rim). */
 const LAVA_MIN_STRENGTH = 0.7

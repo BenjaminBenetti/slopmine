@@ -350,6 +350,38 @@ export enum TextureId {
   GRAVEL = 612,                  // gravel.webp
   ANDESITE = 613,                // andesite.webp
   GRANITE = 614,                 // granite.webp
+  // Underground points of interest
+  ANCIENT_BRICKS = 615,          // ancient_bricks.webp
+  MOSSY_ANCIENT_BRICKS = 616,    // mossy_ancient_bricks.webp
+  CRACKED_ANCIENT_BRICKS = 617,  // cracked_ancient_bricks.webp
+  CARVED_ANCIENT_BRICKS = 618,   // carved_ancient_bricks.webp
+  ANCIENT_TILES = 619,           // ancient_tiles.webp
+  RUNESTONE = 620,               // runestone.webp (emissive runes)
+  ANCIENT_BOOKSHELF = 621,       // ancient_bookshelf.webp (sides; top and bottom are oak planks)
+  PETRIFIED_WOOD = 622,          // petrified_wood.webp (sides)
+  PETRIFIED_WOOD_TOP = 623,      // petrified_wood_top.webp
+  HEAPED_GOLD = 624,             // heaped_gold.webp
+  TREASURE_HOARD = 625,          // decor models (coloured materials, no texture layer)
+  GOLD_COINS = 626,
+  DRAGON_EGG = 627,
+  SKULL = 628,
+  BARREL = 629,                  // barrel_side.webp (a textured full block since the points-of-interest feedback)
+  BEDROLL = 630,
+  RUNE_PEDESTAL = 631,
+  BOOK_PILE = 632,
+  GOLDEN_IDOL = 633,
+  SILK_COCOON = 634,
+  MINERS_LANTERN = 635,
+  DUSTY_BOTTLES = 636,
+  FOSSIL_BONE = 637,             // fossil_bone.webp
+  BARREL_TOP = 638,              // barrel_top.webp
+  SANDSTONE_BRICKS = 639,        // sandstone_bricks.webp
+  CARVED_SANDSTONE = 640,        // carved_sandstone.webp (sides; top is sandstone)
+  IRON_BARS = 641,               // decor models (coloured materials, no texture layer)
+  MINECART = 642,
+  TELESCOPE = 643,
+  STONE_BUST = 644,
+  TANKARDS = 645,
 }
 
 // Cache for the face texture map

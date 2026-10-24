@@ -73,6 +73,8 @@ import { natureHandRecipes, natureSmeltingRecipes } from './NatureRecipes.ts'
 
 // Caves and dark places
 import { caveHandRecipes, caveBrewingRecipes } from './CaveRecipes.ts'
+import { poiHandRecipes } from './PoiRecipes.ts'
+import { forageHandRecipes, forageSmeltingRecipes, forageBrewingRecipes } from './ForageRecipes.ts'
 
 /**
  * Register all default recipes.
@@ -254,6 +256,12 @@ export function registerDefaultRecipes(): void {
   // Caves and dark places
   for (const recipe of caveHandRecipes) recipeRegistry.register(recipe)
   for (const recipe of caveBrewingRecipes) brewingRegistry.register(recipe)
+  for (const recipe of poiHandRecipes) recipeRegistry.register(recipe)
+
+  // Foraging: wild mushroom cooking, salad, compost and odd finds put to use
+  for (const recipe of forageHandRecipes) recipeRegistry.register(recipe)
+  for (const recipe of forageSmeltingRecipes) smeltingRegistry.register(recipe)
+  for (const recipe of forageBrewingRecipes) brewingRegistry.register(recipe)
 }
 
 export { woodToolRecipes } from './WoodToolRecipes.ts'

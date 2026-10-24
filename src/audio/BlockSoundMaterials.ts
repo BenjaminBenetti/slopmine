@@ -50,6 +50,9 @@ const OVERRIDES: Record<string, BlockSoundMaterial> = {
   celestite_block: 'crystal', celestite_lamp: 'crystal', celestite_cluster: 'crystal', celestite_bud: 'crystal',
   hanging_celestite: 'crystal', sulfur_cluster: 'crystal', puffballs: 'soft', egg_sac: 'soft', glowworm_threads: 'cloth',
   frosted_stone: 'ice', cave_pearls: 'gravel', ore_crate: 'wood',
+  // Points of interest: stone that names moss or wood, cloth, glass, metal and wooden decorations
+  mossy_ancient_bricks: 'stone', petrified_wood: 'stone', bedroll: 'cloth', book_pile: 'cloth', silk_cocoon: 'cloth',
+  dusty_bottles: 'glass', minecart: 'metal', telescope: 'metal', tankards: 'wood',
 }
 
 /**

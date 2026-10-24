@@ -74,8 +74,9 @@ ${LIGHT_CURVE_GLSL}
  * @param sky GLSL expression: sky light level (0-15, may be fractional)
  * @param block GLSL expression: block light level (0-15, may be fractional)
  * @param ao GLSL expression: ambient-occlusion multiplier (0-1)
+ * @param flicker GLSL expression: block-light colour multiplier, float or vec3 (FlickerLights.ts: firelight)
  */
-export function worldLightFragment(sky: string, block: string, ao: string): string {
+export function worldLightFragment(sky: string, block: string, ao: string, flicker = '1.0'): string {
   return /* glsl */ `
 {
   float worldAo = ${ao};
@@ -85,7 +86,7 @@ export function worldLightFragment(sky: string, block: string, ao: string): stri
   reflectedLight.indirectDiffuse *= worldSky * worldAo;
   reflectedLight.directSpecular *= worldSky;
   reflectedLight.indirectSpecular *= worldSky;
-  reflectedLight.indirectDiffuse += diffuseColor.rgb * ( BLOCK_LIGHT_COLOR * worldBlock + uLightFloor * ( 1.0 - worldSky ) ) * worldAo;
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * ( BLOCK_LIGHT_COLOR * ( ${flicker} ) * worldBlock + uLightFloor * ( 1.0 - worldSky ) ) * worldAo;
 }
 `
 }

@@ -103,6 +103,7 @@ export const SOUND_DEFS = defs({
   'ui.refused': { variants: 1, loudness: -32, bus: 'ui', maxVoices: 1, preload: true },
   'ui.milestone': { variants: 1, loudness: -27, bus: 'ui', maxVoices: 1 },
   'ui.chapter': { variants: 1, loudness: -26, bus: 'ui', maxVoices: 1 },
+  'ui.discover': { variants: 1, loudness: -28, bus: 'ui', maxVoices: 1 },
 
   // Stations and world interactions
   'chest.open': { variants: 2, loudness: -28, bus: 'sfx', pitch: 1, maxVoices: 1, ref: 4, range: 24, preload: true },

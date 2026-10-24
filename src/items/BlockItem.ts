@@ -1,5 +1,6 @@
 import { Item } from './Item.ts'
 import { BlockIconGenerator } from '../renderer/BlockIconGenerator.ts'
+import { blockItemTags } from './tags/blockItemTags.ts'
 
 /**
  * Base class for all block items.
@@ -18,5 +19,10 @@ export abstract class BlockItem extends Item {
    */
   override get iconUrl(): string | undefined {
     return BlockIconGenerator.getInstance().getIcon(this.blockName)
+  }
+
+  /** Recipe tags by the placed block (compostable plants, salad greens...); block items with tags of their own override this. */
+  override get tags(): ReadonlyArray<string> {
+    return blockItemTags(this.blockName)
   }
 }

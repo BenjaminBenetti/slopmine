@@ -5,13 +5,13 @@ import { SoulTorchBlockItem } from '../../items/blocks/soul_torch/SoulTorchBlock
 import { SoulLanternBlockItem } from '../../items/blocks/soul_lantern/SoulLanternBlockItem.ts'
 
 /**
- * The Ossuary's hand recipes: bone blocks (4 bones, reversible) and the
+ * The Ossuary's hand recipes: bone blocks (6 bones, reversible) and the
  * soul-fire lights made from soul shards.
  */
 export const boneBlockRecipe: IRecipe = {
   id: 'bone_block',
   name: 'Bone Block',
-  ingredients: [{ itemId: 'bone', count: 4 }],
+  ingredients: [{ itemId: 'bone', count: 6 }],
   createResult: () => new BoneBlockItem(),
   resultCount: 1,
 }
@@ -21,7 +21,7 @@ export const bonesFromBoneBlockRecipe: IRecipe = {
   name: 'Bone',
   ingredients: [{ itemId: 'bone_block', count: 1 }],
   createResult: () => new BoneItem(),
-  resultCount: 4,
+  resultCount: 6,
 }
 
 export const soulTorchRecipe: IRecipe = {

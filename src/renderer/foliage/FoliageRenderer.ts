@@ -4,6 +4,7 @@ import { dilateTransparentTexels, loadImage, writeImageLayer } from '../BlockTex
 import { CRISP_TEXEL_SAMPLING_GLSL } from '../crispTexelSampling.ts'
 import { DARK_GLOW_GLSL } from '../EmissiveTextures.ts'
 import { glowTimeUniform } from '../glowClock.ts'
+import { FLICKER_GLSL, flickerSourcesUniform } from '../FlickerLights.ts'
 import { getAnisotropy, getTextureFiltering, minFilterForMode, onTextureFilteringChange } from '../TextureLoader.ts'
 import {
   daylightUniform, LIGHT_CURVE_DEFINES_GLSL, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
@@ -153,6 +154,8 @@ uniform float uFoliageDistanceScale;
 varying vec3 vFoliageUv;
 varying vec2 vFoliageLight;
 varying vec2 vFoliageGlow;
+varying vec3 vFoliageFlicker;
+${FLICKER_GLSL}
 `
 
 // aOffset: base centre (sub-chunk local). aSprite: layer, yaw, width, height.
@@ -191,6 +194,7 @@ vec3 transformed = aOffset;
   float spriteV = mix( uv.y * aShape.w, 1.0 - aShape.w + uv.y * aShape.w, hang );
   vFoliageUv = vec3( uv.x, mix( spriteV, uv.y, aVertShape ), aSprite.x );
   vFoliageLight = aLight;
+  vFoliageFlicker = slopFlicker( foliageWorld );
   vFoliageGlow = aGlow;
 }
 `
@@ -201,6 +205,7 @@ uniform sampler2DArray uFoliageGlow;
 varying vec3 vFoliageUv;
 varying vec2 vFoliageLight;
 varying vec2 vFoliageGlow;
+varying vec3 vFoliageFlicker;
 ${LIGHT_CURVE_DEFINES_GLSL}
 ${WORLD_LIGHT_FRAGMENT_PARS}
 ${DARK_GLOW_GLSL}
@@ -227,6 +232,7 @@ export function getFoliageMaterial(): THREE.Material | null {
     uFoliageDistanceScale: distanceScaleUniform,
     uDaylight: daylightUniform,
     uLightFloor: lightFloorUniform,
+    uFlickerSources: flickerSourcesUniform,
   }
   material = new THREE.MeshLambertMaterial({
     side: THREE.DoubleSide,
@@ -246,7 +252,7 @@ export function getFoliageMaterial(): THREE.Material | null {
       .replace('#include <common>', `#include <common>\n${FRAGMENT_PARS}`)
       .replace('#include <map_fragment>', 'diffuseColor *= slopCrispTexel( uFoliageSprites, vFoliageUv );')
       .replace('#include <emissivemap_fragment>', EMISSIVE_FRAGMENT)
-      .replace('#include <aomap_fragment>', `#include <aomap_fragment>\n${worldLightFragment('vFoliageLight.x', 'vFoliageLight.y', '1.0')}`)
+      .replace('#include <aomap_fragment>', `#include <aomap_fragment>\n${worldLightFragment('vFoliageLight.x', 'vFoliageLight.y', '1.0', 'vFoliageFlicker')}`)
   }
   material.customProgramCacheKey = () => 'slopmine-foliage-v2'
   return material

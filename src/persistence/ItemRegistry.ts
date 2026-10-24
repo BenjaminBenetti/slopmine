@@ -349,6 +349,8 @@ import { registerCocytusItems } from '../items/cocytus/registerCocytusItems.ts'
 import { registerNightfallItems } from '../items/nightfall/registerNightfallItems.ts'
 import { registerNatureItems } from '../items/nature/registerNatureItems.ts'
 import { registerCaveItems } from '../items/caves/registerCaveItems.ts'
+import { registerPoiItems } from '../items/pois/registerPoiItems.ts'
+import { registerForageFoodItems } from '../items/food/registerForageFoodItems.ts'
 
 type ItemFactory = () => IItem
 
@@ -745,6 +747,8 @@ export function initializeItemRegistry(): void {
 
   // Caves and dark places
   registerCaveItems(registerItemFactory)
+  registerPoiItems(registerItemFactory)
+  registerForageFoodItems(registerItemFactory)
 
   console.log(`Item registry initialized with ${itemFactories.size} items`)
 }

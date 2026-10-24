@@ -68,6 +68,12 @@ export type GameEvent =
    */
   | { type: 'daybreak'; day: number; survived: boolean }
   | { type: 'cave-biome-entered'; caveBiome: string }
+  /**
+   * The player found an underground point of interest (src/pois/): `poi` is
+   * its kind id (PoiCatalog), the position its keystone; `distinctKinds`
+   * counts the kinds discovered so far, this one included.
+   */
+  | { type: 'poi-discovered'; poi: string; x: number; y: number; z: number; distinctKinds: number }
 
 export type GameEventType = GameEvent['type']
 export type GameEventOf<T extends GameEventType> = Extract<GameEvent, { type: T }>

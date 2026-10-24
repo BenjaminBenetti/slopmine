@@ -67,6 +67,7 @@ export const HudOrder = {
   STATUS_EFFECTS: 1,
   BOSS_BAR: 0,
   SIGIL_COMPASS: 1,
+  DELVERS_COMPASS: 2,
   TOASTS: 0,
   HEARTS: 0,
   PLAYER_NOTICE: 1,

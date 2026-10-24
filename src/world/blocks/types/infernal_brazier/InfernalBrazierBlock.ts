@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeTaggedParts } from '../model_shared/mergeTaggedParts.ts'
 import type { IBlockProperties, BlockFace } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -45,7 +45,7 @@ const parts: THREE.BufferGeometry[] = [
   box(0.26, 0.34, 0.26, 0.04, FLOOR + 0.62, -0.03, 2),
 ]
 
-const brazierGeometry = mergeGeometries(parts, true)
+const brazierGeometry = mergeTaggedParts(parts)
 
 const ironMaterial = new THREE.MeshLambertMaterial({ color: 0x2b2522 }) // blackened iron
 const coalMaterial = new THREE.MeshBasicMaterial({ color: 0xff5a14 }) // glowing coals

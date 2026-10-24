@@ -470,6 +470,14 @@ export const SFX_RECIPES: Record<string, Recipe> = {
     chime(b, sr, [76, 83], 0.14, 1.0, 0.7)
     return finish(b, sr)
   },
+  'ui.discover'(rng, sr) {
+    // A point of interest found: a breath of air, then a low, open chime under a high shimmer
+    const b = samples(3.4, sr)
+    whoosh(b, sr, rng, 0, 0.9, 300, 1400, 0.6, 0.22, 'pink')
+    shimmer(b, sr, rng, 0.3, 1.6, [81, 88, 93], 0.16)
+    chime(b, sr, [69, 76, 72], 0.22, 1.5, 0.55, 0.15)
+    return finish(b, sr)
+  },
   'ui.chapter'(_rng, sr) {
     const b = samples(3.2, sr)
     chime(b, sr, [72, 76, 79, 84], 0.16, 1.3, 0.6)

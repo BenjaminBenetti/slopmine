@@ -2,6 +2,7 @@ import type * as THREE from 'three'
 import {
   daylightUniform, LIGHT_CURVE_DEFINES_GLSL, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
 } from './worldLightShader.ts'
+import { FLICKER_GLSL, flickerSourcesUniform } from './FlickerLights.ts'
 
 /**
  * World light for instanced (non-greedy) blocks: torches, plants, doors,
@@ -19,8 +20,8 @@ import {
  * renderer/itemdisplay). The patch only touches program variants compiled with
  * `instancingColor` (every vertex edit is additionally under
  * `#ifdef USE_INSTANCING_COLOR`), so every non-instanced use compiles exactly
- * the shader it did before. The only uniforms added are the global daylight
- * and light-floor objects, identical for every chunk.
+ * the shader it did before. The only uniforms added are the global daylight,
+ * light-floor and flicker (FlickerLights.ts) objects, identical for every chunk.
  */
 
 const PROGRAM_KEY = 'slopmine-instanced-world-light-v1'
@@ -31,6 +32,8 @@ const LIT_SHADER_IDS: ReadonlySet<string> = new Set(['lambert', 'phong', 'standa
 const VERTEX_PARS = /* glsl */ `
 #ifdef USE_INSTANCING_COLOR
 varying vec2 vWorldLight;
+varying vec3 vWorldFlicker;
+${FLICKER_GLSL}
 #endif
 `
 
@@ -40,6 +43,7 @@ const VERTEX_COLOR = /* glsl */ `
 #include <color_vertex>
 #ifdef USE_INSTANCING_COLOR
   vWorldLight = instanceColor.xy;
+  vWorldFlicker = slopFlicker( ( modelMatrix * vec4( instanceMatrix[ 3 ].xyz, 1.0 ) ).xyz );
   vColor.xyz = vec3( 1.0 );
   #ifdef USE_COLOR
     vColor.xyz *= color.xyz;
@@ -49,13 +53,14 @@ const VERTEX_COLOR = /* glsl */ `
 
 const FRAGMENT_PARS = /* glsl */ `
 varying vec2 vWorldLight;
+varying vec3 vWorldFlicker;
 ${LIGHT_CURVE_DEFINES_GLSL}
 ${WORLD_LIGHT_FRAGMENT_PARS}
 `
 
 const FRAGMENT_LIGHT = /* glsl */ `
 #include <aomap_fragment>
-${worldLightFragment('vWorldLight.x', 'vWorldLight.y', '1.0')}
+${worldLightFragment('vWorldLight.x', 'vWorldLight.y', '1.0', 'vWorldFlicker')}
 `
 
 const prepared = new WeakSet<THREE.Material>()
@@ -66,6 +71,7 @@ function patchShader(shader: THREE.WebGLProgramParametersWithUniforms): void {
   // variant only could go missing from another.
   shader.uniforms.uDaylight = daylightUniform
   shader.uniforms.uLightFloor = lightFloorUniform
+  shader.uniforms.uFlickerSources = flickerSourcesUniform
 
   if (!shader.instancingColor) return
 

@@ -98,6 +98,7 @@ const ENTITY_VOICES: Record<string, EntityVoice> = {
   prism_warden: V('boss-prism', 'crystal', 1, 10, { boss: true, shield: 'crystal' }),
   rime_sovereign: V('boss-frost', 'ice', 1, 9, { boss: true, shield: 'ice' }),
   sporemother: V('boss-spore', 'soft', 1, 9, { boss: true, shield: 'wood' }),
+  cave_drake: V('boss-fire', 'shell', 0.72, 9, { boss: true, shield: 'stone' }),
 }
 
 export function getEntityVoice(entityType: string): EntityVoice | null {

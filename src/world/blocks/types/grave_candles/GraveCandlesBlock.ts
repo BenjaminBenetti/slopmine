@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeTaggedParts } from '../model_shared/mergeTaggedParts.ts'
 import type { IBlockProperties, BlockFace, IWorld } from '../../../interfaces/IBlock.ts'
 import type { IItem } from '../../../../items/Item.ts'
 import { TransparentBlock } from '../../Block.ts'
@@ -19,7 +19,7 @@ for (const [x, z, h] of candles) {
   flame.groups.forEach((g) => { g.materialIndex = 1 })
   parts.push(wax, flame)
 }
-const candlesGeometry = mergeGeometries(parts, true)
+const candlesGeometry = mergeTaggedParts(parts)
 const candlesMaterials = [
   new THREE.MeshLambertMaterial({ color: 0xded5bf }),
   new THREE.MeshBasicMaterial({ color: 0x8dffb2 }),

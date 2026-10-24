@@ -12,6 +12,7 @@ import {
   LIQUID_SIDE_CLIP_SHIFT,
 } from './ChunkVertexFormat.ts'
 import { prepareInstancedBlockMaterial, writeInstanceLight } from './InstancedBlockLight.ts'
+import { setFlickerLights } from './FlickerLights.ts'
 import { LIQUID_GLOW_ATTRIBUTE } from './LiquidMaterials.ts'
 import { FoliageBatch, releaseFoliageMesh } from './foliage/FoliageRenderer.ts'
 import { isFoliageBlock } from '../world/blocks/foliage/FoliageSpec.ts'
@@ -194,6 +195,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     const faceVisMap = new Map(nonGreedyFaceVisibility)
     const liquidGlowMap = new Map(nonGreedyLiquidGlow)
     const foliage = new FoliageBatch()
+    const flickering: number[] = []
 
     for (let i = 0; i < nonGreedyBlocks.length; i++) {
       const [blockId, positions] = nonGreedyBlocks[i]
@@ -205,6 +207,9 @@ export class GreedyChunkMesh implements IChunkMesh {
       if (count === 0) continue
 
       const block = getBlock(blockId)
+      if (block.properties.lightFlicker) {
+        for (let j = 0; j < positions.length; j++) flickering.push(positions[j] + 0.5)
+      }
 
       // Grass, flowers, doodads: every kind shares the sub-chunk's one foliage mesh
       if (isFoliageBlock(block)) {
@@ -222,10 +227,11 @@ export class GreedyChunkMesh implements IChunkMesh {
       else if (isMultiMeshBlock(block)) {
         const parts = block.getMultiMeshParts()
         for (let partIndex = 0; partIndex < parts.length; partIndex++) {
-          const { geometry, material } = parts[partIndex]
+          const { geometry, material, castShadow } = parts[partIndex]
           // Use a unique key for each part: blockId * 100 + partIndex
           const partKey = blockId * 100 + partIndex
-          this.buildInstancedMesh(partKey, geometry, material, positions, lights, metadata, count, matrix, material)
+          this.buildInstancedMesh(partKey, geometry, material, positions, lights, metadata, count, matrix, Array.isArray(material) ? material[0] : material)
+          if (castShadow === false) this.instancedMeshes.get(partKey)!.castShadow = false
         }
       }
       // Standard single-mesh rendering
@@ -240,7 +246,7 @@ export class GreedyChunkMesh implements IChunkMesh {
       if (hasGlowHalo(block)) {
         const halo = block.getGlowHalo()
         const haloKey = blockId * 100 + 99
-        this.buildInstancedMesh(haloKey, halo.geometry, halo.material, positions, lights, metadata, count, matrix, halo.material)
+        this.buildInstancedMesh(haloKey, halo.geometry, halo.material, positions, lights, metadata, count, matrix, Array.isArray(halo.material) ? halo.material[0] : halo.material)
         const haloMesh = this.instancedMeshes.get(haloKey)!
         haloMesh.renderOrder = 2
         haloMesh.castShadow = false
@@ -258,6 +264,7 @@ export class GreedyChunkMesh implements IChunkMesh {
       this.meshes.push(foliageMesh)
       this.group.add(foliageMesh)
     }
+    if (flickering.length > 0) setFlickerLights(this, new Float32Array(flickering))
   }
 
   /**
@@ -566,6 +573,7 @@ export class GreedyChunkMesh implements IChunkMesh {
    * frees instanceMatrix / instanceColor (WebGLObjects).
    */
   dispose(): void {
+    setFlickerLights(this, null)
     if (this.foliageMesh) {
       releaseFoliageMesh(this.foliageMesh)
       this.foliageMesh = null

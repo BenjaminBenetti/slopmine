@@ -17,9 +17,17 @@ export interface MineshaftSettings {
 /** Side of a network cell (blocks); each holds at most one network, kept inside it. */
 const CELL = 320
 const MARGIN = 12
-/** Corridor half-width (3 wide) and height (3 tall). */
-const HALF = 1
+/**
+ * Corridor lanes across its width, relative to its cross coordinate: 4 wide,
+ * so the support posts on the outer lanes leave two open (play feedback: 3
+ * wide left one, and the player caught on every frame). 3 tall: 2 under the
+ * beams.
+ */
+const LANE_MIN = -1
+const LANE_MAX = 2
 const HEIGHT = 3
+/** Half size of a junction room (7×7: its corner posts stay clear of the corridors' lanes). */
+const ROOM_HALF = 3
 /** A support frame every this many blocks along a corridor. */
 const SUPPORT_SPACING = 4
 /** Corridors never come closer than this to the surface (blocks). */
@@ -109,7 +117,7 @@ function networkAt(cellX: number, cellZ: number, seed: number, s: MineshaftSetti
         nodes.push(axis === 'x' ? { x: t, z: from.z, degree: 2 } : { x: from.x, z: t, degree: 2 })
       }
     }
-    for (const n of nodes) if (n.degree >= 3 || (n === nodes[0])) rooms.push({ x: n.x, z: n.z, y, r: 2 })
+    for (const n of nodes) if (n.degree >= 3 || (n === nodes[0])) rooms.push({ x: n.x, z: n.z, y, r: ROOM_HALF })
     // Chests at a few dead ends, a crate beside each (the loot table's signature)
     const chests: Network['chests'][number][] = []
     for (const n of nodes) {
@@ -118,10 +126,10 @@ function networkAt(cellX: number, cellZ: number, seed: number, s: MineshaftSetti
     }
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity
     for (const c of corridors) {
-      const x0 = c.axis === 'x' ? c.a0 : c.cross - HALF - 1
-      const x1 = c.axis === 'x' ? c.a1 : c.cross + HALF + 1
-      const z0 = c.axis === 'z' ? c.a0 : c.cross - HALF - 1
-      const z1 = c.axis === 'z' ? c.a1 : c.cross + HALF + 1
+      const x0 = c.axis === 'x' ? c.a0 : c.cross + LANE_MIN - 1
+      const x1 = c.axis === 'x' ? c.a1 : c.cross + LANE_MAX + 1
+      const z0 = c.axis === 'z' ? c.a0 : c.cross + LANE_MIN - 1
+      const z1 = c.axis === 'z' ? c.a1 : c.cross + LANE_MAX + 1
       minX = Math.min(minX, x0 - 3); maxX = Math.max(maxX, x1 + 3); minZ = Math.min(minZ, z0 - 3); maxZ = Math.max(maxZ, z1 + 3)
     }
     if (corridors.length > 0) network = { corridors, rooms, chests, minX, maxX, minZ, maxZ }
@@ -131,8 +139,8 @@ function networkAt(cellX: number, cellZ: number, seed: number, s: MineshaftSetti
 }
 
 /**
- * Abandoned mineshafts: networks of 3×3 timber-framed corridors deep in the
- * overworld's rock (one chance per 320-block cell), with oak post-and-beam
+ * Abandoned mineshafts: networks of timber-framed corridors (4 wide, 3 tall)
+ * deep in the overworld's rock (one chance per 320-block cell), with oak post-and-beam
  * supports every 4 blocks, plank floors where a corridor bridges a cave,
  * cobwebs, junction rooms and loot chests at dead ends beside ore crates
  * (the 'abandoned-mineshaft' chest loot table's signature). Listed in every
@@ -206,7 +214,8 @@ export class MineshaftFeature extends Feature {
   ): void {
     for (let a = c.a0; a <= c.a1; a++) {
       const support = (a - c.a0) % SUPPORT_SPACING === 0
-      for (let w = -HALF; w <= HALF; w++) {
+      for (let w = LANE_MIN; w <= LANE_MAX; w++) {
+        const outer = w === LANE_MIN || w === LANE_MAX
         const x = c.axis === 'x' ? a : c.cross + w
         const z = c.axis === 'x' ? c.cross + w : a
         for (let dy = 0; dy < HEIGHT; dy++) set(x, c.y + dy, z, BlockIds.AIR)
@@ -214,11 +223,11 @@ export class MineshaftFeature extends Feature {
         if (inside(x, c.y - 1, z) && get(x, c.y - 1, z) === BlockIds.AIR) set(x, c.y - 1, z, BlockIds.OAK_PLANKS)
         if (support) {
           set(x, c.y + HEIGHT - 1, z, BlockIds.OAK_PLANKS)
-          if (w !== 0) {
+          if (outer) {
             set(x, c.y, z, BlockIds.OAK_FENCE)
             set(x, c.y + 1, z, BlockIds.OAK_FENCE)
           }
-        } else if (w !== 0 && hash(x * 7 + c.y, z, 191) < 0.06) {
+        } else if (outer && hash(x * 7 + c.y, z, 191) < 0.06) {
           // Old cobwebs in the upper corners
           set(x, c.y + HEIGHT - 1, z, BlockIds.COBWEB)
         }

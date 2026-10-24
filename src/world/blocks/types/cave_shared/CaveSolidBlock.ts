@@ -13,6 +13,9 @@ export interface CaveSolidBlockOptions {
   readonly displayName: string
   readonly textureId: number
   readonly texture: string
+  /** Top and bottom faces' texture (log ends, shelf tops); default: `texture`. */
+  readonly endTextureId?: number
+  readonly endTexture?: string
   /** Glow: the chunk shader's emissive texels (EmissiveTextures). */
   readonly glow?: EmissiveTextureOptions
   readonly hardness: number
@@ -24,19 +27,29 @@ export interface CaveSolidBlockOptions {
 }
 
 /**
- * A greedy-meshed cave block with one texture on every face (cave biome
- * rock, crystal and fungus blocks; see cave_shared/caveSolidBlocks.ts):
- * registers its face texture (and glow) on construction.
+ * A greedy-meshed cave block with one texture on every face, or one on the
+ * sides and another on top and bottom (cave biome rock, crystal and fungus
+ * blocks, see cave_shared/caveSolidBlocks.ts; the points of interest's
+ * masonry, poi_shared/poiSolidBlocks.ts): registers its face textures (and
+ * glow) on construction.
  */
 export class CaveSolidBlock extends SolidBlock {
   readonly properties: IBlockProperties
-  private readonly material: THREE.Material
+  private readonly material: THREE.Material | THREE.Material[]
 
   constructor(private readonly options: CaveSolidBlockOptions) {
     super()
     registerTextureUrl(options.textureId, options.texture)
     if (options.glow) registerEmissiveTexture(options.textureId, options.glow)
-    this.material = new THREE.MeshLambertMaterial({ map: loadBlockTexture(options.texture) })
+    const side = new THREE.MeshLambertMaterial({ map: loadBlockTexture(options.texture) })
+    if (options.endTextureId !== undefined && options.endTexture) {
+      registerTextureUrl(options.endTextureId, options.endTexture)
+      const end = new THREE.MeshLambertMaterial({ map: loadBlockTexture(options.endTexture) })
+      // Order: +X, -X, +Y, -Y, +Z, -Z
+      this.material = [side, side, end, end, side, side]
+    } else {
+      this.material = side
+    }
     this.properties = {
       id: options.id,
       name: options.name,
@@ -55,8 +68,13 @@ export class CaveSolidBlock extends SolidBlock {
     return this.options.textureId
   }
 
-  protected getMaterials(): THREE.Material {
+  protected getMaterials(): THREE.Material | THREE.Material[] {
     return this.material
+  }
+
+  getTextureForFace(face: number): number {
+    // TOP = 0, BOTTOM = 1
+    return face <= 1 && this.options.endTextureId !== undefined ? this.options.endTextureId : this.options.textureId
   }
 
   getDrops(): IItem[] {

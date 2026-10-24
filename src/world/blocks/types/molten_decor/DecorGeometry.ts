@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeTaggedParts } from '../model_shared/mergeTaggedParts.ts'
 
 /**
  * Box-built custom geometry for the Infernal Bastion's decor blocks (bars,
@@ -22,7 +22,10 @@ export interface DecorBox {
   readonly ry?: number
 }
 
-/** Merge boxes into one geometry with one group per material index. */
+/**
+ * Merge boxes into one geometry with one group per material index (group i
+ * draws with materials[i]; every index up to the highest used needs a box).
+ */
 export function buildDecorGeometry(boxes: readonly DecorBox[]): THREE.BufferGeometry {
   const parts = boxes.map((b) => {
     const geo = new THREE.BoxGeometry(b.w, b.h, b.d)
@@ -33,7 +36,7 @@ export function buildDecorGeometry(boxes: readonly DecorBox[]): THREE.BufferGeom
     })
     return geo
   })
-  return mergeGeometries(parts, true)
+  return mergeTaggedParts(parts)
 }
 
 /** Bottom of the cell. */

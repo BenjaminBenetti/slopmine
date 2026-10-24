@@ -56,7 +56,8 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
    floor it sets), `setupDungeons`, one `setup<Biome>()` per Hell biome (castle tier loot tables,
    garrisons, guardian, procedural locator), `setupDayNight` + `setupNightfall` + `setupFireflies` +
    `setupButterflies` (the overworld clock, night creatures, beds, fireflies, daytime insects - see
-   `src/daynight/`), `setupCaves` (cave creatures, cave-biome events, mineshaft loot - see Caves), and last
+   `src/daynight/`), `setupCaves` (cave creatures, cave-biome events, mineshaft loot - see Caves),
+   `setupPointsOfInterest` (discovery, Delver's Compass, their loot - see Underground points of interest), and last
    `setupAudio` (sound - see `src/audio/`).
    A new system exposes a `setupX(deps)` in its own module; keep main.ts edits to the call
 
@@ -123,7 +124,7 @@ The core module provides the game loop infrastructure and frame budget managemen
   (atmosphere/sky/fog/daylight, block outline, underwater overlay - skipped frames showed stale sky),
   plus cheap gameplay clocks/polls: 'status-effects', 'alchemy-effects', 'player-combat',
   'progression', 'slime-bounce', 'biome-entry-events', 'dungeons-hud', 'dungeons' (spawners),
-  'world-clock' (time of day), 'fireflies', 'butterflies', 'farming-input', 'caves', 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
+  'world-clock' (time of day), 'fireflies', 'butterflies', 'farming-input', 'caves', 'points-of-interest', 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
   tasks registered late starve for long stretches while the world streams, so anything the player must see promptly
   (a timer, a toast, a boss bar) goes here - and stays cheap (poll at 1-2 Hz inside the task)
 - `HIGH` (1): Can defer briefly - the budgeted light queue ('lighting')
@@ -152,6 +153,8 @@ Three.js-based rendering with optimized voxel mesh handling.
 - `lightCurve.ts` / `worldLightShader.ts` - THE light level → brightness curve (Minecraft-style, 1 level per block; block light uses a brighter `BLOCK_LIGHT_LIFT` and a warm `BLOCK_LIGHT_COLOR`) and its shader side, with the global `daylight` and `uLightFloor` (light where no sky/block light reaches) uniforms; every world-lit surface (chunks, instanced blocks, liquids, LOD, held item, entities) uses them
 - `EmissiveTextures.ts` - Registry of glowing block textures (`registerEmissiveTexture(textureId, {strength, threshold, map?, darkOnly?, pulse?})`, called next to `registerTextureUrl`): the chunk shader adds their hot texels as emissive light, so emitters (magma, ember veins, mushroom caps) glow in the dark instead of being lit only by their neighbours. `map` (a glow map URL: per-texel glow colour, black = none; loaded into `BlockTextureArray.glowMaps`) replaces the threshold and the texel colour, so a surface can look plain by day and glow in another colour; `darkOnly` (bioluminescence) fades the glow out wherever sky light × daylight is bright (`DARK_GLOW_GLSL`: none in the open by day, full at night, in shade and underground) - glowmoss is muddy grass by day. `pulse: { amount, grain }` makes the glow live: `speck` twinkles every texel on its own clock (glowmoss spores), `wave` drifts slow waves of light across the surface (the swamp's glowing mushroom caps); the clock is `glowTimeUniform` (`glowClock.ts`, `advanceGlowTime` in the 'skybox' task; swaying water plants share it). Emissive textures only glow on greedy faces; an instanced (non-greedy) glowing block uses a Lambert `emissiveMap` instead (glowcap, glimmercap, lumen fern, glowkelp, lanternweed: a separate `*_glow.webp` holds only the parts that glow, in their glow colour), made dark-only with `makeGlowDarkOnly` (`BioluminescentMaterial.ts`, instanced draws only). Material patches like it test `shader.instancing` / `shader.instancingColor` in JS, never `#ifdef USE_INSTANCING_COLOR` in a fragment shader (three defines that in the vertex shader only), and compose `customProgramCacheKey` with the one already set (two blocks with equal material parameters but different patches would otherwise share one program); GLSL `smoothstep` needs edge0 < edge1 (write `1.0 - smoothstep(a, b, x)` for a falling edge - reversed edges are undefined)
 - `GlowHaloMaterial.ts` - `createGlowHalo({ color, radius, lift })`: soft additive spheres of light around glowing water plants (see Liquids, glow halos)
+- `FlameMaterial.ts` - `createFlameMaterial(planes)` + `buildFlamePlanes`: animated pixel-art fire (procedural, no texture) on crossed cutout planes - licking tongues, a red-to-pale-yellow ramp, sparks; `glowTimeUniform` clock, seeded per instance by position; the campfire's flames. Its mesh part sets `castShadow: false` (`IBlockMeshPart`: a multi-mesh block's part may also carry a material array)
+- `FlickerLights.ts` - firelight (campfires: `properties.lightFlicker`): the chunk mesh drawing such a block registers it (`setFlickerLights`, dropped on dispose); each frame `updateFlickerLights` (the 'skybox' task) gives the 6 nearest the camera a slot with their own slow swing (±11% - Ben found ±22% at twice the speed flashy), and the world light shader multiplies the block-light colour by `slopFlicker(world position)` (the swing fading out over 14 blocks, times `FIRE_TINT`, oranger than the shared `BLOCK_LIGHT_COLOR`) on chunk faces, instanced blocks and foliage - no light work. Mobs and the held item keep steady light
 - `SwayingPlantMaterial.ts` - `makeSwayInCurrent(material, { amplitude, speed })`: instanced water plants wave in the current, by world height and column, so stacked kelp segments bend as one strand
 - `InstancedBlockLight.ts` - World light for instanced blocks (instanceColor carries light levels, see Miniature block displays)
 - `foliage/FoliageRenderer.ts` - The batched foliage renderer: every foliage block (`FoliageSpec` - grass, flowers, bushes,
@@ -405,7 +408,7 @@ dark; light is never persisted (recomputed on load).
   loadPlayerData<T>(key)` (null = never saved) after `initialize()`; `savePlayerData(key, data)` saves
   out of cycle. Stored in the player store as `data:<key>`. Keys: `progression` (journal),
   `equipment` (worn armor, max-health bonus, current health), `alchemy` (Return Idol cooldown),
-  `dungeons` (cleared dungeon keys). RULE: load first, then contribute (or contribute `undefined`
+  `dungeons` (cleared dungeon keys), `pois` (discovered points of interest). RULE: load first, then contribute (or contribute `undefined`
   until loaded) - a contributor registered before its load writes defaults over the save; on a
   failed load contribute nothing this session. Version the data and tolerate missing fields.
 - Mesh jobs: a sub-chunk is remeshed whenever any cell of its padded 34³ volume (itself + the
@@ -439,7 +442,10 @@ Block type definitions using flyweight pattern (stateless singletons).
   nature (361-402 wild plants and doodads, 403-408 forage bushes, 409 oak sapling, 410-411 farmland,
   412-435 crops, 436-437 embers and volcanic rocks, 438-447 young stages of seed-grown bushes); 448-499
   caves (448-456 cave biome rock, crystal, fungus and the celestite lamp, 457-477 cave foliage, 478 ore
-  crate, 479-481 gravel, andesite, granite); highest 481). Shared registration files are grouped by header comments per feature area
+  crate, 479-481 gravel, andesite, granite); 482-511 underground points of interest (482-490 ancient masonry,
+  runestone, bookshelf, petrified wood, the keystone; 491-502 decorations, 495 the barrel a textured full block; 503 heaped
+  gold, 504 fossil bone, 505-509 iron bars, minecart, telescope, stone bust, tankards, 510-511 sandstone bricks and carved
+  sandstone); highest 511). Shared registration files are grouped by header comments per feature area
   (`// Hell: Cocytus`) - add new entries to their area's group
 - `BlockRegistry.ts` - Singleton registry mapping IDs to block instances
 - `FaceTextureRegistry.ts` - Maps block+face to TextureId for greedy meshing. Greedy side faces
@@ -458,10 +464,13 @@ incomplete - don't rely on it.
 **Box models:** a non-greedy block built from boxes tagged with material indices (`cellBox`,
 `withMaterialIndex`) merges them with `mergeTaggedParts` (`types/model_shared/`), never
 `mergeGeometries(parts, true)` - that numbers groups by part, so every part past the material count
-draws nothing.
+draws nothing. `buildDecorGeometry` (`molten_decor/DecorGeometry.ts`, the Hell decor and the points of
+interest's decorations) goes through it too (it didn't until the points-of-interest update: hoards, anvils,
+racks and lanterns drew only their first few boxes; the campfire, grave candles and infernal brazier had the same
+bug - three stones, one candle, half a basket).
 **Texture-layer budget:** every distinct greedy face texture costs one `BlockTextureArray` layer;
 the limit is 255 (`CHUNK_MAX_TEXTURE_LAYER`, building throws above it; layer 0 = missing texture).
-171 are used (54 base game, 117 expansion - the boot log's `Block texture array built with N layers`
+186 are used (54 base game, 132 expansion - the boot log's `Block texture array built with N layers`
 counts them, layer 0 excluded). TextureId values may exceed 255 (layers are compacted),
 so reuse one texture across faces/blocks where it reads fine (crafted infernal bricks, sanctum tile
 and the crystal cores share their source block's layers). Non-greedy blocks cost no layer.
@@ -650,7 +659,8 @@ skip terrain fill and carving (all-air early-out) but still run water, features 
 2. Generate base terrain with biome blending
 3. Carve caves from the density field (cheese caverns + spaghetti tunnels + ravines)
 4. Fill water depressions
-5. Apply features (ores, cliffs), cave wall lining, then the Hell ceiling band (`HellCeiling.ts`:
+5. Apply features (ores, cliffs), cave wall lining, cave dressing, rock blobs and underground points of
+   interest (overworld caves), then the Hell ceiling band (`HellCeiling.ts`:
    the surface fill's bottom 4 layers, Y 140-143, generate as dark basalt - pale stone lit by a
    Hell biome's light floor read as a bright slab overhead)
 6. Compute local light (after all block writes; merged with neighbours by the LightEngine)
@@ -1138,6 +1148,8 @@ direct call.
 | `effect-applied` | effectId, durationSeconds | `StatusEffects.apply` (a start or a refresh that took effect) |
 | `nightfall` | day | `setupDayNight` 'world-clock' (the sun ≈ 7° below the horizon) |
 | `daybreak` | day (the new one), survived (no death since nightfall) | `setupDayNight` (sunrise, or waking in a bed) |
+| `cave-biome-entered` | caveBiome | `setupCaves` 'caves' (a new special cave zone) |
+| `poi-discovered` | poi (kind id), x/y/z (keystone), distinctKinds | `setupPointsOfInterest` (first visit to a point of interest) |
 
 ---
 
@@ -1289,9 +1301,9 @@ crystal; hoe: rime sigil + rime crystal). Hoes: diamond hoe + 2 ingots → infer
 
 ### `src/progression/` - Journal
 
-- `milestones.ts` - Declarative data: 12 chapters (First Steps, Green Thumb, Into the Dark, Nightfall, Metal
-  Ages, Arms & Armor, Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 81 milestones
-  (Green Thumb's five, Into the Dark's seven and Nightfall's four are optional side goals). Chapter and
+- `milestones.ts` - Declarative data: 13 chapters (First Steps, Green Thumb, Into the Dark, Lost and Found, Nightfall, Metal
+  Ages, Arms & Armor, Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 88 milestones
+  (Green Thumb's five, Into the Dark's seven, Lost and Found's seven and Nightfall's four are optional side goals). Chapter and
   milestone ids are persisted - never rename. `stage` orders the arc: the "next goal" is the
   unlocked, unfinished, non-optional milestone with the lowest stage. `requires` must be TRUE
   implications (completing a milestone completes its prerequisites silently). `legacy` milestones
@@ -1325,7 +1337,7 @@ probe).
 **Spawner lifecycle** (`GuardianSpawnerSystem.ts`, `BlockIds.GUARDIAN_SPAWNER` 170 /
 `GUARDIAN_SPAWNER_SPENT` 171, force 6, hardness 200, light 7):
 - The kit's boss module writes `GUARDIAN_SPAWNER` (`ctx.guardian(x, y, z, index)`) with the guardian
-  index in its metadata (molten 1, ossuary 2, embergrove 3, crystal 4, cocytus 5). Its block entity
+  index in its metadata (molten 1, ossuary 2, embergrove 3, crystal 4, cocytus 5; 6 = the overworld Cave Drake). Its block entity
   (`GuardianSpawnerBlockEntity`, created on every sub-chunk apply) reports load/unload to the system.
 - Armed + player within the guardian's `activationRadius` (default 12) and `activationHeight`
   (default 8) of the altar → `definition.create(altar top centre)`, added through the
@@ -1393,6 +1405,7 @@ recovery, range, phases, weight, line of sight; one attack at a time, weighted p
 | 3 | Sporemother (`sporemother`, in `src/embergrove/sporemother/`) | Sporeheart Hive (`sporeheart_hive`) | 520 | 0.5 | rooted phase 1 (65 % damage), poison globs, spore stalker brood; uproots and walks with a poison aura | glowcap, emberwood, spore sacs, diamonds |
 | 4 | Prism Warden (`prism_warden`) | Prism Sanctum (`prism_sanctum`) | 520 | 0.66, 0.33 | locked prism beam; each phase raises 3/4 `PrismFocusEntity` shields (15 % damage until all break, `countsAsKill = false`) | prism shards, diamonds, infernium |
 | 5 | Rime Sovereign (`rime_sovereign`) | Frozen Citadel (`frozen_citadel`) | 500 | 0.66, 0.33 | frost nova ('magic' + Frostbite II), ice armor, two ice revenants (any standable spot) | rime crystals, diamonds, frost lanterns |
+| 6 | Cave Drake (`cave_drake`, overworld) | dragon's lairs (a point of interest, no locator) | 600 | 0.5 | fire breath stream ('fire'), tail sweep, wing buffet; phase 2 fire rain | gold, diamonds, dragon egg, heaped gold (no sigils) |
 
 Sigils: `ember_sigil`, `bone_sigil`, `spore_sigil`, `prism_sigil`, `rime_sigil` - every guardian
 drops 2, so one castle of each kind covers the 9 Hellbane recipes. Activation radius/height (set in
@@ -1423,6 +1436,8 @@ chests (walls and floors count):
 | Table | Signature (tier 0 / 1 / 2 / 3) | Radius | Priority |
 |-------|--------------------------------|--------|----------|
 | `charred-camp` (volcanic) | `CHARRED_LOG` | 6 | 0 |
+| `abandoned-mineshaft` (overworld) | `ORE_CRATE` | 3 | 0 |
+| `cave-poi` (overworld points of interest; contents by the keystone's kind) | `POI_KEYSTONE` | 8 | 20 |
 | `bastion-t0`..`t3` | `INFERNAL_TILES` / `CHARRED_PLANKS` / `GILDED_INFERNAL_BRICKS` / `OBSIDIAN_BRICKS` | 1 | 11-14 |
 | `catacombs-t0`..`t3` | `CATACOMB_TILE` / `CATACOMB_SKULL_BRICK` / `CRYPT_ALTAR` / `GILDED_RELIQUARY` | 1 | 10-13 |
 | `sporeheart-t0`..`t3` | `HIVE_ROOTBRICK` / `BROOD_COMB` / `GLOWING_SAP` / `ROOT_LATTICE` | 1 | 10-13 |
@@ -1729,8 +1744,15 @@ The overworld is carpeted with life, and plants grow.
   were lost on reload).
 - **Food** (`items/food/`): carrot 2, potato 1 → baked potato 6 (forge), tomato 2, onion 1, strawberry 2,
   blueberries 2, prickly pear 3, pineapple 4, aloe leaf 3 (cures poison), mushroom stew 6, vegetable stew 12
-  (bowl + carrot + potato + onion), pumpkin pie 9 (pumpkin + 2 ground wheat). Bone meal on bare ground
-  sprouts grass and flowers by the ground block.
+  (bowl + carrot + potato + onion), pumpkin pie 9 (pumpkin + 2 ground wheat); foraged (`crafting/recipes/
+  ForageRecipes.ts`): roasted puffball 4 and roasted toadstool 3 (forge), mushroom skewer 10 (stick + both roasts +
+  brown mushrooms), forager's salad 7 (bowl + 3 salad greens). Bone meal on bare ground sprouts grass and flowers by
+  the ground block.
+- **Every plant is good for something** (play feedback: "most items should be usable for something"): 4 of any
+  `compostable` plant (wild plants, flowers, cave plants, glowing swamp plants, cacti, vines, leaves, giant mushroom
+  caps) → 1 bone meal; glowing plants + herb brew ember sight; skulls → bones, shells → bone meal, dusty bottles →
+  glass, dripstone formations → dripstone, vines → rope. Plant tags come from one table by block name
+  (`items/tags/blockItemTags.ts`, read by `BlockItem.tags`; block items with tags of their own override it).
 - **Existing worlds**: generated sub-chunks are saved once and never regenerate, so ground cover only
   appears in newly generated land.
 
@@ -1787,13 +1809,89 @@ smallish and mostly plain.
   Ambience (`AmbienceController` `CAVE_DETAILS`/`CAVE_BEDS`) layers each cave's sounds (dripstone drips,
   crystal pings, spore puffs, ice creaks, lava pops) and a matching Hell bed.
 - **Mineshafts** (`MineshaftFeature.ts`, `overworldMineshafts()` in every overworld biome with equal settings):
-  one chance (55%) per 320-block cell of a flat network of 3×3 corridors at Y 168-205, oak post-and-beam
+  one chance (55%) per 320-block cell of a flat network of corridors 4 wide and 3 tall (play feedback: 3 wide caught the player on every frame) at Y 168-205, oak post-and-beam
   supports every 4 blocks, plank floors bridging caves, cobwebs, junction rooms, and up to 3 dead-end chests
   beside ore crates (the loot table's signature; crates drop coal and iron ore). Each sub-chunk rasterises
   the corridors crossing it; never within 6 blocks of the surface.
 - **Items**: celestite shards (clusters, crystal blocks, geode crawlers) → celestite lamps (light 15) and
   blocks; spider silk → rope; glowberries (food, plant them under a ceiling to grow a vine); cave mushrooms
   + herb → ember sight; salamander scale + herb → fire resistance.
+
+### Underground points of interest (`generate/caves/pois/`, `src/pois/`)
+
+Things to discover in the overworld's caves: 45 kinds of ruin, treasure, dwelling and wonder. The first 25: rune
+circles, sealed rune vaults, dragon's lairs, lost hoards, smugglers' caches, miners' camps, dwarven forges, forgotten
+halls and libraries, crypts, giant geodes and fossils, a petrified tree, sunken shrines, fairy rings, lost and
+frozen explorers, an alchemist's den, a spider queen's nest, a buried longship, a stone colossus, a wishing
+well, a mother lode, a hermit's hollow, a hidden garden. The second 20 (`kinds/{ruins,sacred,outlaws,wilds}.ts`):
+a sunken cistern, an old stone bridge over a chasm, a forgotten gaol, a buried arena, a black monolith, a forgotten
+chapel, a star chamber (observatory), a sandstone tomb (desert only), a buried wizard's tower, a sculptor's studio,
+a bandit hideout, a cave-in, an excavation site, the Deepway Tavern, a mushroom village, hot springs, a fallen
+star, great roots, a frozen waterfall (cold only), a wyrm burrow. Ben's ask: not too common, but you come across
+one every now and again (more kinds dilute each other; the site rate is `POI_CHANCE`). The ruined portal was cut
+before release (no portals in this game): index 22 is retired, never reuse it.
+- **Catalog** (`PoiCatalog.ts`, plain data shared by worker and main thread): `PoiKindId`, keystone `index`
+  (1-255), display name, toast flavour line, and odds as a function of the surroundings (surface biome, cave
+  zone at the cell centre; rarity tiers common 10 / uncommon 6 / rare 3 / legendary 2.2 - the dragon's lair).
+  Ids and indices are persisted (journal, saved keystones): never rename or renumber.
+- **Placement** (`PoiSites.ts`, pure, cached per worker): one candidate per 64-block cell (8 per biome region
+  side, so a site never straddles a region and every chunk sees the same blend), chance 0.38; the kind is
+  rolled, then up to 6 hashed columns are probed for a cave floor with 3 cells of headroom, deep enough for
+  the whole site under the surface (10 blocks), above Y 152, clear of flooded caves and magma chamber lava.
+  ~34% of cells end up with a site: one per ~12,000 blocks² (~110-block spacing). The site faces its most
+  open side (local +Z = forward, toward the cave). A chunk lies in exactly one cell.
+- **Cave probe**: `CaveCarver.probeRegion(box)` carves a free-standing box into a fresh volume - the same
+  cells the generator carves there (world-aligned lattice) - so a structure crossing many sub-chunks knows the
+  original caves around it (`PoiBuilder.isCave/isRock/floorAt`) before they exist.
+- **Builders** (`kinds/{ancient,treasure,nature,dwellings,wonders}.ts`, registry `kinds/index.ts`): a
+  `PoiBuildDef` = kind + extent (`radius`, `above`, `below` around the anchor - writes beyond are dropped) +
+  `build(b)`. `PoiBuilder` is the drawing context: local rotated coordinates (anchor = the floor's first air
+  cell, floor at y -1), clipped to the current sub-chunk, implementing the dungeon framework's `DrawTarget`
+  (so `pillar`, `arch`, `dome`... draw here too), plus `chamber` (a roughened ellipsoid of air with a flat
+  floor), `ellipsoid`, `floor`/`foundation` (filled down to rock under open cave), `ellipsoidTop` (a
+  chamber's ceiling, pure), `chest`, `keystone`, seeded `rng` and world-anchored `hash`/`smoothNoise`.
+  Builders are pure functions of the site: draw everything every call, read only the probe, the surface and
+  their own stream (`get`/`setIf` may read cells this sub-chunk owns), so any generation order gives the same
+  blocks. Helpers in `kinds/shared.ts` (`masonry`, `walledRoom`, `scatter` - decorations need ground -,
+  `hangFromCeiling`, `mix`, `weighted`).
+- **Worker** (`placeCavePois.ts`, Phase 4.57 after the dressing and rock blobs, full-detail surface-layer
+  sub-chunks with caves): draws its cell's site slice, then removes cave plants the structure left
+  unsupported (each plant's own `FoliageBlock.isSupportedBy`). ~1.6 ms per affected sub-chunk.
+- **Keystone** (`POI_KEYSTONE` 490): stone to look at and mine (stone's texture layer and drop), buried under
+  each site with the kind's index in its metadata. Its block entity reports the loaded point of interest to
+  `poiRegistry` (`src/pois/PoiRegistry.ts`) - how the main thread knows where they are. Every chest of a
+  site lies within 8 blocks of it: the 'cave-poi' loot table (signature keystone, radius 8, priority 20,
+  `PoiLoot.ts`) picks contents by the keystone's kind.
+- **Runtime** (`setupPointsOfInterest.ts`): the CRITICAL 'points-of-interest' task (2 Hz) discovers a loaded
+  point of interest when the player comes within reach of its keystone (horizontal ≥ 0.8 × radius) - toast,
+  `ui.discover` chime, `poi-discovered` event (journal chapter Lost and Found), saved under keyed player data
+  `pois` (positions + kinds). The **Delver's Compass** (`delvers_compass`: 2 rune shards + iron bar +
+  celestite shard, or lost explorers' chests) points the themed compass plaque (`SigilCompassHud` with
+  `DELVERS_THEME`, `HudOrder.DELVERS_COMPASS`) at the nearest undiscovered loaded one. Spider queens' nests
+  add a cave spider spawn provider around them.
+- **The Cave Drake** (`entities/guardians/cave_drake/`, guardian index 6, registered by `setupPointsOfInterest`):
+  every dragon's lair has a guardian altar (`PoiBuilder.guardian`) on the summit of its gold mound - the drake
+  sleeps on its hoard and wakes when the player comes within 12 blocks. A box model built at unit scale and
+  scaled ×1.45 (`MODEL_SCALE`: ~4 blocks tall, 10 long; hitbox 3 × 3.6 × 3), wings half raised at rest. 600 HP: bite, tail sweep, fire breath
+  (a stream of small fireballs, 'fire' damage - fire resistance stops it), wing buffet; below half health a
+  roar (ring of fire) and fireballs lobbed down around the player. Loot goes into the reward chest on the
+  spent altar (gold, diamonds, an Infernal Heart, a dragon egg, heaped gold, long fire resistance). The old
+  dragon's fossil skeleton in front of the hoard is cover from the breath. Journal: Dragonslayer.
+- **Blocks** (482-511): ancient bricks (+ mossy, cracked, carved meander frieze), ancient tiles, runestone
+  (glowing runes, light 6, drops rune shards), ancient bookshelf (oak plank top), petrified wood, heaped gold
+  (hoard mounds), fossil bone (the skeletons; smooth ivory, not the Ossuary's bundled bones, which read as birch
+  planks at a distance), barrel (stave sides, lid top - a full block since play feedback asked for a texture),
+  sandstone bricks and carved sandstone (glyph frieze, sandstone top) - 15 texture layers; and box-modelled
+  decorations (`poi_shared/poiDecorBlocks.ts`, data-driven `PoiDecorBlock`, no layers): treasure hoard, gold coins,
+  dragon egg, skull, bedroll, rune pedestal (light 7, drops rune shards), book pile, golden idol, silk cocoon
+  (hangs), miner's lantern (light 12), dusty bottles, iron bars (craftable, full-cell collision - decor collision
+  boxes don't turn with facing), minecart, telescope, stone bust, tankards. Builders also reuse sarcophagi, urns,
+  candles, bone blocks, black ice and entombed figures, forges, the apothecary bench, campfires, giant mushrooms
+  and the anvil/weapon rack.
+- **Recipes** (`PoiRecipes.ts`): Delver's Compass, runestone (3 shards + stone), ancient bricks from stone and
+  their variants, treasure back into gold bars (1 heaped gold → 4 - Ben: "4 gold bars for every 1 heaped gold" -,
+  hoard 4, idol 3, 4 coins 1), fossil bone → 4 bone meal, barrel (6 planks + iron bar), iron bars (3 iron → 8),
+  sandstone bricks and carved sandstone, and the decorations (minecart, telescope, stone bust, tankards).
 
 ### `src/audio/` - Sound (effects, ambience, music)
 

@@ -103,9 +103,14 @@ export function createCaveSolidBlocks(): CaveSolidBlock[] {
   ]
 }
 
-/** Block names of the cave blocks that drop themselves (each gets a block item). */
+/**
+ * Block names of the cave blocks with a block item: those that drop
+ * themselves, and celestite (it drops shards, but is crafted back - without
+ * an item a crafted block was lost on save).
+ */
 export const CAVE_SOLID_ITEMS: ReadonlyArray<readonly [string, string]> = [
   ['dripstone_block', 'Dripstone'],
+  ['celestite_block', 'Celestite'],
   ['calcite', 'Calcite'],
   ['damp_slate', 'Damp Slate'],
   ['frosted_stone', 'Frosted Stone'],

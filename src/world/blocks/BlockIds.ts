@@ -471,4 +471,36 @@ export enum BlockIds {
   GRAVEL = 479,                  // loose gravel (plain cave floors)
   ANDESITE = 480,                // grey andesite (blobs in the overworld's rock)
   GRANITE = 481,                 // pinkish granite (blobs in the overworld's rock)
+
+  // Underground points of interest (482-509): ruins, treasure, lairs
+  ANCIENT_BRICKS = 482,          // a lost civilisation's masonry
+  MOSSY_ANCIENT_BRICKS = 483,
+  CRACKED_ANCIENT_BRICKS = 484,
+  CARVED_ANCIENT_BRICKS = 485,   // meander frieze course
+  ANCIENT_TILES = 486,           // flagstone floors
+  RUNESTONE = 487,               // dark slate with glowing runes (drops rune shards)
+  ANCIENT_BOOKSHELF = 488,
+  PETRIFIED_WOOD = 489,          // a stone tree's trunk and boughs
+  POI_KEYSTONE = 490,            // looks like stone; metadata = point-of-interest kind
+  TREASURE_HOARD = 491,          // heap of gold and gems
+  GOLD_COINS = 492,              // scattered coins
+  DRAGON_EGG = 493,
+  SKULL = 494,
+  BARREL = 495,
+  BEDROLL = 496,
+  RUNE_PEDESTAL = 497,           // stone pedestal with a glowing rune tablet
+  BOOK_PILE = 498,
+  GOLDEN_IDOL = 499,
+  SILK_COCOON = 500,             // something wrapped in spider silk
+  MINERS_LANTERN = 501,
+  DUSTY_BOTTLES = 502,
+  HEAPED_GOLD = 503,             // a full block of heaped coins (dragon hoards)
+  FOSSIL_BONE = 504,             // smooth ancient bone (skeletons of dragons and giant beasts)
+  IRON_BARS = 505,               // craftable iron bars (gaols, windows)
+  MINECART = 506,                // decor: an ore-laden minecart
+  TELESCOPE = 507,               // decor: brass telescope on a tripod
+  STONE_BUST = 508,              // decor: a carved stone bust on a plinth
+  TANKARDS = 509,                // decor: two tankards of ale
+  SANDSTONE_BRICKS = 510,        // desert tomb masonry
+  CARVED_SANDSTONE = 511,        // sandstone carved with glyphs
 }
