@@ -80,6 +80,12 @@ const ENTITY_VOICES: Record<string, EntityVoice> = {
   // Night creatures (the surface after dark)
   stillwatcher: V('straw', 'soft', 1, 22),
   duskmoth: V('moth', 'soft', 1, 9),
+  // Caves and dark places
+  glow_bat: V('fox', 'flesh', 1.9, 22),
+  cave_spider: V('insect', 'flesh', 0.8, 12),
+  geode_crawler: V('insect', 'crystal', 0.7, 20, { shield: 'crystal' }),
+  sporeling: V('fungal', 'soft', 1.6, 14),
+  ember_salamander: V('reptile', 'stone', 1.25, 16),
   sandmaw: V('burrower', 'shell', 1, 16),
   ashwalker: V('ember', 'stone', 1, 16),
   mire_angler: V('angler', 'flesh', 1, 14),

@@ -19,6 +19,7 @@ import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { coastalRainforestGroundCover } from '../features/natureGroundCover.ts'
+import { overworldMineshafts } from '../features/overworldMineshafts.ts'
 
 /** Water surface Y for this biome; kept at 238 to match the other surface biomes. */
 const WATER_LEVEL = 238
@@ -154,6 +155,8 @@ export class CoastalRainforestGenerator extends BiomeGenerator {
         patchRadius: 3,
         validGroundBlocks: [BlockIds.GRASS, BlockIds.MOSS],
       }),
+      // Caves: abandoned mineshafts (same settings in every overworld biome: networks cross borders)
+      overworldMineshafts(),
       // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
       coastalRainforestGroundCover(),
     ],

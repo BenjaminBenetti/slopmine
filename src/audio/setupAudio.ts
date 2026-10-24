@@ -44,6 +44,8 @@ export interface AudioDeps {
   isBurning(): boolean
   getSeed(): number
   isLoading(): boolean
+  /** The cave biome the player is in (caves/CaveAtmosphere), or null above ground. */
+  getCaveBiome(): string | null
 }
 
 const BUFF_EFFECTS = new Set(['fire_resistance', 'slow_falling', 'regeneration', 'ember_sight', 'strength', 'resistance'])
@@ -231,7 +233,7 @@ export function setupAudio(deps: AudioDeps): void {
         const outdoors = layer === 0 ? 0 : deps.getSkyLight(listenerPos.x, listenerPos.y, listenerPos.z) / 15
         engine.setMuffled(submergedIn === 'lava' ? 0.75 : submergedIn ? 1 : 0)
         engine.setEnvironmentReverb(submergedIn ? 0.15 : layer === 0 ? (inDungeon ? 0.42 : 0.32) : 0.05 + 0.27 * (1 - outdoors))
-        ambience.update({ layer, biome, outdoors, cameraY: listenerPos.y, submergedIn, night: layer === 1 ? worldClock.nightAmount : 0 }, envDt)
+        ambience.update({ layer, biome, outdoors, cameraY: listenerPos.y, submergedIn, night: layer === 1 ? worldClock.nightAmount : 0, caveBiome: deps.getCaveBiome() }, envDt)
       }
 
       dungeonTimer -= dt

@@ -277,6 +277,7 @@ import { SanctumStairsBlock } from './types/sanctum_stairs/SanctumStairsBlock.ts
 // Hell: Cocytus
 import { registerCocytusBlocks } from './types/cocytus_shared/registerCocytusBlocks.ts'
 import { registerNatureBlocks } from './types/nature_shared/registerNatureBlocks.ts'
+import { registerCaveBlocks } from './types/cave_shared/registerCaveBlocks.ts'
 
 // Day and night
 import { WardLanternBlock } from './types/ward_lantern/WardLanternBlock.ts'
@@ -634,4 +635,7 @@ export function registerDefaultBlocks(): void {
 
   // Nature
   registerNatureBlocks()
+
+  // Caves and dark places
+  registerCaveBlocks()
 }

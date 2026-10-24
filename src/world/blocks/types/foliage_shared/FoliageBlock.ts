@@ -25,10 +25,18 @@ export interface FoliageBlockOptions {
   /**
    * Blocks this plant grows on. Default: any solid block. A plant standing
    * on something else (its ground dug out, a block swapped) pops off.
+   * Hanging plants (shape 'hang') check the block ABOVE them instead.
    */
   readonly ground?: readonly BlockId[]
   /** Blocks it floats on instead (lily pads: liquid sources). */
   readonly floatsOn?: readonly BlockId[]
+  /**
+   * Non-solid blocks that hold it too, besides any solid block: the pieces
+   * of a chain (a stalactite's column, the vine above a vine).
+   */
+  readonly alsoSupportedBy?: readonly BlockId[]
+  /** Needs no support at all (cobwebs strung across cave air). */
+  readonly freestanding?: boolean
   /**
    * What breaking it gives (default: its own block item). Called per break,
    * so it may roll chances.
@@ -51,9 +59,26 @@ function createDisplayGeometry(spec: FoliageSpec): THREE.BufferGeometry {
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]), 2))
   } else {
     const w = spec.width * 0.5
-    const bottom = -0.5
+    const hang = spec.shape === 'hang'
+    const bottom = hang ? 0.5 - spec.height : -0.5
     const top = bottom + spec.height
     const v = spec.spriteHeight ?? spec.height
+    if (hang) {
+      // The top of the sprite: v from 1 - v (plane bottom) to 1 (plane top)
+      const v0 = 1 - v
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+        -w, bottom, -w, w, bottom, w, w, top, w,
+        -w, bottom, -w, w, top, w, -w, top, -w,
+        -w, bottom, w, w, bottom, -w, w, top, -w,
+        -w, bottom, w, w, top, -w, -w, top, w,
+      ]), 3))
+      geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
+        0, v0, 1, v0, 1, 1, 0, v0, 1, 1, 0, 1,
+        0, v0, 1, v0, 1, 1, 0, v0, 1, 1, 0, 1,
+      ]), 2))
+      geo.computeVertexNormals()
+      return geo
+    }
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
       -w, bottom, -w, w, bottom, w, w, top, w,
       -w, bottom, -w, w, top, w, -w, top, -w,
@@ -131,9 +156,16 @@ export class FoliageBlock extends TransparentBlock implements IFoliageBlock {
     return this.displayMaterial
   }
 
-  /** Whether `below` holds this plant (its ground, or the liquid it floats on). */
+  /** The block that holds this plant up: the one above a hanging plant, else the one below. */
+  private supportAt(world: IWorld, x: bigint, y: bigint, z: bigint): IBlock {
+    return world.getBlock(x, this.foliage.shape === 'hang' ? y + 1n : y - 1n, z)
+  }
+
+  /** Whether `below` (above, for a hanging plant) holds this plant: its ground, or the liquid it floats on. */
   isSupportedBy(below: IBlock): boolean {
-    const { ground, floatsOn } = this.options
+    const { ground, floatsOn, alsoSupportedBy, freestanding } = this.options
+    if (freestanding) return true
+    if (alsoSupportedBy?.includes(below.properties.id)) return true
     if (floatsOn) return floatsOn.includes(below.properties.id)
     if (ground) return ground.includes(below.properties.id)
     return below.properties.isSolid
@@ -142,11 +174,11 @@ export class FoliageBlock extends TransparentBlock implements IFoliageBlock {
   canPlace(world: IWorld, x: bigint, y: bigint, z: bigint): boolean {
     const here = world.getBlock(x, y, z).properties
     if (here.id !== 0 && !here.replaceable) return false
-    return this.isSupportedBy(world.getBlock(x, y - 1n, z))
+    return this.isSupportedBy(this.supportAt(world, x, y, z))
   }
 
   onScheduledTick(world: IWorld, x: bigint, y: bigint, z: bigint): boolean {
-    if (this.isSupportedBy(world.getBlock(x, y - 1n, z))) return false
+    if (this.isSupportedBy(this.supportAt(world, x, y, z))) return false
     playBlockSound(this.properties.id, 'break', { x: Number(x) + 0.5, y: Number(y) + 0.5, z: Number(z) + 0.5 }, { volume: 0.25 })
     world.spawnBlockDrops?.(x, y, z, this.getDrops())
     world.setBlock(x, y, z, 0)
@@ -171,8 +203,9 @@ export class FoliageBlock extends TransparentBlock implements IFoliageBlock {
       return new THREE.Box3(new THREE.Vector3(0.1, 0, 0.1), new THREE.Vector3(0.9, 0.08, 0.9))
     }
     const half = Math.min(0.4, spec.width * 0.35)
-    const top = Math.max(0.15, Math.min(1, spec.height * 0.9))
-    return new THREE.Box3(new THREE.Vector3(0.5 - half, 0, 0.5 - half), new THREE.Vector3(0.5 + half, top, 0.5 + half))
+    const reach = Math.max(0.15, Math.min(1, spec.height * 0.9))
+    const bottom = spec.shape === 'hang' ? 1 - reach : 0
+    return new THREE.Box3(new THREE.Vector3(0.5 - half, bottom, 0.5 - half), new THREE.Vector3(0.5 + half, bottom + reach, 0.5 + half))
   }
 
   getDrops(): IItem[] {

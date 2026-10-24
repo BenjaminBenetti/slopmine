@@ -156,7 +156,7 @@ varying vec2 vFoliageGlow;
 `
 
 // aOffset: base centre (sub-chunk local). aSprite: layer, yaw, width, height.
-// aShape: shape (0 cross, 1 flat), sway, view distance, sprite height share.
+// aShape: shape (0 cross, 1 flat, 2 hang), sway, view distance, sprite height share.
 // aGlow: glow layer, signed strength (negative = dark only). aLight: sky, block.
 const BEGIN_VERTEX = /* glsl */ `
 vec3 transformed = aOffset;
@@ -165,10 +165,14 @@ vec3 transformed = aOffset;
   float reach = aShape.z * uFoliageDistanceScale;
   float fade = 1.0 - smoothstep( reach * 0.65, reach, length( foliageView.xyz ) );
   // The other shape's planes collapse to a point: zero area, never rasterized
-  float keep = fade * step( abs( aVertShape - aShape.x ), 0.5 );
+  // (hanging plants use the crossed planes)
+  float hang = step( 1.5, aShape.x );
+  float flatShape = step( 0.5, aShape.x ) - hang;
+  float keep = fade * step( abs( aVertShape - flatShape ), 0.5 );
   vec3 p = position;
   p.xz *= aSprite.z * keep;
-  p.y *= aSprite.w * keep;
+  // Hanging: the plane's top at the cell ceiling, its tip aSprite.w below
+  p.y = ( p.y * aSprite.w + hang * ( 1.0 - aSprite.w ) ) * keep;
   float c = cos( aSprite.y );
   float s = sin( aSprite.y );
   p.xz = vec2( c * p.x - s * p.z, s * p.x + c * p.z );
@@ -178,11 +182,14 @@ vec3 transformed = aOffset;
   float gust = 0.55 + 0.45 * sin( t * 0.5 + foliageWorld.x * 0.05 + foliageWorld.z * 0.035 );
   float phase = foliageWorld.x * 0.73 + foliageWorld.z * 0.51;
   vec2 wind = vec2( sin( t * 1.8 + phase ), sin( t * 1.37 + phase * 1.31 + 1.7 ) ) * 0.08 + vec2( 0.05, 0.02 );
-  float bend = aShape.y * position.y * position.y * ( 1.0 - aVertShape );
+  // Free ends sway: the tips of standing plants, the bottoms of hanging ones
+  float freeEnd = mix( position.y, 1.0 - position.y, hang );
+  float bend = aShape.y * freeEnd * freeEnd * ( 1.0 - aVertShape );
   p.xz += wind * ( gust * bend * aSprite.w * keep );
   p.y += aVertShape * 0.015 * keep;
   transformed += p;
-  vFoliageUv = vec3( uv.x, uv.y * mix( aShape.w, 1.0, aVertShape ), aSprite.x );
+  float spriteV = mix( uv.y * aShape.w, 1.0 - aShape.w + uv.y * aShape.w, hang );
+  vFoliageUv = vec3( uv.x, mix( spriteV, uv.y, aVertShape ), aSprite.x );
   vFoliageLight = aLight;
   vFoliageGlow = aGlow;
 }
@@ -241,7 +248,7 @@ export function getFoliageMaterial(): THREE.Material | null {
       .replace('#include <emissivemap_fragment>', EMISSIVE_FRAGMENT)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>\n${worldLightFragment('vFoliageLight.x', 'vFoliageLight.y', '1.0')}`)
   }
-  material.customProgramCacheKey = () => 'slopmine-foliage-v1'
+  material.customProgramCacheKey = () => 'slopmine-foliage-v2'
   return material
 }
 
@@ -259,7 +266,7 @@ function getDraw(blockId: number, block: IFoliageBlock): FoliageDraw | null {
   const draw: FoliageDraw = {
     layers,
     glowLayers,
-    shape: spec.shape === 'flat' ? 1 : 0,
+    shape: spec.shape === 'flat' ? 1 : spec.shape === 'hang' ? 2 : 0,
     spec,
     glow: spec.darkOnlyGlow ? -strength : strength,
   }

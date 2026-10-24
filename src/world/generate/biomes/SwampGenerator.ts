@@ -21,6 +21,7 @@ import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { swampGroundCover } from '../features/natureGroundCover.ts'
+import { overworldMineshafts } from '../features/overworldMineshafts.ts'
 
 /**
  * Swamp biome with mud surface, clay subsurface, and scattered giant
@@ -179,6 +180,8 @@ export class SwampGenerator extends BiomeGenerator {
           density: 0.22,
         },
       }),
+      // Caves: abandoned mineshafts (same settings in every overworld biome: networks cross borders)
+      overworldMineshafts(),
       // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
       swampGroundCover(),
     ],

@@ -46,6 +46,10 @@ export class Skybox {
   // Darkness transition thresholds
   private readonly darknessStartY = 180
   private readonly darknessEndY = 150
+  /** Cave override (caves/CaveAtmosphere.ts): how far underground the camera is, and that cave's fog colour (linear). */
+  private caveFactor = 0
+  private readonly caveColor = new THREE.Color()
+  private readonly mixedUnderground = new THREE.Color()
 
   constructor(atmosphere: BiomeAtmosphere, options: SkyboxOptions = {}) {
     const {
@@ -302,7 +306,22 @@ export class Skybox {
       target.g += dn.twilightColor.g * dn.twilight * TWILIGHT_FOG_SHARE
       target.b += dn.twilightColor.b * dn.twilight * TWILIGHT_FOG_SHARE
     }
-    return target.multiplyScalar(a.skyBrightness).lerp(a.undergroundColor, this.darkness)
+    return target.multiplyScalar(a.skyBrightness).lerp(this.undergroundColor(), this.darkness)
+  }
+
+  /**
+   * In a cave: the sky and fog darken toward this cave's fog colour as the
+   * camera goes underground (`factor` 0-1, from sky light - see
+   * caves/CaveAtmosphere.ts), whatever its height.
+   */
+  setCaveUnderground(factor: number, color: THREE.Color): void {
+    this.caveFactor = factor
+    this.caveColor.copy(color)
+  }
+
+  /** The biome's underground colour, blended toward the cave's while in one. */
+  private undergroundColor(): THREE.Color {
+    return this.mixedUnderground.copy(this.atmosphere.undergroundColor).lerp(this.caveColor, this.caveFactor)
   }
 
   /** Call each frame to keep the dome centered on the camera and apply the atmosphere. */
@@ -310,9 +329,10 @@ export class Skybox {
     const cameraPos = camera.position
     this.skyMesh.position.copy(cameraPos)
 
-    // Y-based darkness (dark below darknessEndY, normal above darknessStartY)
+    // Y-based darkness (dark below darknessEndY, normal above darknessStartY),
+    // or the cave factor when deeper underground by sky light
     this.darkness = Math.max(
-      0,
+      this.caveFactor,
       Math.min(1, (this.darknessStartY - cameraPos.y) / (this.darknessStartY - this.darknessEndY))
     )
 
@@ -322,7 +342,7 @@ export class Skybox {
     u.skyBrightness.value = a.skyBrightness
     ;(u.skyTint.value as THREE.Color).copy(a.skyTint)
     ;(u.horizonColor.value as THREE.Color).copy(a.horizonColor)
-    ;(u.undergroundColor.value as THREE.Color).copy(a.undergroundColor)
+    ;(u.undergroundColor.value as THREE.Color).copy(this.undergroundColor())
     u.cloudCoverage.value = a.cloudCoverage
     u.cloudOpacity.value = a.cloudOpacity
     ;(u.cloudTint.value as THREE.Color).copy(a.cloudTint)

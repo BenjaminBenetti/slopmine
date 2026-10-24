@@ -22,6 +22,7 @@ import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { jungleGroundCover } from '../features/natureGroundCover.ts'
+import { overworldMineshafts } from '../features/overworldMineshafts.ts'
 
 /**
  * Jungle biome with grass surface, dirt subsurface, tall trees, and hanging vines.
@@ -181,6 +182,8 @@ export class JungleGenerator extends BiomeGenerator {
         minVineLength: 2,
         maxVineLength: 10,    // Longer vines for big trees
       }),
+      // Caves: abandoned mineshafts (same settings in every overworld biome: networks cross borders)
+      overworldMineshafts(),
       // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
       jungleGroundCover(),
     ],

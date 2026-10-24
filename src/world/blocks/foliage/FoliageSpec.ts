@@ -2,10 +2,12 @@ import type { IBlock } from '../../interfaces/IBlock.ts'
 
 /**
  * How a foliage sprite stands in its cell: `cross` - two crossed vertical
- * planes on the floor (grass, flowers, bushes); `flat` - one horizontal
- * quad lying on the floor (pebbles, fallen leaves, lily pads on the water).
+ * planes on the floor (grass, flowers, bushes); `hang` - the same planes
+ * hanging from the cell's ceiling (stalactites, roots, cave vines; the
+ * sprite hangs from its TOP edge); `flat` - one horizontal quad lying on the
+ * floor (pebbles, fallen leaves, lily pads on the water).
  */
-export type FoliageShape = 'cross' | 'flat'
+export type FoliageShape = 'cross' | 'hang' | 'flat'
 
 /**
  * A plant or ground doodad drawn by the batched foliage renderer
@@ -18,8 +20,9 @@ export type FoliageShape = 'cross' | 'flat'
 export interface FoliageSpec {
   /**
    * Sprite images (64×64, alpha-tested at 0.5). Cross sprites stand on the
-   * image's bottom edge and fill its lower `height` (the rest is unused);
-   * flat sprites fill the square. Instances pick one by position.
+   * image's bottom edge and fill its lower `height` (the rest is unused),
+   * hanging ones hang from its top edge and fill its upper `height`; flat
+   * sprites fill the square. Instances pick one by position.
    */
   readonly sprites: readonly string[]
   /** Glow maps, one per sprite (black = no glow), or omitted. */
@@ -29,9 +32,9 @@ export interface FoliageSpec {
   /** The glow only shows in the dark (bioluminescence), like makeGlowDarkOnly. */
   readonly darkOnlyGlow?: boolean
   readonly shape: FoliageShape
-  /** Cross: plane width, 1 = corner to corner of the cell. Flat: side of the square (blocks). */
+  /** Cross/hang: plane width, 1 = corner to corner of the cell. Flat: side of the square (blocks). */
   readonly width: number
-  /** Cross: plane height (blocks), also the share of the sprite drawn. Ignored for flat. */
+  /** Cross/hang: plane height (blocks), also the share of the sprite drawn. Ignored for flat. */
   readonly height: number
   /**
    * Share of the sprite's height mapped onto the plane (default `height`):

@@ -335,6 +335,21 @@ export enum TextureId {
   // Nature
   FARMLAND_TOP = 600,            // farmland.webp (sides and bottom: dirt)
   FARMLAND_MOIST_TOP = 601,      // farmland_moist.webp
+
+  // Caves and dark places
+  DRIPSTONE_BLOCK = 602,         // dripstone_block.webp
+  CALCITE = 603,                 // calcite.webp
+  DAMP_SLATE = 604,              // damp_slate.webp
+  CELESTITE_BLOCK = 605,         // celestite_block.webp (emissive)
+  PALE_MYCELIUM = 606,           // pale_mycelium.webp (emissive specks)
+  FROSTED_STONE = 607,           // frosted_stone.webp
+  PALE_MUSHROOM_STEM = 608,      // pale_mushroom_stem.webp
+  PALE_MUSHROOM_CAP = 609,       // pale_mushroom_cap.webp (emissive spots)
+  CELESTITE_LAMP = 610,          // celestite_lamp.webp (emissive)
+  ORE_CRATE = 611,               // ore_crate.webp
+  GRAVEL = 612,                  // gravel.webp
+  ANDESITE = 613,                // andesite.webp
+  GRANITE = 614,                 // granite.webp
 }
 
 // Cache for the face texture map

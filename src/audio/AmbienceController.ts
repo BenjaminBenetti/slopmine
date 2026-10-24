@@ -29,6 +29,8 @@ export interface AmbienceContext {
   submergedIn: string | null
   /** 0 by day .. 1 at night (the overworld clock; the surface only). */
   night: number
+  /** The cave biome the player is in, or null above ground. */
+  caveBiome: string | null
 }
 
 interface Bed {
@@ -85,6 +87,26 @@ const HELL_DETAILS: Record<string, DetailRule[]> = {
   cocytus: [{ id: 'amb.icecreak', every: 15 }],
 }
 
+/** Cave biomes layer a Hell bed under the cave hollowness where it fits. */
+const CAVE_BEDS: Record<string, Partial<Record<BedId, number>>> = {
+  crystal_geode: { 'bed.crystal': 0.45 },
+  frozen_cave: { 'bed.cocytus': 0.4 },
+  fungal_hollow: { 'bed.embergrove': 0.3 },
+  magma_chamber: { 'bed.hell': 0.45 },
+}
+
+/** Each cave biome's details (the generic cave's drips and rumbles otherwise). */
+const CAVE_DETAILS: Record<string, DetailRule[]> = {
+  dripstone_caverns: [{ id: 'amb.drip', every: 3.5 }, { id: 'amb.distantrumble', every: 70 }],
+  mossy_grotto: [{ id: 'amb.drip', every: 9 }, { id: 'amb.frog', every: 30 }],
+  glowworm_grotto: [{ id: 'amb.drip', every: 5 }],
+  crystal_geode: [{ id: 'amb.crystalping', every: 8 }, { id: 'amb.drip', every: 14 }],
+  fungal_hollow: [{ id: 'amb.sporepuff', every: 9 }, { id: 'amb.drip', every: 16 }],
+  frozen_cave: [{ id: 'amb.icecreak', every: 13 }],
+  magma_chamber: [{ id: 'amb.lavapop', every: 6 }, { id: 'amb.distantrumble', every: 35 }],
+  webbed_hollow: [{ id: 'amb.drip', every: 14 }, { id: 'amb.bonechime', every: 40 }],
+}
+
 export class AmbienceController {
   private readonly beds = new Map<BedId, Bed>()
   private readonly buffers = new Map<BedId, AudioBuffer>()
@@ -131,11 +153,16 @@ export class AmbienceController {
     // Nights are calmer: less wind, crickets in the grass (fading with altitude)
     const night = ctx.night
     const chorus = (NIGHT_CHORUS[ctx.biome] ?? 0.5) * (1 - 0.8 * height)
-    return {
+    const targets: Partial<Record<BedId, number>> = {
       'bed.wind': open * (0.45 + 0.55 * height) * (1 - 0.3 * night),
       'bed.night': open * night * chorus,
       'bed.cave': (1 - open) * (ctx.cameraY < 236 ? 0.9 : 0.4),
     }
+    const caveBeds = ctx.caveBiome ? CAVE_BEDS[ctx.caveBiome] : undefined
+    if (caveBeds) {
+      for (const [id, weight] of Object.entries(caveBeds) as [BedId, number][]) targets[id] = weight * (1 - open)
+    }
+    return targets
   }
 
   private updateDetails(ctx: AmbienceContext, dt: number): void {
@@ -147,6 +174,8 @@ export class AmbienceController {
       if (VEGETATED.has(ctx.biome) && ctx.cameraY < 330 && ctx.night < 0.4) rules.push({ id: 'amb.bird', every: 16 })
       if (OWL_BIOMES.has(ctx.biome) && ctx.cameraY < 330 && ctx.night > 0.6) rules.push({ id: 'amb.owl', every: 38 })
       if (ctx.biome === 'swamp') rules.push({ id: 'amb.frog', every: ctx.night > 0.5 ? 6 : 11 })
+    } else if (ctx.caveBiome && ctx.outdoors < 0.4) {
+      rules.push(...(CAVE_DETAILS[ctx.caveBiome] ?? []))
     } else if (ctx.outdoors < 0.25 && ctx.cameraY < 236) {
       rules.push({ id: 'amb.drip', every: 8 }, { id: 'amb.distantrumble', every: 60 })
     }

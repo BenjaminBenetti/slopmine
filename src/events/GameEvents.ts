@@ -67,6 +67,7 @@ export type GameEvent =
    * night through without dying.
    */
   | { type: 'daybreak'; day: number; survived: boolean }
+  | { type: 'cave-biome-entered'; caveBiome: string }
 
 export type GameEventType = GameEvent['type']
 export type GameEventOf<T extends GameEventType> = Extract<GameEvent, { type: T }>

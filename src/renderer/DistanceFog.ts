@@ -141,6 +141,9 @@ export class DistanceFog {
   private density = 1
   private readonly color = new THREE.Color(0xffffff)
   private override: FogOverride | null = null
+  /** Cave haze (caves/CaveAtmosphere.ts): haze distance in a cave, blended in by how far underground the camera is. */
+  private caveHaze = Infinity
+  private caveWeight = 0
 
   constructor(scene: THREE.Scene) {
     this.fog = new THREE.Fog(0xffffff, CLEAR_HAZE_DISTANCE, 1000)
@@ -168,6 +171,17 @@ export class DistanceFog {
     this.density = Math.max(1, scale)
   }
 
+  /**
+   * Thicker haze in caves: blends the haze distance toward `haze` blocks
+   * (each cave biome's own, e.g. 90) by `weight` (0 surface .. 1 deep in a
+   * cave). The fog colour is the sky's horizon, which darkens to the cave's
+   * fog colour at the same time (Skybox.setCaveUnderground).
+   */
+  setCaveHaze(haze: number, weight: number): void {
+    this.caveHaze = haze
+    this.caveWeight = weight
+  }
+
   /** Replace the distance fog with a fixed one (null restores it). Applies immediately. */
   setOverride(override: FogOverride | null): void {
     this.override = override
@@ -181,7 +195,10 @@ export class DistanceFog {
 
   /** Current aerial haze distance in blocks (63% haze). */
   getHazeDistance(): number {
-    return CLEAR_HAZE_DISTANCE / Math.pow(this.density, HAZE_DENSITY_EXPONENT)
+    const open = CLEAR_HAZE_DISTANCE / Math.pow(this.density, HAZE_DENSITY_EXPONENT)
+    if (this.caveWeight <= 0) return open
+    // Blend in log space: a steady thickening from open air into the cave
+    return Math.exp(Math.log(open) + (Math.log(Math.min(open, this.caveHaze)) - Math.log(open)) * this.caveWeight)
   }
 
   /** Push the current state to the fog object. Call once per frame. */

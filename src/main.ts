@@ -14,6 +14,8 @@ import { setupDayNight } from './daynight/setupDayNight.ts'
 import { setupNightfall } from './nightfall/setupNightfall.ts'
 import { setupFireflies } from './fireflies/setupFireflies.ts'
 import { setupButterflies } from './butterflies/setupButterflies.ts'
+import { CaveAtmosphere } from './caves/CaveAtmosphere.ts'
+import { setupCaves } from './caves/setupCaves.ts'
 import { requestSleep } from './daynight/sleep.ts'
 import { DistanceFog } from './renderer/DistanceFog.ts'
 import { BlockOutline } from './renderer/BlockOutline.ts'
@@ -1365,6 +1367,15 @@ scheduler.createTask({
   update: () => lighting.updateShadowTarget(renderer.camera.position),
 })
 
+// Cave biomes' moods: fog, haze and light floor around the camera underground
+const caveAtmosphere = new CaveAtmosphere({
+  seed: worldGenerator.getConfig().seed,
+  getPackedLight: (x, y, z) => world.getPackedLightFast(x, y, z),
+  getBlock: (x, y, z) => world.getBlockFast(x, y, z),
+  getSurfaceBiome: (x, z) =>
+    biomeRegistry.selectBiomeForLayer(Math.floor(x / (BIOME_REGION_SIZE * 32)), Math.floor(z / (BIOME_REGION_SIZE * 32)), worldGenerator.getConfig().seed, 1),
+})
+
 scheduler.createTask({
   id: 'skybox',
   // Critical (never skipped by the frame budget): cheap, and it drives the
@@ -1383,6 +1394,10 @@ scheduler.createTask({
     dayNightSky.update(worldClock.hour, surfaceWeight, atmosphere.horizonColor)
     const dayNight = dayNightSky.state
     lighting.setLightDirection(dayNight.lightDirection, dayNight.lightIntensity)
+    // In a cave: its own fog colour, haze and light floor, by how far underground
+    caveAtmosphere.update(dt, renderer.camera.position)
+    skybox.setCaveUnderground(caveAtmosphere.weight, caveAtmosphere.fogColor)
+    distanceFog.setCaveHaze(caveAtmosphere.hazeDistance, caveAtmosphere.weight)
     // Update skybox position and apply modifiers (sun, moon and stars follow the clock)
     skybox.update(renderer.camera, dt)
     // Fog matches the sky's final horizon color; biome tints the world light
@@ -1394,7 +1409,7 @@ scheduler.createTask({
     worldLightTint.copy(atmosphere.lightTint).multiply(dayNight.lightTint)
     lighting.setTint(worldLightTint)
     heldItemRenderer.setLightTint(worldLightTint)
-    setWorldLightFloor(atmosphere.lightFloor)
+    setWorldLightFloor(caveAtmosphere.blendLightFloor(atmosphere.lightFloor))
     setWorldDaylight(atmosphere.daylight * dayNight.daylight)
     // Liquids reflect the horizon sky at glancing angles; drift their textures
     setLiquidReflectionColor(fogColor)
@@ -1730,8 +1745,19 @@ setupButterflies({
   getBiome: (x, z, y) => worldGenerator.getBiomeAtPosition(x, z, y),
 })
 
+// Caves and dark places: cave creatures and cave-biome events (the atmosphere is caveAtmosphere, in 'skybox')
+setupCaves({
+  scheduler,
+  entitySpawner,
+  caveAtmosphere,
+  seed: worldGenerator.getConfig().seed,
+  getSurfaceBiome: (x, z) =>
+    biomeRegistry.selectBiomeForLayer(Math.floor(x / (BIOME_REGION_SIZE * 32)), Math.floor(z / (BIOME_REGION_SIZE * 32)), worldGenerator.getConfig().seed, 1),
+})
+
 // Sound: procedural effects, ambience and generative music (see src/audio)
 setupAudio({
+  getCaveBiome: () => caveAtmosphere.biome,
   scheduler,
   settings: audioSettings,
   camera: renderer.camera,

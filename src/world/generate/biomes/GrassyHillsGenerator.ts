@@ -21,6 +21,7 @@ import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { grassyHillsGroundCover } from '../features/natureGroundCover.ts'
+import { overworldMineshafts } from '../features/overworldMineshafts.ts'
 
 /**
  * Grassy hills biome with dramatic rolling hills and sparse oak trees.
@@ -107,6 +108,8 @@ export class GrassyHillsGenerator extends BiomeGenerator {
         gridSize: 12,
         flowerBlockIds: [BlockIds.YELLOW_FLOWER, BlockIds.BLUE_FLOWER, BlockIds.RED_FLOWER],
       }),
+      // Caves: abandoned mineshafts (same settings in every overworld biome: networks cross borders)
+      overworldMineshafts(),
       // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
       grassyHillsGroundCover(),
     ],

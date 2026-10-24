@@ -13,7 +13,12 @@ import { BlockTags } from '../../world/blocks/tags/BlockTags.ts'
  * creatures are registered by setupNightfall this way, so biome generators -
  * also loaded by the generation workers - never import them).
  */
-export type EntitySpawnProvider = (biome: string, layer: 0 | 1) => readonly EntitySpawnConfig[] | undefined
+export type EntitySpawnProvider = (
+  biome: string,
+  layer: 0 | 1,
+  /** The candidate chunk's centre (X/Z) and the player's Y (spawns search ground near it). */
+  position: { readonly x: number; readonly y: number; readonly z: number },
+) => readonly EntitySpawnConfig[] | undefined
 
 // Spawning constants
 const SPAWN_CHECK_INTERVAL = 20.0 // seconds between spawn checks (faster cycle)
@@ -153,7 +158,7 @@ export class EntitySpawner implements ITask {
     if (this.providers.length > 0) {
       const { biome, layer } = this.worldGenerator.getBiomeAtPosition(worldX, worldZ, worldY)
       for (const provider of this.providers) {
-        const extra = provider(biome, layer)
+        const extra = provider(biome, layer, { x: worldX, y: worldY, z: worldZ })
         if (!extra) continue
         for (const config of extra) {
           if (this.trySpawnEntity(config, chunkX, chunkZ)) {

@@ -56,7 +56,7 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
    floor it sets), `setupDungeons`, one `setup<Biome>()` per Hell biome (castle tier loot tables,
    garrisons, guardian, procedural locator), `setupDayNight` + `setupNightfall` + `setupFireflies` +
    `setupButterflies` (the overworld clock, night creatures, beds, fireflies, daytime insects - see
-   `src/daynight/`), and last
+   `src/daynight/`), `setupCaves` (cave creatures, cave-biome events, mineshaft loot - see Caves), and last
    `setupAudio` (sound - see `src/audio/`).
    A new system exposes a `setupX(deps)` in its own module; keep main.ts edits to the call
 
@@ -123,7 +123,7 @@ The core module provides the game loop infrastructure and frame budget managemen
   (atmosphere/sky/fog/daylight, block outline, underwater overlay - skipped frames showed stale sky),
   plus cheap gameplay clocks/polls: 'status-effects', 'alchemy-effects', 'player-combat',
   'progression', 'slime-bounce', 'biome-entry-events', 'dungeons-hud', 'dungeons' (spawners),
-  'world-clock' (time of day), 'fireflies', 'butterflies', 'farming-input', 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
+  'world-clock' (time of day), 'fireflies', 'butterflies', 'farming-input', 'caves', 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
   tasks registered late starve for long stretches while the world streams, so anything the player must see promptly
   (a timer, a toast, a boss bar) goes here - and stays cheap (poll at 1-2 Hz inside the task)
 - `HIGH` (1): Can defer briefly - the budgeted light queue ('lighting')
@@ -437,7 +437,9 @@ Block type definitions using flyweight pattern (stateless singletons).
   blocks; 350-369 day and night (350 Ward Lantern, 351-360 swamp bioluminescence: foxfire and amber
   mushroom stems/caps, glowmoss, glimmercap, lumen fern, glowkelp + its crown, lanternweed); 361-449
   nature (361-402 wild plants and doodads, 403-408 forage bushes, 409 oak sapling, 410-411 farmland,
-  412-435 crops, 436-437 embers and volcanic rocks, 438-447 young stages of seed-grown bushes); highest 447). Shared registration files are grouped by header comments per feature area
+  412-435 crops, 436-437 embers and volcanic rocks, 438-447 young stages of seed-grown bushes); 448-499
+  caves (448-456 cave biome rock, crystal, fungus and the celestite lamp, 457-477 cave foliage, 478 ore
+  crate, 479-481 gravel, andesite, granite); highest 481). Shared registration files are grouped by header comments per feature area
   (`// Hell: Cocytus`) - add new entries to their area's group
 - `BlockRegistry.ts` - Singleton registry mapping IDs to block instances
 - `FaceTextureRegistry.ts` - Maps block+face to TextureId for greedy meshing. Greedy side faces
@@ -459,7 +461,7 @@ incomplete - don't rely on it.
 draws nothing.
 **Texture-layer budget:** every distinct greedy face texture costs one `BlockTextureArray` layer;
 the limit is 255 (`CHUNK_MAX_TEXTURE_LAYER`, building throws above it; layer 0 = missing texture).
-158 are used (54 base game, 104 expansion - the boot log's `Block texture array built with N layers`
+171 are used (54 base game, 117 expansion - the boot log's `Block texture array built with N layers`
 counts them, layer 0 excluded). TextureId values may exceed 255 (layers are compacted),
 so reuse one texture across faces/blocks where it reads fine (crafted infernal bricks, sanctum tile
 and the crystal cores share their source block's layers). Non-greedy blocks cost no layer.
@@ -653,6 +655,13 @@ skip terrain fill and carving (all-air early-out) but still run water, features 
    Hell biome's light floor read as a bright slab overhead)
 6. Compute local light (after all block writes; merged with neighbours by the LightEngine)
 7. Place decorations (trees) on main thread
+
+**Cave biomes (Caves and Dark Places):** see the Caves section below - the underground is divided into
+zones, mostly plain caves with a special one now and again (`caves/CaveBiomes.ts`), and full-detail
+surface-layer sub-chunks are carved with `CaveCarver.carveSubChunkWithMask` (one padded 34³ carve: identical blocks, plus a
+`CaveMask` of the 1-block shell) so `CaveDressing.ts` (worker Phase 4.55, after features and lining,
+before light) can line and decorate caves seamlessly across sub-chunk faces; `scatterRockBlobs` then
+puts andesite and granite blobs through every surface-layer sub-chunk's stone.
 
 **Cave System (noise-density carving):**
 
@@ -1280,9 +1289,9 @@ crystal; hoe: rime sigil + rime crystal). Hoes: diamond hoe + 2 ingots → infer
 
 ### `src/progression/` - Journal
 
-- `milestones.ts` - Declarative data: 11 chapters (First Steps, Green Thumb, Nightfall, Metal Ages, Arms &
-  Armor, Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 74 milestones (Green
-  Thumb's five and Nightfall's four are optional side goals). Chapter and
+- `milestones.ts` - Declarative data: 12 chapters (First Steps, Green Thumb, Into the Dark, Nightfall, Metal
+  Ages, Arms & Armor, Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 81 milestones
+  (Green Thumb's five, Into the Dark's seven and Nightfall's four are optional side goals). Chapter and
   milestone ids are persisted - never rename. `stage` orders the arc: the "next goal" is the
   unlocked, unfinished, non-optional milestone with the lowest stage. `requires` must be TRUE
   implications (completing a milestone completes its prerequisites silently). `legacy` milestones
@@ -1724,6 +1733,67 @@ The overworld is carpeted with life, and plants grow.
   sprouts grass and flowers by the ground block.
 - **Existing worlds**: generated sub-chunks are saved once and never regenerate, so ground cover only
   appears in newly generated land.
+
+### Caves and dark places (`src/caves/`, `generate/caves/{CaveBiomes,CaveDressing,CaveMask}.ts`, `features/MineshaftFeature.ts`)
+
+The underground between the surface and the Hell ceiling (the cave band, Y ~146 to under the surface) is
+divided into zones: most are plain caves, and now and again one is one of eight kinds of special cave, each
+with its own rock, decorations, mood, sounds and creatures. Play feedback: 176-block zones felt like
+"I'm in the geode area", then small 3D pockets in half the underground were "too mixed up" - keep zones
+smallish and mostly plain.
+- **Cave biomes** (`CaveBiomes.ts`): `caveBiomeAt(x, z, seed, surfaceBiomeAt, out)` → `{ biome, strength }`
+  - jittered Voronoi zones of 88 blocks with warped borders, each a column from the surface down to the
+  Hell ceiling; one in four (`SPECIAL_SHARE`) is special (~19% of the area past the rim), the rest plain
+  (`biome` null). A special zone is full strength inside and thins to 0 over its last 12 blocks (`RIM`,
+  distance to the bisector with the neighbouring zone). Its kind is rolled by hash with odds set by the
+  surface biome over its centre (`CAVE_WEIGHTS`: frozen caves under pine forests, magma chambers under
+  volcanic lands, glowworm grottos and fungal hollows under swamps, ...). Pure: the worker (with
+  `getBiomeNameAt`) and the main thread (with `biomeRegistry.selectBiomeForLayer`) always agree. Biomes:
+  dripstone caverns (dripstone, stalactites
+  and stalagmites), mossy grotto (moss, cave ferns, glow blooms, hanging roots, cave vines with harvestable
+  glowberries that regrow and grow longer), glowworm grotto (damp slate, curtains of glowing glowworm
+  threads), crystal geode (calcite, glowing celestite blocks and clusters), fungal hollow (glowing pale
+  mycelium, cave mushrooms, puffballs, giant pale mushrooms with light-12 caps), frozen cave (frosted stone,
+  glacial ice, snow patches, icicles), magma chamber (basalt, magma, lava lakes up to Y 160 off its rim,
+  obsidian where rock meets lava, embers, glowing sulfur clusters), webbed hollow (cobwebs in corners and
+  under ceilings, egg sacs, bones).
+- **Plain caves** (`PLAIN_CAVE` in `CaveDressing.ts`): mostly stone - gravel patches on ~12% of floors,
+  pebbles, a rare mushroom, bones or cobweb, hanging roots only within 16 blocks of the surface
+  (`Decor.maxDepth`); plus `scatterRockBlobs`: andesite and granite blobs (~10% of stone, 7-block value
+  noise, kind by a 40-block noise) through all overworld stone from Y 146 up to 8 blocks under the surface,
+  caves or not.
+- **Dressing** (`CaveDressing.ts`, `DRESSINGS` per biome): the cave biome is sampled on a world-aligned
+  4-block column lattice (lazily, only near caves) and interpolated per cell; a cell is in the special zone
+  where its strength beats patch noise (a ragged rim), else plain. Rock touching cave air (only STONE - ores and
+  feature blocks stay) is lined as floor/ceiling/wall in patches of 3D value noise (values bunch around 0.5:
+  coverage 0.32 ≈ 18% of the surface); decorations roll per air cell beside a floor or ceiling. A decoration belongs to the sub-chunk holding its anchor air cell and is
+  kept inside it (formation lengths clamp, giant mushrooms only where they fit whole), so nothing is cut at a
+  seam; every choice hashes world coordinates. ~1-2 ms per sub-chunk. Cave foliage (`cave_plants/`) uses the
+  foliage renderer, hanging pieces with shape `'hang'` (anchored at the cell top, held by the block above;
+  chains via `alsoSupportedBy`); glow maps light crystals, gills, berries and glowworms in the dark.
+- **Atmosphere** (`CaveAtmosphere.ts`, the 'skybox' task): an underground factor eased from sky light at the
+  camera, counted only with natural rock (ROCK/SOIL) overhead - a roofed house stays a house - and the cave
+  zone at the camera; the mood blends by `weight` (factor × zone strength, eased - 0 in plain caves,
+  which keep the old underground look). The sky/fog darken to the zone's fog colour
+  (`Skybox.setCaveUnderground`), haze thickens to its distance (`DistanceFog.setCaveHaze`, 55-110 blocks)
+  and the light floor takes its tint (`blendLightFloor`; Ember Sight still post-adjusts it). Fog colours
+  stay darker than anything lit.
+- **Runtime** (`setupCaves.ts`): an EntitySpawner provider (providers now get the candidate position) spawns
+  the creatures of the special zone at each spawn position while the player is in a cave (factor ≥ 0.5;
+  plain caves: bats and the odd spider): glow bats (flocking, passive, glowing wings) everywhere but magma chambers, cave spiders (webbed hollows, rare in dripstone), geode
+  crawlers (crystal geodes, armoured crystal back), sporelings (fungal hollows, spore puffs), ember
+  salamanders (magma chambers, set you alight) - `src/entities/cave/`; the CRITICAL 'caves' task emits
+  `cave-biome-entered` (journal chapter Into the Dark, ambience); the `abandoned-mineshaft` chest loot table.
+  Ambience (`AmbienceController` `CAVE_DETAILS`/`CAVE_BEDS`) layers each cave's sounds (dripstone drips,
+  crystal pings, spore puffs, ice creaks, lava pops) and a matching Hell bed.
+- **Mineshafts** (`MineshaftFeature.ts`, `overworldMineshafts()` in every overworld biome with equal settings):
+  one chance (55%) per 320-block cell of a flat network of 3×3 corridors at Y 168-205, oak post-and-beam
+  supports every 4 blocks, plank floors bridging caves, cobwebs, junction rooms, and up to 3 dead-end chests
+  beside ore crates (the loot table's signature; crates drop coal and iron ore). Each sub-chunk rasterises
+  the corridors crossing it; never within 6 blocks of the surface.
+- **Items**: celestite shards (clusters, crystal blocks, geode crawlers) → celestite lamps (light 15) and
+  blocks; spider silk → rope; glowberries (food, plant them under a ceiling to grow a vine); cave mushrooms
+  + herb → ember sight; salamander scale + herb → fire resistance.
 
 ### `src/audio/` - Sound (effects, ambience, music)
 

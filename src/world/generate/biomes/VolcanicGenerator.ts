@@ -20,6 +20,7 @@ import type { SimplexNoise } from '../SimplexNoise.ts'
 import { MagmaSlimeEntity } from '../../../entities/animals/magma_slime/index.ts'
 import { KomodoDragonEntity } from '../../../entities/animals/komodo_dragon/index.ts'
 import { volcanicGroundCover } from '../features/natureGroundCover.ts'
+import { overworldMineshafts } from '../features/overworldMineshafts.ts'
 
 /**
  * Volcanic biome with basalt surface, magma subsurface, and lava pools.
@@ -160,6 +161,8 @@ export class VolcanicGenerator extends BiomeGenerator {
         maxHeight: 60,
         minBaseHeight: 242, // above lava lakes (Y=238) and their shores
       }),
+      // Caves: abandoned mineshafts (same settings in every overworld biome: networks cross borders)
+      overworldMineshafts(),
       // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
       volcanicGroundCover(),
     ],

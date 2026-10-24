@@ -26,6 +26,7 @@ import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { SNOW_LINE_Y } from './pineForestConstants.ts'
 import { pineForestGroundCover } from '../features/natureGroundCover.ts'
+import { overworldMineshafts } from '../features/overworldMineshafts.ts'
 
 /**
  * Classic evergreen forest: rolling terrain densely covered in conical pine
@@ -167,6 +168,8 @@ export class PineForestGenerator extends BiomeGenerator {
         gridSize: 16,
         flowerBlockIds: [BlockIds.YELLOW_FLOWER, BlockIds.RED_FLOWER],
       }),
+      // Caves: abandoned mineshafts (same settings in every overworld biome: networks cross borders)
+      overworldMineshafts(),
       // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
       pineForestGroundCover(),
     ],

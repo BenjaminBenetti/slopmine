@@ -71,6 +71,9 @@ import { nightfallHandRecipes, nightfallBrewingRecipes } from './NightfallRecipe
 // Nature
 import { natureHandRecipes, natureSmeltingRecipes } from './NatureRecipes.ts'
 
+// Caves and dark places
+import { caveHandRecipes, caveBrewingRecipes } from './CaveRecipes.ts'
+
 /**
  * Register all default recipes.
  * Call this at startup.
@@ -247,6 +250,10 @@ export function registerDefaultRecipes(): void {
   // Nature
   for (const recipe of natureHandRecipes) recipeRegistry.register(recipe)
   for (const recipe of natureSmeltingRecipes) smeltingRegistry.register(recipe)
+
+  // Caves and dark places
+  for (const recipe of caveHandRecipes) recipeRegistry.register(recipe)
+  for (const recipe of caveBrewingRecipes) brewingRegistry.register(recipe)
 }
 
 export { woodToolRecipes } from './WoodToolRecipes.ts'

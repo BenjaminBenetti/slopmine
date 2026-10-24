@@ -2,7 +2,8 @@ import type { IChunkData } from '../../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../../interfaces/ISubChunkData.ts'
 import { SimplexNoise } from '../SimplexNoise.ts'
 import { BlockIds } from '../../blocks/BlockIds.ts'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../../interfaces/IChunk.ts'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z, SUB_CHUNK_HEIGHT } from '../../interfaces/IChunk.ts'
+import { CAVE_MASK_AIR, CAVE_MASK_FLOODED, CAVE_MASK_OPEN, CAVE_MASK_ROCK, CAVE_MASK_SIZE } from './CaveMask.ts'
 import { isLiquidBlock } from '../../liquid/LiquidPhysicsAlgorithm.ts'
 import type { CaveParamsComponent, CaveSample, CaveSampleGetter } from './CaveConfig.ts'
 
@@ -12,7 +13,6 @@ export type HeightGetter = (worldX: number, worldZ: number) => number
 const LATTICE_STEP = 4
 
 /** Number of lattice points across a chunk's 32-block horizontal extent. */
-const LATTICE_XZ = CHUNK_SIZE_X / LATTICE_STEP + 1
 
 /** Cheese-threshold tightening applied at the surface outside entrance zones. */
 const SURFACE_TIGHTEN = 0.7
@@ -96,7 +96,8 @@ export class CaveCarver {
   private latSpag1: Float32Array = new Float32Array(0)
   private latSpag2: Float32Array = new Float32Array(0)
   private latPipe: Float32Array = new Float32Array(0)
-  private readonly heights = new Float32Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
+  private heights = new Float32Array(CHUNK_SIZE_X * CHUNK_SIZE_Z)
+  private scratch: Uint16Array = new Uint16Array(0)
 
   constructor(seed: number) {
     this.cheeseNoise = new SimplexNoise(seed + 7001)
@@ -124,6 +125,69 @@ export class CaveCarver {
     const chunkWorldX = Number(coord.x) * CHUNK_SIZE_X
     const chunkWorldZ = Number(coord.z) * CHUNK_SIZE_Z
     this.carveRegion(subChunk, chunkWorldX, chunkWorldZ, minWorldY, maxWorldY, minWorldY, getSampleAt, getHeightAt)
+  }
+
+  /**
+   * Carve a sub-chunk like carveSubChunk, and report what the carve looks
+   * like one block beyond it on every side: `mask` (CAVE_MASK_SIZE³, see
+   * CaveMask.ts) gets, for the sub-chunk and its 1-block shell, whether each
+   * cell is rock, cave air, flooded cave or open air above the surface.
+   * One padded carve (34³) instead of a second pass: the interior is copied
+   * into the sub-chunk (identical to carveSubChunk - the lattice is world-
+   * aligned and carving only depends on noise, the column height and
+   * whether a cell is liquid, and the scratch volume has no liquids).
+   */
+  carveSubChunkWithMask(
+    subChunk: ISubChunkData,
+    getSampleAt: CaveSampleGetter,
+    getHeightAt: HeightGetter,
+    minWorldY: number,
+    maxWorldY: number,
+    mask: Uint8Array
+  ): void {
+    const coord = subChunk.coordinate
+    const originX = Number(coord.x) * CHUNK_SIZE_X - 1
+    const originZ = Number(coord.z) * CHUNK_SIZE_Z - 1
+    const originY = minWorldY - 1
+    const n = CAVE_MASK_SIZE
+    // Scratch terrain: rock up to each column's surface, open air above
+    if (this.scratch.length < n * n * n) this.scratch = new Uint16Array(n * n * n)
+    const scratch = this.scratch
+    for (let z = 0; z < n; z++) {
+      for (let x = 0; x < n; x++) {
+        const surface = getHeightAt(originX + x, originZ + z)
+        for (let y = 0; y < n; y++) {
+          const i = (y * n + z) * n + x
+          const rock = originY + y <= surface
+          scratch[i] = rock ? BlockIds.STONE : BlockIds.AIR
+          mask[i] = rock ? CAVE_MASK_ROCK : CAVE_MASK_OPEN
+        }
+      }
+    }
+    const access: BlockAccess = {
+      getBlockId: (x, y, z) => scratch[(y * n + z) * n + x],
+      setBlockId: (x, y, z, id) => {
+        scratch[(y * n + z) * n + x] = id
+        return true
+      },
+    }
+    this.carveRegion(access, originX, originZ, originY, minWorldY + SUB_CHUNK_HEIGHT, originY, getSampleAt, getHeightAt, n, n)
+    // Mask + copy the interior carve into the sub-chunk
+    for (let y = 0; y < n; y++) {
+      for (let z = 0; z < n; z++) {
+        for (let x = 0; x < n; x++) {
+          const i = (y * n + z) * n + x
+          if (mask[i] !== CAVE_MASK_ROCK) continue
+          const id = scratch[i]
+          if (id === BlockIds.STONE) continue
+          mask[i] = id === BlockIds.AIR ? CAVE_MASK_AIR : CAVE_MASK_FLOODED
+          if (x === 0 || z === 0 || y === 0 || x === n - 1 || z === n - 1 || y === n - 1) continue
+          const current = subChunk.getBlockId(x - 1, y - 1, z - 1)
+          if (current === BlockIds.AIR || isLiquidBlock(current)) continue
+          subChunk.setBlockId(x - 1, y - 1, z - 1, id)
+        }
+      }
+    }
   }
 
   /**
@@ -320,17 +384,20 @@ export class CaveCarver {
     maxWorldY: number,
     storageYOffset: number,
     getSampleAt: CaveSampleGetter,
-    getHeightAt: HeightGetter
+    getHeightAt: HeightGetter,
+    sizeX: number = CHUNK_SIZE_X,
+    sizeZ: number = CHUNK_SIZE_Z
   ): void {
     // ---- Pass 1: per-column heights and the carveable Y window ----
+    if (this.heights.length < sizeX * sizeZ) this.heights = new Float32Array(sizeX * sizeZ)
     const heights = this.heights
     let windowLo = Infinity
     let windowHi = -Infinity
     let anyCarving = false
     let anyPipes = false
 
-    for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-      for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
+    for (let localZ = 0; localZ < sizeZ; localZ++) {
+      for (let localX = 0; localX < sizeX; localX++) {
         const worldX = chunkWorldX + localX
         const worldZ = chunkWorldZ + localZ
 
@@ -338,7 +405,7 @@ export class CaveCarver {
         if (params.strength <= 0.001) continue
 
         const surfaceY = getHeightAt(worldX, worldZ)
-        heights[localZ * CHUNK_SIZE_X + localX] = surfaceY
+        heights[localZ * sizeX + localX] = surfaceY
 
         const colLo = Math.max(minWorldY, Math.floor(params.minY))
         const colHi = Math.min(maxWorldY, Math.floor(params.maxY), surfaceY)
@@ -358,7 +425,13 @@ export class CaveCarver {
     // are identical regardless of which sub-chunk requests them.
     const latY0 = Math.floor(windowLo / LATTICE_STEP) * LATTICE_STEP
     const latYCount = Math.floor((windowHi - latY0) / LATTICE_STEP) + 2
-    const latSize = LATTICE_XZ * LATTICE_XZ * latYCount
+    // Lattice X/Z planes are world-aligned too (a padded region starts one
+    // block before its chunk), so every region interpolates the same field
+    const latX0 = Math.floor(chunkWorldX / LATTICE_STEP) * LATTICE_STEP
+    const latZ0 = Math.floor(chunkWorldZ / LATTICE_STEP) * LATTICE_STEP
+    const latNX = Math.floor((chunkWorldX + sizeX - 1 - latX0) / LATTICE_STEP) + 2
+    const latNZ = Math.floor((chunkWorldZ + sizeZ - 1 - latZ0) / LATTICE_STEP) + 2
+    const latSize = latNX * latNZ * latYCount
     if (this.latCheese.length < latSize) {
       this.latCheese = new Float32Array(latSize)
       this.latSpag1 = new Float32Array(latSize)
@@ -370,15 +443,15 @@ export class CaveCarver {
     const latSpag2 = this.latSpag2
     const latPipe = this.latPipe
 
-    for (let iz = 0; iz < LATTICE_XZ; iz++) {
-      const worldZ = chunkWorldZ + iz * LATTICE_STEP
-      for (let ix = 0; ix < LATTICE_XZ; ix++) {
-        const worldX = chunkWorldX + ix * LATTICE_STEP
+    for (let iz = 0; iz < latNZ; iz++) {
+      const worldZ = latZ0 + iz * LATTICE_STEP
+      for (let ix = 0; ix < latNX; ix++) {
+        const worldX = latX0 + ix * LATTICE_STEP
         // Field values are blended across biome components per lattice
         // column; weights vary smoothly, so the interpolated field stays
         // continuous across biome borders and chunk seams.
         const components = getSampleAt(worldX, worldZ).components
-        const colBase = (iz * LATTICE_XZ + ix) * latYCount
+        const colBase = (iz * latNX + ix) * latYCount
 
         for (let iy = 0; iy < latYCount; iy++) {
           const worldY = latY0 + iy * LATTICE_STEP
@@ -400,8 +473,8 @@ export class CaveCarver {
     const colPipe = new Float32Array(latYCount)
 
     // ---- Pass 3: carve per column ----
-    for (let localZ = 0; localZ < CHUNK_SIZE_Z; localZ++) {
-      for (let localX = 0; localX < CHUNK_SIZE_X; localX++) {
+    for (let localZ = 0; localZ < sizeZ; localZ++) {
+      for (let localX = 0; localX < sizeX; localX++) {
         const worldX = chunkWorldX + localX
         const worldZ = chunkWorldZ + localZ
         const sample = getSampleAt(worldX, worldZ)
@@ -410,7 +483,7 @@ export class CaveCarver {
         const strength = params.strength
         if (strength <= 0.001) continue
 
-        const surfaceY = heights[localZ * CHUNK_SIZE_X + localX]
+        const surfaceY = heights[localZ * sizeX + localX]
         const yLo = Math.max(minWorldY, Math.floor(params.minY))
         const yHi = Math.min(maxWorldY, Math.floor(params.maxY), surfaceY)
         if (yLo > yHi) continue
@@ -484,18 +557,20 @@ export class CaveCarver {
         const cheeseStrengthPenalty = (1 - params.cheeseStrength * strength) * 2
 
         // Build interpolated noise Y-profiles for this column from the lattice.
-        const tx = (localX % LATTICE_STEP) / LATTICE_STEP
-        const tz = (localZ % LATTICE_STEP) / LATTICE_STEP
-        const ix0 = Math.floor(localX / LATTICE_STEP)
-        const iz0 = Math.floor(localZ / LATTICE_STEP)
+        const lx = worldX - latX0
+        const lz = worldZ - latZ0
+        const tx = (lx % LATTICE_STEP) / LATTICE_STEP
+        const tz = (lz % LATTICE_STEP) / LATTICE_STEP
+        const ix0 = Math.floor(lx / LATTICE_STEP)
+        const iz0 = Math.floor(lz / LATTICE_STEP)
         const w00 = (1 - tx) * (1 - tz)
         const w10 = tx * (1 - tz)
         const w01 = (1 - tx) * tz
         const w11 = tx * tz
-        const c00 = (iz0 * LATTICE_XZ + ix0) * latYCount
-        const c10 = (iz0 * LATTICE_XZ + ix0 + 1) * latYCount
-        const c01 = ((iz0 + 1) * LATTICE_XZ + ix0) * latYCount
-        const c11 = ((iz0 + 1) * LATTICE_XZ + ix0 + 1) * latYCount
+        const c00 = (iz0 * latNX + ix0) * latYCount
+        const c10 = (iz0 * latNX + ix0 + 1) * latYCount
+        const c01 = ((iz0 + 1) * latNX + ix0) * latYCount
+        const c11 = ((iz0 + 1) * latNX + ix0 + 1) * latYCount
         // Pipe eligibility for this column: pipes must reach full depth, so
         // they are gated per column (liquid guard, strength fade at borders)
         // but NOT by depth-varying terms.

@@ -46,6 +46,10 @@ const OVERRIDES: Record<string, BlockSoundMaterial> = {
   aloe_1: 'leaves', aloe_2: 'leaves', prickly_pear_1: 'soft', prickly_pear_2: 'soft',
   barrel_cactus: 'soft', prickly_pear: 'soft', prickly_pear_ripe: 'soft', toadstool: 'soft',
   pebbles: 'gravel', cinders: 'gravel', twigs: 'wood', obsidian_shards: 'glass', embers: 'gravel', volcanic_rocks: 'gravel',
+  // Caves: crystals ring, fungi and silk are soft, threads like cloth
+  celestite_block: 'crystal', celestite_lamp: 'crystal', celestite_cluster: 'crystal', celestite_bud: 'crystal',
+  hanging_celestite: 'crystal', sulfur_cluster: 'crystal', puffballs: 'soft', egg_sac: 'soft', glowworm_threads: 'cloth',
+  frosted_stone: 'ice', cave_pearls: 'gravel', ore_crate: 'wood',
 }
 
 /**

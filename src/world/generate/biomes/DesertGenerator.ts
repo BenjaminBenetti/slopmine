@@ -17,6 +17,7 @@ import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { desertGroundCover } from '../features/natureGroundCover.ts'
+import { overworldMineshafts } from '../features/overworldMineshafts.ts'
 
 /**
  * Desert biome with sand surface, sandstone subsurface, and scattered cacti.
@@ -102,6 +103,8 @@ export class DesertGenerator extends BiomeGenerator {
         ySpread: 4,
         replaceableBlocks: [BlockIds.STONE],
       }),
+      // Caves: abandoned mineshafts (same settings in every overworld biome: networks cross borders)
+      overworldMineshafts(),
       // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
       desertGroundCover(),
     ],

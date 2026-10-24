@@ -435,4 +435,40 @@ export enum BlockIds {
   ALOE_2 = 445,
   BERRY_BUSH_1 = 446,            // planted berry seeds, stages 1-2 (then BERRY_BUSH)
   BERRY_BUSH_2 = 447,
+
+  // Caves and dark places (448-499): cave biome rock, crystals, giant pale mushrooms, cave foliage
+  DRIPSTONE_BLOCK = 448,         // banded limestone (dripstone caverns lining)
+  CALCITE = 449,                 // white calcite (crystal geode lining)
+  DAMP_SLATE = 450,              // dark wet slate (glowworm grotto lining)
+  CELESTITE_BLOCK = 451,         // glowing sky-blue crystal mass (emissive)
+  PALE_MYCELIUM = 452,           // pale fungal floor with glowing specks (fungal hollow)
+  FROSTED_STONE = 453,           // frost-crusted stone (frozen cave lining)
+  PALE_MUSHROOM_STEM = 454,      // giant pale cave mushroom stem
+  PALE_MUSHROOM_CAP = 455,       // giant pale cave mushroom cap, glowing teal spots (light 12)
+  CELESTITE_LAMP = 456,          // crafted celestite lamp (light 15)
+  STALACTITE = 457,              // dripstone tip hanging from a ceiling (foliage, hanging)
+  DRIPSTONE_COLUMN = 458,        // dripstone column segment of a stalactite/stalagmite (foliage)
+  STALAGMITE = 459,              // dripstone tip rising from a floor (foliage)
+  CELESTITE_CLUSTER = 460,       // celestite crystals on a floor (foliage, light 4)
+  CELESTITE_BUD = 461,           // small celestite crystals (foliage, emissive)
+  HANGING_CELESTITE = 462,       // celestite crystals on a ceiling (foliage, hanging, light 4)
+  CAVE_FERN = 463,               // pale blue-green cave fern
+  GLOW_BLOOM = 464,              // violet glowing cave flower (emissive)
+  CAVE_MUSHROOMS = 465,          // small pale mushrooms with glowing gills (emissive)
+  PUFFBALLS = 466,               // cave puffball fungi
+  SULFUR_CLUSTER = 467,          // yellow sulfur crystals (magma chambers, emissive, drops sulfur)
+  EGG_SAC = 468,                 // spider egg sac (webbed hollow)
+  COBWEB = 469,                  // cave cobweb (drops spider silk)
+  HANGING_ROOTS = 470,           // roots dangling from a cave ceiling (foliage, hanging)
+  CAVE_VINES = 471,              // vines hanging from a cave ceiling (foliage, hanging)
+  CAVE_VINES_BERRIES = 472,      // cave vines with glowing berries (light 7, harvestable)
+  GLOWWORM_THREADS = 473,        // glowworm silk threads on a ceiling (foliage, hanging, emissive)
+  CAVE_BONES = 474,              // scattered bones on a cave floor (flat)
+  SNOW_PATCH = 475,              // patch of snow on a cave floor (flat)
+  CAVE_PEARLS = 476,             // cave pearls in a stone dish (flat)
+  STALACTITE_COLUMN = 477,       // dripstone column segment of a stalactite (foliage, hanging)
+  ORE_CRATE = 478,               // abandoned miners' crate (mineshafts; signature of their chest loot, drops ore)
+  GRAVEL = 479,                  // loose gravel (plain cave floors)
+  ANDESITE = 480,                // grey andesite (blobs in the overworld's rock)
+  GRANITE = 481,                 // pinkish granite (blobs in the overworld's rock)
 }

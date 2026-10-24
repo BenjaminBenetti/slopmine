@@ -31,7 +31,11 @@ import { JungleFernFeature, type JungleFernFeatureSettings } from '../world/gene
 import { RiverbankClayFeature, type RiverbankClayFeatureSettings } from '../world/generate/features/RiverbankClayFeature.ts'
 import { CattailFeature, type CattailFeatureSettings } from '../world/generate/features/CattailFeature.ts'
 import { SubmergedPlantFeature, type SubmergedPlantFeatureSettings } from '../world/generate/features/SubmergedPlantFeature.ts'
+import { CAVE_MASK_SIZE } from '../world/generate/caves/CaveMask.ts'
+import { dressCaves, scatterRockBlobs } from '../world/generate/caves/CaveDressing.ts'
+import { caveBiomeAt, type CaveBiomeSample } from '../world/generate/caves/CaveBiomes.ts'
 import { GroundCoverFeature, type GroundCoverSettings } from '../world/generate/features/GroundCoverFeature.ts'
+import { MineshaftFeature, type MineshaftSettings } from '../world/generate/features/MineshaftFeature.ts'
 import { getCellLiquidFamily } from '../world/liquid/cellLiquid.ts'
 import { PineTreeFeature, type PineTreeFeatureSettings } from '../world/generate/features/PineTreeFeature.ts'
 import { GiantConiferFeature, type GiantConiferFeatureSettings } from '../world/generate/features/GiantConiferFeature.ts'
@@ -177,6 +181,7 @@ export type FeatureConfig =
   | { type: 'cattail'; settings: CattailFeatureSettings }
   | { type: 'submergedPlant'; settings: SubmergedPlantFeatureSettings }
   | { type: 'groundCover'; settings: GroundCoverSettings }
+  | { type: 'mineshaft'; settings: MineshaftSettings }
   | { type: 'hemp'; settings: HempFeatureSettings }
   | { type: 'pineTree'; settings: PineTreeFeatureSettings }
   | { type: 'giantConifer'; settings: GiantConiferFeatureSettings }
@@ -410,6 +415,8 @@ function createFeatures(configs: FeatureConfig[]): Feature[] {
         return new SubmergedPlantFeature(config.settings)
       case 'groundCover':
         return new GroundCoverFeature(config.settings)
+      case 'mineshaft':
+        return new MineshaftFeature(config.settings)
       case 'hemp':
         return new HempFeature(config.settings)
       case 'pineTree':
@@ -1139,8 +1146,16 @@ async function generateSubChunk(
   // per-column across biome borders like terrain height)
   const anyCaves = cavesCanAffect(biomeData, 0, CHUNK_HEIGHT - 1)
   const getCaveSample = anyCaves ? createCaveSampleGetter(biomeData, chunkWorldX, chunkWorldZ) : null
+  // Full-detail surface-layer caves also keep the padded cave mask: the cave
+  // biome dressing (Phase 4.55) lines and decorates them seamlessly
+  let caveMask: Uint8Array | null = null
   if (options.caves && !aboveTerrain && getCaveSample && cavesCanAffect(biomeData, minWorldY, maxWorldY)) {
-    getCaveCarver(seed).carveSubChunk(subChunk, getCaveSample, getHeight, minWorldY, maxWorldY)
+    if (options.lining && minWorldY >= LAYER_BOUNDARY_Y) {
+      caveMask = new Uint8Array(CAVE_MASK_SIZE * CAVE_MASK_SIZE * CAVE_MASK_SIZE)
+      getCaveCarver(seed).carveSubChunkWithMask(subChunk, getCaveSample, getHeight, minWorldY, maxWorldY, caveMask)
+    } else {
+      getCaveCarver(seed).carveSubChunk(subChunk, getCaveSample, getHeight, minWorldY, maxWorldY)
+    }
   }
 
   // Surface-open probe for features: lets tree placement (which spans
@@ -1261,6 +1276,23 @@ async function generateSubChunk(
   // lakes exist, ore veins are skipped via replaceableBlocks).
   if (options.lining && biomeConfig.caves?.enabled && biomeConfig.caves.lining) {
     applyCaveWallLining(subChunk, biomeConfig.caves, seed, chunkWorldX, chunkWorldZ, minWorldY, maxWorldY, getHeight)
+  }
+
+  // Phase 4.55: cave biomes (CaveBiomes.ts) - zones of the underground, mostly
+  // plain caves, now and again a special one lined and decorated as its kind
+  // of cave (CaveDressing.ts) - then andesite and granite blobs through all
+  // the overworld's rock
+  if (options.lining && !aboveTerrain && minWorldY >= LAYER_BOUNDARY_Y) {
+    const dressing = {
+      chunkWorldX,
+      chunkWorldZ,
+      minWorldY,
+      getHeight,
+      caveBiomeAt: (worldX: number, worldZ: number, out: CaveBiomeSample) =>
+        caveBiomeAt(worldX, worldZ, seed, getBiomeNameAt, out),
+    }
+    if (caveMask) dressCaves(subChunk, caveMask, dressing)
+    scatterRockBlobs(subChunk, dressing)
   }
 
   // Phase 4.6: the Hell cavern's dark rock ceiling - the bottom layers of the

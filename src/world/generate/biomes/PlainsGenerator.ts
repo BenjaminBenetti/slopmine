@@ -23,6 +23,7 @@ import { localToWorld } from '../../coordinates/CoordinateUtils.ts'
 import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { plainsGroundCover } from '../features/natureGroundCover.ts'
+import { overworldMineshafts } from '../features/overworldMineshafts.ts'
 
 /**
  * Grassy plains biome with gentle rolling hills and scattered oak trees.
@@ -125,6 +126,8 @@ export class PlainsGenerator extends BiomeGenerator {
         gridSize: 12,
         flowerBlockIds: [BlockIds.YELLOW_FLOWER, BlockIds.BLUE_FLOWER, BlockIds.RED_FLOWER],
       }),
+      // Caves: abandoned mineshafts (same settings in every overworld biome: networks cross borders)
+      overworldMineshafts(),
       // Nature: grass, flowers, bushes and doodads on the open ground the features above left (last)
       plainsGroundCover(),
     ],

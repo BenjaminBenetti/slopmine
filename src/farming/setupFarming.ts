@@ -132,7 +132,7 @@ export function setupFarming(deps: FarmingDeps): void {
     },
   })
 
-  for (const id of [...FORAGE_BUSHES.map((bush) => bush.ripeId), BlockIds.BERRY_BUSH_BERRIES]) {
+  for (const id of [...FORAGE_BUSHES.map((bush) => bush.ripeId), BlockIds.BERRY_BUSH_BERRIES, BlockIds.CAVE_VINES_BERRIES]) {
     blockActionRegistry.register(id, (x, y, z) => harvest(x, y, z))
   }
 }
