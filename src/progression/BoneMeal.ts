@@ -7,6 +7,7 @@ import { BlockIds } from '../world/blocks/BlockIds.ts'
 import { BlockRegistry, getBlock } from '../world/blocks/BlockRegistry.ts'
 import { isGrowableBlock } from '../world/interfaces/IBlock.ts'
 import { playSound } from '../audio/SoundHooks.ts'
+import { hasGameplayPointer } from '../player/PointerMode.ts'
 
 /**
  * Bone meal: right-click a growing crop with bone meal in hand to grow it one
@@ -77,7 +78,7 @@ export function setupBoneMeal(options: BoneMealOptions): () => void {
 
   const onMouseDown = (event: MouseEvent): void => {
     if (event.button !== 2) return
-    if (document.pointerLockElement !== domElement) return
+    if (!hasGameplayPointer()) return
 
     const toolbar = playerState.inventory.toolbar
     const stack = toolbar.getStack(toolbar.selectedIndex)

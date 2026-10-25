@@ -14,6 +14,7 @@ import { createEquipmentPanelUI } from '../../ui/EquipmentPanel.ts'
 import { createArmorDisplayUI } from '../../ui/ArmorDisplay.ts'
 import { showPlayerNotice } from '../../ui/PlayerNotice.ts'
 import { playSound } from '../../audio/SoundHooks.ts'
+import { hasGameplayPointer } from '../PointerMode.ts'
 
 /** Player-data key of worn armor + the Infernal Heart max-health bonus. */
 export const EQUIPMENT_DATA_KEY = 'equipment'
@@ -90,7 +91,7 @@ export function setupArmorSystem(options: ArmorSystemOptions): ArmorSystem {
 
   // Right-click with armor in the hand: wear it (swapping out what was worn)
   domElement.addEventListener('mousedown', (event: MouseEvent) => {
-    if (event.button !== 2 || document.pointerLockElement !== domElement) return
+    if (event.button !== 2 || !hasGameplayPointer()) return
     if (playerHealth.isDead) return
     const toolbar = playerState.inventory.toolbar
     const index = toolbar.selectedIndex

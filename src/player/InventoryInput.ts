@@ -11,6 +11,7 @@ import { createItemFromId } from '../persistence/ItemRegistry.ts'
 import type { IRecipe } from '../crafting/RecipeRegistry.ts'
 import { gameEvents } from '../events/GameEvents.ts'
 import { playSound } from '../audio/SoundHooks.ts'
+import { closeCursorMenu, hasGameplayPointer, isPointerLocked, openCursorMenu } from './PointerMode.ts'
 
 export interface InventoryInput {
   /** The crafting panel root element, for hiding when block UIs are open */
@@ -39,12 +40,11 @@ export interface InventoryInput {
    *   and routes to a block UI instead when targeting an interactable)
    * - Press Escape to close when open
    *
-   * When the inventory is open, pointer lock is released so the mouse
-   * becomes visible. Closing the inventory acquires pointer lock again
-   * so the mouse goes back to controlling the camera.
+   * While the inventory is open the mouse drives the virtual cursor
+   * (PointerMode / ui/VirtualCursor.ts) - pointer lock stays on. Losing the
+   * lock (Esc, leaving the window) closes it: the pause menu takes over.
    */
 export class InventoryInputHandler implements InventoryInput {
-  private readonly domElement: HTMLElement
   private readonly inventoryUI: InventoryUI
   private readonly inventoryState: IInventoryGridState
   private readonly toolbarUI: ToolbarUI
@@ -57,7 +57,6 @@ export class InventoryInputHandler implements InventoryInput {
   private readonly recipeBook: RecipeBookUI
   private readonly extraContainers: DragDropExtraContainer[] = []
 
-  private pointerLocked = false
   private blockUIActive = false
 
   /**
@@ -110,7 +109,6 @@ export class InventoryInputHandler implements InventoryInput {
   }
 
   constructor(
-    domElement: HTMLElement,
     inventoryUI: InventoryUI,
     inventoryState: IInventoryGridState,
     toolbarUI: ToolbarUI,
@@ -118,7 +116,6 @@ export class InventoryInputHandler implements InventoryInput {
     cameraControls: CameraControls,
     playerState: IPlayerState,
   ) {
-    this.domElement = domElement
     this.inventoryUI = inventoryUI
     this.inventoryState = inventoryState
     this.toolbarUI = toolbarUI
@@ -175,6 +172,8 @@ export class InventoryInputHandler implements InventoryInput {
       inventorySlots: inventoryUI.slots,
       craftingRoot: this.craftingPanel.root,
       craftingSlots: this.craftingPanel.craftingSlots,
+      // Ctrl+click: hotbar and inventory into the crafting grid, the grid back to the inventory (Ben: more consistent)
+      quickTransferIntoCrafting: true,
       onStateChanged: () => this.syncUI(),
       onDropOutside: (stack) => this.throwStackHandler?.(stack.item, stack.count) ?? false,
     })
@@ -231,7 +230,8 @@ export class InventoryInputHandler implements InventoryInput {
   }
 
   private onPointerLockChange = (): void => {
-    this.pointerLocked = document.pointerLockElement === this.domElement
+    // The lock is gone (Esc, the window lost focus): close, the pause menu comes up
+    if (!isPointerLocked() && this.inventoryUI.isOpen && !this.blockUIActive) this.closeInventory()
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
@@ -239,9 +239,7 @@ export class InventoryInputHandler implements InventoryInput {
     if (this.blockUIActive) return
 
     // Ignore input completely when the game is not focused on the canvas
-    // and the inventory is not open. Once the inventory is open we still
-    // want ESC to work even though pointer lock has been released.
-    if (!this.pointerLocked && !this.inventoryUI.isOpen) return
+    if (!isPointerLocked() && !this.inventoryUI.isOpen) return
 
     // Avoid conflicting with browser/system shortcuts
     if (event.altKey || event.ctrlKey || event.metaKey) return
@@ -274,11 +272,8 @@ export class InventoryInputHandler implements InventoryInput {
     this.syncUI()
     this.dragDrop.enable()
 
-    // Release pointer lock so the mouse becomes visible while
-    // the inventory is open.
-    if (document.pointerLockElement === this.domElement) {
-      document.exitPointerLock()
-    }
+    // The mouse drives the virtual cursor until the inventory closes
+    openCursorMenu('inventory')
   }
 
   private closeInventory(): void {
@@ -289,15 +284,11 @@ export class InventoryInputHandler implements InventoryInput {
     this.syncUI()
 
     this.inventoryUI.close()
-    this.cameraControls.setInputEnabled(true)
     playSound('ui.close')
 
-    // Re-acquire pointer lock so the mouse returns to controlling
-    // the camera once the inventory is closed. This must be called
-    // from an input event handler, which onKeyDown satisfies.
-    if (document.pointerLockElement !== this.domElement) {
-      this.domElement.requestPointerLock()
-    }
+    // Back to the game - unless the lock is gone (the pause menu is coming up)
+    closeCursorMenu('inventory')
+    this.cameraControls.setInputEnabled(hasGameplayPointer())
   }
 
   dispose(): void {

@@ -4,6 +4,7 @@ import type { ICraftingState } from '../crafting/CraftingState.ts'
 import { renderStackInSlot } from './SlotRenderer.ts'
 import { UI_SCALE } from './uiScale.ts'
 import { playSound } from '../audio/SoundHooks.ts'
+import { addCursorShapeProvider, type CursorContext, type CursorShape } from './VirtualCursor.ts'
 
 export interface DragDropSlotInfo {
   element: HTMLDivElement
@@ -44,9 +45,11 @@ export interface DragDropOptions {
   craftingSlots?: HTMLDivElement[]
   /**
    * Ctrl+click on a toolbar/inventory slot moves the stack into the crafting
-   * container (set when it is an external block inventory like a chest or
-   * bench). When false, ctrl+click transfers between toolbar and inventory.
-   * Crafting slots always quick-transfer back to the player either way.
+   * container while it is shown (the player's crafting grid, a chest, a
+   * bench...). When false - or the container is hidden (the recipe book
+   * replaces the crafting grid) - ctrl+click transfers between toolbar and
+   * inventory. Crafting slots always quick-transfer back to the player
+   * (inventory first, then the toolbar).
    */
   quickTransferIntoCrafting?: boolean
   /** Per-slot filter for quick transfers into the crafting container */
@@ -97,6 +100,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
   let ghostElement: HTMLDivElement | null = null
   let tooltipElement: HTMLDivElement | null = null
   let hoveredSlot: DragDropSlotInfo | null = null
+  let removeCursorShape: (() => void) | null = null
 
   // Build lookup map: element -> slot info
   const slotMap = new Map<HTMLDivElement, DragDropSlotInfo>()
@@ -469,7 +473,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
         ...slotInfosFor('inventory', inventorySlots),
         ...slotInfosFor('toolbar', toolbarSlots),
       ]
-    } else if (quickTransferIntoCrafting && craftingSlots && craftingSlots.length > 0) {
+    } else if (quickTransferIntoCrafting && craftingSlots && craftingSlots.length > 0 && (!craftingRoot || craftingRoot.getClientRects().length > 0)) {
       targets = slotInfosFor('crafting', craftingSlots)
     } else if (source.container === 'toolbar') {
       targets = slotInfosFor('inventory', inventorySlots)
@@ -541,6 +545,28 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
       return true
     }
     return false
+  }
+
+  /**
+   * The virtual cursor's shape over the slots: a fist while dragging; over an
+   * item, swap arrows when a click would move it somewhere else (Ctrl, or
+   * Shift into or out of an extra container like worn armor), else an open hand.
+   */
+  function cursorShape(context: CursorContext): CursorShape | null {
+    if (dragging) return 'grabbing'
+    const slot = findSlotUnderPoint(context.x, context.y)
+    const stack = slot ? getStackFromSlot(slot) : null
+    if (!slot || !stack) return null
+    if (context.ctrlKey) return 'transfer'
+    if (context.shiftKey) {
+      if (slot.container === 'extra') return 'transfer'
+      const takesIt = extraContainers.some((extra) => {
+        const index = extra.quickTarget?.(stack.item) ?? -1
+        return index >= 0 && extra.accepts(index, stack.item)
+      })
+      if (takesIt && (slot.container === 'toolbar' || slot.container === 'inventory')) return 'transfer'
+    }
+    return 'grab'
   }
 
   function cancelDrag(): void {
@@ -715,6 +741,7 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
       window.addEventListener('keydown', onKeyDown)
+      removeCursorShape = addCursorShapeProvider(cursorShape)
     },
 
     disable(): void {
@@ -731,6 +758,8 @@ export function createDragDropHandler(options: DragDropOptions): DragDropHandler
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('keydown', onKeyDown)
+      removeCursorShape?.()
+      removeCursorShape = null
     },
 
     addContainer(container: DragDropExtraContainer): void {

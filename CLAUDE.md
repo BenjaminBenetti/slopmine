@@ -189,7 +189,7 @@ Three.js-based rendering with optimized voxel mesh handling.
   While overridden the sky dome shows the fog colour (`Skybox.setFogOverride`)
 - `BlockOutline.ts` - Dark 2 CSS-px outline (`LineSegments2`, one draw) around the targeted block's
   interaction box; its own `BlockRaycaster` in the CRITICAL 'block-outline' task, gated like
-  mining (pointer locked and player alive - hidden while inventory/menus are open)
+  mining (`hasGameplayPointer()` and player alive - hidden while inventory/menus are open)
 - `lod/LodRenderer.ts` / `lod/LodMaterial.ts` - Far-terrain region meshes (see LOD Far Terrain below)
 - `helditem/HeldItemRenderer.ts` - First-person held item with bob/swing animations (`playAttackSwing()`:
   one full swing per melee hit); lit by the world light model (`setWorldLight(packedLight)`) and the
@@ -1032,6 +1032,7 @@ Player state, controls, and block interactions.
 | E | Interact with targeted block, else toggle inventory; closes any open overlay |
 | J | Journal (also from the inventory sidebar); J / E / Esc close it |
 | Left Click | Mine block (hold); attack an entity in front (held: re-hits whenever fully charged) |
+| Ctrl+Click (menus) | Hotbar/inventory stack into the crafting grid (or the open chest, bench, forge...); a crafting-grid stack back to the inventory (then the hotbar). With the recipe book open: hotbar ↔ inventory |
 | Right Click | Place block (aimed at grass or a flower: into its cell); pick a ripe berry/forage bush; plant seeds/carrots/potatoes on farmland; held armor: wear it (swaps the worn piece); hoe on grass/dirt: till farmland (hold to keep tilling); bone meal on a crop/bush/sapling: grow it, on bare ground: sprout grass and flowers |
 | Right Click (hold) | Consume food / potion / Infernal Heart; channel the Return Idol (3 s) |
 
@@ -2186,8 +2187,32 @@ DOM-based overlays rendered above the WebGL canvas.
   frost rim and poison pulse
 - `EquipmentPanel.ts` / `ArmorDisplay.ts` - Armor slots beside the inventory grid; armor row above the hearts
 - `ReturnIdolOverlay.ts` - Channel glow/ring and the teleport veil
-- `ModalOverlays.ts` - `registerModalOverlay(isOpen)`: an overlay that releases pointer lock (the
-  journal) registers here so losing the lock to it doesn't open the pause menu
+- `VirtualCursor.ts` - The in-game mouse of the inventory, block UIs and journal (see Pointer and menus below)
+
+**Pointer and menus** (Ben: releasing and re-taking the browser's pointer lock for every menu now and then
+left it in the wrong state - the mouse escaping the window - and the free mouse selected page text):
+- The canvas keeps pointer lock the whole time the game is played; `player/PointerMode.ts` tracks it and the open
+  cursor menus. A menu calls `openCursorMenu(id)` / `closeCursorMenu(id)` instead of exiting or requesting the
+  lock, and closes itself when the lock is lost (Esc, leaving the window) - the pause menu then opens, the ONLY
+  screen with the real mouse (`SettingsInput`: lock lost = pause menu, always).
+- Gameplay input asks `hasGameplayPointer()` (locked AND no cursor menu), never `document.pointerLockElement`
+  alone; things that must stop when a menu opens (held mining, eating, hoeing) listen to `onPointerModeChange`.
+- `ui/VirtualCursor.ts` draws a pixel-art arrow moved by the real mouse's movement while a cursor menu is up,
+  stops every real (trusted) mouse event at the window, and dispatches synthetic ones at the cursor - mousemove,
+  mouseover/out, mouseenter/leave, mousedown/up, click (on the innermost element holding press and release),
+  wheel, with the real modifier keys - so menu code uses ordinary listeners with `clientX`/`clientY` and
+  `elementFromPoint`. It also does what browsers don't do for synthetic events: focuses a clicked text field,
+  scrolls the scrollable box under the wheel, and shows `title` tooltips. No `:hover` CSS (synthetic events never
+  set it) - hover styling goes through mouseenter/mouseleave, as all the UI already does. The camera ignores
+  untrusted mousemoves. The page has `user-select: none` (index.html).
+- The cursor's shape shows what a click would do (Ben's ask): arrow, pointing hand, open hand, fist, swap arrows,
+  I-beam (pixel art in `SHAPES`, drop shadow baked in, snapped to whole device pixels). A provider registered with
+  `addCursorShapeProvider` decides first - DragDropHandler's while enabled: a fist while dragging, over an item swap
+  arrows when a click would move it elsewhere (Ctrl, or Shift into/out of worn armor), else an open hand - then the
+  element's CSS `cursor` (`pointer` = the hand: give new clickable things `cursor: pointer`; text fields = I-beam),
+  else the arrow. Re-evaluated every frame and on modifier keys, so pressing Ctrl changes it without a move.
+- The cursor moves once per rendered frame (the OS cursor is drawn by the hardware): at a high frame rate it is
+  close to the OS feel; a framerate cap below the display rate makes it visibly steppier.
 
 **Z-Index Layers** (`HudZ` in hudLayout.ts for the HUD slots):
 - 25: Toolbar (normal)
@@ -2199,6 +2224,7 @@ DOM-based overlays rendered above the WebGL canvas.
 - 41: Day/night debug button (above the inventory and pause backdrops, so it can be clicked)
 - 45: Journal book
 - 1000: Loading screen, drag ghost
+- top (2147483646-7): the virtual cursor and its `title` tooltip
 
 ---
 

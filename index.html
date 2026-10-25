@@ -13,6 +13,9 @@
       body {
         overflow: hidden;
         background: #000;
+        /* Nothing on the page is text to select (text fields still are) */
+        user-select: none;
+        -webkit-user-select: none;
       }
       canvas {
         display: block;

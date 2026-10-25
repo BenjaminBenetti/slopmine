@@ -34,6 +34,8 @@ import { PlayerState } from './player/PlayerState.ts'
 import { ToolbarInputHandler } from './player/ToolbarInput.ts'
 import { InventoryInputHandler } from './player/InventoryInput.ts'
 import { SettingsInputHandler } from './player/SettingsInput.ts'
+import { hasGameplayPointer, setPointerLockTarget } from './player/PointerMode.ts'
+import { installVirtualCursor } from './ui/VirtualCursor.ts'
 import { BlockInteraction, MAX_REACH_DISTANCE } from './player/BlockInteraction.ts'
 import { BlockPlacement } from './player/BlockPlacement.ts'
 import { ItemConsumption } from './player/ItemConsumption.ts'
@@ -235,6 +237,9 @@ function calculateBiomeMiniMap(worldX: number, worldY: number, worldZ: number, s
 }
 
 const renderer = new Renderer()
+// The canvas keeps pointer lock in the menus too (they use the virtual cursor); only the pause menu frees the mouse
+setPointerLockTarget(renderer.renderer.domElement)
+installVirtualCursor()
 
 // Graphics settings (persisted to localStorage)
 const graphicsSettings = new GraphicsSettings()
@@ -307,11 +312,9 @@ const cameraControls = new FirstPersonCameraControls(
 const toolbarInput = new ToolbarInputHandler(
 	  playerState.inventory.toolbar,
 	  toolbarUI,
-	  renderer.renderer.domElement,
 	)
 
 const inventoryInput = new InventoryInputHandler(
-  renderer.renderer.domElement,
   inventoryUI,
   playerState.inventory.inventory,
   toolbarUI,
@@ -724,7 +727,7 @@ playerHealth.setOnDeath(() => {
         // Control returns only in gameplay: an overlay still open (journal,
         // inventory, block UI, pause menu) holds the pointer and re-enables
         // input itself when it closes / the pointer is locked again
-        cameraControls.setInputEnabled(document.pointerLockElement === renderer.renderer.domElement)
+        cameraControls.setInputEnabled(hasGameplayPointer())
       }
     }
     requestAnimationFrame(holdPlayer)
@@ -1089,7 +1092,6 @@ const outlineRaycaster = new BlockRaycaster(world)
 
 // Block UI interaction handler (E-key to open forge, etc.)
 const blockInteractionHandler = new BlockInteractionHandler({
-  domElement: renderer.renderer.domElement,
   camera: renderer.camera,
   worldManager: world,
   raycaster: blockRaycaster,
@@ -1436,9 +1438,9 @@ scheduler.createTask({
   id: 'block-outline',
   priority: TaskPriority.CRITICAL,
   update: () => {
-    // Only while playing: like mining and placement, targeting needs pointer
-    // lock (released by the inventory, block UIs and the pause menu)
-    const playing = document.pointerLockElement === renderer.renderer.domElement && !playerHealth.isDead
+    // Only while playing: like mining and placement, targeting needs the
+    // gameplay pointer (not the inventory, a block UI, the journal or the pause menu)
+    const playing = hasGameplayPointer() && !playerHealth.isDead
     const hit = playing ? outlineRaycaster.castFromCamera(renderer.camera, MAX_REACH_DISTANCE) : null
     if (hit) blockOutline.show(hit.interactionBox)
     else blockOutline.hide()
@@ -1591,7 +1593,6 @@ setupProgression({
   inventoryUI,
   cameraControls,
   persistenceManager,
-  domElement: renderer.renderer.domElement,
   isLoading: () => isLoading,
   isPlayerDead: () => playerHealth.isDead,
 })
@@ -1724,7 +1725,7 @@ setupAlchemy({
     y < 0 || y >= 512 ||
     world.getSubChunk({ x: BigInt(Math.floor(x / 32)), z: BigInt(Math.floor(z / 32)), subY: Math.floor(y / 32) })?.lightReady === true,
   getRespawnPosition,
-  isInGameplay: () => document.pointerLockElement === renderer.renderer.domElement,
+  isInGameplay: hasGameplayPointer,
   resetAfterTeleport: () => {
     fallDamageTracker.reset()
     environmentalDamage.reset()
@@ -2028,7 +2029,6 @@ const gameLoop = new GameLoop({
 const settingsInput = new SettingsInputHandler({
   domElement: renderer.renderer.domElement,
   cameraControls,
-  isInventoryOpen: () => inventoryUI.isOpen || blockInteractionHandler.isOpen,
   openSettingsUI: () => settingsUI.open(),
   closeSettingsUI: () => settingsUI.close(),
   setGamePaused: (paused) => { gameLoop.paused = paused },

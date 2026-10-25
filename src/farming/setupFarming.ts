@@ -15,6 +15,7 @@ import { TaskPriority } from '../core/interfaces/ITask.ts'
 import { isFarmlandWatered } from '../world/blocks/types/farmland/FarmlandBlock.ts'
 import { playBlockSound } from '../audio/SoundHooks.ts'
 import { gameEvents } from '../events/GameEvents.ts'
+import { hasGameplayPointer, onPointerModeChange } from '../player/PointerMode.ts'
 
 /** Ground a hoe tills into farmland. */
 const TILLABLE: ReadonlySet<number> = new Set([
@@ -97,7 +98,7 @@ export function setupFarming(deps: FarmingDeps): void {
   let rightHeld = false
   let sinceTill = 0
   domElement.addEventListener('mousedown', (event) => {
-    if (event.button !== 2 || document.pointerLockElement !== domElement) return
+    if (event.button !== 2 || !hasGameplayPointer()) return
     rightHeld = true
     const hit = raycaster.castFromCamera(camera, MAX_REACH_DISTANCE)
     if (hit && harvest(hit.worldX, hit.worldY, hit.worldZ)) {
@@ -112,8 +113,8 @@ export function setupFarming(deps: FarmingDeps): void {
   window.addEventListener('mouseup', (event) => {
     if (event.button === 2) rightHeld = false
   })
-  document.addEventListener('pointerlockchange', () => {
-    if (document.pointerLockElement !== domElement) rightHeld = false
+  onPointerModeChange(() => {
+    if (!hasGameplayPointer()) rightHeld = false
   })
 
   // Holding right-click with a hoe keeps tilling whatever the crosshair moves onto
@@ -124,7 +125,7 @@ export function setupFarming(deps: FarmingDeps): void {
     enabled: true,
     execute(deltaTime: number) {
       sinceTill += deltaTime
-      if (rightHeld && sinceTill >= TILL_REPEAT && holdingHoe() && document.pointerLockElement === domElement) {
+      if (rightHeld && sinceTill >= TILL_REPEAT && holdingHoe() && hasGameplayPointer()) {
         sinceTill = 0
         till()
       }

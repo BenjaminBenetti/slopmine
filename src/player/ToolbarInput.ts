@@ -1,5 +1,6 @@
 import type { IToolbarState } from './PlayerState.ts'
 import type { ToolbarUI } from '../ui/Toolbar.ts'
+import { hasGameplayPointer } from './PointerMode.ts'
 
 export interface ToolbarInput {
   dispose(): void
@@ -10,18 +11,16 @@ export interface ToolbarInput {
  * - Mouse wheel to cycle slots (with wrapping)
  * - Number keys 1-9,0 to select specific slots
  *
- * Input is only processed while pointer lock is active on the given domElement.
+ * Input is only processed in gameplay (PointerMode: locked, no menu open).
  */
 export class ToolbarInputHandler implements ToolbarInput {
   private readonly toolbar: IToolbarState
   private readonly ui: ToolbarUI
-  private readonly domElement: HTMLElement
   private lastWheelTime = 0
 
-  constructor(toolbar: IToolbarState, ui: ToolbarUI, domElement: HTMLElement) {
+  constructor(toolbar: IToolbarState, ui: ToolbarUI) {
     this.toolbar = toolbar
     this.ui = ui
-    this.domElement = domElement
 
     // Listen on both window and document for maximum compatibility
     window.addEventListener('wheel', this.onWheel)
@@ -35,8 +34,8 @@ export class ToolbarInputHandler implements ToolbarInput {
     if (now - this.lastWheelTime < 5) return
     this.lastWheelTime = now
 
-    // Check pointer lock state directly to avoid sync issues with cached state
-    if (document.pointerLockElement !== this.domElement) return
+    // In gameplay only (not while a menu has the cursor)
+    if (!hasGameplayPointer()) return
 
     // Ignore if no meaningful vertical scroll (use threshold for floating-point safety)
     if (Math.abs(event.deltaY) < 0.01) return
@@ -56,8 +55,8 @@ export class ToolbarInputHandler implements ToolbarInput {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
-    // Check pointer lock state directly to avoid sync issues with cached state
-    if (document.pointerLockElement !== this.domElement) return
+    // In gameplay only (not while a menu has the cursor)
+    if (!hasGameplayPointer()) return
 
     // Ignore when any modifier is held to avoid conflicting with browser shortcuts
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return

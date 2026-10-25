@@ -1,10 +1,9 @@
 import type { CameraControls } from './FirstPersonCameraControls.ts'
-import { isModalOverlayOpen } from '../ui/ModalOverlays.ts'
+import { hasGameplayPointer } from './PointerMode.ts'
 
 export interface SettingsInputOptions {
   domElement: HTMLElement
   cameraControls: CameraControls
-  isInventoryOpen: () => boolean
   openSettingsUI: () => void
   closeSettingsUI: () => void
   setGamePaused: (paused: boolean) => void
@@ -15,17 +14,18 @@ export interface SettingsInput {
 }
 
 /**
- * Handles the settings menu visibility:
- * - Show settings when pointer lock is lost (and inventory is not open)
- * - Hide settings when pointer lock is acquired
+ * Handles the settings (pause) menu visibility:
+ * - Show it whenever pointer lock is lost (Esc, leaving the window)
+ * - Hide it when pointer lock is acquired
  *
- * Simple rule: no pointer lock + no inventory = show settings menu
+ * The other menus (inventory, block UIs, journal) keep the lock and use the
+ * virtual cursor (PointerMode); they close themselves when the lock goes, so
+ * the pause menu is the only screen with the real mouse.
  * Also pauses/unpauses the game loop accordingly.
  */
 export class SettingsInputHandler implements SettingsInput {
   private readonly domElement: HTMLElement
   private readonly cameraControls: CameraControls
-  private readonly isInventoryOpen: () => boolean
   private readonly openSettingsUI: () => void
   private readonly closeSettingsUI: () => void
   private readonly setGamePaused: (paused: boolean) => void
@@ -33,7 +33,6 @@ export class SettingsInputHandler implements SettingsInput {
   constructor(options: SettingsInputOptions) {
     this.domElement = options.domElement
     this.cameraControls = options.cameraControls
-    this.isInventoryOpen = options.isInventoryOpen
     this.openSettingsUI = options.openSettingsUI
     this.closeSettingsUI = options.closeSettingsUI
     this.setGamePaused = options.setGamePaused
@@ -49,19 +48,15 @@ export class SettingsInputHandler implements SettingsInput {
     const isLocked = document.pointerLockElement === this.domElement
 
     if (isLocked) {
-      // Pointer lock acquired - close settings, enable controls, unpause
+      // Pointer lock acquired - close settings, enable controls (unless a menu has the cursor), unpause
       this.closeSettingsUI()
-      this.cameraControls.setInputEnabled(true)
+      this.cameraControls.setInputEnabled(hasGameplayPointer())
       this.setGamePaused(false)
     } else {
-      // Pointer lock lost - show settings if inventory (or another modal
-      // overlay, e.g. the journal) is not open
-      if (!this.isInventoryOpen() && !isModalOverlayOpen()) {
-        this.openSettingsUI()
-        this.cameraControls.setInputEnabled(false)
-        this.setGamePaused(true)
-      }
+      // Pointer lock lost - the pause menu (any open menu closes itself)
+      this.openSettingsUI()
+      this.cameraControls.setInputEnabled(false)
+      this.setGamePaused(true)
     }
   }
 }
-

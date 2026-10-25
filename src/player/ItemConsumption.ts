@@ -3,6 +3,7 @@ import type { HeldItemRenderer } from '../renderer/helditem/HeldItemRenderer.ts'
 import type { IPlayerHealth } from './PlayerHealth.ts'
 import { isConsumable } from '../items/interfaces/IConsumable.ts'
 import { gameEvents } from '../events/GameEvents.ts'
+import { hasGameplayPointer, onPointerModeChange } from './PointerMode.ts'
 
 /**
  * Configuration for item consumption.
@@ -25,6 +26,7 @@ export class ItemConsumption {
 
   /** Whether right mouse button is currently held */
   private isMouseDown = false
+  private unsubscribePointerMode: (() => void) | null = null
   /** The held press was used up by another action (see endPress). */
   private pressEnded = false
 
@@ -62,8 +64,8 @@ export class ItemConsumption {
       return
     }
 
-    // Only process when pointer is locked (in-game)
-    if (document.pointerLockElement !== this.domElement) {
+    // Only in gameplay (not while a menu has the cursor)
+    if (!hasGameplayPointer()) {
       this.cancelConsumption()
       return
     }
@@ -160,21 +162,22 @@ export class ItemConsumption {
   private setupEventListeners(): void {
     this.domElement.addEventListener('mousedown', this.onMouseDown)
     window.addEventListener('mouseup', this.onMouseUp)
-    document.addEventListener('pointerlockchange', this.onPointerLockChange)
+    this.unsubscribePointerMode = onPointerModeChange(this.onPointerModeChange)
   }
 
   private removeEventListeners(): void {
     this.domElement.removeEventListener('mousedown', this.onMouseDown)
     window.removeEventListener('mouseup', this.onMouseUp)
-    document.removeEventListener('pointerlockchange', this.onPointerLockChange)
+    this.unsubscribePointerMode?.()
+    this.unsubscribePointerMode = null
   }
 
   private onMouseDown = (event: MouseEvent): void => {
     // Only handle right mouse button (button 2)
     if (event.button !== 2) return
 
-    // Only handle when pointer is locked
-    if (document.pointerLockElement !== this.domElement) return
+    // Only in gameplay (not while a menu has the cursor)
+    if (!hasGameplayPointer()) return
 
     this.isMouseDown = true
   }
@@ -197,9 +200,9 @@ export class ItemConsumption {
     this.cancelConsumption()
   }
 
-  private onPointerLockChange = (): void => {
-    // Cancel consumption if pointer lock is released
-    if (document.pointerLockElement !== this.domElement) {
+  private onPointerModeChange = (): void => {
+    // Cancel consumption when the pointer is released or a menu takes it
+    if (!hasGameplayPointer()) {
       this.isMouseDown = false
       this.pressEnded = false
       this.cancelConsumption()

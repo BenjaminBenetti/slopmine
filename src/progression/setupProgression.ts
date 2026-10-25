@@ -7,7 +7,7 @@ import type { CameraControls } from '../player/FirstPersonCameraControls.ts'
 import type { PersistenceManager } from '../persistence/PersistenceManager.ts'
 import { createItemFromId, isItemRegistered } from '../persistence/ItemRegistry.ts'
 import { showToast } from '../ui/Toasts.ts'
-import { registerModalOverlay } from '../ui/ModalOverlays.ts'
+import { closeCursorMenu, hasGameplayPointer, isPointerLocked, onPointerModeChange, openCursorMenu } from '../player/PointerMode.ts'
 import { JOURNAL_CHAPTERS } from './milestones.ts'
 import { ProgressionManager } from './ProgressionManager.ts'
 import { createJournalUI, type JournalUI } from './JournalUI.ts'
@@ -28,8 +28,6 @@ export interface ProgressionSetupOptions {
   inventoryUI: InventoryUI
   cameraControls: CameraControls
   persistenceManager: PersistenceManager
-  /** The game canvas (pointer lock target) */
-  domElement: HTMLElement
   isLoading(): boolean
   isPlayerDead(): boolean
 }
@@ -63,7 +61,7 @@ function writeHudPreference(enabled: boolean): void {
 }
 
 export function setupProgression(options: ProgressionSetupOptions): ProgressionSystem {
-  const { playerState, persistenceManager, domElement, inventoryUI, cameraControls } = options
+  const { playerState, persistenceManager, inventoryUI, cameraControls } = options
 
   // --- Item lookups (cached; other streams' ids may not be registered) ------
   const iconCache = new Map<string, string | undefined>()
@@ -147,35 +145,25 @@ export function setupProgression(options: ProgressionSetupOptions): ProgressionS
     },
     onCloseRequested: () => closeJournal(),
   })
-  registerModalOverlay(() => journal.isOpen)
 
   const openJournal = (): void => {
     if (journal.isOpen) return
-    openedFromGameplay = document.pointerLockElement === domElement
+    openedFromGameplay = hasGameplayPointer()
     journal.open()
     playSound('ui.open')
-    if (openedFromGameplay) {
-      cameraControls.setInputEnabled(false)
-      // The settings handler sees the open journal (ModalOverlays) and
-      // stays closed; the mouse is free to use the book
-      document.exitPointerLock()
-    }
+    // The mouse drives the virtual cursor while the book is open
+    openCursorMenu('journal')
+    if (openedFromGameplay) cameraControls.setInputEnabled(false)
   }
 
   const closeJournal = (): void => {
     if (!journal.isOpen) return
     journal.close()
     playSound('ui.close')
-    // Opened over the inventory / a block UI: back to it. From gameplay:
-    // back to the game (called from a key or click handler, so pointer lock
-    // may be requested)
-    if (openedFromGameplay && !inventoryUI.isOpen) {
-      cameraControls.setInputEnabled(true)
-      if (document.pointerLockElement !== domElement) {
-        const request = domElement.requestPointerLock() as unknown
-        if (request instanceof Promise) request.catch(() => {})
-      }
-    }
+    closeCursorMenu('journal')
+    // Opened over the inventory / a block UI: back to it. From gameplay: back
+    // to the game, unless the lock is gone (the pause menu is coming up)
+    if (openedFromGameplay && !inventoryUI.isOpen) cameraControls.setInputEnabled(hasGameplayPointer())
     openedFromGameplay = false
   }
 
@@ -197,19 +185,16 @@ export function setupProgression(options: ProgressionSetupOptions): ProgressionS
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
       if (options.isLoading() || options.isPlayerDead()) return
       // In game, or over the inventory/block UI; never over the pause menu
-      if (document.pointerLockElement !== domElement && !inventoryUI.isOpen) return
+      if (!isPointerLocked() || (!hasGameplayPointer() && !inventoryUI.isOpen)) return
       event.preventDefault()
       openJournal()
     },
     true
   )
 
-  // The journal never stays open under a re-locked pointer
-  document.addEventListener('pointerlockchange', () => {
-    if (document.pointerLockElement === domElement && journal.isOpen) {
-      journal.close()
-      openedFromGameplay = false
-    }
+  // Losing the lock (Esc, leaving the window) closes the book: the pause menu takes over
+  onPointerModeChange(() => {
+    if (!isPointerLocked() && journal.isOpen) closeJournal()
   })
 
   // Inventory sidebar button (next to the recipe book toggle)

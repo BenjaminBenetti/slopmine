@@ -1,6 +1,6 @@
 {
   "name": "slopmine",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "A Minecraft-like voxel game built with three.js",
   "type": "module",
   "scripts": {

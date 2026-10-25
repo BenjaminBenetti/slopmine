@@ -12,6 +12,7 @@ import { BlockFace } from '../world/interfaces/IBlock.ts'
 import { AABB } from '../physics/collision/AABB.ts'
 import { yawToFacing, hitFaceToFacing, setMetadataFacing, setMetadataUses3DRotation, setMetadataFlipped, BlockFacing } from '../world/blocks/BlockFacing.ts'
 import { gameEvents } from '../events/GameEvents.ts'
+import { hasGameplayPointer } from './PointerMode.ts'
 
 /** Maximum reach distance for block placement */
 const MAX_REACH_DISTANCE = 5
@@ -89,8 +90,8 @@ export class BlockPlacement {
     // Only handle right mouse button (button 2)
     if (event.button !== 2) return
 
-    // Only handle when pointer is locked
-    if (document.pointerLockElement !== this.domElement) return
+    // Only in gameplay (not while a menu has the cursor)
+    if (!hasGameplayPointer()) return
 
     // Prevent context menu
     event.preventDefault()

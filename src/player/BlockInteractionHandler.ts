@@ -13,6 +13,7 @@ import { blockActionRegistry } from '../ui/blockui/BlockActionRegistry.ts'
 import { BlockStateManager } from '../world/blockstate/BlockStateManager.ts'
 import { createDragDropHandler, type DragDropHandler } from '../ui/DragDropHandler.ts'
 import { playBlockUiSound, playSound } from '../audio/SoundHooks.ts'
+import { closeCursorMenu, hasGameplayPointer, isPointerLocked, openCursorMenu } from './PointerMode.ts'
 
 const MAX_INTERACTION_DISTANCE = 5
 
@@ -23,7 +24,6 @@ const MAX_INTERACTION_DISTANCE = 5
  * - Any open overlay (block UI or inventory): close it
  */
 export class BlockInteractionHandler {
-  private readonly domElement: HTMLElement
   private readonly camera: THREE.PerspectiveCamera
   private readonly worldManager: WorldManager
   private readonly raycaster: BlockRaycaster
@@ -47,10 +47,7 @@ export class BlockInteractionHandler {
   /** Throws a dragged-out stack into the world (set from main.ts) */
   private throwStackHandler: ((item: IItem, count: number) => boolean) | null = null
 
-  private pointerLocked = false
-
   constructor(options: {
-    domElement: HTMLElement
     camera: THREE.PerspectiveCamera
     worldManager: WorldManager
     raycaster: BlockRaycaster
@@ -63,7 +60,6 @@ export class BlockInteractionHandler {
     toolbarState: IToolbarState
     onStateChanged?: () => void
   }) {
-    this.domElement = options.domElement
     this.camera = options.camera
     this.worldManager = options.worldManager
     this.raycaster = options.raycaster
@@ -90,7 +86,8 @@ export class BlockInteractionHandler {
   }
 
   private onPointerLockChange = (): void => {
-    this.pointerLocked = document.pointerLockElement === this.domElement
+    // The lock is gone (Esc, the window lost focus): close, the pause menu comes up
+    if (!isPointerLocked() && this.isBlockUIOpen) this.closeBlockUI()
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
@@ -118,8 +115,8 @@ export class BlockInteractionHandler {
       return
     }
 
-    // Only open when pointer locked (in game)
-    if (!this.pointerLocked) return
+    // Only open in gameplay
+    if (!hasGameplayPointer()) return
 
     event.preventDefault()
 
@@ -235,10 +232,8 @@ export class BlockInteractionHandler {
     // Sync UI state
     this.syncUI()
 
-    // Release pointer lock
-    if (document.pointerLockElement === this.domElement) {
-      document.exitPointerLock()
-    }
+    // The mouse drives the virtual cursor until the block UI closes
+    openCursorMenu('block-ui')
   }
 
   private syncUI(): void {
@@ -283,12 +278,10 @@ export class BlockInteractionHandler {
 
     // Close inventory overlay
     this.inventoryUI.close()
-    this.cameraControls.setInputEnabled(true)
 
-    // Re-acquire pointer lock
-    if (document.pointerLockElement !== this.domElement) {
-      this.domElement.requestPointerLock()
-    }
+    // Back to the game - unless the lock is gone (the pause menu is coming up)
+    closeCursorMenu('block-ui')
+    this.cameraControls.setInputEnabled(hasGameplayPointer())
   }
 
   private blockUiSoundPosition(): { x: number; y: number; z: number } | null {

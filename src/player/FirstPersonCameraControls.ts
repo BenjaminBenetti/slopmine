@@ -144,7 +144,8 @@ export class FirstPersonCameraControls implements CameraControls {
   }
 
   private onMouseMove = (event: MouseEvent): void => {
-    if (!this.pointerLocked || !this.inputEnabled) return
+    // (untrusted moves are the menus' virtual cursor - ui/VirtualCursor.ts - never the camera)
+    if (!this.pointerLocked || !this.inputEnabled || !event.isTrusted) return
 
     const movementX = event.movementX || 0
     const movementY = event.movementY || 0

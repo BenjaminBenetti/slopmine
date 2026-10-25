@@ -16,6 +16,7 @@ import { FloatingTextManager } from '../ui/floating-text/index.ts'
 import { gameEvents } from '../events/GameEvents.ts'
 import { canPlayerAttack, getPlayerAttackCharge, isPlayerAttackReady, registerPlayerAttack } from '../combat/PlayerAttack.ts'
 import { playBlockSound, playSound } from '../audio/SoundHooks.ts'
+import { hasGameplayPointer, onPointerModeChange } from './PointerMode.ts'
 
 /** Maximum reach distance for block interaction */
 export const MAX_REACH_DISTANCE = 5
@@ -67,6 +68,7 @@ export class BlockInteraction {
   private readonly onItemsCollected?: () => void
 
   private isMouseDown = false
+  private unsubscribePointerMode: (() => void) | null = null
   private hasHitEntityThisClick = false
   private currentMining: IMiningProgress | null = null
 
@@ -115,8 +117,8 @@ export class BlockInteraction {
       return
     }
 
-    // Only process when pointer is locked (in-game)
-    if (document.pointerLockElement !== this.domElement) {
+    // Only in gameplay (not while a menu has the cursor)
+    if (!hasGameplayPointer()) {
       this.cancelMining()
       return
     }
@@ -183,11 +185,11 @@ export class BlockInteraction {
 
   /**
    * Check if the player is performing a mining action (left mouse down).
-   * Returns true when left mouse is down and pointer is locked,
+   * Returns true when left mouse is down in gameplay,
    * regardless of whether a block is being targeted.
    */
   isMining(): boolean {
-    return this.isMouseDown && document.pointerLockElement === this.domElement
+    return this.isMouseDown && hasGameplayPointer()
   }
 
   /**
@@ -201,21 +203,22 @@ export class BlockInteraction {
   private setupEventListeners(): void {
     this.domElement.addEventListener('mousedown', this.onMouseDown)
     window.addEventListener('mouseup', this.onMouseUp)
-    document.addEventListener('pointerlockchange', this.onPointerLockChange)
+    this.unsubscribePointerMode = onPointerModeChange(this.onPointerModeChange)
   }
 
   private removeEventListeners(): void {
     this.domElement.removeEventListener('mousedown', this.onMouseDown)
     window.removeEventListener('mouseup', this.onMouseUp)
-    document.removeEventListener('pointerlockchange', this.onPointerLockChange)
+    this.unsubscribePointerMode?.()
+    this.unsubscribePointerMode = null
   }
 
   private onMouseDown = (event: MouseEvent): void => {
     // Only handle left mouse button
     if (event.button !== 0) return
 
-    // Only handle when pointer is locked
-    if (document.pointerLockElement !== this.domElement) return
+    // Only in gameplay (not while a menu has the cursor)
+    if (!hasGameplayPointer()) return
 
     this.isMouseDown = true
   }
@@ -229,9 +232,9 @@ export class BlockInteraction {
     this.cancelMining()
   }
 
-  private onPointerLockChange = (): void => {
-    // Cancel mining if pointer lock is released
-    if (document.pointerLockElement !== this.domElement) {
+  private onPointerModeChange = (): void => {
+    // Cancel mining when the pointer is released or a menu takes it
+    if (!hasGameplayPointer()) {
       this.isMouseDown = false
       this.hasHitEntityThisClick = false
       this.cancelMining()
