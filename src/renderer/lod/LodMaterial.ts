@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { LIGHT_CURVE_DEFINES } from '../lightCurve.ts'
-import { daylightUniform, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment } from '../worldLightShader.ts'
+import { daylightUniform, cloudShadowUniforms, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment } from '../worldLightShader.ts'
 import { LOD_REGION_SLOTS } from '../../world/lod/LodTypes.ts'
 
 /**
@@ -94,6 +94,7 @@ export class LodTerrainMaterial extends THREE.MeshLambertMaterial {
     shader.uniforms.lodSlotSky = this.slotSkyUniform
     shader.uniforms.uDaylight = daylightUniform
     shader.uniforms.uLightFloor = lightFloorUniform
+    Object.assign(shader.uniforms, cloudShadowUniforms)
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${VERTEX_DECLARATIONS}`)
       .replace('#include <project_vertex>', `#include <project_vertex>\n${VERTEX_MAIN}`)

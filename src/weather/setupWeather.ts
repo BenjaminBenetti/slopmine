@@ -184,11 +184,13 @@ function layerOf(y: number): 0 | 1 {
 
 export function setupWeather(deps: WeatherSetupDeps): WeatherSystem {
   // The surface's weather systems, and the Hell cavern's own
+  const surfaceSystems = new WeatherSystems(deps.seed)
   const state = new WeatherState({
-    surface: new WeatherSystems(deps.seed),
+    surface: surfaceSystems,
     cavern: new WeatherSystems(deps.seed ^ 0x48e11),
     biomeAt: deps.biomeAt,
   })
+  const drift = { x: 0, z: 0 }
   const skyMap = new WeatherSkyMap(state)
   const skyWeather = createSkyWeather()
   deps.skybox.setWeather(skyWeather)
@@ -275,6 +277,11 @@ export function setupWeather(deps: WeatherSetupDeps): WeatherSystem {
   let loaded = false
   let clockOffset = 0
   let mapFilled = false
+  // A jump in the weather: refill the sky map and let the clouds start over
+  const resetSky = (): void => {
+    mapFilled = false
+    deps.skybox.resetClouds()
+  }
   deps.persistence
     .initialize()
     .then(() => deps.persistence.loadPlayerData<Partial<WeatherPlayerData>>(PLAYER_DATA_KEY))
@@ -285,7 +292,7 @@ export function setupWeather(deps: WeatherSetupDeps): WeatherSystem {
       if (typeof data?.clockOffset === 'number' && Number.isFinite(data.clockOffset)) {
         clockOffset = Math.max(0, data.clockOffset)
         state.snap()
-        mapFilled = false
+        resetSky()
       }
       deps.persistence.registerPlayerDataContributor(PLAYER_DATA_KEY, (): WeatherPlayerData => ({
         version: 2,
@@ -355,7 +362,7 @@ export function setupWeather(deps: WeatherSetupDeps): WeatherSystem {
       const wet = here.wet >= 0.3 || totalParticles(here) > 0.1
       const mode = wet ? 'clear' : 'rain'
       state.spell = { mode, x, z, until: state.time + SPELL_SECONDS }
-      mapFilled = false
+      resetSky()
       return mode
     },
   })
@@ -397,7 +404,7 @@ export function setupWeather(deps: WeatherSetupDeps): WeatherSystem {
       if (clockEvent && clock - lastClock > CLOCK_JUMP) {
         clockOffset += SLEEP_WEATHER_JUMP
         state.snap()
-        mapFilled = false
+        resetSky()
       }
       clockEvent = false
       lastClock = clock
@@ -429,7 +436,10 @@ export function setupWeather(deps: WeatherSetupDeps): WeatherSystem {
       skyWeather.meteors = cavern ? 0 : look.meteors
       skyWeather.heatHaze = cavern ? 0 : look.heatHaze
       setTideGlow(cavern ? 0 : look.waterGlow)
-      deps.skybox.setWind(state.windX, state.windZ, state.windStrength)
+      // The clouds travel with the weather systems
+      surfaceSystems.driftAt(t, drift)
+      skyWeather.cloudDriftX = drift.x
+      skyWeather.cloudDriftZ = drift.z
       setWorldWind(state.windX, state.windZ, state.windStrength)
 
       // Air
@@ -532,19 +542,19 @@ export function setupWeather(deps: WeatherSetupDeps): WeatherSystem {
       const at = cycle.indexOf(state.forced)
       state.forced = cycle[(at + 1) % cycle.length]
       state.snap()
-      mapFilled = false
+      resetSky()
     },
     strikeNow: (x, z) => lightning.strike(state.look, layerOf(player.position.y) === 0, x !== undefined && z !== undefined ? { x, z } : undefined),
     starNow: () => lightning.fallingStar(),
     forceWeather: (id) => {
       state.forced = id && WEATHER_DEFS.has(id) ? id : null
       state.snap()
-      mapFilled = false
+      resetSky()
     },
     advanceWeather: (seconds) => {
       clockOffset = Math.max(0, clockOffset + seconds)
       state.snap()
-      mapFilled = false
+      resetSky()
     },
     debugLabel: () => {
       const name = getWeatherDef(state.weatherId).name

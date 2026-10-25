@@ -16,6 +16,10 @@ export type TextureFiltering = (typeof TEXTURE_FILTERING_OPTIONS)[number]
 export const FOLIAGE_DETAIL_OPTIONS = ['full', 'near', 'off'] as const
 export type FoliageDetail = (typeof FOLIAGE_DETAIL_OPTIONS)[number]
 
+/** Volumetric clouds: full quality, or cheaper (lower resolution, fewer steps). */
+export const CLOUD_QUALITY_OPTIONS = ['fancy', 'fast'] as const
+export type CloudQuality = (typeof CLOUD_QUALITY_OPTIONS)[number]
+
 export interface IGraphicsSettings {
   cullingEnabled: boolean
   resolutionPreset: ResolutionPreset
@@ -29,6 +33,8 @@ export interface IGraphicsSettings {
   textureFiltering: TextureFiltering
   /** Plant detail (applied by FoliageRenderer.setFoliageDetail). */
   foliageDetail: FoliageDetail
+  /** Cloud quality (applied by VolumetricClouds.setCloudQuality). */
+  cloudQuality: CloudQuality
 }
 
 const DEFAULT_SETTINGS: IGraphicsSettings = {
@@ -41,6 +47,7 @@ const DEFAULT_SETTINGS: IGraphicsSettings = {
   lodDistance: 24,
   textureFiltering: 'crisp',
   foliageDetail: 'full',
+  cloudQuality: 'fancy',
 }
 
 export class GraphicsSettings {
@@ -131,6 +138,15 @@ export class GraphicsSettings {
     this.save()
   }
 
+  get cloudQuality(): CloudQuality {
+    return this.settings.cloudQuality
+  }
+
+  set cloudQuality(value: CloudQuality) {
+    this.settings.cloudQuality = value
+    this.save()
+  }
+
   private load(): IGraphicsSettings {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
@@ -145,6 +161,9 @@ export class GraphicsSettings {
         }
         if (!FOLIAGE_DETAIL_OPTIONS.includes(settings.foliageDetail)) {
           settings.foliageDetail = DEFAULT_SETTINGS.foliageDetail
+        }
+        if (!CLOUD_QUALITY_OPTIONS.includes(settings.cloudQuality)) {
+          settings.cloudQuality = DEFAULT_SETTINGS.cloudQuality
         }
         return settings
       }

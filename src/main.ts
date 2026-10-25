@@ -64,6 +64,7 @@ import { setTextureFiltering, whenBlockTexturesLoaded } from './renderer/Texture
 import { setWorldDaylight, setWorldLightFloor } from './renderer/worldLightShader.ts'
 import { getChunkCutoutDepthMaterial, getChunkMaterial } from './renderer/ChunkMaterial.ts'
 import { getFoliageMaterial, setFoliageDetail } from './renderer/foliage/FoliageRenderer.ts'
+import { setCloudQuality } from './renderer/clouds/VolumetricClouds.ts'
 import { advanceGlowTime } from './renderer/glowClock.ts'
 import { updateFlickerLights } from './renderer/FlickerLights.ts'
 import { warmUpWorldShaders, type WarmupMaterial } from './renderer/ShaderWarmup.ts'
@@ -241,6 +242,7 @@ renderer.setGraphicsSettings(graphicsSettings)
 // Block texture filtering (crisp/smooth), before any block texture is uploaded
 setTextureFiltering(graphicsSettings.textureFiltering)
 setFoliageDetail(graphicsSettings.foliageDetail)
+setCloudQuality(graphicsSettings.cloudQuality)
 // Volume settings (persisted to localStorage; the audio system starts near the end)
 const audioSettings = new AudioSettings()
 
@@ -499,6 +501,7 @@ const settingsUI = createSettingsMenuUI(worldGenerator.getConfig(), graphicsSett
     setTextureFiltering(mode)
   },
   onFoliageDetailChange: (detail) => setFoliageDetail(detail),
+  onCloudQualityChange: (quality) => setCloudQuality(quality),
   onSave: async () => {
     // Manual save triggered from pause menu (never before the stored state was read)
     if (!savedPlayerStateLoaded) return

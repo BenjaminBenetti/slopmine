@@ -1,6 +1,6 @@
 import type * as THREE from 'three'
 import {
-  daylightUniform, LIGHT_CURVE_DEFINES_GLSL, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
+  daylightUniform, LIGHT_CURVE_DEFINES_GLSL, cloudShadowUniforms, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
 } from './worldLightShader.ts'
 import { FLICKER_GLSL, flickerSourcesUniform } from './FlickerLights.ts'
 
@@ -71,6 +71,7 @@ function patchShader(shader: THREE.WebGLProgramParametersWithUniforms): void {
   // variant only could go missing from another.
   shader.uniforms.uDaylight = daylightUniform
   shader.uniforms.uLightFloor = lightFloorUniform
+  Object.assign(shader.uniforms, cloudShadowUniforms)
   shader.uniforms.uFlickerSources = flickerSourcesUniform
 
   if (!shader.instancingColor) return

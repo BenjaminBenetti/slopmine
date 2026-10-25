@@ -4,7 +4,7 @@ import { CRISP_TEXEL_SAMPLING_GLSL } from './crispTexelSampling.ts'
 import { buildLayerGlowTexture, DARK_GLOW_GLSL, EMISSIVE_MAX_STRENGTH_GLSL } from './EmissiveTextures.ts'
 import { LIGHT_CURVE_DEFINES } from './lightCurve.ts'
 import {
-  daylightUniform, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
+  daylightUniform, cloudShadowUniforms, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
 } from './worldLightShader.ts'
 import { CHUNK_LIGHT_SCALE } from './ChunkVertexFormat.ts'
 import { glowTimeUniform } from './glowClock.ts'
@@ -185,6 +185,7 @@ function patchChunkShader(
   shader.uniforms.uGlowTime = glowTimeUniform
   shader.uniforms.uDaylight = daylightUniform
   shader.uniforms.uLightFloor = lightFloorUniform
+  Object.assign(shader.uniforms, cloudShadowUniforms)
   shader.uniforms.uFlickerSources = flickerSourcesUniform
 
   shader.vertexShader = shader.vertexShader

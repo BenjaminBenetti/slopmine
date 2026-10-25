@@ -3,7 +3,7 @@ import { CRISP_TEXEL_SAMPLING_GLSL } from './crispTexelSampling.ts'
 import { LIGHT_CURVE_DEFINES } from './lightCurve.ts'
 import { loadBlockTexture } from './TextureLoader.ts'
 import { SKY_HORIZON_HEX } from './skybox/BiomeAtmosphere.ts'
-import { daylightUniform, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment } from './worldLightShader.ts'
+import { daylightUniform, cloudShadowUniforms, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment } from './worldLightShader.ts'
 import { DARK_GLOW_GLSL } from './EmissiveTextures.ts'
 
 /**
@@ -161,6 +161,7 @@ export function createLiquidMaterial(textureUrl: string, options: LiquidMaterial
     shader.uniforms.liquidGlitterLuma = glitterLuma
     shader.uniforms.uDaylight = daylightUniform
     shader.uniforms.uLightFloor = lightFloorUniform
+    Object.assign(shader.uniforms, cloudShadowUniforms)
     shader.uniforms.uTideGlow = tideGlowUniform
     shader.uniforms.liquidTideAmount = tideAmount
     shader.vertexShader = shader.vertexShader

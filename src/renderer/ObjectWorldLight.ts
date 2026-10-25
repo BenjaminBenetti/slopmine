@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import {
-  daylightUniform, LIGHT_CURVE_DEFINES_GLSL, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
+  daylightUniform, LIGHT_CURVE_DEFINES_GLSL, cloudShadowUniforms, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
 } from './worldLightShader.ts'
 
 /**
@@ -55,6 +55,7 @@ export function applyObjectWorldLight(material: THREE.Material): ObjectLightUnif
     shader.uniforms.uObjectLight = uniform
     shader.uniforms.uDaylight = daylightUniform
     shader.uniforms.uLightFloor = lightFloorUniform
+    Object.assign(shader.uniforms, cloudShadowUniforms)
     if (!LIT_SHADER_IDS.has(shader.shaderID)) return
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${FRAGMENT_PARS}`)

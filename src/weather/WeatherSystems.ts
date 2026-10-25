@@ -43,10 +43,12 @@ export interface WeatherAir {
   fog: number
   /** A system's character (0-1), for biomes to pick variants by (hail or thunder). */
   flavor: number
+  /** A storm's anvil overhead: the flat spread of cloud at its tops, reaching beyond its core (clouds). */
+  anvil: number
 }
 
 export function createAir(): WeatherAir {
-  return { cloud: 0, precip: 0, storm: 0, wind: BREEZE, fog: 0, flavor: 0.5 }
+  return { cloud: 0, precip: 0, storm: 0, wind: BREEZE, fog: 0, flavor: 0.5, anvil: 0 }
 }
 
 export function copyAir(out: WeatherAir, src: WeatherAir): WeatherAir {
@@ -56,6 +58,7 @@ export function copyAir(out: WeatherAir, src: WeatherAir): WeatherAir {
   out.wind = src.wind
   out.fog = src.fog
   out.flavor = src.flavor
+  out.anvil = src.anvil
   return out
 }
 
@@ -320,6 +323,7 @@ export class WeatherSystems {
     let fogKeep = 1
     let storm = 0
     let wind = 0
+    let anvil = 0
     let flavorSum = 0
     let flavorWeight = 0
     for (let n = 0; n < list.count; n++) {
@@ -336,6 +340,8 @@ export class WeatherSystems {
       const c = s.cloud * (1 - smoothstep(0.65, 1, r / s.cloudReach)) * s.strength
       if (c <= 0 && r > 1.05) continue
       cloudKeep *= 1 - c
+      // A stormy system's anvil spreads out over its whole cloud
+      if (s.storm > 0.4) anvil = Math.max(anvil, ((s.storm - 0.4) / 0.6) * (1 - smoothstep(0.85, s.cloudReach, r)) * s.strength)
       if (r < 1.05) {
         // Rain comes in bands and cells that move through the system
         const band = s.precip > 0 || s.storm > 0
@@ -357,6 +363,7 @@ export class WeatherSystems {
     out.cloud = 1 - cloudKeep
     out.precip = 1 - precipKeep
     out.storm = storm
+    out.anvil = anvil
     out.fog = 1 - fogKeep
     const breeze = BREEZE + 0.06 * noise.noise2D(t / 400, 7.7)
     // Fog lies in still air
@@ -405,7 +412,12 @@ export class WeatherSystems {
     return h >>> 0
   }
 
-  /** How far the weather has drifted by time t (blocks, x and z). */
+  /** How far the weather has drifted by time t (blocks, x and z): everything the systems carry moves with it. */
+  driftAt(t: number, out: { x: number; z: number }): { x: number; z: number } {
+    this.drift(t, out)
+    return out
+  }
+
   private drift(t: number, out: { x: number; z: number }): void {
     const steps = Math.max(0, t) / DRIFT_STEP
     const whole = Math.floor(steps)

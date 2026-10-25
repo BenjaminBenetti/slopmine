@@ -176,7 +176,8 @@ Three.js-based rendering with optimized voxel mesh handling.
 - `BlockTextureArray.ts` - One `DataArrayTexture` layer per greedy face texture (tiles across merged quads, no bleeding); minification follows the Texture Filtering setting (`TextureLoader.setTextureFiltering`: crisp `NearestMipmapLinear` default, or smooth trilinear), anisotropy 16. Magnification is LINEAR on the sampler and made pixel-crisp in the shader (`crispTexelSampling.ts`: sample at the texel centre with the true UV gradients) - never force anisotropy onto a NEAREST-magnified texture: ANGLE/D3D11 (Windows) and SwiftShader then interpolate magnified texels, which is why three.js skips it. `loadBlockTexture` textures (instanced blocks, held items) stay NEAREST-magnified and get anisotropy only where a startup probe (`anisotropyProbe.ts`) shows the backend keeps them crisp; liquid textures magnify linearly and sample through `slopCrispTexel` like the array
 - `TextureAtlas.ts` - Texture URL registry (`registerTextureUrl` / `getTextureUrls`)
 - `WorldLighting.ts` - Directional light (the sun by day, the moon by night: `setLightDirection(dir, strength)`, `getSunDirection()`), cool hemisphere/ambient fill, light tint (`setTint`: biome × time of day), shadows (PCF soft)
-- `skybox/Skybox.ts` - Colour-managed sky dome shader (gradient, sun disc/halo, moon, stars, twilight glow, drifting noise clouds); `fog: false`, pinned to the far plane, renderOrder 500 (drawn after world geometry); `getHorizonColor()` is the fog colour (time of day included)
+- `skybox/Skybox.ts` - Colour-managed sky dome shader (gradient, sun disc/halo, moon, stars, twilight glow, and the volumetric clouds composited on the sky pixels); `fog: false`, pinned to the far plane, renderOrder 500 (drawn after world geometry); `getHorizonColor()` is the fog colour (time of day included). Its `onBeforeRender` renders the clouds' passes (a nested render, frame stats and shadow-map updates kept as they are)
+- `clouds/VolumetricClouds.ts` - The sky's clouds in 3D (see Weather): ray-marched at a fraction of the screen into a half-float target with temporal accumulation (`setCloudQuality`: Settings > Clouds, fancy = half resolution / 72 steps, fast = a third / 44), shaped by the weather map's cloud channel, plus the cloud shadow map; noise volume from `cloudNoise3D.ts` (64³ tileable Perlin-Worley + Worley fBm, built in `cloudNoiseWorker.ts`)
 - `skybox/DayNightSky.ts` - Hour of day → sun/moon directions, the directional light (follows the sun, then the moon; elevation clamped), daylight and light-tint multipliers, the sky's night palette and twilight; eased to "no change" off the surface layer (Hell has no day or night)
 - `skybox/BiomeAtmosphere.ts` / `BiomeSkyboxManager.ts` - Per-biome sky/fog/light state (`SkyboxSettings` in `BiomeProperties`: colours in sRGB, light multipliers linear), blended across biome borders and eased (see Atmosphere below)
 - `DistanceFog.ts` - Owns the scene's ONE persistent `THREE.Fog` (never swapped - that recompiles every material): spherical edge fade + absolute aerial haze (1500 blocks in clear air ÷ biome `fogDensity`^1.5), so the long (LOD) view gets depth and hazy biomes tint rather than erase it, + the cavern ceiling haze (smoke under the Hell ceiling, density 0.12/block at Y 140 falling off over 8 blocks, none above it - shader constants, integrated along each view ray; the ceiling straight up is ~62% haze); `setViewDistance(blocks)` (applies immediately), `setColor`, `setDensity`, `setOverride` (underwater: haze + far)
@@ -228,6 +229,8 @@ shader patch on their registered materials, a per-material light-level uniform).
 light scales the scene lights (sun, hemisphere, ambient) times the global `daylight` uniform; block
 light is a separate warm, non-directional term; `uLightFloor` is what remains where neither reaches.
 Never fold the non-directional term into scene lights (Lambert's 1/π and N·L darken it 24-59%).
+The direct (sun/moon) term is also dimmed by cloud shadows (`slopCloudShadow`, `cloudShadowUniforms` - attach them
+wherever `uDaylight` is attached: a material whose shader has the sampler but not the uniform leaves it on texture unit 0).
 `daylight` and the floor come from the biome atmosphere every frame (`setWorldDaylight`,
 `setWorldLightFloor` in the 'skybox' task). Level 15 sky in full daylight shades exactly like the
 plain scene lights. Glowing blocks add emissive texels via `EmissiveTextures.ts`.
@@ -245,7 +248,7 @@ sky's night palette/twilight - weighted by a surface factor eased from the playe
   (light floor as an RGB multiplier of albedo, e.g. the Molten Wastes' red ember glow (0.33, 0.15, 0.1),
   the Ossuary's pale green (0.3, 0.37, 0.31)) and
   `daylight` (0-1 overcast dimming - swamp 0.62, coastal rainforest 0.82). Scalars: `fogDensity` (≥ 1,
-  shortens the absolute haze distance), `clouds.coverage` (default 0.42) and `clouds.opacity` (swamp
+  shortens the absolute haze distance), `clouds.coverage` (default 0.42; the volumetric clouds' fair-weather cover, weather adds to it) and `clouds.opacity` (swamp
   grey overcast 0.65, volcanic dark ash 0.6, desert 0.2). Use `daylight` for a biome's gloom, NOT a
   `skylightValue` cap (caps are baked per sub-chunk and draw hard 32-block light steps at region
   borders; every Hell biome uses cap 0).
@@ -1917,7 +1920,8 @@ sandstorm in the desert), events lasting ~10 minutes, clear the most common, and
 squalls needed visible debris to explain the push, and rain splashes slid along with the player (now world-anchored).
 Every surface biome has six to nine weathers, each Hell biome a calm and four cavern weathers falling from the ceiling.
 61 distinct weathers (87 biome slots: Clear, Overcast, Gale, Drizzle, Rain Shower, Thunderstorm, Meteor Shower and
-Calm are shared).
+Calm are shared). Then, after v1.7.0 ("swing for the fences"): the clouds ARE the weather systems - one volumetric
+cloud layer built from the same air, moving with it, casting shadows that drift over the land.
 
 | Biome | Weathers (fair → wild) |
 |-------|------------------------|
@@ -1981,23 +1985,38 @@ Calm are shared).
 - **Hooks** (`WeatherHooks.ts`, safe in workers - no-ops until registered): `getWeatherSnapshot()` (sound),
   `weatherAt(x, y, z)` (creatures), `isRainingOn(x, y, z)` (crops grow ×1.6, farmland wets: wet weather + sky light 15),
   `getWeatherForecast(seconds)` (Storm Glass: the systems at that time over the player), `ringSkyBell(x, z)`.
-- **Weather you can see coming** (`WeatherSkyMap.ts` + `renderer/weather/WeatherFieldShader.ts`): the map is 64² cells of
-  64 blocks around the player (world-anchored, repeat-wrapped; 40 cells a frame), each the weather there as its biome
-  presents it: texture A = haze extinction, ground fog, storm darkness, cloud cover (`COVER_BIAS/RANGE`); B = sky tint,
-  greyness (the textures are created once in WeatherFieldShader and written in place). Every view ray reads it
-  (`slopWeatherFar`, 12 log-spaced jittered steps on the land, 16 on the sky, to 2000 blocks): under the weather's
-  deck (260 blocks above the camera) rain shafts and dust walls, above it a cloud tower as tall as the weather is
-  stormy, with drifting billows; coloured from the horizon without the weather (`weatherFieldSky`, set by Skybox)
-  greyed, darkened by the storm, tinted. The first 80 blocks are the weather here (`slopWeatherNear`, the fog colour;
-  all of the ray where the map is off: Hell, caves, underwater). So a rain belt two kilometres off is a dark deck and a
-  grey curtain on the horizon, a sandstorm a brown wall swallowing the land, both growing as they come. Fair-weather
-  haze thins beyond ~600 blocks so it never hides the storms behind it. The land (DistanceFog's `fog_fragment`) and the
-  dome read the same rays; land in the edge fog reads as far as the sky behind it. The dome's clouds take cover,
-  darkness and tint from the map where the ray meets the deck (`slopWeatherReach`); a weather deck far off stays
-  solid to the horizon. **Every fogged material must carry the field's uniforms** (DistanceFog adds them to three's
-  fog uniforms; a ShaderMaterial clones `UniformsLib.fog`): a sampler left unset sits on texture unit 0, and WebGL
-  refuses to draw when another sampler type (the chunk texture array) is bound there. The textures are
-  `SharedDataTexture`s (their `clone()` returns themselves - three clones texture uniforms per material).
+- **Weather you can see coming** (`WeatherSkyMap.ts`, `renderer/weather/WeatherFieldShader.ts`, `renderer/clouds/`): the
+  map is 96² cells of 64 blocks around the player (world-anchored, repeat-wrapped, ~3 km each way; 40 cells a frame),
+  each the weather there as its biome presents it: texture A = haze extinction, ground fog, storm darkness, cloud cover;
+  B = sky tint, greyness; C = the clouds its air makes - amount added to the biome's fair cover, thickness, puffiness,
+  a storm's anvil (`writeClouds`: fair cumulus ~130 blocks, cumulus fields taller, overcast decks flat thin sheets,
+  rain decks thick and lower, storms towers to ~900 blocks with an anvil spreading over them). The textures are created
+  once in WeatherFieldShader and written in place (`SharedDataTexture`s: their `clone()` returns themselves - three
+  clones texture uniforms per material).
+  - **Volumetric clouds** (`VolumetricClouds.ts`, rendered by the Skybox just before the dome draws, composited on the
+    sky pixels): one layer from the cloud base (`WEATHER_CLOUD_BASE`, Y 430; sheets and rain decks hang up to 70
+    lower) up to the anvils (Y ~1230), ray-marched through a tileable 3D noise volume (Perlin-Worley shapes eroded by
+    Worley detail; 960-block shape tile, squashed vertically for lumpy sides) whose coverage, height profile and
+    puffiness come from map C, so every cloud belongs to a weather system - and the noise drifts with the steering wind
+    (`SkyWeather.cloudDriftX/Z` = `WeatherSystems.driftAt`), so it travels with it. Lit by the sun (until after sunset:
+    it lights the bases from below the horizon) or the moon: three light samples for self-shadowing, Henyey-Greenstein
+    silver lining, a soft multiple-scattering term, storm darkness and tint from maps A/B, lightning from inside, aerial
+    perspective. Jittered march (up to 72 steps, empty-air striding) blended over the last frame reprojected through
+    its view (history dropped on camera jumps, resizes, hidden sky, weather jumps: `Skybox.resetClouds`). Beyond the
+    map the biome's fair cumulus continue to the horizon. Skipped underground, in caves and under water.
+  - **Cloud shadows**: a 128² map of 16-block cells around the camera (world-anchored), marched through the same
+    clouds toward the light each frame; `worldLightShader`'s `slopCloudShadow` dims the direct light by it (slid along
+    the light to each fragment's height), fading out past ~800 blocks. Shadows drift over the land with the clouds.
+  - **Rain shafts and walls** (`slopWeatherFar`, 12 log-spaced jittered steps on the land, 16 on the sky, to 2000
+    blocks): rain and dust from the ground up to the cloud base, with drifting billows, coloured from the horizon
+    without the weather (`weatherFieldSky`, set by Skybox) greyed, darkened by the storm, tinted; the first 80 blocks
+    are the weather here (`slopWeatherNear`, the fog colour; all of the ray where the map is off: Hell, caves,
+    underwater). So a rain belt two kilometres off is a grey curtain falling from its cloud's base; a sandstorm a brown
+    wall swallowing the land. Fair-weather haze thins beyond ~600 blocks so it never hides the storms behind it. The
+    land (DistanceFog's `fog_fragment`) and the dome read the same rays; land in the edge fog reads as far as the sky
+    behind it. **Every fogged material must carry the field's uniforms** (DistanceFog adds them to three's fog
+    uniforms; a ShaderMaterial clones `UniformsLib.fog`): a sampler left unset sits on texture unit 0, and WebGL refuses
+    to draw when another sampler type (the chunk texture array) is bound there.
 - **Particles** (`PrecipitationRenderer.ts`, one instanced draw of 16000 quads + 1800 splashes): `ParticleKinds.ts` is the
   data (23 kinds: colours, size, streak length, fall, wind follow, flutter, alpha, glow, shape streak/flake/sparkle/chip,
   splash; `debris` (torn leaves and twigs), `gust` (faint long streaks along the wind) and `driving` (rain blown
@@ -2185,6 +2204,7 @@ User-configurable graphics options with localStorage persistence.
 | lodDistance | number | 24 | 12, 16, 20, 24, 32 chunks (only ≥ chunkDistance + 2 offered) |
 | textureFiltering | string | 'crisp' | crisp (`NearestMipmapLinear`, pixel art), smooth (trilinear); applied live via `setTextureFiltering` |
 | foliageDetail | string | 'full' | Plants: full, near (view distances ×0.55 - much less overdraw), off; applied live via `setFoliageDetail` (FoliageRenderer) |
+| cloudQuality | string | 'fancy' | Clouds: fancy (half resolution, 72 steps), fast (a third, 44 steps); applied live via `setCloudQuality` (VolumetricClouds) |
 
 **Persistence:** Auto-saves to `localStorage['slopmine:graphicsSettings']` on every change.
 

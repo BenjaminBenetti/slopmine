@@ -1,6 +1,6 @@
 import { applyUIScale } from './uiScale.ts'
 import { MAX_CHUNK_DISTANCE, type GenerationConfig } from '../world/generate/GenerationConfig.ts'
-import { LOD_DISTANCE_OPTIONS, type GraphicsSettings, type ResolutionPreset, type FramerateLimit, type ShadowMapSize, type LodDistance, type TextureFiltering, type FoliageDetail } from '../settings/index.ts'
+import { LOD_DISTANCE_OPTIONS, type GraphicsSettings, type ResolutionPreset, type FramerateLimit, type ShadowMapSize, type LodDistance, type TextureFiltering, type FoliageDetail, type CloudQuality } from '../settings/index.ts'
 import { LOD_MIN_MARGIN_CHUNKS } from '../world/lod/LodTypes.ts'
 import type { AudioSettingKey, AudioSettings } from '../audio/AudioSettings.ts'
 import { playSound } from '../audio/SoundHooks.ts'
@@ -25,6 +25,7 @@ export interface SettingsMenuUIOptions {
   /** Called when the texture filtering setting changes */
   onTextureFilteringChange?: (mode: TextureFiltering) => void
   onFoliageDetailChange?: (detail: FoliageDetail) => void
+  onCloudQualityChange?: (quality: CloudQuality) => void
   /** Called when the user clicks "Save Game" - returns a promise that resolves when save is complete */
   onSave?: () => Promise<void>
   /** Called when the user confirms "New Game" - should clear saved data and reload */
@@ -510,6 +511,37 @@ export function createSettingsMenuUI(
     foliageContainer.appendChild(foliageLabel)
     foliageContainer.appendChild(foliageSelect)
     panel.appendChild(foliageContainer)
+
+    // Clouds dropdown: full volumetric clouds, or a cheaper pass
+    const cloudContainer = document.createElement('div')
+    cloudContainer.style.cssText = foliageContainer.style.cssText
+    const cloudLabel = document.createElement('label')
+    cloudLabel.textContent = 'Clouds'
+    cloudLabel.style.fontSize = '0.9rem'
+    cloudLabel.htmlFor = 'cloud-quality-select'
+    const cloudSelect = document.createElement('select')
+    cloudSelect.id = 'cloud-quality-select'
+    cloudSelect.style.cssText = filteringSelect.style.cssText
+    const cloudOptions: { value: CloudQuality; label: string }[] = [
+      { value: 'fancy', label: 'Fancy' },
+      { value: 'fast', label: 'Fast' },
+    ]
+    for (const opt of cloudOptions) {
+      const option = document.createElement('option')
+      option.value = opt.value
+      option.textContent = opt.label
+      option.style.background = 'rgba(30, 30, 30, 1)'
+      if (opt.value === graphicsSettings.cloudQuality) option.selected = true
+      cloudSelect.appendChild(option)
+    }
+    cloudSelect.addEventListener('change', () => {
+      const quality = cloudSelect.value as CloudQuality
+      graphicsSettings.cloudQuality = quality
+      options.onCloudQualityChange?.(quality)
+    })
+    cloudContainer.appendChild(cloudLabel)
+    cloudContainer.appendChild(cloudSelect)
+    panel.appendChild(cloudContainer)
 
     // FPS Limit dropdown
     const fpsContainer = document.createElement('div')

@@ -45,7 +45,7 @@ const WIDE_RADIUS = 110
 /** How many biomes a reading blends: one ('none'), the player's view, or wide (the sky map's cells). */
 export type BiomeBlend = 'none' | 'view' | 'wide'
 /** Systems are collected this far around the player (the sky map's reach and then some), again after this long or this far. */
-export const COLLECT_RADIUS = 2600
+export const COLLECT_RADIUS = 3500
 const COLLECT_SECONDS = 1
 const COLLECT_MOVE = 300
 

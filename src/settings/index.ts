@@ -3,6 +3,7 @@ export {
   LOD_DISTANCE_OPTIONS,
   TEXTURE_FILTERING_OPTIONS,
   FOLIAGE_DETAIL_OPTIONS,
+  CLOUD_QUALITY_OPTIONS,
   type IGraphicsSettings,
   type ResolutionPreset,
   type FramerateLimit,
@@ -10,4 +11,5 @@ export {
   type LodDistance,
   type TextureFiltering,
   type FoliageDetail,
+  type CloudQuality,
 } from './GraphicsSettings.ts'

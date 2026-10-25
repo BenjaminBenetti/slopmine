@@ -1,28 +1,21 @@
 import * as THREE from 'three'
 import type { BiomeAtmosphere } from './BiomeAtmosphere.ts'
-import { DEFAULT_CLOUD_COVERAGE, SKY_ZENITH_HEX } from './BiomeAtmosphere.ts'
+import { SKY_ZENITH_HEX } from './BiomeAtmosphere.ts'
 import { createCloudNoiseTexture } from './cloudNoise.ts'
 import type { DayNightState } from './DayNightSky.ts'
-import { WEATHER_FIELD_GLSL, WEATHER_MARCH_MAX, WEATHER_TINT_SCALE, weatherFieldSky, weatherFieldUniforms } from '../weather/WeatherFieldShader.ts'
+import { WEATHER_FIELD_GLSL, WEATHER_MARCH_MAX, weatherFieldSky, weatherFieldUniforms } from '../weather/WeatherFieldShader.ts'
+import { VolumetricClouds } from '../clouds/VolumetricClouds.ts'
 
 export interface SkyboxOptions {
   skyRadius?: number
   zenithColor?: THREE.Color
   sunColor?: THREE.Color
-  /** Fraction of the sky covered by clouds (0-1) until the atmosphere sets it. */
-  cloudCoverage?: number
 }
 
-/** Cloud drift in cloud-texture UV units per second (shape and detail layers) in a calm, and added at a gale. */
-const CLOUD_DRIFT_CALM = 0.0026
-const CLOUD_DRIFT_GALE = 0.009
-/** The finer detail layer drifts this much faster than the shapes. */
-const CLOUD_DETAIL_SPEEDUP = 1.7
+/** The moon's light on the clouds (linear colour × strength), and the sun's (× its colour). */
+const MOONLIGHT = new THREE.Color(0.42, 0.5, 0.68).multiplyScalar(0.11)
+const SUN_ON_CLOUDS = 0.95
 
-
-/** The weather map stores cloud cover as (cover + COVER_BIAS) / COVER_RANGE (fair weathers thin the clouds: negative cover). */
-export const COVER_BIAS = 0.5
-export const COVER_RANGE = 1.5
 
 /**
  * The weather as the sky shows it (setupWeather, every frame). Far off it
@@ -40,6 +33,9 @@ export interface SkyWeather {
   tintAmount: number
   /** Sun disc and glow hidden (0-1). */
   sunDim: number
+  /** How far the weather has drifted (blocks): the clouds travel with their weather systems. */
+  cloudDriftX: number
+  cloudDriftZ: number
   /** Lightning: 0-1 brightness, toward flashDir (a far flash lights one side of the sky). */
   flash: number
   readonly flashDir: THREE.Vector3
@@ -51,7 +47,7 @@ export interface SkyWeather {
 
 export function createSkyWeather(): SkyWeather {
   return {
-    skyGrey: 0, dim: 1, tint: new THREE.Color(1, 1, 1), tintAmount: 0, sunDim: 0,
+    skyGrey: 0, dim: 1, tint: new THREE.Color(1, 1, 1), tintAmount: 0, sunDim: 0, cloudDriftX: 0, cloudDriftZ: 0,
     flash: 0, flashDir: new THREE.Vector3(0, 1, 0), rainbow: 0, aurora: 0, meteors: 0, heatHaze: 0,
   }
 }
@@ -92,23 +88,25 @@ export class Skybox {
   private readonly mixedUnderground = new THREE.Color()
   /** The weather (setWeather); null until the weather system starts. */
   private weather: SkyWeather | null = null
-  /** Wind for the cloud drift: direction (unit) and strength 0-1. */
-  private readonly windDir = new THREE.Vector2(0.95, 0.31)
-  private windStrength = 0.15
   private readonly baseHorizon = new THREE.Color()
+  /** The clouds: rendered just before the dome draws (skyMesh.onBeforeRender), composited by it. */
+  private readonly clouds = new VolumetricClouds()
+  private readonly screenSize = new THREE.Vector2()
+  private readonly zenithNow = new THREE.Color()
 
   constructor(atmosphere: BiomeAtmosphere, options: SkyboxOptions = {}) {
     const {
       skyRadius = 500,
       zenithColor = new THREE.Color(SKY_ZENITH_HEX),
       sunColor = new THREE.Color(1.0, 0.93, 0.8),
-      cloudCoverage = DEFAULT_CLOUD_COVERAGE,
     } = options
 
     this.atmosphere = atmosphere
     this.cloudTexture = createCloudNoiseTexture()
-    this.skyMaterial = this.createSkyMaterial(zenithColor, sunColor, cloudCoverage)
+    this.skyMaterial = this.createSkyMaterial(zenithColor, sunColor)
     this.skyMesh = new THREE.Mesh(new THREE.SphereGeometry(skyRadius, 32, 16), this.skyMaterial)
+    // The clouds render into their own target right before the dome draws (the camera's matrices are current)
+    this.skyMesh.onBeforeRender = (renderer, _scene, camera) => this.renderClouds(renderer, camera)
 
     // Render after the world's opaque geometry (renderOrder 0) but before
     // debug overlays (999+) that skip depth writes; transparent meshes still
@@ -117,11 +115,7 @@ export class Skybox {
     this.skyMesh.frustumCulled = false
   }
 
-  private createSkyMaterial(
-    zenithColor: THREE.Color,
-    sunColor: THREE.Color,
-    cloudCoverage: number
-  ): THREE.ShaderMaterial {
+  private createSkyMaterial(zenithColor: THREE.Color, sunColor: THREE.Color): THREE.ShaderMaterial {
     return new THREE.ShaderMaterial({
       uniforms: {
         zenithColor: { value: zenithColor },
@@ -135,11 +129,9 @@ export class Skybox {
         sunDirection: { value: new THREE.Vector3(0, 1, 0) },
         sunColor: { value: sunColor },
         cloudNoise: { value: this.cloudTexture },
-        cloudOffsetShapes: { value: new THREE.Vector2() },
-        cloudOffsetDetail: { value: new THREE.Vector2() },
-        cloudCoverage: { value: cloudCoverage },
-        cloudTint: { value: new THREE.Color(1, 1, 1) },
-        cloudOpacity: { value: 1.0 },
+        uClouds: { value: null },
+        uCloudsOn: { value: 0.0 },
+        uScreenSize: { value: new THREE.Vector2(1, 1) },
         moonDirection: { value: new THREE.Vector3(0, -1, 0) },
         night: { value: 0.0 },
         twilight: { value: 0.0 },
@@ -184,11 +176,9 @@ export class Skybox {
         uniform vec3 sunDirection;
         uniform vec3 sunColor;
         uniform sampler2D cloudNoise;
-        uniform vec2 cloudOffsetShapes;
-        uniform vec2 cloudOffsetDetail;
-        uniform float cloudCoverage;
-        uniform vec3 cloudTint;
-        uniform float cloudOpacity;
+        uniform sampler2D uClouds;
+        uniform float uCloudsOn;
+        uniform vec2 uScreenSize;
         uniform vec3 moonDirection;
         uniform float night;
         uniform float twilight;
@@ -224,13 +214,6 @@ export class Skybox {
           p3 = fract(p3 * vec3(0.1031, 0.1030, 0.0973));
           p3 += dot(p3, p3.yxz + 33.33);
           return fract((p3.xxy + p3.yxx) * p3.zyx);
-        }
-
-        // The weather map under the cloud seen along a view direction (cover, darkness; tint): where the
-        // ray rises into the weather's deck (WeatherFieldShader)
-        vec2 weatherDeckUv(vec3 dir) {
-          vec2 level = dir.xz / max(length(dir.xz), 1e-4);
-          return (cameraPosition.xz + level * slopWeatherReach(dir)) * slopWxParams.x;
         }
 
         // Rainbow colour across the bow (0 = inner violet .. 1 = outer red)
@@ -372,50 +355,11 @@ export class Skybox {
             color += bow * uRainbow * smoothstep(-0.01, 0.06, h) * (1.0 - night) * smoothstep(0.0, 0.12, sunDirection.y);
           }
 
-          // Clouds: a flat deck intersected by the view ray. Large drifting
-          // shapes, eroded at their thin edges by two finer noise layers.
           float flashLight = uFlash * (0.2 + 0.8 * pow(max(dot(dir, uFlashDir), 0.0), 3.0));
-          if (h > 0.0) {
-            vec2 deck = dir.xz / (h + 0.12);
-            // The weather under this patch of cloud: cover, storm darkness, its tint (ash, sand, sulphur)
-            vec2 wxUv = weatherDeckUv(dir);
-            vec4 wx = texture2D(slopWxMapA, wxUv);
-            vec3 wxTint = texture2D(slopWxMapB, wxUv).rgb * ${WEATHER_TINT_SCALE.toFixed(2)};
-            float wxCover = wx.a * ${COVER_RANGE.toFixed(2)} - ${COVER_BIAS.toFixed(2)};
-            float shapes = texture2D(cloudNoise, deck * 0.22 + cloudOffsetShapes).r;
-            float detail = texture2D(cloudNoise, deck * 1.0 + cloudOffsetDetail).g * 0.65
-                         + texture2D(cloudNoise, deck * 2.3 - cloudOffsetDetail).r * 0.35;
-            float edge = 1.0 - clamp(cloudCoverage + wxCover, 0.0, 1.0);
-            float n = shapes - (1.0 - shapes) * detail * 0.4 + 0.10;
-            // Soft edges: a wide coverage ramp, never narrower than ~2 px on
-            // screen (fwidth), so thin parts are translucent wisps rather than
-            // hard cut-outs with a stepped, posterized rim
-            float ramp = 0.18 + 1.5 * fwidth(n);
-            float density = smoothstep(edge - 0.04, edge - 0.04 + ramp, n);
-            // Fade toward the horizon (tiny, aliased features; aerial haze)
-            // A full overcast closes the gaps: one mottled sheet
-            density = mix(density, 0.97 + 0.03 * density, smoothstep(0.7, 1.0, clamp(cloudCoverage + wxCover, 0.0, 1.0)) * smoothstep(0.6, 0.95, wxCover));
-            // (a weather deck far off stays solid down to the horizon: a storm's dark mass over the land)
-            float horizonFade = mix(smoothstep(0.03, 0.28, h), smoothstep(0.0, 0.05, h), smoothstep(0.4, 0.9, wxCover));
-            density *= horizonFade * 0.96 * mix(cloudOpacity, 1.0, clamp(wxCover, 0.0, 1.0));
-            // White thin parts, grey thick bases with a little billow texture;
-            // a silver lining toward the sun, mostly on the thin parts
-            float thick = smoothstep(edge, edge + 0.32, n);
-            vec3 cloudColor = mix(vec3(1.0), vec3(0.70, 0.73, 0.80), thick * (0.8 + 0.2 * detail));
-            cloudColor *= mix(vec3(1.0), skyTint, 0.5);
-            cloudColor += sunColor * pow(sunDot, 8.0) * 0.35 * (1.0 - 0.6 * thick);
-            // Biome cloud colour: grey overcast, dark volcanic ash
-            cloudColor *= cloudTint;
-            // Weather: storm clouds darken, ash and sulphur colour them
-            cloudColor *= mix(vec3(1.0), wxTint * wxTint, clamp(wxCover, 0.0, 1.0)) * (1.0 - 0.68 * wx.b);
-            // Lightning lights the clouds from inside
-            cloudColor += vec3(0.75, 0.8, 1.0) * flashLight * (0.5 + 0.5 * thick);
-            // Dusk lights the cloud bases toward the sun; at night they are
-            // dark shapes with a silver edge near the moon
-            cloudColor += twilightColor * twilight * (0.15 + 0.6 * toward * toward) * (1.0 - 0.4 * thick);
-            cloudColor *= mix(vec3(1.0), vec3(0.03, 0.036, 0.058), night);
-            cloudColor += vec3(0.5, 0.56, 0.72) * pow(max(moonDot, 0.0), 10.0) * 0.08 * night * (1.0 - 0.6 * thick);
-            color = mix(color, cloudColor, density);
+          // Clouds: the volumetric clouds (renderer/clouds), rendered at a lower resolution this frame
+          if (uCloudsOn > 0.5) {
+            vec4 cloud = texture2D(uClouds, gl_FragCoord.xy / uScreenSize);
+            color = color * (1.0 - cloud.a) + cloud.rgb;
           }
 
           // Heat shimmer: a bright, rippling mirage band on the horizon
@@ -529,12 +473,6 @@ export class Skybox {
     this.weather = weather
   }
 
-  /** The wind the clouds drift with: direction it blows toward (x, z) and strength 0-1. */
-  setWind(dirX: number, dirZ: number, strength: number): void {
-    this.windDir.set(dirX, dirZ)
-    this.windStrength = strength
-  }
-
   /**
    * In a cave: the sky and fog darken toward this cave's fog colour as the
    * camera goes underground (`factor` 0-1, from sky light - see
@@ -569,9 +507,6 @@ export class Skybox {
     ;(u.skyTint.value as THREE.Color).copy(a.skyTint)
     ;(u.horizonColor.value as THREE.Color).copy(a.horizonColor)
     ;(u.undergroundColor.value as THREE.Color).copy(this.undergroundColor())
-    u.cloudCoverage.value = a.cloudCoverage
-    u.cloudOpacity.value = a.cloudOpacity
-    ;(u.cloudTint.value as THREE.Color).copy(a.cloudTint)
 
     const dn = this.dayNight
     if (dn) {
@@ -609,15 +544,77 @@ export class Skybox {
       u.uHeatHaze.value = w.heatHaze
     }
 
-    // Drift the cloud layers with the wind; offsets wrap (the noise tiles) to keep precision
-    const shapes = u.cloudOffsetShapes.value as THREE.Vector2
-    const detail = u.cloudOffsetDetail.value as THREE.Vector2
-    const speed = (CLOUD_DRIFT_CALM + CLOUD_DRIFT_GALE * this.windStrength) * deltaTime
-    // Deck uv grows away from the camera along the view; moving the texture by -wind moves clouds with it
-    shapes.addScaledVector(this.windDir, -speed)
-    detail.addScaledVector(this.windDir, -speed * CLOUD_DETAIL_SPEEDUP)
-    shapes.set(shapes.x % 1, shapes.y % 1)
-    detail.set(detail.x % 1, detail.y % 1)
+    this.lightClouds(dn, w)
+  }
+
+  /**
+   * What the clouds are lit by: the sun (until well after sunset - it lights
+   * their bases from below the horizon - then the moon), the sky's zenith and
+   * horizon as ambient light; the biome's fair-weather cover and cloud colour;
+   * lightning; the weather's drift.
+   */
+  private lightClouds(dn: DayNightState | null, w: SkyWeather | null): void {
+    const l = this.clouds.lighting
+    const a = this.atmosphere
+    const u = this.skyMaterial.uniforms
+    const sunDir = u.sunDirection.value as THREE.Vector3
+    const night = dn ? dn.night : 0
+    const sunUp = Math.min(1, Math.max(0, (sunDir.y + 0.12) / 0.17))
+    if (sunUp > 0 || !dn) {
+      l.lightDir.copy(sunDir)
+      l.lightColor.copy(u.sunColor.value as THREE.Color).multiplyScalar(SUN_ON_CLOUDS * (dn ? sunUp : 1))
+    } else {
+      l.lightDir.copy(dn.moonDirection)
+      l.lightColor.copy(MOONLIGHT).multiplyScalar(Math.min(1, Math.max(0, dn.moonDirection.y * 4)))
+    }
+    this.zenithNow.copy(u.zenithColor.value as THREE.Color).multiply(a.skyTint)
+    if (dn) this.zenithNow.lerp(dn.nightZenith, night)
+    // Clouds are lit by the whole sky: whiter than the zenith's blue
+    l.ambientTop.copy(this.zenithNow).multiplyScalar(0.55).addScalar(0.18 * (1 - night))
+    l.horizon.copy(a.horizonColor)
+    if (dn) {
+      l.horizon.lerp(dn.nightHorizon, night)
+      l.horizon.r += dn.twilightColor.r * dn.twilight * TWILIGHT_FOG_SHARE
+      l.horizon.g += dn.twilightColor.g * dn.twilight * TWILIGHT_FOG_SHARE
+      l.horizon.b += dn.twilightColor.b * dn.twilight * TWILIGHT_FOG_SHARE
+    }
+    l.ambientBottom.copy(l.horizon).multiplyScalar(0.5)
+    l.coverage = a.cloudCoverage
+    l.opacity = a.cloudOpacity
+    l.tint.copy(a.cloudTint).multiply(this.zenithNow.setRGB(1, 1, 1).lerp(a.skyTint, 0.5))
+    l.flash = w ? w.flash : 0
+    if (w) l.flashDir.copy(w.flashDir)
+    l.driftX = w ? w.cloudDriftX : 0
+    l.driftZ = w ? w.cloudDriftZ : 0
+  }
+
+  /** Render this frame's clouds and hand them to the dome (skyMesh.onBeforeRender). */
+  private renderClouds(renderer: THREE.WebGLRenderer, camera: THREE.Camera): void {
+    const u = this.skyMaterial.uniforms
+    // Nothing to see underground, in a cave or under water: skip the work (and start over after)
+    if (this.darkness > 0.97 || u.fogOverride.value > 0.5 || !this.clouds.ready) {
+      u.uCloudsOn.value = 0
+      this.clouds.invalidate()
+      this.clouds.hideShadows()
+      return
+    }
+    // A nested render: keep the frame's stats and shadow maps as they are
+    const autoReset = renderer.info.autoReset
+    const shadowAuto = renderer.shadowMap.autoUpdate
+    renderer.info.autoReset = false
+    renderer.shadowMap.autoUpdate = false
+    this.clouds.render(renderer, camera)
+    renderer.info.autoReset = autoReset
+    renderer.shadowMap.autoUpdate = shadowAuto
+    renderer.getDrawingBufferSize(this.screenSize)
+    ;(u.uScreenSize.value as THREE.Vector2).copy(this.screenSize)
+    u.uClouds.value = this.clouds.texture
+    u.uCloudsOn.value = this.clouds.texture ? 1 : 0
+  }
+
+  /** The clouds' history is stale (the weather jumped): they start over. */
+  resetClouds(): void {
+    this.clouds.invalidate()
   }
 
   addTo(scene: THREE.Scene): void {
@@ -632,5 +629,6 @@ export class Skybox {
     this.skyMesh.geometry.dispose()
     this.skyMaterial.dispose()
     this.cloudTexture.dispose()
+    this.clouds.dispose()
   }
 }

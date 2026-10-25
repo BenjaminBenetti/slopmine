@@ -8,7 +8,7 @@ import { windUniform } from '../WindUniform.ts'
 import { FLICKER_GLSL, flickerSourcesUniform } from '../FlickerLights.ts'
 import { getAnisotropy, getTextureFiltering, minFilterForMode, onTextureFilteringChange } from '../TextureLoader.ts'
 import {
-  daylightUniform, LIGHT_CURVE_DEFINES_GLSL, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
+  daylightUniform, LIGHT_CURVE_DEFINES_GLSL, cloudShadowUniforms, lightFloorUniform, WORLD_LIGHT_FRAGMENT_PARS, worldLightFragment,
 } from '../worldLightShader.ts'
 
 /**
@@ -239,6 +239,7 @@ export function getFoliageMaterial(): THREE.Material | null {
     uFoliageDistanceScale: distanceScaleUniform,
     uDaylight: daylightUniform,
     uLightFloor: lightFloorUniform,
+    ...cloudShadowUniforms,
     uFlickerSources: flickerSourcesUniform,
   }
   material = new THREE.MeshLambertMaterial({
