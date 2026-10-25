@@ -1,10 +1,14 @@
 /**
  * Background ambience: looping noise beds crossfaded by environment (surface
- * wind, cave hollowness, each Hell biome's air, underwater), plus sparse
- * one-shot details placed around the listener (birds, drips, lava pops, ice
- * creaks...). Beds render lazily the first time an environment needs them.
+ * wind, cave hollowness, each Hell biome's air, underwater) and by the
+ * weather (rain, hail, gales, sand, blizzards, embers, glitter, the aurora -
+ * muffled under shelter), plus sparse one-shot details placed around the
+ * listener (birds, drips, lava pops, ice creaks...). Beds render lazily the
+ * first time an environment needs them.
  */
 
+import { PARTICLE_KIND_INDEX, type ParticleKindId } from '../weather/ParticleKinds.ts'
+import type { WeatherSnapshot } from '../weather/WeatherHooks.ts'
 import type { AudioEngine } from './AudioEngine.ts'
 import { RenderPriority } from './AudioSynthClient.ts'
 import type { SoundBank } from './SoundBank.ts'
@@ -17,7 +21,12 @@ const BED_LOUDNESS = -31
 /** Crossfade time constant between environments (seconds). */
 const BED_FADE = 1.6
 
-export type BedId = 'bed.wind' | 'bed.night' | 'bed.cave' | 'bed.hell' | 'bed.ossuary' | 'bed.embergrove' | 'bed.crystal' | 'bed.cocytus' | 'bed.underwater'
+export type BedId =
+  | 'bed.wind' | 'bed.night' | 'bed.cave' | 'bed.hell' | 'bed.ossuary' | 'bed.embergrove' | 'bed.crystal' | 'bed.cocytus'
+  | 'bed.underwater'
+  // Weather (synth/weatherSounds.ts)
+  | 'bed.rain' | 'bed.rain_heavy' | 'bed.drizzle' | 'bed.hail' | 'bed.gale' | 'bed.sandstorm' | 'bed.blizzard'
+  | 'bed.embers' | 'bed.shimmer' | 'bed.aurora' | 'bed.roof'
 
 export interface AmbienceContext {
   layer: 0 | 1
@@ -31,6 +40,8 @@ export interface AmbienceContext {
   night: number
   /** The cave biome the player is in, or null above ground. */
   caveBiome: string | null
+  /** The weather where the player is (src/weather/), or null before it runs. */
+  weather: WeatherSnapshot | null
 }
 
 interface Bed {
@@ -107,6 +118,71 @@ const CAVE_DETAILS: Record<string, DetailRule[]> = {
   webbed_hollow: [{ id: 'amb.drip', every: 14 }, { id: 'amb.bonechime', every: 40 }],
 }
 
+/**
+ * Level of each weather bed at full weight, relative to the others (every bed
+ * is first calibrated to BED_LOUDNESS): rain sits under the surface wind,
+ * glitter and the aurora are barely there.
+ */
+const WEATHER_BED_LEVEL: Partial<Record<BedId, number>> = {
+  'bed.rain': 0.75,
+  'bed.rain_heavy': 0.9,
+  'bed.drizzle': 0.55,
+  'bed.hail': 0.7,
+  'bed.gale': 0.95,
+  'bed.sandstorm': 0.9,
+  'bed.blizzard': 0.95,
+  'bed.embers': 0.55,
+  'bed.shimmer': 0.4,
+  'bed.aurora': 0.3,
+  'bed.roof': 0.6,
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)))
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * Weather bed weights from the live weather. Under shelter the weather is
+ * heard faintly (30 % near the surface, 6 % deep in a cave), and rain
+ * drums on the roof instead.
+ */
+export function weatherBedWeights(ctx: AmbienceContext): Partial<Record<BedId, number>> {
+  const w = ctx.weather
+  if (!w) return {}
+  const look = w.look
+  const p = (kind: ParticleKindId): number => look.particles[PARTICLE_KIND_INDEX[kind]] ?? 0
+  const exposure = Math.min(1, Math.max(0, w.exposure))
+  const nearSurface = ctx.layer === 0 || ctx.outdoors > 0.2 || ctx.cameraY > 236
+  const floor = nearSurface ? 0.3 : 0.06
+  const open = floor + (1 - floor) * exposure
+  const wind = Math.min(1, Math.max(0, w.windStrength))
+
+  const wetFall = p('rain') + 0.9 * p('sulphur') + 0.3 * p('firefall')
+  const rainLight = Math.min(1, wetFall * 1.8)
+  const rainHeavy = smoothstep(0.55, 1, wetFall)
+  // Sandstorms and blizzards carry their own wind: the gale howl backs off under them
+  const ownWind = Math.min(1, p('sand') + p('bone') + (p('snow') + p('blacksnow')) * wind)
+  const raw: Partial<Record<BedId, number>> = {
+    'bed.rain': rainLight * (1 - 0.6 * rainHeavy) * open,
+    'bed.rain_heavy': rainHeavy * open,
+    'bed.drizzle': Math.min(1, p('drizzle') * 1.3) * open,
+    'bed.hail': Math.min(1, p('hail') * 1.8 + p('shard') * 0.6) * open,
+    'bed.gale': smoothstep(0.45, 1, wind) * (1 - 0.4 * ownWind) * open,
+    'bed.sandstorm': Math.min(1, (p('sand') + p('bone')) * 1.1) * open,
+    'bed.blizzard': Math.min(1, (p('snow') + p('blacksnow')) * wind * 1.3) * open,
+    'bed.embers': Math.min(1, (p('ember') + 1.2 * p('firefall')) * 1.3) * open,
+    'bed.shimmer': Math.min(1, 1.4 * p('glitter') + p('shard') + 0.8 * look.glowPulse) * (0.5 + 0.5 * open),
+    'bed.aurora': Math.min(1, Math.max(0, look.aurora)) * (ctx.layer === 1 ? open : 1),
+    'bed.roof': ctx.layer === 1 && nearSurface ? Math.min(1, (wetFall + p('hail')) * 1.4) * (1 - exposure) : 0,
+  }
+  const out: Partial<Record<BedId, number>> = {}
+  for (const [id, weight] of Object.entries(raw) as [BedId, number][]) {
+    if (weight > 0.002) out[id] = weight * (WEATHER_BED_LEVEL[id] ?? 1)
+  }
+  return out
+}
+
 export class AmbienceController {
   private readonly beds = new Map<BedId, Bed>()
   private readonly buffers = new Map<BedId, AudioBuffer>()
@@ -146,15 +222,22 @@ export class AmbienceController {
 
   private bedTargets(ctx: AmbienceContext): Partial<Record<BedId, number>> {
     if (ctx.submergedIn === 'water' || ctx.submergedIn === 'swamp_water') return { 'bed.underwater': 1 }
-    if (ctx.layer === 0) return HELL_BEDS[ctx.biome] ?? { 'bed.hell': 1 }
+    const targets = ctx.layer === 0 ? { ...(HELL_BEDS[ctx.biome] ?? { 'bed.hell': 1 }) } : this.surfaceTargets(ctx)
+    for (const [id, weight] of Object.entries(weatherBedWeights(ctx)) as [BedId, number][]) targets[id] = (targets[id] ?? 0) + weight
+    return targets
+  }
+
+  private surfaceTargets(ctx: AmbienceContext): Partial<Record<BedId, number>> {
     const open = ctx.outdoors
-    // Wind grows with altitude above sea level (240).
+    // Wind grows with altitude above sea level (240) and with the weather's wind.
     const height = Math.max(0, Math.min(1, (ctx.cameraY - 250) / 120))
-    // Nights are calmer: less wind, crickets in the grass (fading with altitude)
+    const windFactor = ctx.weather ? Math.min(1.4, Math.max(0.7, 1 + (ctx.weather.windStrength - 0.15) * 1.2)) : 1
+    // Nights are calmer: less wind, crickets in the grass (fading with altitude, hushed by rain)
     const night = ctx.night
-    const chorus = (NIGHT_CHORUS[ctx.biome] ?? 0.5) * (1 - 0.8 * height)
+    const rainHush = 1 - 0.75 * smoothstep(0.1, 0.4, ctx.weather?.look.wet ?? 0)
+    const chorus = (NIGHT_CHORUS[ctx.biome] ?? 0.5) * (1 - 0.8 * height) * rainHush
     const targets: Partial<Record<BedId, number>> = {
-      'bed.wind': open * (0.45 + 0.55 * height) * (1 - 0.3 * night),
+      'bed.wind': open * (0.45 + 0.55 * height) * (1 - 0.3 * night) * windFactor,
       'bed.night': open * night * chorus,
       'bed.cave': (1 - open) * (ctx.cameraY < 236 ? 0.9 : 0.4),
     }
@@ -170,10 +253,13 @@ export class AmbienceController {
     if (ctx.layer === 0) {
       rules.push(...(HELL_DETAILS[ctx.biome] ?? []))
     } else if (ctx.outdoors > 0.6) {
-      // Birds sing by day, owls call at night; swamp frogs are loudest after dark
-      if (VEGETATED.has(ctx.biome) && ctx.cameraY < 330 && ctx.night < 0.4) rules.push({ id: 'amb.bird', every: 16 })
-      if (OWL_BIOMES.has(ctx.biome) && ctx.cameraY < 330 && ctx.night > 0.6) rules.push({ id: 'amb.owl', every: 38 })
-      if (ctx.biome === 'swamp') rules.push({ id: 'amb.frog', every: ctx.night > 0.5 ? 6 : 11 })
+      // Birds sing by day, owls call at night; swamp frogs are loudest after dark.
+      // Rain and gales silence the birds and owls and hush the frogs
+      const wet = ctx.weather?.look.wet ?? 0
+      const calm = wet < 0.3 && (ctx.weather?.windStrength ?? 0) < 0.8
+      if (calm && VEGETATED.has(ctx.biome) && ctx.cameraY < 330 && ctx.night < 0.4) rules.push({ id: 'amb.bird', every: 16 })
+      if (calm && OWL_BIOMES.has(ctx.biome) && ctx.cameraY < 330 && ctx.night > 0.6) rules.push({ id: 'amb.owl', every: 38 })
+      if (ctx.biome === 'swamp') rules.push({ id: 'amb.frog', every: (ctx.night > 0.5 ? 6 : 11) * (1 + 2 * Math.min(1, wet)) })
     } else if (ctx.caveBiome && ctx.outdoors < 0.4) {
       rules.push(...(CAVE_DETAILS[ctx.caveBiome] ?? []))
     } else if (ctx.outdoors < 0.25 && ctx.cameraY < 236) {

@@ -16,6 +16,7 @@ import {
   addModes,
   addNoiseBurst,
   addSine,
+  biquad,
   normalize,
   range,
   samples,
@@ -194,6 +195,55 @@ function wingBeat(buf: Float32Array, sr: number, rng: Rng, start: number, amp: n
   addNoiseBurst(buf, sr, rng, { start: start + 0.01, duration: 0.05, amp: amp * 0.3, type: 'highpass', freq: 2500, attack: 0.008, tau: 0.012 })
 }
 
+/** A low electric rumble with crackling discharge (the Thunderhead). */
+function stormRumble(buf: Float32Array, sr: number, rng: Rng, start: number, length: number, amp: number, sparks: number): void {
+  addNoiseBurst(buf, sr, rng, { start, duration: length, amp: amp * 0.6, type: 'lowpass', freq: range(rng, 240, 300), attack: length * 0.25, tau: length * 0.45, color: 'brown' })
+  addNoiseBurst(buf, sr, rng, { start, duration: length, amp: amp * 0.7, type: 'bandpass', freq: range(rng, 300, 420), q: 1.3, attack: length * 0.3, tau: length * 0.4, color: 'pink' })
+  addGrains(buf, sr, rng, { count: sparks, start: start + length * 0.1, spread: length * 0.8, grainLength: [0.0006, 0.003], freq: [2500, 8000], q: 1.5, amp: amp * 0.5, bunch: 1 })
+}
+
+/** A whirl of sand: a band of hiss sweeping up and back down, grains peppering it. */
+function sandWhirl(buf: Float32Array, sr: number, rng: Rng, start: number, length: number, amp: number, from: number, peak: number): void {
+  const n = Math.ceil(length * sr)
+  const env = swellEnv(length * 0.35, length, length * 0.45)
+  const i0 = Math.floor(start * sr)
+  const noise = new Float32Array(n)
+  for (let i = 0; i < n; i++) noise[i] = rng() * 2 - 1
+  const band = noise.slice()
+  // Rises to `peak` at 40 % of the length, falls back toward `from`
+  biquad(band, sr, 'bandpass', (t) => {
+    const u = t / length
+    return u < 0.4 ? from + (peak - from) * (u / 0.4) : peak + (from - peak) * ((u - 0.4) / 0.6)
+  }, 1.6)
+  for (let i = 0; i < n && i0 + i < buf.length; i++) buf[i0 + i] += band[i] * env(i / sr) * amp
+  addGrains(buf, sr, rng, { count: Math.round(length * 90), start, spread: length, grainLength: [0.0005, 0.002], freq: [3000, 8000], q: 1.2, amp: amp * 0.35, bunch: 1 })
+}
+
+/** A breathy, pitchless whisper: noise through moving vowel formants. */
+function whisper(buf: Float32Array, sr: number, rng: Rng, start: number, length: number, amp: number): void {
+  voice(buf, sr, rng, {
+    start,
+    length,
+    f0: () => range(rng, 180, 220),
+    formants: [
+      [(t) => 500 + 300 * Math.sin((Math.PI * t) / length), 6, 1],
+      [(t) => 1500 + 600 * Math.sin((Math.PI * t) / length + 1), 8, 0.5],
+      [2800, 9, 0.25],
+    ],
+    amp,
+    breath: 4,
+    attack: length * 0.3,
+    release: length * 0.5,
+  })
+}
+
+/** Faint glassy chimes with no fixed pitch (the marsh wisp's glimmer). */
+function glimmer(buf: Float32Array, sr: number, rng: Rng, start: number, count: number, spread: number, amp: number): void {
+  for (let i = 0; i < count; i++) {
+    addDenseModes(buf, sr, rng, { count: 3, lo: 1800, hi: 5200, decay: range(rng, 0.12, 0.3), amp: amp * range(rng, 0.5, 1), start: start + rng() * spread, tilt: 0.4 })
+  }
+}
+
 export type VoiceArchetype =
   | 'cow'
   | 'pig'
@@ -232,6 +282,10 @@ export type VoiceArchetype =
   | 'angler'
   | 'bellow'
   | 'burrower'
+  | 'storm'
+  | 'whirl'
+  | 'bigcat'
+  | 'will'
 
 export const CREATURE_VOICES: Record<VoiceArchetype, Partial<Record<VoiceKind, Recipe>>> = {
   cow: {
@@ -552,6 +606,85 @@ export const CREATURE_VOICES: Record<VoiceArchetype, Partial<Record<VoiceKind, R
       const b = samples(1.0, sr)
       addNoiseBurst(b, sr, rng, { duration: 0.85, amp: 0.6, type: 'lowpass', freq: 260, attack: 0.15, tau: 0.35, color: 'brown' })
       voice(b, sr, rng, { length: 0.7, f0: (t) => 60 + 6 * Math.sin(t * 7), formants: GROWL, amp: 0.45, rough: 0.8, roughRate: 22, breath: 0.3, attack: 0.15 })
+      return finish(b, sr)
+    },
+  },
+  // Weather creatures
+  storm: {
+    // The Thunderhead: a cloud that rumbles and crackles
+    hurt: (rng, sr) => {
+      const b = samples(0.6, sr)
+      addNoiseBurst(b, sr, rng, { duration: 0.08, amp: 0.7, type: 'highpass', freq: 2600, attack: 0.0005, tau: 0.02 })
+      stormRumble(b, sr, rng, 0.02, 0.45, 0.8, 18)
+      return finish(b, sr)
+    },
+    death: (rng, sr) => {
+      const b = samples(2.0, sr)
+      addNoiseBurst(b, sr, rng, { duration: 0.15, amp: 0.9, type: 'highpass', freq: 1800, attack: 0.0005, tau: 0.04 })
+      stormRumble(b, sr, rng, 0.03, 1.7, 0.9, 70)
+      return finish(b, sr)
+    },
+    idle: (rng, sr) => {
+      const b = samples(1.3, sr)
+      stormRumble(b, sr, rng, 0, range(rng, 0.9, 1.2), 0.8, 22)
+      return finish(b, sr)
+    },
+  },
+  whirl: {
+    // The Dune Dervish: a whirlwind of sand
+    hurt: (rng, sr) => {
+      const b = samples(0.55, sr)
+      addGrains(b, sr, rng, { count: 40, spread: 0.3, grainLength: [0.0008, 0.004], freq: [1500, 6000], amp: 0.6, bunch: 1.5 })
+      sandWhirl(b, sr, rng, 0, 0.45, 0.7, 900, 2600)
+      return finish(b, sr)
+    },
+    death: (rng, sr) => {
+      const b = samples(1.8, sr)
+      sandWhirl(b, sr, rng, 0, 0.8, 0.8, 1500, 3500)
+      // The column collapses: a long pour of sand settling
+      addGrains(b, sr, rng, { count: 160, start: 0.4, spread: 1.3, grainLength: [0.001, 0.005], freq: [800, 5000], amp: 0.45, bunch: 1.4 })
+      addNoiseBurst(b, sr, rng, { start: 0.45, duration: 1.2, amp: 0.3, type: 'lowpass', freq: 900, attack: 0.05, tau: 0.4, color: 'pink' })
+      return finish(b, sr)
+    },
+    idle: (rng, sr) => {
+      const b = samples(1.4, sr)
+      sandWhirl(b, sr, rng, 0, range(rng, 1.0, 1.3), 0.8, range(rng, 700, 1000), range(rng, 2200, 3200))
+      return finish(b, sr)
+    },
+  },
+  bigcat: {
+    // The Whiteout Stalker: a big cat's growls, snarls and chuffs
+    hurt: call({ length: [0.22, 0.3], pitch: [230, 260, 170], formants: AH, rough: 0.55, roughRate: 30, breath: 0.35 }),
+    death: call({ length: [0.9, 1.1], pitch: [190, 160, 75], formants: GROWL, rough: 0.6, roughRate: 24, breath: 0.4 }),
+    idle: (rng, sr) => {
+      const b = samples(1.3, sr)
+      voice(b, sr, rng, { length: 0.75, f0: (t) => 68 + 8 * Math.sin(t * 6), formants: GROWL, amp: 0.7, rough: 0.75, roughRate: 26, breath: 0.35, attack: 0.12 })
+      // Two breathy chuffs after the growl
+      for (let i = 0; i < 2; i++) {
+        addNoiseBurst(b, sr, rng, { start: 0.85 + i * range(rng, 0.14, 0.2), duration: 0.09, amp: 0.45, type: 'bandpass', freq: range(rng, 500, 700), q: 0.9, attack: 0.008, tau: 0.025, color: 'pink' })
+      }
+      return finish(b, sr)
+    },
+  },
+  will: {
+    // The marsh wisp: an airy whisper and a faint glassy glimmer
+    hurt: (rng, sr) => {
+      const b = samples(0.5, sr)
+      whisper(b, sr, rng, 0, 0.3, 0.8)
+      addNoiseBurst(b, sr, rng, { duration: 0.2, amp: 0.25, type: 'highpass', freq: 4000, attack: 0.005, tau: 0.05 })
+      glimmer(b, sr, rng, 0.02, 3, 0.15, 0.3)
+      return finish(b, sr)
+    },
+    death: (rng, sr) => {
+      const b = samples(1.6, sr)
+      whisper(b, sr, rng, 0, 1.0, 0.7)
+      glimmer(b, sr, rng, 0.05, 12, 1.1, 0.35)
+      return finish(b, sr)
+    },
+    idle: (rng, sr) => {
+      const b = samples(1.4, sr)
+      whisper(b, sr, rng, 0, range(rng, 0.8, 1.1), 0.7)
+      glimmer(b, sr, rng, 0.2, 3, 0.9, 0.25)
       return finish(b, sr)
     },
   },

@@ -6,6 +6,7 @@ import { BlockTags } from '../world/blocks/tags/BlockTags.ts'
 import { getCellLiquidFamily } from '../world/liquid/cellLiquid.ts'
 import { LAYER_BOUNDARY_Y } from '../world/generate/GenerationConfig.ts'
 import { worldClock } from '../daynight/WorldClock.ts'
+import { calmWeather } from '../weather/calmWeather.ts'
 import { ButterflySwarm } from './ButterflySwarm.ts'
 
 /**
@@ -91,7 +92,8 @@ export function setupButterflies(deps: ButterflySetupDeps): void {
       const onSurface = feet.y >= LAYER_BOUNDARY_Y ? 1 : 0
       surfaceWeight += (onSurface - surfaceWeight) * Math.min(1, dt * 2)
       const pixelScale = deps.getViewportHeight() / (2 * Math.tan(THREE.MathUtils.degToRad(deps.camera.fov) / 2))
-      swarm.update(dt, (1 - worldClock.nightAmount) * surfaceWeight, feet, pixelScale)
+      // They shelter from anything falling or blowing (weather)
+      swarm.update(dt, (1 - worldClock.nightAmount) * surfaceWeight * calmWeather(), feet, pixelScale)
     },
   })
 }

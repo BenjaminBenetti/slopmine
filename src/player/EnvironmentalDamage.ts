@@ -177,6 +177,11 @@ export class EnvironmentalDamage {
   }
 
   /** Clear all environmental state (call on respawn/teleport). */
+  /** Put out the burn (rain). Standing in lava keeps it going. */
+  extinguish(): void {
+    if (!this.inLava) this.burnTicksRemaining = 0
+  }
+
   reset(): void {
     this.inLava = false
     this.lavaTickAccumulator = 0

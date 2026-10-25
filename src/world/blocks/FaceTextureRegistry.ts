@@ -382,6 +382,12 @@ export enum TextureId {
   TELESCOPE = 643,
   STONE_BUST = 644,
   TANKARDS = 645,
+  // Weather
+  LIGHTNING_ROD = 646,           // decor models (coloured materials, no texture layer)
+  WEATHERVANE = 647,
+  FULGURITE = 648,               // fulgurite.webp
+  STAR_FRAGMENT = 649,           // decor models (coloured materials, no texture layer)
+  STAR_LANTERN = 650,
 }
 
 // Cache for the face texture map

@@ -53,6 +53,8 @@ const OVERRIDES: Record<string, BlockSoundMaterial> = {
   // Points of interest: stone that names moss or wood, cloth, glass, metal and wooden decorations
   mossy_ancient_bricks: 'stone', petrified_wood: 'stone', bedroll: 'cloth', book_pile: 'cloth', silk_cocoon: 'cloth',
   dusty_bottles: 'glass', minecart: 'metal', telescope: 'metal', tankards: 'wood',
+  // Weather: the copper rod and vane, sand fused to glass, the fallen star's rock
+  lightning_rod: 'metal', weathervane: 'metal', fulgurite: 'glass', star_fragment: 'stone',
 }
 
 /**

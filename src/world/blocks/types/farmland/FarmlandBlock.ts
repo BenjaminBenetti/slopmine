@@ -12,6 +12,7 @@ import { getCellLiquidFamily } from '../../../liquid/cellLiquid.ts'
 import farmlandTexUrl from './assets/farmland.webp'
 import farmlandMoistTexUrl from './assets/farmland_moist.webp'
 import dirtTexUrl from '../grass/assets/dirt.webp'
+import { isRainingOn } from '../../../../weather/WeatherHooks.ts'
 
 registerTextureUrl(TextureId.FARMLAND_TOP, farmlandTexUrl)
 registerTextureUrl(TextureId.FARMLAND_MOIST_TOP, farmlandMoistTexUrl)
@@ -79,7 +80,8 @@ export class FarmlandBlock extends SolidBlock {
   }
 
   onRandomTick(world: IWorld, x: bigint, y: bigint, z: bigint): void {
-    const watered = isFarmlandWatered(world, x, y, z)
+    // Water nearby, or rain falling on it (weather: src/weather)
+    const watered = isFarmlandWatered(world, x, y, z) || isRainingOn(Number(x), Number(y) + 1, Number(z))
     if (watered !== this.moist) {
       world.setBlock(x, y, z, watered ? BlockIds.FARMLAND_MOIST : BlockIds.FARMLAND)
     }

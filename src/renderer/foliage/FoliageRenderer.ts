@@ -4,6 +4,7 @@ import { dilateTransparentTexels, loadImage, writeImageLayer } from '../BlockTex
 import { CRISP_TEXEL_SAMPLING_GLSL } from '../crispTexelSampling.ts'
 import { DARK_GLOW_GLSL } from '../EmissiveTextures.ts'
 import { glowTimeUniform } from '../glowClock.ts'
+import { windUniform } from '../WindUniform.ts'
 import { FLICKER_GLSL, flickerSourcesUniform } from '../FlickerLights.ts'
 import { getAnisotropy, getTextureFiltering, minFilterForMode, onTextureFilteringChange } from '../TextureLoader.ts'
 import {
@@ -150,6 +151,7 @@ attribute vec2 aGlow;
 attribute vec2 aLight;
 attribute float aVertShape;
 uniform float uFoliageTime;
+uniform vec3 uWind;
 uniform float uFoliageDistanceScale;
 varying vec3 vFoliageUv;
 varying vec2 vFoliageLight;
@@ -182,9 +184,13 @@ vec3 transformed = aOffset;
   // Wind: the tips sway, the base stays put; slow gusts roll across the land
   vec3 foliageWorld = ( modelMatrix * vec4( aOffset, 1.0 ) ).xyz;
   float t = uFoliageTime;
-  float gust = 0.55 + 0.45 * sin( t * 0.5 + foliageWorld.x * 0.05 + foliageWorld.z * 0.035 );
+  // The weather's wind (WindUniform.ts): stronger winds bend further, flutter faster and lean downwind
+  float windStrength = uWind.z;
+  float gust = 0.55 + 0.45 * sin( t * ( 0.5 + windStrength ) + foliageWorld.x * 0.05 + foliageWorld.z * 0.035 );
   float phase = foliageWorld.x * 0.73 + foliageWorld.z * 0.51;
-  vec2 wind = vec2( sin( t * 1.8 + phase ), sin( t * 1.37 + phase * 1.31 + 1.7 ) ) * 0.08 + vec2( 0.05, 0.02 );
+  float flutterRate = 1.0 + 1.6 * windStrength;
+  vec2 wind = vec2( sin( t * 1.8 * flutterRate + phase ), sin( t * 1.37 * flutterRate + phase * 1.31 + 1.7 ) ) * ( 0.06 + 0.1 * windStrength )
+    + uWind.xy * ( 0.03 + 0.2 * windStrength );
   // Free ends sway: the tips of standing plants, the bottoms of hanging ones
   float freeEnd = mix( position.y, 1.0 - position.y, hang );
   float bend = aShape.y * freeEnd * freeEnd * ( 1.0 - aVertShape );
@@ -229,6 +235,7 @@ export function getFoliageMaterial(): THREE.Material | null {
     uFoliageSprites: { value: textures.sprites },
     uFoliageGlow: { value: textures.glow },
     uFoliageTime: glowTimeUniform,
+    uWind: windUniform,
     uFoliageDistanceScale: distanceScaleUniform,
     uDaylight: daylightUniform,
     uLightFloor: lightFloorUniform,

@@ -53,6 +53,8 @@ export interface LiquidMaterialOptions {
   readonly emissiveIntensity?: number
   /** Emissive intensity swing (+/-) for a slow glow pulse, e.g. lava. */
   readonly emissivePulse?: number
+  /** Glows blue after dark in a glowing tide (weather: setTideGlow). */
+  readonly tideGlow?: boolean
 }
 
 interface AnimatedLiquid {
@@ -112,8 +114,18 @@ diffuseColor.a = mix( diffuseColor.a, 1.0, liquidFresnel );
 // and stronger at glancing angles (a longer path through the lit water)
 float liquidGlowPath = min( 2.2, 1.0 / max( abs( dot( normal, normalize( vViewPosition ) ) ), 0.01 ) );
 outgoingLight += vLiquidGlow * liquidGlowPath * ( 0.6 + 0.8 * specularStrength ) * slopDarkGlow( slopLightShape( vColor.r * 15.0 ) * uDaylight );
+// Glowing tide (weather): plankton light the water blue after dark, brightest on the ripples
+outgoingLight += vec3( 0.08, 0.5, 1.0 ) * ( uTideGlow * liquidTideAmount ) * ( 0.12 + 0.4 * specularStrength * specularStrength ) * liquidGlowPath * slopDarkGlow( slopLightShape( vColor.r * 15.0 ) * uDaylight );
 #include <opaque_fragment>
 `
+
+/** The glowing tide (weather): 0-1, shared by every liquid program (families without tideGlow ignore it). */
+const tideGlowUniform = { value: 0 }
+
+/** Set how strongly water glows after dark (the coast's Glowing Tide weather). */
+export function setTideGlow(amount: number): void {
+  tideGlowUniform.value = amount
+}
 
 /** Create a family's shared liquid material and register it for animation. */
 export function createLiquidMaterial(textureUrl: string, options: LiquidMaterialOptions): THREE.MeshPhongMaterial {
@@ -141,6 +153,7 @@ export function createLiquidMaterial(textureUrl: string, options: LiquidMaterial
 
   const reflectivity = { value: options.reflectivity }
   const glitterLuma = { value: new THREE.Vector2(...(options.glitterLuma ?? DEFAULT_GLITTER_LUMA)) }
+  const tideAmount = { value: options.tideGlow ? 1 : 0 }
   material.defines = { ...LIGHT_CURVE_DEFINES }
   material.onBeforeCompile = (shader) => {
     shader.uniforms.liquidReflectColor = reflectionColor
@@ -148,11 +161,13 @@ export function createLiquidMaterial(textureUrl: string, options: LiquidMaterial
     shader.uniforms.liquidGlitterLuma = glitterLuma
     shader.uniforms.uDaylight = daylightUniform
     shader.uniforms.uLightFloor = lightFloorUniform
+    shader.uniforms.uTideGlow = tideGlowUniform
+    shader.uniforms.liquidTideAmount = tideAmount
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\nattribute vec3 ${LIQUID_GLOW_ATTRIBUTE};\nvarying vec3 vLiquidGlow;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\nvLiquidGlow = ${LIQUID_GLOW_ATTRIBUTE};`)
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform vec3 liquidReflectColor;\nuniform float liquidReflectivity;\nuniform vec2 liquidGlitterLuma;\nvarying vec3 vLiquidGlow;\n${WORLD_LIGHT_FRAGMENT_PARS}\n${DARK_GLOW_GLSL}`)
+      .replace('#include <common>', `#include <common>\nuniform vec3 liquidReflectColor;\nuniform float liquidReflectivity;\nuniform vec2 liquidGlitterLuma;\nuniform float uTideGlow;\nuniform float liquidTideAmount;\nvarying vec3 vLiquidGlow;\n${WORLD_LIGHT_FRAGMENT_PARS}\n${DARK_GLOW_GLSL}`)
       .replace('#include <map_pars_fragment>', `#include <map_pars_fragment>\n${CRISP_TEXEL_SAMPLING_GLSL}`)
       .replace('#include <map_fragment>', CRISP_MAP)
       .replace('#include <color_fragment>', '')
@@ -161,7 +176,7 @@ export function createLiquidMaterial(textureUrl: string, options: LiquidMaterial
       .replace('#include <opaque_fragment>', FRESNEL_REFLECTION)
   }
   // Same patch for every liquid; per-family values live in uniforms
-  material.customProgramCacheKey = () => 'liquid-surface-v4'
+  material.customProgramCacheKey = () => 'liquid-surface-v5'
 
   animatedLiquids.push({ material, texture, options })
   return material

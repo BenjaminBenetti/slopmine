@@ -31,6 +31,7 @@ import { SoundBank } from './SoundBank.ts'
 import { setSoundSink, type SoundPosition, type SoundSink } from './SoundHooks.ts'
 import { getDeferredSoundIds, getPreloadSoundIds, getSoundDef, getVoiceSoundIds, type SoundId } from './SoundLibrary.ts'
 import { worldClock } from '../daynight/WorldClock.ts'
+import { getWeatherSnapshot } from '../weather/WeatherHooks.ts'
 
 export interface AudioDeps {
   scheduler: TaskScheduler
@@ -57,6 +58,14 @@ const IDLE_RADIUS = 24
 /** Seconds between any two creature idle calls. */
 const IDLE_SPACING = 2.5
 const LAYER_BOUNDARY_Y = 128
+/** Thunder travels this many blocks per second (slower than real sound: a strike 180 blocks off rumbles in 2 s later). */
+const THUNDER_SPEED = 90
+/** Strikes within this many blocks crack overhead; further ones only roll. */
+const NEAR_THUNDER = 40
+/** Strikes within this many blocks are heard sizzling at the spot as they hit. */
+const ZAP_RANGE = 24
+/** A distant flash's rumble comes at most this many seconds after it. */
+const MAX_FLASH_DELAY = 10
 
 export function setupAudio(deps: AudioDeps): void {
   const engine = AudioEngine.create(deps.settings)
@@ -155,6 +164,26 @@ export function setupAudio(deps: AudioDeps): void {
     if (BUFF_EFFECTS.has(e.effectId)) bank.play('magic.buff', null)
     else if (DEBUFF_EFFECTS.has(e.effectId)) bank.play('magic.debuff', null)
   })
+  // Weather: thunder after its lightning (sound is slower than light), falling stars
+  const delayed: { at: number; id: SoundId; position: SoundPosition | null; volume: number }[] = []
+  const playLater = (delay: number, id: SoundId, position: SoundPosition | null, volume = 1): void => {
+    delayed.push({ at: clock + delay, id, position, volume })
+  }
+  gameEvents.on('lightning-strike', (e) => {
+    const at = { x: e.x, y: e.y, z: e.z }
+    if (e.distance <= ZAP_RANGE) bank.play('weather.zap', at)
+    playLater(e.distance / THUNDER_SPEED, e.distance <= NEAR_THUNDER ? 'weather.thunder.near' : 'weather.thunder.far', at)
+  })
+  gameEvents.on('lightning-flash', (e) => {
+    const volume = Math.min(0.7, Math.max(0.25, 0.9 - e.distance / 2000))
+    playLater(Math.min(MAX_FLASH_DELAY, e.distance / THUNDER_SPEED), 'weather.thunder.far', null, volume)
+  })
+  gameEvents.on('star-fallen', (e) => {
+    const at = { x: e.x, y: e.y + 0.5, z: e.z }
+    bank.play('weather.meteor.whoosh', at)
+    playLater(1.0 + e.distance / THUNDER_SPEED, 'weather.meteor.impact', at)
+  })
+
   gameEvents.on('dungeon-entered', () => bank.play('dungeon.enter', null))
   gameEvents.on('guardian-defeated', () => bank.play('boss.defeat', null))
 
@@ -225,6 +254,13 @@ export function setupAudio(deps: AudioDeps): void {
 
       tracker.update(dt)
 
+      for (let i = delayed.length - 1; i >= 0; i--) {
+        const due = delayed[i]
+        if (clock < due.at) continue
+        delayed.splice(i, 1)
+        bank.play(due.id, due.position, { volume: due.volume })
+      }
+
       envTimer += dt
       if (envTimer >= 0.25) {
         const envDt = envTimer
@@ -233,7 +269,19 @@ export function setupAudio(deps: AudioDeps): void {
         const outdoors = layer === 0 ? 0 : deps.getSkyLight(listenerPos.x, listenerPos.y, listenerPos.z) / 15
         engine.setMuffled(submergedIn === 'lava' ? 0.75 : submergedIn ? 1 : 0)
         engine.setEnvironmentReverb(submergedIn ? 0.15 : layer === 0 ? (inDungeon ? 0.42 : 0.32) : 0.05 + 0.27 * (1 - outdoors))
-        ambience.update({ layer, biome, outdoors, cameraY: listenerPos.y, submergedIn, night: layer === 1 ? worldClock.nightAmount : 0, caveBiome: deps.getCaveBiome() }, envDt)
+        ambience.update(
+          {
+            layer,
+            biome,
+            outdoors,
+            cameraY: listenerPos.y,
+            submergedIn,
+            night: layer === 1 ? worldClock.nightAmount : 0,
+            caveBiome: deps.getCaveBiome(),
+            weather: getWeatherSnapshot(),
+          },
+          envDt,
+        )
       }
 
       dungeonTimer -= dt

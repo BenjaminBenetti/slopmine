@@ -163,6 +163,15 @@ export const SOUND_DEFS = defs({
   'night.slash': { variants: 3, loudness: -30, bus: 'sfx', pitch: 1.5, maxVoices: 3, minInterval: 0.08, ref: 3, range: 24 },
   'night.vanish': { variants: 2, loudness: -33, bus: 'sfx', pitch: 2, maxVoices: 3, ref: 3, range: 24 },
 
+  // Weather (beds are handled by AmbienceController). Thunder carries low end
+  // but stays under the explosion (-19); the far roll sits well under it
+  'weather.thunder.near': { variants: 3, loudness: -23, bus: 'sfx', pitch: 1.5, volume: 1, maxVoices: 2, ref: 30, range: 260 },
+  'weather.thunder.far': { variants: 3, loudness: -32, bus: 'sfx', pitch: 2, volume: 1.5, maxVoices: 2, ref: 80, range: 900 },
+  'weather.zap': { variants: 3, loudness: -27, bus: 'sfx', pitch: 2, maxVoices: 3, minInterval: 0.05, ref: 5, range: 48 },
+  'weather.meteor.whoosh': { variants: 2, loudness: -28, bus: 'sfx', pitch: 1.5, maxVoices: 2, ref: 20, range: 220 },
+  'weather.meteor.impact': { variants: 2, loudness: -26, bus: 'sfx', pitch: 1, maxVoices: 2, ref: 10, range: 160 },
+  'weather.skybell': { variants: 1, loudness: -27, bus: 'sfx', maxVoices: 1, minInterval: 1, ref: 8, range: 80 },
+
   // Ambience details (beds are handled by AmbienceController)
   'amb.drip': { variants: 4, loudness: -33, bus: 'ambience', pitch: 2, maxVoices: 2, ref: 3, range: 30 },
   'amb.lavapop': { variants: 3, loudness: -31, bus: 'ambience', pitch: 2, maxVoices: 2, ref: 3, range: 30 },

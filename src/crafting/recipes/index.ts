@@ -76,6 +76,9 @@ import { caveHandRecipes, caveBrewingRecipes } from './CaveRecipes.ts'
 import { poiHandRecipes } from './PoiRecipes.ts'
 import { forageHandRecipes, forageSmeltingRecipes, forageBrewingRecipes } from './ForageRecipes.ts'
 
+// Weather
+import { weatherHandRecipes, weatherSmeltingRecipes, weatherBrewingRecipes } from './WeatherRecipes.ts'
+
 /**
  * Register all default recipes.
  * Call this at startup.
@@ -262,6 +265,11 @@ export function registerDefaultRecipes(): void {
   for (const recipe of forageHandRecipes) recipeRegistry.register(recipe)
   for (const recipe of forageSmeltingRecipes) smeltingRegistry.register(recipe)
   for (const recipe of forageBrewingRecipes) brewingRegistry.register(recipe)
+
+  // Weather: lightning rods, the Storm Glass and Sky Bell, stardust, weather creatures' drops
+  for (const recipe of weatherHandRecipes) recipeRegistry.register(recipe)
+  for (const recipe of weatherSmeltingRecipes) smeltingRegistry.register(recipe)
+  for (const recipe of weatherBrewingRecipes) brewingRegistry.register(recipe)
 }
 
 export { woodToolRecipes } from './WoodToolRecipes.ts'

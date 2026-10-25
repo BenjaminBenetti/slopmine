@@ -29,7 +29,7 @@ const LOOP_SECONDS = 16
 const CROSSFADE_SECONDS = 2
 
 /** Smoothed random walk in 0..1 (gusts, slow swells). */
-function slowWalk(rng: Rng, n: number, sr: number, rate: number): Float32Array {
+export function slowWalk(rng: Rng, n: number, sr: number, rate: number): Float32Array {
   const out = new Float32Array(n)
   const k = 1 - Math.exp((-2 * Math.PI * rate) / sr)
   let target = rng()
@@ -47,7 +47,7 @@ function slowWalk(rng: Rng, n: number, sr: number, rate: number): Float32Array {
 }
 
 /** Render `make(n)` with extra length and crossfade the tail into the head so it loops seamlessly. */
-function loop(sr: number, make: (n: number) => Float32Array): Float32Array {
+export function loop(sr: number, make: (n: number) => Float32Array): Float32Array {
   const n = Math.ceil(LOOP_SECONDS * sr)
   const x = Math.ceil(CROSSFADE_SECONDS * sr)
   const raw = make(n + x)

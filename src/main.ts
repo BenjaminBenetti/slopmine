@@ -11,6 +11,8 @@ import { BiomeAtmosphere } from './renderer/skybox/BiomeAtmosphere.ts'
 import { DayNightSky } from './renderer/skybox/DayNightSky.ts'
 import { worldClock } from './daynight/WorldClock.ts'
 import { setupDayNight } from './daynight/setupDayNight.ts'
+import { setupWeather } from './weather/setupWeather.ts'
+import { weatherAtmosphere } from './weather/WeatherAtmosphere.ts'
 import { setupNightfall } from './nightfall/setupNightfall.ts'
 import { setupFireflies } from './fireflies/setupFireflies.ts'
 import { setupButterflies } from './butterflies/setupButterflies.ts'
@@ -970,6 +972,7 @@ skybox.addTo(renderer.scene)
 const dayNightSky = new DayNightSky()
 skybox.setDayNight(dayNightSky.state)
 const worldLightTint = new THREE.Color()
+const weatherLightFloor = new THREE.Color()
 /** 1 on the surface layer, 0 in Hell (eased): Hell has no day and night. */
 let surfaceWeight = 1
 
@@ -1395,7 +1398,8 @@ scheduler.createTask({
     surfaceWeight += (onSurface - surfaceWeight) * Math.min(1, dt * 2)
     dayNightSky.update(worldClock.hour, surfaceWeight, atmosphere.horizonColor)
     const dayNight = dayNightSky.state
-    lighting.setLightDirection(dayNight.lightDirection, dayNight.lightIntensity)
+    // The weather (src/weather, written by its 'weather' task) softens and tints the light on top
+    lighting.setLightDirection(dayNight.lightDirection, dayNight.lightIntensity * weatherAtmosphere.sunLight)
     // In a cave: its own fog colour, haze and light floor, by how far underground
     caveAtmosphere.update(dt, renderer.camera.position)
     skybox.setCaveUnderground(caveAtmosphere.weight, caveAtmosphere.fogColor)
@@ -1408,11 +1412,14 @@ scheduler.createTask({
     distanceFog.update()
     // Submerged: the sky is beyond the liquid fog too
     skybox.setFogOverride(distanceFog.getOverrideColor())
-    worldLightTint.copy(atmosphere.lightTint).multiply(dayNight.lightTint)
+    worldLightTint.copy(atmosphere.lightTint).multiply(dayNight.lightTint).multiply(weatherAtmosphere.lightTint)
     lighting.setTint(worldLightTint)
     heldItemRenderer.setLightTint(worldLightTint)
-    setWorldLightFloor(caveAtmosphere.blendLightFloor(atmosphere.lightFloor))
-    setWorldDaylight(atmosphere.daylight * dayNight.daylight)
+    // Lightning flashes the sky light, and the cavern's glow where there is no sky
+    weatherLightFloor.copy(caveAtmosphere.blendLightFloor(atmosphere.lightFloor)).multiply(weatherAtmosphere.floorTint)
+    if (surfaceWeight < 0.5) weatherLightFloor.multiplyScalar(1 + weatherAtmosphere.flash * 1.5)
+    setWorldLightFloor(weatherLightFloor)
+    setWorldDaylight(atmosphere.daylight * dayNight.daylight * weatherAtmosphere.daylight + weatherAtmosphere.flash * 0.7 * surfaceWeight)
     // Liquids reflect the horizon sky at glancing angles; drift their textures
     setLiquidReflectionColor(fogColor)
     updateLiquidMaterials(dt)
@@ -1643,6 +1650,58 @@ const armorSystem = setupArmorSystem({
   domElement: renderer.renderer.domElement,
   persistenceManager,
 })
+
+// Weather: each biome's weathers drifting across the world - sky, fog, light, wind, rain and snow,
+// lightning, weather creatures, hazards (see src/weather); before 'alchemy-effects' like 'skybox'
+const weatherSystem = setupWeather({
+  scheduler,
+  scene: renderer.scene,
+  seed: worldGenerator.getConfig().seed,
+  camera: renderer.camera,
+  player: {
+    position: playerBody.position,
+    isDead: () => playerHealth.isDead,
+    isBurning: () => environmentalDamage.isBurning,
+    extinguish: () => environmentalDamage.extinguish(),
+    ignite: (ticks) => environmentalDamage.ignite(ticks),
+    hurt: (amount, source) => {
+      const damage = applyDamageModifiers(amount, source)
+      if (damage > 0) playerHealth.takeEnvironmentalDamage(damage)
+    },
+    applyEffect: (id, seconds, level) => playerEffects.apply(id, seconds, level),
+    push: (x, z, dt) => {
+      // Only into open air (a gale never shoves the player into a wall)
+      const nx = playerBody.position.x + x * dt
+      const nz = playerBody.position.z + z * dt
+      const y = playerBody.position.y
+      for (const [cx, cz] of [[0.35, 0.35], [-0.35, 0.35], [0.35, -0.35], [-0.35, -0.35]]) {
+        if (physicsWorld.isSolidBlock(Math.floor(nx + cx), Math.floor(y + 0.2), Math.floor(nz + cz))) return
+        if (physicsWorld.isSolidBlock(Math.floor(nx + cx), Math.floor(y + 1.2), Math.floor(nz + cz))) return
+      }
+      playerBody.position.x = nx
+      playerBody.position.z = nz
+    },
+    heldItemId: () => {
+      const toolbar = playerState.inventory.toolbar
+      return toolbar.getStack(toolbar.selectedIndex)?.item.id ?? null
+    },
+  },
+  world: {
+    getColumnFast: (cx, cz) => world.getColumnFast(cx, cz),
+    getBlockIdFast: (x, y, z) => world.getBlockIdFast(x, y, z),
+    setBlock: (x, y, z, id) => world.setBlock(BigInt(x), BigInt(y), BigInt(z), id),
+    skyLightAt: (x, y, z) => world.getPackedLightFast(x, y, z) >> 4,
+  },
+  biomeAt: (x, z, layer) =>
+    biomeRegistry.selectBiomeForLayer(Math.floor(x / (BIOME_REGION_SIZE * 32)), Math.floor(z / (BIOME_REGION_SIZE * 32)), worldGenerator.getConfig().seed, layer),
+  skybox,
+  distanceFog,
+  persistence: persistenceManager,
+  entitySpawner,
+  entityManager,
+  viewportHeight: () => renderer.getRenderResolution().height,
+})
+fpsCounter.setWeatherToggle(weatherSystem.cycleForcedWeather, weatherSystem.debugLabel)
 
 // Alchemy (status effect potions, Return Idol)
 // Status effect behaviours + HUD, potions' effects, Return Idol (after the

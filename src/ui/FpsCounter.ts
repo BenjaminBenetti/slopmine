@@ -87,6 +87,8 @@ export interface FpsCounterUI {
   setBiomeMiniMap(data: BiomeMiniMapData): void
   /** Show the day/night debug button, which calls `toggle` (setupDayNight's toggleNight). */
   setDayNightToggle(toggle: () => void): void
+  /** Show the weather debug button beside it: `cycle` steps the forced weather, `label` names the current one. */
+  setWeatherToggle(cycle: () => void, label: () => string): void
   show(): void
   hide(): void
   toggle(): boolean
@@ -185,6 +187,34 @@ export function createFpsCounterUI(
       timeButton.textContent = label
     }
   }
+  // Weather debug button, left of the day/night one: steps through the biome's weathers
+  const weatherButton = timeButton.cloneNode() as HTMLButtonElement
+  weatherButton.title = 'Debug: force each of this biome\'s weathers in turn, then back to the real weather.'
+  parent.appendChild(weatherButton)
+  let weatherCycle: (() => void) | null = null
+  let weatherLabel: (() => string) | null = null
+  let lastWeatherLabel = ''
+  const refreshWeatherButton = (): void => {
+    const show = weatherCycle !== null && isVisible && el.style.display !== 'none'
+    weatherButton.style.display = show ? '' : 'none'
+    if (!show) return
+    weatherButton.style.right = `${10 + timeButton.offsetWidth + 6}px`
+    const label = weatherLabel?.() ?? ''
+    if (label !== lastWeatherLabel) {
+      lastWeatherLabel = label
+      weatherButton.textContent = label
+    }
+  }
+  weatherButton.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+  })
+  weatherButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    weatherCycle?.()
+    refreshWeatherButton()
+  })
+
   // mousedown: no focus, and no backdrop/drag handler sees it
   timeButton.addEventListener('mousedown', (event) => {
     event.preventDefault()
@@ -226,9 +256,11 @@ export function createFpsCounterUI(
   /** Tell the HUD layout where the stats and mini-map are (nothing while hidden). */
   const reportObstacles = (): void => {
     refreshTimeButton()
+    refreshWeatherButton()
     const statsShown = isVisible && el.style.display !== 'none'
     setHudObstacle('debug-stats', statsShown ? el.getBoundingClientRect() : null)
     setHudObstacle('debug-time', timeButton.style.display !== 'none' ? timeButton.getBoundingClientRect() : null)
+    setHudObstacle('debug-weather', weatherButton.style.display !== 'none' ? weatherButton.getBoundingClientRect() : null)
     setHudObstacle('debug-minimap', isVisible ? miniMapEl.getBoundingClientRect() : null)
   }
 
@@ -279,6 +311,7 @@ export function createFpsCounterUI(
           liquidColumnsProcessedTotal = 0
           return
         }
+        refreshWeatherButton()
         const fps = Math.round((frameCount / elapsedTime) * 1000)
         const ups = Math.round((totalTickCount / elapsedTime) * 1000)
         const avgFrameTime = elapsedTime / frameCount
@@ -470,6 +503,12 @@ export function createFpsCounterUI(
       reportObstacles()
     },
 
+    setWeatherToggle(cycle: () => void, label: () => string): void {
+      weatherCycle = cycle
+      weatherLabel = label
+      reportObstacles()
+    },
+
     show(): void {
       el.style.visibility = ''
       miniMapEl.style.display = 'block'
@@ -509,9 +548,13 @@ export function createFpsCounterUI(
       if (timeButton.parentElement === parent) {
         parent.removeChild(timeButton)
       }
+      if (weatherButton.parentElement === parent) {
+        parent.removeChild(weatherButton)
+      }
       unsubscribeLayout()
       setHudObstacle('debug-stats', null)
       setHudObstacle('debug-time', null)
+      setHudObstacle('debug-weather', null)
       setHudObstacle('debug-minimap', null)
     },
   }

@@ -52,7 +52,8 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
 9. **Gameplay wiring** (the "Depth expansion wiring" block near the end of main.ts, after the core
    tasks): chest loot tables, the 'status-effects' and 'biome-entry-events' tasks, then
    `setupProgression`, `setupBoneMeal`/`setupFarming`/`setupSlimeBounce`, `setupPlayerCombat`, `setupHellforge`,
-   `setupArmorSystem`, `setupAlchemy` (must come after 'skybox': ember sight post-adjusts the light
+   `setupArmorSystem`, `setupWeather` (each biome's weathers, sky/fog/light modifiers, particles,
+   lightning, weather creatures - see Weather), `setupAlchemy` (must come after 'skybox': ember sight post-adjusts the light
    floor it sets), `setupDungeons`, one `setup<Biome>()` per Hell biome (castle tier loot tables,
    garrisons, guardian, procedural locator), `setupDayNight` + `setupNightfall` + `setupFireflies` +
    `setupButterflies` (the overworld clock, night creatures, beds, fireflies, daytime insects - see
@@ -124,7 +125,7 @@ The core module provides the game loop infrastructure and frame budget managemen
   (atmosphere/sky/fog/daylight, block outline, underwater overlay - skipped frames showed stale sky),
   plus cheap gameplay clocks/polls: 'status-effects', 'alchemy-effects', 'player-combat',
   'progression', 'slime-bounce', 'biome-entry-events', 'dungeons-hud', 'dungeons' (spawners),
-  'world-clock' (time of day), 'fireflies', 'butterflies', 'farming-input', 'caves', 'points-of-interest', 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
+  'world-clock' (time of day), 'fireflies', 'butterflies', 'farming-input', 'caves', 'points-of-interest', 'weather' (the live weather, sky/fog/light modifiers, particles, lightning), 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
   tasks registered late starve for long stretches while the world streams, so anything the player must see promptly
   (a timer, a toast, a boss bar) goes here - and stays cheap (poll at 1-2 Hz inside the task)
 - `HIGH` (1): Can defer briefly - the budgeted light queue ('lighting')
@@ -152,6 +153,10 @@ Three.js-based rendering with optimized voxel mesh handling.
 - `ChunkMaterial.ts` / `ChunkVertexFormat.ts` - Chunk materials (Lambert + onBeforeCompile: texture array, smooth light, AO) and the 12-byte packed vertex format
 - `lightCurve.ts` / `worldLightShader.ts` - THE light level → brightness curve (Minecraft-style, 1 level per block; block light uses a brighter `BLOCK_LIGHT_LIFT` and a warm `BLOCK_LIGHT_COLOR`) and its shader side, with the global `daylight` and `uLightFloor` (light where no sky/block light reaches) uniforms; every world-lit surface (chunks, instanced blocks, liquids, LOD, held item, entities) uses them
 - `EmissiveTextures.ts` - Registry of glowing block textures (`registerEmissiveTexture(textureId, {strength, threshold, map?, darkOnly?, pulse?})`, called next to `registerTextureUrl`): the chunk shader adds their hot texels as emissive light, so emitters (magma, ember veins, mushroom caps) glow in the dark instead of being lit only by their neighbours. `map` (a glow map URL: per-texel glow colour, black = none; loaded into `BlockTextureArray.glowMaps`) replaces the threshold and the texel colour, so a surface can look plain by day and glow in another colour; `darkOnly` (bioluminescence) fades the glow out wherever sky light × daylight is bright (`DARK_GLOW_GLSL`: none in the open by day, full at night, in shade and underground) - glowmoss is muddy grass by day. `pulse: { amount, grain }` makes the glow live: `speck` twinkles every texel on its own clock (glowmoss spores), `wave` drifts slow waves of light across the surface (the swamp's glowing mushroom caps); the clock is `glowTimeUniform` (`glowClock.ts`, `advanceGlowTime` in the 'skybox' task; swaying water plants share it). Emissive textures only glow on greedy faces; an instanced (non-greedy) glowing block uses a Lambert `emissiveMap` instead (glowcap, glimmercap, lumen fern, glowkelp, lanternweed: a separate `*_glow.webp` holds only the parts that glow, in their glow colour), made dark-only with `makeGlowDarkOnly` (`BioluminescentMaterial.ts`, instanced draws only). Material patches like it test `shader.instancing` / `shader.instancingColor` in JS, never `#ifdef USE_INSTANCING_COLOR` in a fragment shader (three defines that in the vertex shader only), and compose `customProgramCacheKey` with the one already set (two blocks with equal material parameters but different patches would otherwise share one program); GLSL `smoothstep` needs edge0 < edge1 (write `1.0 - smoothstep(a, b, x)` for a falling edge - reversed edges are undefined)
+- `weather/` - `PrecipitationRenderer.ts` (all weather particles + splashes, one draw each), `ShelterMap.ts` (where weather
+  stops: per-column floor texture), `WeatherFieldShader.ts` (weather far off along every view ray: rain walls, storm
+  towers, sandstorms - the dome and every fogged material), `LightningRenderer.ts` (bolts, falling stars),
+  `AuroraCurtains.ts` (Hell's prism lights); `WindUniform.ts` - the shared wind (foliage sway, weathervane); see Weather
 - `GlowHaloMaterial.ts` - `createGlowHalo({ color, radius, lift })`: soft additive spheres of light around glowing water plants (see Liquids, glow halos)
 - `FlameMaterial.ts` - `createFlameMaterial(planes)` + `buildFlamePlanes`: animated pixel-art fire (procedural, no texture) on crossed cutout planes - licking tongues, a red-to-pale-yellow ramp, sparks; `glowTimeUniform` clock, seeded per instance by position; the campfire's flames. Its mesh part sets `castShadow: false` (`IBlockMeshPart`: a multi-mesh block's part may also carry a material array)
 - `FlickerLights.ts` - firelight (campfires: `properties.lightFlicker`): the chunk mesh drawing such a block registers it (`setFlickerLights`, dropped on dispose); each frame `updateFlickerLights` (the 'skybox' task) gives the 6 nearest the camera a slot with their own slow swing (±11% - Ben found ±22% at twice the speed flashy), and the world light shader multiplies the block-light colour by `slopFlicker(world position)` (the swing fading out over 14 blocks, times `FIRE_TINT`, oranger than the shared `BLOCK_LIGHT_COLOR`) on chunk faces, instanced blocks and foliage - no light work. Mobs and the held item keep steady light
@@ -249,10 +254,11 @@ sky's night palette/twilight - weighted by a surface factor eased from the playe
   The global `fog_vertex` override makes fog spherical (true distance, not view depth - no fog-free
   screen edges at 100° FOV); the `fog_fragment` override reinterprets `THREE.Fog`: `far` = edge
   fade (0.6·far → far), `near` = exponential aerial haze distance; a third layer, the cavern
-  ceiling haze, needs the fragment's world height (`vFogRise`, added to `fog_pars_*`), so any
-  custom shader with fog must include three's `fog_pars_vertex`/`fog_vertex` (with `mvPosition`
-  in view space) as well as the fragment chunks. Every fogged material shares these patches; keep
-  `fog: true` on world materials.
+  ceiling haze, and the weather far off (see Weather) need the fragment's world offset from the
+  camera (`vFogOffset`, added to `fog_pars_*`), so any custom shader with fog must include three's
+  `fog_pars_vertex`/`fog_vertex` (with `mvPosition` in view space) as well as the fragment chunks,
+  and its uniforms must include `UniformsLib.fog` (the weather field's samplers ride in it). Every
+  fogged material shares these patches; keep `fog: true` on world materials.
 - Sky materials have `fog: false`; the dome is pinned to the far plane, dithered against banding,
   and includes three's colour-space chunk (colour-managed). Any future opaque object that does not
   write depth must draw after it (renderOrder > 500).
@@ -408,7 +414,7 @@ dark; light is never persisted (recomputed on load).
   loadPlayerData<T>(key)` (null = never saved) after `initialize()`; `savePlayerData(key, data)` saves
   out of cycle. Stored in the player store as `data:<key>`. Keys: `progression` (journal),
   `equipment` (worn armor, max-health bonus, current health), `alchemy` (Return Idol cooldown),
-  `dungeons` (cleared dungeon keys), `pois` (discovered points of interest). RULE: load first, then contribute (or contribute `undefined`
+  `dungeons` (cleared dungeon keys), `pois` (discovered points of interest), `weather` (weathers seen, a rung Sky Bell's spell, the weather clock's offset). RULE: load first, then contribute (or contribute `undefined`
   until loaded) - a contributor registered before its load writes defaults over the save; on a
   failed load contribute nothing this session. Version the data and tolerate missing fields.
 - Mesh jobs: a sub-chunk is remeshed whenever any cell of its padded 34³ volume (itself + the
@@ -445,7 +451,8 @@ Block type definitions using flyweight pattern (stateless singletons).
   crate, 479-481 gravel, andesite, granite); 482-511 underground points of interest (482-490 ancient masonry,
   runestone, bookshelf, petrified wood, the keystone; 491-502 decorations, 495 the barrel a textured full block; 503 heaped
   gold, 504 fossil bone, 505-509 iron bars, minecart, telescope, stone bust, tankards, 510-511 sandstone bricks and carved
-  sandstone); highest 511). Shared registration files are grouped by header comments per feature area
+  sandstone); 512-516 weather (lightning rod, weathervane, fulgurite, star fragment, star lantern; 512-529 reserved);
+  highest 516). Shared registration files are grouped by header comments per feature area
   (`// Hell: Cocytus`) - add new entries to their area's group
 - `BlockRegistry.ts` - Singleton registry mapping IDs to block instances
 - `FaceTextureRegistry.ts` - Maps block+face to TextureId for greedy meshing. Greedy side faces
@@ -470,7 +477,7 @@ racks and lanterns drew only their first few boxes; the campfire, grave candles 
 bug - three stones, one candle, half a basket).
 **Texture-layer budget:** every distinct greedy face texture costs one `BlockTextureArray` layer;
 the limit is 255 (`CHUNK_MAX_TEXTURE_LAYER`, building throws above it; layer 0 = missing texture).
-186 are used (54 base game, 132 expansion - the boot log's `Block texture array built with N layers`
+187 are used (54 base game, 133 expansion - the boot log's `Block texture array built with N layers`
 counts them, layer 0 excluded). TextureId values may exceed 255 (layers are compacted),
 so reuse one texture across faces/blocks where it reads fine (crafted infernal bricks, sanctum tile
 and the crystal cores share their source block's layers). Non-greedy blocks cost no layer.
@@ -1150,6 +1157,11 @@ direct call.
 | `daybreak` | day (the new one), survived (no death since nightfall) | `setupDayNight` (sunrise, or waking in a bed) |
 | `cave-biome-entered` | caveBiome | `setupCaves` 'caves' (a new special cave zone) |
 | `poi-discovered` | poi (kind id), x/y/z (keystone), distinctKinds | `setupPointsOfInterest` (first visit to a point of interest) |
+| `weather-changed` | weather, previous (WeatherCatalog ids), layer | `setupWeather` (the named weather at the player changed, after a 5 s hold) |
+| `weather-seen` | weather, distinct | `setupWeather` (a weather seen for the first time ever; fair weathers don't count) |
+| `lightning-strike` | x/y/z (top of the block hit), distance, rod | `LightningSystem` (every strike around the player; `rod`: a lightning rod caught it) |
+| `lightning-flash` | distance | `LightningSystem` (a flash in far clouds, no strike: far thunder) |
+| `star-fallen` | x/y/z (where it lands), distance | `LightningSystem` (a meteor shower's shooting star starts to fall; it lands ~1.5 s later as a star fragment) |
 
 ---
 
@@ -1195,6 +1207,7 @@ which asks `has`/`getLevel`:
 | `poison` | Poison | 1 'magic' HP per 1.25 s / level, never below 1 HP | `EffectBehaviours.update` |
 | `slowness` | Frostbite | walk speed −25 %/level (floor 25 %), frost vignette | `cameraControls.addSpeedModifier` |
 | `potion_sickness` | Potion Sickness | display-only healing-potion cooldown | gate in `HealingPotionCooldown.ts` |
+| `swiftness` | Swiftness | walk speed ×1.3 per level (stacks with Frostbite) | `getMovementSpeedMultiplier` (EffectBehaviours) |
 | `rootbound` (not in `StatusEffectIds`) | Rootbound | walk speed ×0.35 (Rootbound Warden snare, 2.5 s) | speed modifier in `enemies/rootbound_warden/RootboundEffect.ts`, installed by `setupEmberGrove` |
 
 `EffectBehaviours` runs in the CRITICAL 'alchemy-effects' task (with the frost vignette, Return
@@ -1301,9 +1314,10 @@ crystal; hoe: rime sigil + rime crystal). Hoes: diamond hoe + 2 ingots → infer
 
 ### `src/progression/` - Journal
 
-- `milestones.ts` - Declarative data: 13 chapters (First Steps, Green Thumb, Into the Dark, Lost and Found, Nightfall, Metal
-  Ages, Arms & Armor, Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 88 milestones
-  (Green Thumb's five, Into the Dark's seven, Lost and Found's seven and Nightfall's four are optional side goals). Chapter and
+- `milestones.ts` - Declarative data: 14 chapters (First Steps, Green Thumb, Into the Dark, Lost and Found, Under the Weather,
+  Nightfall, Metal Ages, Arms & Armor, Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 96 milestones
+  (Green Thumb's five, Into the Dark's seven, Lost and Found's seven, Under the Weather's eight and Nightfall's four are
+  optional side goals). Chapter and
   milestone ids are persisted - never rename. `stage` orders the arc: the "next goal" is the
   unlocked, unfinished, non-optional milestone with the lowest stage. `requires` must be TRUE
   implications (completing a milestone completes its prerequisites silently). `legacy` milestones
@@ -1893,6 +1907,131 @@ before release (no portals in this game): index 22 is retired, never reuse it.
   hoard 4, idol 3, 4 coins 1), fossil bone → 4 bone meal, barrel (6 planks + iron bar), iron bars (3 iron → 8),
   sandstone bricks and carved sandstone, and the decorations (minecart, telescope, stone bust, tankards).
 
+### Weather (`src/weather/`, `src/renderer/weather/`)
+
+Ben's asks: "the weather is going to depend on the biome... each biome to have at least 5 distinct weathers... really
+awesome"; then, after playing: weather as real weather systems you can see coming in the sky (rain clouds approaching, a
+sandstorm approaching), with shapes of their own rather than the biome's square, made of underlying air (wind,
+moisture, cloud cover) that each biome shows its own way (high moisture is snow in the snowy biome, high wind is a
+sandstorm in the desert), events lasting ~10 minutes, clear the most common, and sleeping bringing new weather. Plus:
+squalls needed visible debris to explain the push, and rain splashes slid along with the player (now world-anchored).
+Every surface biome has six to nine weathers, each Hell biome a calm and four cavern weathers falling from the ceiling.
+61 distinct weathers (87 biome slots: Clear, Overcast, Gale, Drizzle, Rain Shower, Thunderstorm, Meteor Shower and
+Calm are shared).
+
+| Biome | Weathers (fair → wild) |
+|-------|------------------------|
+| plains | Clear, Seedfall (day), Mist, Overcast, Gale, Rain Shower, Hailstorm, Thunderstorm |
+| grassy-hills | Clear, Meteor Shower (night), Valley Fog, Overcast, Gale, Drizzle, Rain Shower, Thunderstorm |
+| desert | Clear, Meteor Shower (night), Heat Wave (day), Dust Devils (day), Overcast, Sandstorm, Cloudburst |
+| volcanic | Smoky Haze, Red Haze, Ash Fall, Sulphur Rain, Ember Storm, Volcanic Lightning |
+| jungle | Humid, Pollen Bloom (day), Steam Mist, Overcast, Sun Shower (day; Rain Shower at night), Downpour, Monsoon Storm |
+| swamp | Murk, Glowmist (night), Swamp Gas, Overcast, Thick Fog, Drizzle, Rain Shower, Thunderstorm |
+| pine-forest | Crisp, Aurora (night), Diamond Dust, Freezing Fog, Overcast, Gale, Snowfall, Blizzard (below the snow line: Rain Shower, Thunderstorm) |
+| coastal-rainforest | Clear, Glowing Tide (night), Sea Fog, Overcast, Gale, Drizzle, Rain Shower, Squall, Thunderstorm |
+| Hell (each) | Calm + Molten Wastes: Heat Surge, Ash Squall, Ember Rain, Firefall; Ossuary: Soul Wisps, Ghost Fog, Bone-Dust Storm, Grave Storm (green lightning); Ember Grove: Crimson Mist, Ember Drift, Spore Bloom, Glowfall; Crystal Abyss: Violet Mist, Resonance, Prism Lights, Crystal Hail; Cocytus: Frost Glitter, Soul Snow, Freezing Fog, Black Blizzard |
+
+- **Weather systems** (`WeatherSystems.ts`, pure: nothing saved): the air everywhere is `WeatherAir` - cloud, precip,
+  storm, wind, fog (0-1) and a system's `flavor` - made by weather systems: fair-weather cumulus fields, overcast decks,
+  rain belts (some with thunder in their cores), thunderstorms (intense core, wide anvil), squall lines (long, fast,
+  across their motion), dry wind storms and slow fog banks (`SYSTEM_TYPES`: shares, radius, aspect, life, levels,
+  speed relative to the steering wind). Each sits on a space-time lattice in a frame drifting with the steering wind
+  (2000-block cells, 1200 s steps, 3 slots at 0.34): born, grown, carried along (0.85 b/s plus its own speed), faded
+  out; shapes are noise-warped ellipses with broad steady cores, rain bands moving through them. Between systems the
+  air is clear (a breeze). `collect(t, x, z, radius, list)` gathers the systems alive near a place, `airAt(list, x,
+  z)` reads the air from them; `regional(x, z, t, salt)` = drifting patches of fair-weather specials (pollen, heat
+  waves, swamp gas...), `nightEvent(day, salt, chance)` = sky nights (meteor showers 30%, auroras 40%...),
+  `biomeWarp` = where a weather reads its biome (up to 140 blocks off, so looks change along meandering lines, not a
+  region's straight edge). Calibrated with scratchpad `weather/systems.ts` (shares and held-name run lengths per biome),
+  `weather/air.ts` (raw air) and `weather/timeline.ts`: fair weather ~55%, wet spells usually 10-30 minutes.
+- **Catalog** (`WeatherCatalog.ts`): `WeatherDef` (id - persisted, matched by milestones and creatures: never rename -,
+  name, flavour line, `time` (reference), `belowSnowLine`, look) and `BIOME_WEATHER`: per biome its `ids` (fair → wild;
+  the first is its fair weather - not announced) and `present(air, ctx, cascade)`, which may weigh the air first (the
+  desert dries rain to virga and thins cloud, the swamp thickens fog, the hills and coast catch the wind) and hands out
+  the mix with a `WeatherCascade` (most severe rule first, each taking its strength's share of what is left, the fair
+  weather the rest - always sums to 1, changes smoothly). Storm cores, then rain, then wind, then fog and cloud, then
+  the specials. The same rain belt is a rain shower on the plains, snowfall in the pines, a cloudburst in the desert.
+- **Look** (`WeatherLook.ts`): everything a weather does, as blendable numbers - cloud cover/darkness/tint, sky grey and
+  tint, sun dim, haze (extinction), ground fog (density + top Y), daylight, sun light, light tint, Hell's floor tint and
+  pulse, particle densities per kind, wind, lightning rate + colour, spectacles (aurora, meteors, heat haze, rainbow,
+  water glow, dust devils) and hazards (wet, hail, embers, sulphur, cold, gale). Defs give a `WeatherLookSpec` (subset,
+  `hazeDistance` in blocks, particles by name). Neutral = no change from the biome atmosphere.
+- **Live state** (`WeatherState.ts`): the surface's systems and the Hell cavern's own (seed ^ 0x48e11), collected around
+  the player (2600 blocks, again each second or 300 blocks); `mixAt(x, y, z, layer, blend, out, air?)` (blend `'view'`
+  = 9 biome readings within 64 blocks, `'wide'` = 5 within 110 (sky map), `'none'` = one (gameplay)); `lookOf(mix,
+  out, air)` adds what the air itself does (a cloudier sky under cumulus, the wind as strong as the air's); overrides
+  (`forced` - the debug button; `spell` - a Sky Bell raises cloud and rain, or clears the air, within 384 blocks for
+  300 s, so each biome shows its own rain); the eased look (4 s), the named weather (8 s hold, and the new one must
+  outweigh the old by 0.2, so rain bands don't flicker the name), wetness, after-shower rainbows, wind, forecasts.
+- **Weather clock**: weather time = world time (`worldTime`) + `clockOffset`; a clock jump of over 60 s with a
+  nightfall/daybreak (sleeping, the night button) adds `SLEEP_WEATHER_JUMP` (2400 s: you wake to new weather). The
+  offset is saved; day/night and sky nights read the game clock.
+- **Wiring** (`setupWeather.ts`, CRITICAL 'weather' task): sky (`Skybox.setWeather(SkyWeather)` + `setWind`), fog
+  (`DistanceFog.setWeatherHaze` - the weather here - `setWeatherField` - read the map far off - and `setGroundFog`),
+  light (`weatherAtmosphere`, WeatherAtmosphere.ts: multipliers applied by main.ts's 'skybox' task one frame later -
+  daylight, sun light, light tint, the cavern's floor tint/pulse, lightning flash), wind (`setWorldWind`, WindUniform.ts:
+  foliage and the weathervane), water glow (`setTideGlow`, LiquidMaterials), particles, lightning, dust devils, Hell's
+  prism lights, hazards, the Storm Glass HUD, `weather-changed`/`weather-seen` events (+ a "New weather" toast), keyed
+  player data `weather` (v2: seen ids, the bell's spell, the clock offset), the `WeatherHooks` provider, the
+  weather-creature spawn provider, and the debug button beside "Make night" (`FpsCounter.setWeatherToggle`: steps
+  through the current biome's weathers, then Auto). `WeatherSystem` also has `forceWeather(id | null)` (snaps, no
+  easing), `strikeNow(x?, z?)`, `starNow()` and `advanceWeather(seconds)` (as sleeping does) for tests. Hell weathers'
+  ground fog `groundFogTop` is height above the cavern floor around the player (floors run Y 30-70+), re-estimated at
+  2 Hz while a fog is up; surface ones are world Y.
+- **Hooks** (`WeatherHooks.ts`, safe in workers - no-ops until registered): `getWeatherSnapshot()` (sound),
+  `weatherAt(x, y, z)` (creatures), `isRainingOn(x, y, z)` (crops grow ×1.6, farmland wets: wet weather + sky light 15),
+  `getWeatherForecast(seconds)` (Storm Glass: the systems at that time over the player), `ringSkyBell(x, z)`.
+- **Weather you can see coming** (`WeatherSkyMap.ts` + `renderer/weather/WeatherFieldShader.ts`): the map is 64² cells of
+  64 blocks around the player (world-anchored, repeat-wrapped; 40 cells a frame), each the weather there as its biome
+  presents it: texture A = haze extinction, ground fog, storm darkness, cloud cover (`COVER_BIAS/RANGE`); B = sky tint,
+  greyness (the textures are created once in WeatherFieldShader and written in place). Every view ray reads it
+  (`slopWeatherFar`, 12 log-spaced jittered steps on the land, 16 on the sky, to 2000 blocks): under the weather's
+  deck (260 blocks above the camera) rain shafts and dust walls, above it a cloud tower as tall as the weather is
+  stormy, with drifting billows; coloured from the horizon without the weather (`weatherFieldSky`, set by Skybox)
+  greyed, darkened by the storm, tinted. The first 80 blocks are the weather here (`slopWeatherNear`, the fog colour;
+  all of the ray where the map is off: Hell, caves, underwater). So a rain belt two kilometres off is a dark deck and a
+  grey curtain on the horizon, a sandstorm a brown wall swallowing the land, both growing as they come. Fair-weather
+  haze thins beyond ~600 blocks so it never hides the storms behind it. The land (DistanceFog's `fog_fragment`) and the
+  dome read the same rays; land in the edge fog reads as far as the sky behind it. The dome's clouds take cover,
+  darkness and tint from the map where the ray meets the deck (`slopWeatherReach`); a weather deck far off stays
+  solid to the horizon. **Every fogged material must carry the field's uniforms** (DistanceFog adds them to three's
+  fog uniforms; a ShaderMaterial clones `UniformsLib.fog`): a sampler left unset sits on texture unit 0, and WebGL
+  refuses to draw when another sampler type (the chunk texture array) is bound there. The textures are
+  `SharedDataTexture`s (their `clone()` returns themselves - three clones texture uniforms per material).
+- **Particles** (`PrecipitationRenderer.ts`, one instanced draw of 16000 quads + 1800 splashes): `ParticleKinds.ts` is the
+  data (23 kinds: colours, size, streak length, fall, wind follow, flutter, alpha, glow, shape streak/flake/sparkle/chip,
+  splash; `debris` (torn leaves and twigs), `gust` (faint long streaks along the wind) and `driving` (rain blown
+  sideways) make windy weathers readable - squall, gale, monsoon, storms); each particle picks its kind from the live
+  mix by seed. A 64-block box around the camera, world-anchored and wrapped; hidden below the `ShelterMap` floor (a
+  128² repeat-wrapped float texture of the highest cell weather stops on per column - solid, liquid or leaves, glass
+  included - swept from the chunk arrays 2048 columns a frame; in the cavern scanned down from the box top), so nothing
+  falls indoors, in caves or under trees. Flakes and chips fade out within ~2 blocks of the eye. Splashes land in a
+  world-anchored wrapped tile (they stay where they fell). Dust devils are the 'devil' kind orbiting up to 4 centres
+  (`DustDevils.ts`). Fogged like the world.
+- **Lightning** (`Lightning.ts` + `LightningRenderer.ts`): strikes at the look's rate within 18-170 blocks, the highest
+  of three spots; 3.5% seek an exposed player (6 'fire' + burn within 3 blocks); a lightning rod within 48 blocks
+  catches it (`LightningRods.ts`, fed by the rod's block entity); a strike chars a log (charred log) or fuses sand into
+  fulgurite. Far flashes in the storm's clouds and from storms on the horizon (the map's darkness) emit
+  `lightning-flash`. Bolts: jagged branching ribbons with a white core, flickering restrikes. Meteor showers drop
+  falling stars (~0.7/min) that land as STAR_FRAGMENT blocks (light 10, stardust).
+- **Hazards** (`WeatherHazards.ts`, only under open sky - the shelter map): rain douses burning, hail 1 per 5 s, embers
+  may ignite, sulphur rain poisons after 6 s, freezing weather frostbites after 12 s (effects re-applied only as they run
+  out - every apply emits `effect-applied` and a sound), a gale pushes (never into a wall) - only named windy weathers
+  push, and each has debris or sand in the air to show the wind.
+- **Weather creatures** (`entities/weather/`, `WeatherRetreat` in WeatherCreature.ts - they leave when the weather where
+  they stand is none of theirs): Thunderhead (`thunderhead`, storms: hovers, telegraphed strikes - a roof stops them,
+  sinks drained after each; storm essence), Dune Dervish (`dune_dervish`, sandstorm/dust devils: rushes and flings,
+  shrugs off hits while spinning fast; whirlstone), Whiteout Stalker (`whiteout_stalker`, blizzard: circles, pounces,
+  Frostbite; whiteout pelt - hide), Marsh Wisp (`marsh_wisp`, glowmist/thick fog: keeps away, homing flares, blinks;
+  wisp light). At most 4 alive.
+- **Blocks and items**: lightning rod (3 copper), weathervane (turns into the wind: arrow part rotated in its shader by
+  `windUniform`), fulgurite (lightning on sand; smelts to 2 glass), star fragment, star lantern (4 stardust + glass + iron);
+  Storm Glass (3 glass + copper + herb: HUD with the weather now and the forecast at +2/+5 min), Sky Bell (2 gold +
+  storm essence + fulgurite: hold to call rain or clear the sky, 300 s cooldown), swiftness potion (whirlstone + herb:
+  new `swiftness` effect, walk ×1.3), wisp light + herb → ember sight.
+- Insects (fireflies, butterflies) scale by `calmWeather()`; sound reads the snapshot (weather beds, thunder - see
+  `src/audio/`); journal chapter Under the Weather.
+
 ### `src/audio/` - Sound (effects, ambience, music)
 
 Every sound is procedural: recipes in `synth/` render samples in `AudioSynthWorker` at startup or
@@ -1949,7 +2088,11 @@ player's hurt is a voiced cry, not a thump.
   cricket chorus (per-biome weight × `worldClock.nightAmount`), a bed mix per Hell biome,
   underwater; sparse positioned details (birds by day and owls at night in vegetated biomes, swamp
   frogs - more often after dark, cave drips, lava pops, bone chimes, spore puffs, crystal pings, ice
-  creaks)
+  creaks); weather beds from `getWeatherSnapshot()` (`weatherBedWeights`: rain light/heavy, drizzle, hail,
+  gale, sandstorm, blizzard, embers, shimmer, aurora, and rain on the roof while sheltered - weights ×
+  shelter; birds stop and crickets hush in wet weather). Thunder (`weather.thunder.near/far`, delayed
+  distance / 90 s), `weather.zap`, meteor whoosh/impact and `weather.skybell` from the weather events
+  (`synth/weatherSounds.ts`)
 - `music/` - generative score, mostly silence. `MusicMoods.ts` (22 moods, at least two per place
   with different instruments: meadow / drift / dusk / wander / canopy / mirage on the surface,
   cave / deep, two per Hell biome, dungeon / vigil, boss / onslaught - scale, tempo, progressions,

@@ -6,6 +6,7 @@ import regenerationIcon from '../../items/potions/regeneration_potion/assets/reg
 import emberSightIcon from '../../items/potions/ember_sight_potion/assets/ember-sight-potion-icon.webp'
 import strengthIcon from '../../items/potions/strength_potion/assets/strength-potion-icon.webp'
 import iceskinIcon from '../../items/potions/iceskin_potion/assets/iceskin-potion-icon.webp'
+import swiftnessIcon from '../../items/potions/swiftness_potion/assets/swiftness-potion-icon.webp'
 import healingPotionIcon from '../../items/potions/health_potion_2/assets/health-potion-2-icon.webp'
 import { POTION_SICKNESS_EFFECT } from '../../items/potions/HealingPotionCooldown.ts'
 import poisonIcon from './assets/poison-effect-icon.webp'
@@ -33,6 +34,7 @@ export function registerEffectDisplay(): void {
     [StatusEffectIds.RESISTANCE, iceskinIcon],
     [StatusEffectIds.POISON, poisonIcon],
     [StatusEffectIds.SLOWNESS, frostbiteIcon],
+    [StatusEffectIds.SWIFTNESS, swiftnessIcon],
   ]
   for (const [id, iconUrl, color] of icons) {
     const info = getStatusEffectInfo(id)

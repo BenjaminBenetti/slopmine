@@ -31,6 +31,8 @@ export const StatusEffectIds = {
   POISON: 'poison',
   /** Move slower (frost). */
   SLOWNESS: 'slowness',
+  /** Move faster (whirlstone). */
+  SWIFTNESS: 'swiftness',
 } as const
 
 export type StatusEffectId = (typeof StatusEffectIds)[keyof typeof StatusEffectIds] | (string & {})
@@ -65,6 +67,7 @@ const effectInfo = new Map<string, StatusEffectInfo>([
   [StatusEffectIds.RESISTANCE, { name: 'Iceskin', color: '#7fc4e8', beneficial: true }],
   [StatusEffectIds.POISON, { name: 'Poison', color: '#7a9a2e', beneficial: false }],
   [StatusEffectIds.SLOWNESS, { name: 'Frostbite', color: '#5a7fa8', beneficial: false }],
+  [StatusEffectIds.SWIFTNESS, { name: 'Swiftness', color: '#6fd64a', beneficial: true }],
 ])
 
 /** Register (or override) display info for an effect id. */

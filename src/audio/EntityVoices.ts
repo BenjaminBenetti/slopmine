@@ -91,6 +91,11 @@ const ENTITY_VOICES: Record<string, EntityVoice> = {
   mire_angler: V('angler', 'flesh', 1, 14),
   hollow_stag: V('bellow', 'flesh', 1, 22),
   orchid_mantis: V('insect', 'shell', 1.3, 20),
+  // Weather creatures (come and go with their weather)
+  thunderhead: V('storm', 'ghost', 1, 12),
+  dune_dervish: V('whirl', 'soft', 1, 10),
+  whiteout_stalker: V('bigcat', 'flesh', 1, 18),
+  marsh_wisp: V('will', 'ghost', 1, 11),
 
   // Guardians (a blocked hit: invulnerable, warded or shielded)
   bone_king: V('boss-bone', 'bone', 1, 9, { boss: true, shield: 'bone' }),

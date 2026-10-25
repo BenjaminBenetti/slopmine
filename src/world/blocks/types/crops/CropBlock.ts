@@ -3,6 +3,10 @@ import type { IItem } from '../../../../items/Item.ts'
 import { BlockIds } from '../../BlockIds.ts'
 import { FoliageBlock } from '../foliage_shared/FoliageBlock.ts'
 import { RANDOM_TICK_INTERVAL } from '../../../blocktick/RandomBlockTicks.ts'
+import { isRainingOn } from '../../../../weather/WeatherHooks.ts'
+
+/** Growth multiplier for a crop with rain falling on it. */
+const RAIN_GROWTH = 1.6
 
 /** One growth stage of a crop: its block and sprite (bottom-aligned, `height` of the sprite used). */
 export interface CropStage {
@@ -89,7 +93,9 @@ export class CropBlock extends FoliageBlock implements IGrowableBlock {
   onRandomTick(world: IWorld, x: bigint, y: bigint, z: bigint): void {
     if (this.next === null) return
     const soil = SOIL_GROWTH.get(world.getBlock(x, y - 1n, z).properties.id) ?? WILD_GROWTH
-    if (Math.random() < (RANDOM_TICK_INTERVAL / this.crop.stageSeconds) * soil) {
+    // Rain falling on it helps (weather: src/weather)
+    const rain = isRainingOn(Number(x), Number(y), Number(z)) ? RAIN_GROWTH : 1
+    if (Math.random() < (RANDOM_TICK_INTERVAL / this.crop.stageSeconds) * soil * rain) {
       world.setBlock(x, y, z, this.next)
     }
   }

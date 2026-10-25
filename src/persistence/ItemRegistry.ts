@@ -351,6 +351,7 @@ import { registerNatureItems } from '../items/nature/registerNatureItems.ts'
 import { registerCaveItems } from '../items/caves/registerCaveItems.ts'
 import { registerPoiItems } from '../items/pois/registerPoiItems.ts'
 import { registerForageFoodItems } from '../items/food/registerForageFoodItems.ts'
+import { registerWeatherItems } from '../items/weather/registerWeatherItems.ts'
 
 type ItemFactory = () => IItem
 
@@ -749,6 +750,7 @@ export function initializeItemRegistry(): void {
   registerCaveItems(registerItemFactory)
   registerPoiItems(registerItemFactory)
   registerForageFoodItems(registerItemFactory)
+  registerWeatherItems(registerItemFactory)
 
   console.log(`Item registry initialized with ${itemFactories.size} items`)
 }

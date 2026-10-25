@@ -279,6 +279,12 @@ import { registerCocytusBlocks } from './types/cocytus_shared/registerCocytusBlo
 import { registerNatureBlocks } from './types/nature_shared/registerNatureBlocks.ts'
 import { registerCaveBlocks } from './types/cave_shared/registerCaveBlocks.ts'
 import { registerPoiBlocks } from './types/poi_shared/registerPoiBlocks.ts'
+// Weather
+import { LightningRodBlock } from './types/lightning_rod/LightningRodBlock.ts'
+import { WeathervaneBlock } from './types/weathervane/WeathervaneBlock.ts'
+import { FulguriteBlock } from './types/fulgurite/FulguriteBlock.ts'
+import { StarFragmentBlock } from './types/star_fragment/StarFragmentBlock.ts'
+import { StarLanternBlock } from './types/star_lantern/StarLanternBlock.ts'
 
 // Day and night
 import { WardLanternBlock } from './types/ward_lantern/WardLanternBlock.ts'
@@ -640,4 +646,11 @@ export function registerDefaultBlocks(): void {
   // Caves and dark places
   registerCaveBlocks()
   registerPoiBlocks()
+
+  // Weather
+  registerBlock(new LightningRodBlock())
+  registerBlock(new WeathervaneBlock())
+  registerBlock(new FulguriteBlock())
+  registerBlock(new StarFragmentBlock())
+  registerBlock(new StarLanternBlock())
 }

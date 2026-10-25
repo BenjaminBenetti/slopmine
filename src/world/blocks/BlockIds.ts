@@ -503,4 +503,11 @@ export enum BlockIds {
   TANKARDS = 509,                // decor: two tankards of ale
   SANDSTONE_BRICKS = 510,        // desert tomb masonry
   CARVED_SANDSTONE = 511,        // sandstone carved with glyphs
+
+  // Weather (512-529)
+  LIGHTNING_ROD = 512,           // copper rod: catches lightning within 48 blocks
+  WEATHERVANE = 513,             // copper vane that turns with the wind
+  FULGURITE = 514,               // sand fused to glass by a lightning strike
+  STAR_FRAGMENT = 515,           // a fallen star (meteor showers), glowing
+  STAR_LANTERN = 516,            // lantern of stardust (light 15)
 }

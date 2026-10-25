@@ -74,6 +74,22 @@ export type GameEvent =
    * counts the kinds discovered so far, this one included.
    */
   | { type: 'poi-discovered'; poi: string; x: number; y: number; z: number; distinctKinds: number }
+  /**
+   * The weather where the player is changed (src/weather/): `weather` and
+   * `previous` are WeatherCatalog ids, `layer` 1 surface / 0 Hell.
+   */
+  | { type: 'weather-changed'; weather: string; previous: string; layer: 0 | 1 }
+  /** The player saw a weather for the first time ever; `distinct` counts the weathers seen, this one included. */
+  | { type: 'weather-seen'; weather: string; distinct: number }
+  /**
+   * Lightning struck at x/y/z (the top of the block it hit), `distance` from
+   * the player; `rod` when a lightning rod caught it.
+   */
+  | { type: 'lightning-strike'; x: number; y: number; z: number; distance: number; rod: boolean }
+  /** Lightning flickered in clouds far away (no strike nearby): thunder rolls in later. */
+  | { type: 'lightning-flash'; distance: number }
+  /** A shooting star began to fall (a meteor shower): it lands as a star fragment at x/y/z about 1.5 s later. */
+  | { type: 'star-fallen'; x: number; y: number; z: number; distance: number }
 
 export type GameEventType = GameEvent['type']
 export type GameEventOf<T extends GameEventType> = Extract<GameEvent, { type: T }>

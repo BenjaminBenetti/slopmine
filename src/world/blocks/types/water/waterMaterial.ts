@@ -9,6 +9,7 @@ export { waterTexUrl }
  * bed, slow drift, glittering sun path, strong sky reflection when glancing.
  */
 export const waterMaterial = createLiquidMaterial(waterTexUrl, {
+  tideGlow: true,
   opacity: 0.78,
   flowU: 0.021,
   flowV: 0.013,

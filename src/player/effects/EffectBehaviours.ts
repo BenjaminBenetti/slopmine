@@ -15,7 +15,7 @@ import { GRAVITY } from '../../physics/constants.ts'
  * - Per-tick effects run in `update(dt)` (one CRITICAL task, registered after
  *   the 'skybox' task so the ember sight light floor post-adjusts the biome's):
  *   slow falling's glide, regeneration, poison and ember sight.
- * - Slowness is a movement speed multiplier (`getMovementSpeedMultiplier`),
+ * - Slowness and swiftness are a movement speed multiplier (`getMovementSpeedMultiplier`),
  *   registered with the camera controls.
  */
 
@@ -37,6 +37,8 @@ export const EFFECT_TUNING = {
   slownessPerLevel: 0.25,
   /** Frostbite floor: never slower than this fraction of normal speed. */
   minSpeedMultiplier: 0.25,
+  /** Swiftness: movement speed gain per level. */
+  swiftnessPerLevel: 0.3,
   /**
    * Ember sight: the light floor (linear RGB, where no sky/block light
    * reaches) is raised to at least this warm level, and the biome's own floor
@@ -76,11 +78,12 @@ export function getResistanceMultiplier(effects: StatusEffects = playerEffects):
   return level > 0 ? Math.max(0, 1 - EFFECT_TUNING.resistancePerLevel * level) : 1
 }
 
-/** Movement speed multiplier of the active Frostbite (slowness) level. */
+/** Movement speed multiplier of the active Frostbite (slowness) and Swiftness levels. */
 export function getMovementSpeedMultiplier(effects: StatusEffects = playerEffects): number {
-  const level = effects.getLevel(StatusEffectIds.SLOWNESS)
-  if (level <= 0) return 1
-  return Math.max(EFFECT_TUNING.minSpeedMultiplier, 1 - EFFECT_TUNING.slownessPerLevel * level)
+  const slow = effects.getLevel(StatusEffectIds.SLOWNESS)
+  const swift = effects.getLevel(StatusEffectIds.SWIFTNESS)
+  const slowed = slow > 0 ? Math.max(EFFECT_TUNING.minSpeedMultiplier, 1 - EFFECT_TUNING.slownessPerLevel * slow) : 1
+  return swift > 0 ? slowed * (1 + EFFECT_TUNING.swiftnessPerLevel * swift) : slowed
 }
 
 /**
