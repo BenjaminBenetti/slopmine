@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { HELL_CEILING_Y } from '../world/generate/GenerationConfig.ts'
 import { WEATHER_FIELD_GLSL, WEATHER_MARCH_MAX, weatherFieldParams, weatherFieldUniforms } from './weather/WeatherFieldShader.ts'
+import { godRayParams } from './worldLightShader.ts'
 
 /**
  * Spherical fog: three.js measures fog depth along the view axis
@@ -150,6 +151,12 @@ THREE.ShaderChunk.fog_fragment = /* glsl */ `
 	#endif
 	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
 	#ifndef FOG_EXP2
+		#ifdef SLOP_CLOUD_SHADOW
+			// God rays (world-lit materials: worldLightShader's cloud light) - land in the edge fog reads as far as the sky
+			vec3 slopRayDir = vFogOffset / max( vFogDepth, 1e-3 );
+			vec2 slopRays = slopGodRaysAt( mix( vFogDepth, 1500.0, fogEdge ) );
+			gl_FragColor.rgb = slopApplyGodRays( gl_FragColor.rgb, fogColor, max( fogHaze, fogEdge ), slopRayDir, slopRays );
+		#endif
 		vec4 slopWxFar = slopWeatherFar( cameraPosition, vFogOffset / max( vFogDepth, 1e-3 ), mix( vFogDepth, ${glslFloat(WEATHER_MARCH_MAX)}, fogEdge ) );
 		gl_FragColor.rgb = gl_FragColor.rgb * ( 1.0 - slopWxFar.a ) + slopWxFar.rgb;
 		gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, slopWeatherNear( vFogDepth ) );
@@ -282,10 +289,14 @@ export class DistanceFog {
       fog.far = this.override.far
       weatherFieldParams.y = 0
       weatherFieldParams.z = 0
+      godRayParams.y = 0
       return
     }
     // The weather's haze thins out into a cave, and nothing is read far off from one
     weatherFieldParams.y = this.weatherField * (1 - this.caveWeight)
+    // God rays scatter in the open air's haze (none in a cave)
+    godRayParams.x = 1 / this.getHazeDistance() + this.weatherExtinction
+    godRayParams.y = 1 - this.caveWeight
     weatherFieldParams.w = (performance.now() / 1000) % 3600
     weatherFieldParams.z = this.weatherExtinction * (1 - this.caveWeight)
     fog.color.copy(this.color)

@@ -233,16 +233,15 @@ export class SwampGenerator extends BiomeGenerator {
       heightScale: 10, // Slightly more variation for water pools
       combineMode: 'add',
     } as TerrainConfig,
-    // Swamp has a darker, murky atmosphere: an overcast, olive-grey sky and
-    // haze, and dimmed daylight (eased in while the player is here - not a
-    // per-chunk skylight cap, whose region border was a hard light step)
+    // Swamp has a darker, murky atmosphere: an olive-grey sky and haze, and a
+    // heavier cloud deck (its shade on the land comes from those clouds - no
+    // biome-wide daylight dimming)
     skybox: {
       brightness: 0.7, // darker, overcast sky
       tint: { r: 0.85, g: 0.9, b: 0.78 }, // Slight greenish-brown tint
       fogColor: { r: 0.64, g: 0.69, b: 0.62 }, // Grey-green murk (darkened by brightness)
       fogDensity: 1.2,
       lightTint: { r: 0.94, g: 0.96, b: 0.88 },
-      daylight: 0.62, // overcast: gloomy but readable
       clouds: { coverage: 0.65, color: { r: 0.7, g: 0.72, b: 0.68 } }, // grey overcast deck
     },
 

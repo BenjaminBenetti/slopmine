@@ -105,7 +105,8 @@ export class DayNightSky {
       const k = Math.sqrt(1 - MIN_LIGHT_ELEVATION * MIN_LIGHT_ELEVATION) / horizontal
       s.lightDirection.set(s.lightDirection.x * k, MIN_LIGHT_ELEVATION, s.lightDirection.z * k)
     }
-    const bodyIntensity = sunUp ? smoothstep(0, 0.16, e) : 0.8 * smoothstep(0, 0.2, s.moonDirection.y)
+    // (the moon at a quarter of the sun's strength: as bright as before the sun was raised)
+    const bodyIntensity = sunUp ? smoothstep(0, 0.16, e) : 0.53 * smoothstep(0, 0.2, s.moonDirection.y)
     s.lightIntensity = 1 + (bodyIntensity - 1) * w
 
     // Light colour: white by day, warm as the sun gets low, cool moonlight at night

@@ -20,7 +20,8 @@ export interface WorldLightingOptions {
  * their own copy of the rig (the held item's overlay scene) match the world.
  */
 export const WORLD_LIGHT_DEFAULTS = {
-  sunIntensity: 1.4,
+  // (1.4 until the cloud shadows: with shade to compare against, full sun needed to read brighter - Ben)
+  sunIntensity: 2.1,
   ambientIntensity: 0.9,
   hemisphereIntensity: 0.9,
   sunColor: 0xfff0dc,
@@ -38,9 +39,10 @@ export interface ShadowTarget {
 /**
  * The world's light rig: a warm directional sun, a cool ambient fill and a
  * sky/ground hemisphere bounce. With three.js' Lambert (irradiance / π) the
- * defaults give face brightness factors of roughly: top 0.83, sunward sides
- * 0.57-0.63, shaded sides 0.43, bottom 0.38 (warm bounce) - enough contrast
- * to read block shapes without crushing shaded faces.
+ * defaults give face brightness factors of roughly: top 1.0, sunward sides
+ * 0.68-0.75, shaded sides 0.43, bottom 0.38 (warm bounce) - enough contrast
+ * to read block shapes without crushing shaded faces, and full sun well
+ * above the shade of a passing cloud.
  */
 export class WorldLighting {
   readonly sun: THREE.DirectionalLight

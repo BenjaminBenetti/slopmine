@@ -149,6 +149,10 @@ export interface SkyboxSettings {
    * weather. Prefer this to a `skylightValue` cap for mood: a cap is baked
    * per chunk into the light data, so its biome border shows as a hard
    * 32-block brightness step.
+   * No surface biome uses it: darkness comes from the clouds and the weather
+   * (cloud cover, cloud shadows, the weathers' looks), not a biome-wide dimmer
+   * (Ben - the coastal rainforest's 0.82 and the swamp's 0.62 read as always
+   * shaded once clouds cast real shadows).
    * Default: 1
    */
   readonly daylight?: number
@@ -198,8 +202,8 @@ export interface BiomeProperties {
    *
    * The cap is baked per 32-block sub-chunk into the light data, so a biome
    * border shows as a hard 32-block brightness step. Use it only for
-   * underground biomes that must never see the sky (Hell = 0). For a surface
-   * biome's gloom use `SkyboxSettings.daylight` instead, which dims smoothly.
+   * underground biomes that must never see the sky (Hell = 0). A surface
+   * biome's gloom comes from its clouds and weather (see `SkyboxSettings.daylight`).
    */
   readonly skylightValue?: number
   /**

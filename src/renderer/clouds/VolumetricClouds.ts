@@ -1,7 +1,9 @@
 import * as THREE from 'three'
 import { CLOUD_NOISE_SIZE } from './cloudNoise3D.ts'
 import { COVER_BIAS, COVER_RANGE, WEATHER_CLOUD_BASE, weatherFieldParams, weatherMapA, weatherMapB, weatherMapC } from '../weather/WeatherFieldShader.ts'
-import { CLOUD_SHADOW_REF_Y, cloudShadowParams, setCloudShadowMap } from '../worldLightShader.ts'
+import {
+  CLOUD_LIGHT_GLSL, CLOUD_SHADOW_REF_Y, cloudShadowParams, cloudShadowUniforms, godRaySun, godRaySunColor, setCloudShadowMap, setGodRayMap,
+} from '../worldLightShader.ts'
 
 /**
  * The sky's clouds, in 3D: one layer ray-marched through a tileable noise
@@ -48,9 +50,11 @@ const FAIR_THICKNESS = 0.12
 const HISTORY_BLEND = 0.88
 /** A camera jump further than this (blocks) drops the history. */
 const HISTORY_JUMP = 40
+/** God rays are marched at this fraction of the screen (each axis): they are soft. */
+const GOD_RAY_SCALE = 0.25
 /** The cloud shadow map: CLOUD_SHADOW_SIZE² texels of CLOUD_SHADOW_TEXEL blocks around the camera. */
-const CLOUD_SHADOW_SIZE = 128
-const CLOUD_SHADOW_TEXEL = 16
+const CLOUD_SHADOW_SIZE = 256
+const CLOUD_SHADOW_TEXEL = 8
 
 function glslFloat(value: number): string {
   return Number.isInteger(value) ? `${value}.0` : `${value}`
@@ -88,7 +92,7 @@ float remap( float v, float l0, float h0, float l1, float h1 ) {
 }
 
 // The clouds a map cell asks for: amount added to the biome's, thickness, puffiness, anvil; base and top heights
-struct Cell { float cover; float puff; float anvil; float base; float top; };
+struct Cell { float cover; float puff; float anvil; float base; float top; vec3 warp; };
 
 Cell cellAt( vec3 p ) {
   vec4 c = texture2D( uMapC, p.xz * uMapInvSpan );
@@ -102,12 +106,17 @@ Cell cellAt( vec3 p ) {
   // Sheets and rain decks hang lower than fair cumulus
   cell.base = BASE - 70.0 * ( 1.0 - cell.puff );
   cell.top = cell.base + 30.0 + THICKNESS * thick;
+  // A slow warp of the shapes and a swell and ebb of the cover, kilometres across, so the noise's 960-block
+  // tile never shows as a repeating pattern
+  vec4 big = texture( uNoise, ( vec3( p.x, 0.0, p.z ) - uCamPos * vec3( 1.0, 0.0, 1.0 ) + uNoiseOrigin * vec3( 1.0, 0.0, 1.0 ) ) * ${glslFloat(1 / 12000)} + vec3( 0.13, 0.5, 0.71 ) );
+  cell.warp = vec3( big.g - 0.5, 0.0, big.b - 0.5 ) * 320.0;
+  cell.cover += ( big.r - 0.5 ) * 0.3;
   return cell;
 }
 
 // Cloud density at p (0-1); hf = height through the cell's cloud (0 base .. 1 top)
 float density( vec3 p, Cell cell, bool fine, out float hf ) {
-  vec3 q = uNoiseOrigin + ( p - uCamPos );
+  vec3 q = uNoiseOrigin + ( p - uCamPos ) + cell.warp;
   // Fair-weather cover is a fraction of the sky (cumulus leave most of it blue); weather adds to it
   float cov = clamp( uCoverage * 0.8 + cell.cover, 0.0, 1.0 );
   hf = ( p.y - cell.base ) / ( cell.top - cell.base );
@@ -255,7 +264,7 @@ void main() {
  * The cloud shadow map: for each texel (a CLOUD_SHADOW_TEXEL-block cell of
  * the ground at CLOUD_SHADOW_REF_Y, world-anchored and wrapped like the
  * weather map), how much light gets through the clouds along the light
- * (shapes only, no detail: shadows are soft).
+ * (the clouds' own shapes, detail and all).
  */
 const SHADOW_FRAGMENT = /* glsl */ `
 ${CLOUD_DENSITY_GLSL}
@@ -269,16 +278,53 @@ void main() {
   vec2 first = floor( uCamPos.xz / texel ) - size * 0.5;
   vec2 cell = first + mod( k - first, size );
   vec3 ground = vec3( ( cell + 0.5 ) * texel, ${glslFloat(CLOUD_SHADOW_REF_Y)} ).xzy;
-  float t0 = ( ${glslFloat(SLAB_BOTTOM)} - ground.y ) / uLightDir.y;
-  float t1 = min( ( ${glslFloat(WEATHER_CLOUD_BASE + THICKNESS_RANGE)} - ground.y ) / uLightDir.y, t0 + 2400.0 );
-  float dt = ( t1 - t0 ) / 10.0;
+  // Through this column's own cloud (from its base to its top, or its anvil), in fine jittered steps
+  Cell column = cellAt( ground + uLightDir * ( ( BASE - ground.y ) / uLightDir.y ) );
+  float top = column.anvil > 0.02 ? ANVIL_Y + ANVIL_HALF : column.top;
+  float t0 = ( column.base - ground.y ) / uLightDir.y;
+  float t1 = min( ( top - ground.y ) / uLightDir.y, t0 + 2400.0 );
+  float dt = ( t1 - t0 ) / 14.0;
+  float jitter = fract( sin( dot( cell, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
   float od = 0.0;
-  for ( int i = 0; i < 10; i++ ) {
-    vec3 p = ground + uLightDir * ( t0 + dt * ( float( i ) + 0.5 ) );
+  for ( int i = 0; i < 14; i++ ) {
+    vec3 p = ground + uLightDir * ( t0 + dt * ( float( i ) + jitter ) );
     float hf;
-    od += density( p, cellAt( p ), false, hf ) * dt;
+    od += density( p, cellAt( p ), true, hf ) * dt;
   }
-  gl_FragColor = vec4( vec3( exp( - od * EXTINCTION * 0.4 ) ), 1.0 );
+  gl_FragColor = vec4( vec3( exp( - od * EXTINCTION * 2.6 ) ), 1.0 );
+}
+`
+
+/**
+ * God rays along each pixel's view (worldLightShader's slopGodRays, through
+ * the cloud shadow map): r = the haze in sunlight, g = all the haze, both as
+ * their share of the view. Jittered per frame and blended over the last
+ * frame like the clouds; the land and the sky read it (slopGodRaysAt).
+ */
+const GOD_RAY_FRAGMENT = /* glsl */ `
+precision highp float;
+uniform vec3 uCamPos;
+uniform mat4 uInvProj;
+uniform mat3 uCamRot;
+uniform mat4 uPrevRot;
+uniform vec3 uCamDelta;
+uniform sampler2D uHistory;
+uniform float uHistoryBlend;
+uniform float uFrame;
+varying vec2 vUv;
+#define SLOP_CAMERA uCamPos
+#define SLOP_JITTER ( uFrame * 0.6180339 )
+${CLOUD_LIGHT_GLSL}
+void main() {
+  vec4 view = uInvProj * vec4( vUv * 2.0 - 1.0, 1.0, 1.0 );
+  vec3 dir = normalize( uCamRot * ( view.xyz / view.w ) );
+  vec4 result = vec4( slopGodRays( uCamPos, dir, 1500.0 ), 0.0, 1.0 );
+  vec4 prev = uPrevRot * vec4( dir * 400.0 + uCamDelta, 1.0 );
+  vec2 prevUv = prev.xy / prev.w * 0.5 + 0.5;
+  if ( prev.w > 0.0 && prevUv.x > 0.0 && prevUv.x < 1.0 && prevUv.y > 0.0 && prevUv.y < 1.0 ) {
+    result = mix( result, texture2D( uHistory, prevUv ), uHistoryBlend );
+  }
+  gl_FragColor = result;
 }
 `
 
@@ -327,6 +373,10 @@ export class VolumetricClouds {
   private readonly shadowTarget: THREE.WebGLRenderTarget
   private readonly shadowMaterial: THREE.ShaderMaterial
   private readonly shadowScene = new THREE.Scene()
+  /** God rays (ping-pong, like the clouds). */
+  private readonly godTargets: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget]
+  private readonly godMaterial: THREE.ShaderMaterial
+  private readonly godScene = new THREE.Scene()
   private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
   private readonly size = new THREE.Vector2()
   private readonly prevRot = new THREE.Matrix4()
@@ -403,6 +453,32 @@ export class VolumetricClouds {
     shadowMesh.frustumCulled = false
     this.shadowScene.add(shadowMesh)
     setCloudShadowMap(this.shadowTarget.texture, 1 / (CLOUD_SHADOW_SIZE * CLOUD_SHADOW_TEXEL))
+
+    // God rays: the camera uniforms are the clouds' (same objects), the light ones every world material's
+    this.godTargets = [target(), target()]
+    this.godMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        ...cloudShadowUniforms,
+        // Not the map being rendered (the pass never reads it; keep it off the target)
+        uGodRayMap: { value: null },
+        uCamPos: uniforms.uCamPos,
+        uInvProj: uniforms.uInvProj,
+        uCamRot: uniforms.uCamRot,
+        uPrevRot: uniforms.uPrevRot,
+        uCamDelta: uniforms.uCamDelta,
+        uFrame: uniforms.uFrame,
+        uHistory: { value: null },
+        uHistoryBlend: { value: 0 },
+      },
+      vertexShader: VERTEX,
+      fragmentShader: GOD_RAY_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.NoBlending,
+    })
+    const godMesh = new THREE.Mesh(quad, this.godMaterial)
+    godMesh.frustumCulled = false
+    this.godScene.add(godMesh)
     this.startNoise()
   }
 
@@ -439,9 +515,10 @@ export class VolumetricClouds {
     this.historyValid = false
   }
 
-  /** No clouds to cast shadows (underground, under water): the ground is lit as if clear. */
+  /** No clouds to cast shadows (underground, under water): the ground is lit as if clear, no god rays. */
   hideShadows(): void {
     cloudShadowParams.y = 0
+    godRaySun.w = 0
   }
 
   /**
@@ -508,6 +585,30 @@ export class VolumetricClouds {
     cloudShadowParams.y = strength
     cloudShadowParams.z = light.y > 0.01 ? light.x / light.y : 0
     cloudShadowParams.w = light.y > 0.01 ? light.z / light.y : 0
+    // God rays shine with the same light
+    godRaySun.x = light.x
+    godRaySun.y = light.y
+    godRaySun.z = light.z
+    godRaySun.w = strength
+    godRaySunColor.x = l.lightColor.r
+    godRaySunColor.y = l.lightColor.g
+    godRaySunColor.z = l.lightColor.b
+    // The god rays through this frame's shadows (the land reads them from the next frame)
+    const godWrite = this.godTargets[this.current]
+    const godRead = this.godTargets[1 - this.current]
+    const godWidth = Math.max(1, Math.ceil(this.size.x * GOD_RAY_SCALE))
+    const godHeight = Math.max(1, Math.ceil(this.size.y * GOD_RAY_SCALE))
+    if (godWrite.width !== godWidth || godWrite.height !== godHeight) {
+      godWrite.setSize(godWidth, godHeight)
+      godRead.setSize(godWidth, godHeight)
+    }
+    const g = this.godMaterial.uniforms
+    g.uHistory.value = godRead.texture
+    g.uHistoryBlend.value = u.uHistoryBlend.value
+    renderer.setRenderTarget(godWrite)
+    renderer.render(this.godScene, this.camera)
+    renderer.setRenderTarget(previous)
+    setGodRayMap(godWrite.texture, this.size.x, this.size.y)
 
     // Next frame reprojects through this frame's view (rotation only; the position change goes in uCamDelta)
     this.viewRot.copy(camera.matrixWorldInverse).setPosition(0, 0, 0)
@@ -524,6 +625,9 @@ export class VolumetricClouds {
     this.material.dispose()
     this.shadowTarget.dispose()
     this.shadowMaterial.dispose()
+    this.godTargets[0].dispose()
+    this.godTargets[1].dispose()
+    this.godMaterial.dispose()
     this.noise?.dispose()
   }
 }

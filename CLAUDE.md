@@ -230,7 +230,8 @@ light scales the scene lights (sun, hemisphere, ambient) times the global `dayli
 light is a separate warm, non-directional term; `uLightFloor` is what remains where neither reaches.
 Never fold the non-directional term into scene lights (Lambert's 1/π and N·L darken it 24-59%).
 The direct (sun/moon) term is also dimmed by cloud shadows (`slopCloudShadow`, `cloudShadowUniforms` - attach them
-wherever `uDaylight` is attached: a material whose shader has the sampler but not the uniform leaves it on texture unit 0).
+wherever `uDaylight` is attached: a material whose shader has the sampler but not the uniform leaves it on texture unit 0),
+and world-lit materials get god rays in their fog (`CLOUD_LIGHT_GLSL` defines `SLOP_CLOUD_SHADOW`, which fog_fragment checks).
 `daylight` and the floor come from the biome atmosphere every frame (`setWorldDaylight`,
 `setWorldLightFloor` in the 'skybox' task). Level 15 sky in full daylight shades exactly like the
 plain scene lights. Glowing blocks add emissive texels via `EmissiveTextures.ts`.
@@ -247,11 +248,12 @@ sky's night palette/twilight - weighted by a surface factor eased from the playe
   colours `tint`, `fogColor`, `undergroundFogColor`, `lightTint`, `clouds.color`. Linear: `minimumLight`
   (light floor as an RGB multiplier of albedo, e.g. the Molten Wastes' red ember glow (0.33, 0.15, 0.1),
   the Ossuary's pale green (0.3, 0.37, 0.31)) and
-  `daylight` (0-1 overcast dimming - swamp 0.62, coastal rainforest 0.82). Scalars: `fogDensity` (≥ 1,
+  `daylight` (0-1 biome-wide dimming - no surface biome uses it: Ben's rule is that darkness comes from the clouds
+  and the weather, not a biome; the swamp's 0.62 and the coast's 0.82 read as always shaded). Scalars: `fogDensity` (≥ 1,
   shortens the absolute haze distance), `clouds.coverage` (default 0.42; the volumetric clouds' fair-weather cover, weather adds to it) and `clouds.opacity` (swamp
-  grey overcast 0.65, volcanic dark ash 0.6, desert 0.2). Use `daylight` for a biome's gloom, NOT a
-  `skylightValue` cap (caps are baked per sub-chunk and draw hard 32-block light steps at region
-  borders; every Hell biome uses cap 0).
+  grey overcast 0.65, volcanic dark ash 0.6, desert 0.2). A surface biome's gloom is its clouds and
+  weathers, never a `skylightValue` cap (caps are baked per sub-chunk and draw hard 32-block light steps
+  at region borders; every Hell biome uses cap 0).
 - `DistanceFog` owns THE fog; `setViewDistance` is called only by `syncViewDistance()` (the drawn
   LOD ring's reach × 32 while LOD is drawn, else `chunkDistance` × 32), so fog and far plane always agree.
   The global `fog_vertex` override makes fog spherical (true distance, not view depth - no fog-free
@@ -266,7 +268,8 @@ sky's night palette/twilight - weighted by a surface factor eased from the playe
   and includes three's colour-space chunk (colour-managed). Any future opaque object that does not
   write depth must draw after it (renderOrder > 500).
 - `WorldLighting`: warm sun (fixed 10am, `getSunDirection()` also drives the sky's sun disc),
-  hemisphere + ambient fill, optional PCF soft shadows.
+  hemisphere + ambient fill, optional PCF soft shadows. Sun intensity 2.1 (1.4 before the cloud shadows: Ben found
+  full sun read slightly shaded once there was real shade beside it); the moon is set as a share of it in DayNightSky.
 
 **Liquids:** each family (water, swamp water, lava) has ONE shared animated `MeshPhongMaterial`
 (`LiquidMaterials.ts`) and one texture for all its levels; its sun glitter is gated by the texel
@@ -2004,9 +2007,20 @@ cloud layer built from the same air, moving with it, casting shadows that drift 
     perspective. Jittered march (up to 72 steps, empty-air striding) blended over the last frame reprojected through
     its view (history dropped on camera jumps, resizes, hidden sky, weather jumps: `Skybox.resetClouds`). Beyond the
     map the biome's fair cumulus continue to the horizon. Skipped underground, in caves and under water.
-  - **Cloud shadows**: a 128² map of 16-block cells around the camera (world-anchored), marched through the same
-    clouds toward the light each frame; `worldLightShader`'s `slopCloudShadow` dims the direct light by it (slid along
-    the light to each fragment's height), fading out past ~800 blocks. Shadows drift over the land with the clouds.
+  - **Cloud shadows**: a 256² map of 8-block cells around the camera (world-anchored), marched each frame through
+    each column's own cloud (base to top or anvil, 14 jittered steps, detail and all) toward the light, ×2.6 opacity
+    (from straight below, fair cumulus cover only ~15% of the ground - they look denser edge-on); `worldLightShader`'s
+    `slopCloudShadow` dims the direct light by it and the sky's a little (slid along the light to each fragment's
+    height), fading out past ~850 blocks. Shadows drift over the land with the clouds. A slow 12 km domain warp and
+    cover swell (`Cell.warp`) keep the noise's 960-block tile from repeating.
+  - **God rays**: a quarter-resolution pass (`GOD_RAY_FRAGMENT`, temporally accumulated) marches each view ray through
+    the air below the cloud base, 10 jittered steps through the shadow map (`slopGodRays`, scattering 3.5× the visible
+    haze), storing the haze's sunlit share; the land (fog_fragment, from the last frame: the pass renders after the land
+    draws) and the sky read it (`slopGodRaysAt` scales it to each pixel's distance; `slopApplyGodRays` takes half the light
+    out of the fog's own haze where it sits in cloud shadow - the sky still lights it; at full darkening every view
+    under broken cloud read dim - and adds a forward glow toward the sun), and the sun's halo is cut by
+    it - shafts of light pouring through gaps in the clouds. All the light uniforms ride in `cloudShadowUniforms` (the
+    dome adds them too).
   - **Rain shafts and walls** (`slopWeatherFar`, 12 log-spaced jittered steps on the land, 16 on the sky, to 2000
     blocks): rain and dust from the ground up to the cloud base, with drifting billows, coloured from the horizon
     without the weather (`weatherFieldSky`, set by Skybox) greyed, darkened by the storm, tinted; the first 80 blocks

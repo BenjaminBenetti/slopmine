@@ -5,6 +5,7 @@ import { createCloudNoiseTexture } from './cloudNoise.ts'
 import type { DayNightState } from './DayNightSky.ts'
 import { WEATHER_FIELD_GLSL, WEATHER_MARCH_MAX, weatherFieldSky, weatherFieldUniforms } from '../weather/WeatherFieldShader.ts'
 import { VolumetricClouds } from '../clouds/VolumetricClouds.ts'
+import { CLOUD_LIGHT_GLSL, cloudShadowUniforms } from '../worldLightShader.ts'
 
 export interface SkyboxOptions {
   skyRadius?: number
@@ -140,6 +141,7 @@ export class Skybox {
         nightHorizon: { value: new THREE.Color() },
         skyTime: { value: 0.0 },
         ...weatherFieldUniforms,
+        ...cloudShadowUniforms,
         uFogColor: { value: new THREE.Color() },
         uSkyGrey: { value: 0.0 },
         uWeatherDim: { value: 1.0 },
@@ -203,6 +205,7 @@ export class Skybox {
         #include <dithering_pars_fragment>
         #define SLOP_WX_STEPS 16
         ${WEATHER_FIELD_GLSL}
+        ${CLOUD_LIGHT_GLSL}
 
         float starHash(vec3 p3) {
           p3 = fract(p3 * 0.1031);
@@ -330,7 +333,10 @@ export class Skybox {
           // (the disc sets behind the horizon)
           float sunDot = max(dot(dir, sunDirection), 0.0);
           float sunShow = 1.0 - uSunDim;
-          color += sunColor * (pow(sunDot, 12.0) * 0.16 + pow(sunDot, 180.0) * 0.55) * (1.0 - night * 0.85) * sunShow;
+          // (its halo is cut by the clouds' shadows in the air: shafts of light around a sun behind broken cloud)
+          vec4 godRays = texture2D(uGodRayMap, gl_FragCoord.xy * uGodRayParams.zw);
+          float sunlitAir = godRays.g > 1e-4 && uGodRaySun.w > 0.0 ? mix(1.0, godRays.r / godRays.g, min(1.0, godRays.g * 1.5)) : 1.0;
+          color += sunColor * (pow(sunDot, 12.0) * 0.16 * (0.15 + 0.85 * sunlitAir) + pow(sunDot, 180.0) * 0.55) * (1.0 - night * 0.85) * sunShow;
           color += sunColor * 3.0 * smoothstep(0.99885, 0.99925, sunDot) * aboveHorizon * sunShow;
 
           // Shooting stars (meteor showers)
@@ -379,6 +385,8 @@ export class Skybox {
           color *= mix(vec3(1.0), uWeatherTint, uWeatherTintAmount);
           // The weather far off along this ray (rain walls, sandstorms, fog banks: like the land's edge
           // in front of it), then the weather here
+          // God rays through the gaps between clouds (as on the land: worldLightShader)
+          color = slopApplyGodRays(color, uFogColor, 1.0 - smoothstep(0.0, 0.45, h), dir, slopGodRaysAt(1500.0));
           vec4 wxFar = slopWeatherFar(cameraPosition, dir, ${WEATHER_MARCH_MAX.toFixed(1)});
           color = color * (1.0 - wxFar.a) + wxFar.rgb;
           color = mix(color, uFogColor, slopWeatherNear(${WEATHER_MARCH_MAX.toFixed(1)}));
