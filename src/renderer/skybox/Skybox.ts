@@ -452,6 +452,24 @@ export class Skybox {
       target.g += dn.twilightColor.g * dn.twilight * TWILIGHT_FOG_SHARE
       target.b += dn.twilightColor.b * dn.twilight * TWILIGHT_FOG_SHARE
     }
+    return this.displayedSky(target, withWeather)
+  }
+
+  /**
+   * The sky overhead as displayed (linear): what water reflects looking
+   * straight up (the dome's zenith, with its night, weather, brightness and
+   * underground steps).
+   */
+  getZenithColor(target: THREE.Color): THREE.Color {
+    target.copy(this.skyMaterial.uniforms.zenithColor.value as THREE.Color).multiply(this.atmosphere.skyTint)
+    const dn = this.dayNight
+    if (dn) target.lerp(dn.nightZenith, dn.night)
+    return this.displayedSky(target, true)
+  }
+
+  /** The dome's colour steps after its gradient: weather grey and dim, flash, brightness, underground, tint. */
+  private displayedSky(target: THREE.Color, withWeather: boolean): THREE.Color {
+    const a = this.atmosphere
     // The same weather steps as the dome's horizon (see the shader)
     const w = withWeather ? this.weather : null
     if (w) {

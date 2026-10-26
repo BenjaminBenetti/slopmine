@@ -5,9 +5,11 @@ import type { IBlock } from '../interfaces/IBlock.ts'
  * [blockId, family (1-based index, equal for every level of one liquid and its
  * falling variant), level (surface height in eighths; full and falling = 8),
  * drawAs (the liquid block whose faces this cell draws: itself for a liquid,
- * its liquid's source block for a submerged block such as glowkelp)].
+ * its liquid's source block for a submerged block such as glowkelp), clear
+ * (1 = water-like: light ripples through it - caustics on the faces under it;
+ * 0 = lava)].
  */
-export type LiquidMeshEntry = [blockId: number, family: number, level: number, drawAs: number]
+export type LiquidMeshEntry = [blockId: number, family: number, level: number, drawAs: number, clear: number]
 
 /**
  * Build the mesh worker's liquid table from the registered blocks' own
@@ -30,13 +32,13 @@ export function buildLiquidMeshEntries(getBlock: (id: number) => IBlock, blockId
   for (const id of blockIds) {
     const props = getBlock(id).properties
     if (!props.isLiquid || !props.liquidFamily || !props.liquidLevel) continue
-    entries.push([id, familyIndex(props.liquidFamily), props.liquidLevel, id])
+    entries.push([id, familyIndex(props.liquidFamily), props.liquidLevel, id, props.liquidFamily === 'lava' ? 0 : 1])
     if (props.liquidLevel === 8 && !props.isFallingLiquid) sources.set(props.liquidFamily, id)
   }
   for (const id of blockIds) {
     const family = getBlock(id).properties.submergedIn
     const source = family ? sources.get(family) : undefined
-    if (family && source !== undefined) entries.push([id, familyIndex(family), 8, source])
+    if (family && source !== undefined) entries.push([id, familyIndex(family), 8, source, family === 'lava' ? 0 : 1])
   }
   return entries
 }

@@ -16,6 +16,7 @@ import { biquad, createRng } from './dsp.ts'
 import { renderInstrumentNote, type InstrumentId } from './instruments.ts'
 import { SFX_RECIPES } from './sfxRecipes.ts'
 import { WEATHER_BEDS, WEATHER_SFX } from './weatherSounds.ts'
+import { WATER_BEDS } from './waterSounds.ts'
 
 export function hasRecipe(id: string): boolean {
   try {
@@ -40,7 +41,7 @@ function findRecipe(id: string): ((seed: number, sr: number) => Float32Array) | 
     const midi = Number(parts[2])
     return Number.isFinite(midi) ? (_seed, sr) => renderInstrumentNote(instrument, midi, sr) : null
   }
-  const recipe = AMBIENCE_BEDS[id] ?? AMBIENCE_DETAILS[id] ?? WEATHER_BEDS[id] ?? WEATHER_SFX[id] ?? SFX_RECIPES[id]
+  const recipe = AMBIENCE_BEDS[id] ?? AMBIENCE_DETAILS[id] ?? WEATHER_BEDS[id] ?? WEATHER_SFX[id] ?? WATER_BEDS[id] ?? SFX_RECIPES[id]
   return recipe ? (seed, sr) => recipe(createRng(seed), sr) : null
 }
 

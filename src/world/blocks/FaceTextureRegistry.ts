@@ -388,6 +388,10 @@ export enum TextureId {
   FULGURITE = 648,               // fulgurite.webp
   STAR_FRAGMENT = 649,           // decor models (coloured materials, no texture layer)
   STAR_LANTERN = 650,
+  // Water
+  KELP = 651,                    // Non-greedy sprites (no texture-array layer)
+  KELP_TOP = 652,
+  SEAGRASS = 653,
 }
 
 // Cache for the face texture map

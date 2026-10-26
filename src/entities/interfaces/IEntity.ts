@@ -143,6 +143,12 @@ export interface IEntity {
    * minion) can clear them along with it.
    */
   readonly spawnedChildren?: readonly IEntity[]
+
+  /**
+   * Never removed for being far from the player (boats: their own registry
+   * decides when they exist - setupBoats).
+   */
+  readonly keepLoaded?: boolean
 }
 
 /**

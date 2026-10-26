@@ -22,7 +22,7 @@ import { setupPointsOfInterest } from './pois/setupPointsOfInterest.ts'
 import { requestSleep } from './daynight/sleep.ts'
 import { DistanceFog } from './renderer/DistanceFog.ts'
 import { BlockOutline } from './renderer/BlockOutline.ts'
-import { updateLiquidMaterials, setLiquidReflectionColor } from './renderer/LiquidMaterials.ts'
+import { updateLiquidMaterials, setLiquidReflectionColor, setLiquidZenithColor } from './renderer/LiquidMaterials.ts'
 import { HeldItemRenderer } from './renderer/helditem/index.ts'
 import { LiquidOverlay } from './renderer/LiquidOverlay.ts'
 import { LodRenderer } from './renderer/lod/LodRenderer.ts'
@@ -36,6 +36,11 @@ import { InventoryInputHandler } from './player/InventoryInput.ts'
 import { SettingsInputHandler } from './player/SettingsInput.ts'
 import { hasGameplayPointer, setPointerLockTarget } from './player/PointerMode.ts'
 import { installVirtualCursor } from './ui/VirtualCursor.ts'
+import { Hydrology, WATER_SURFACE_Y } from './world/generate/water/Hydrology.ts'
+import { findCoastalSpawn } from './water/coastalSpawn.ts'
+import { WaterCurrents } from './world/liquid/WaterCurrents.ts'
+import { setupWater } from './water/setupWater.ts'
+import { setupBoats } from './water/boats/setupBoats.ts'
 import { BlockInteraction, MAX_REACH_DISTANCE } from './player/BlockInteraction.ts'
 import { BlockPlacement } from './player/BlockPlacement.ts'
 import { ItemConsumption } from './player/ItemConsumption.ts'
@@ -76,6 +81,7 @@ import {
   WorldPhysicsAdapter,
   PLAYER_WIDTH,
   PLAYER_HEIGHT,
+  PLAYER_BUOYANCY,
   PLAYER_DEPTH,
   EYE_HEIGHT,
 } from './physics/index.ts'
@@ -108,6 +114,7 @@ import { recipeBook } from './crafting/RecipeBook.ts'
 import {
   PersistenceManager,
   initializeItemRegistry,
+  createItemFromId,
   serializeInventory,
   deserializeInventory,
   setGlobalPersistenceManager,
@@ -257,6 +264,12 @@ const playerState = new PlayerState(10)
 // Player health system (20 hearts = 40 HP)
 const playerHealth = new PlayerHealth({ maxHealth: 40 })
 const fallDamageTracker = new FallDamageTracker()
+/**
+ * Arriving at the spawn (a new world, a respawn) the player drops onto the
+ * ground from well above it (the spawn height is a guess above any land):
+ * that first landing never hurts.
+ */
+let spawnDrop = true
 
 // Give player diamond tools in dev mode
 if (import.meta.env.DEV) {
@@ -404,6 +417,12 @@ persistenceManager.initialize().then(async () => {
     console.log(`Loaded saved position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`)
   }
 
+  // A saved world keeps the spawn it was made with (the spawn search has changed since some were made)
+  if (savedMetadata?.originalSpawnPoint) {
+    const sp = savedMetadata.originalSpawnPoint
+    originalSpawnPoint.set(sp.x, sp.y, sp.z)
+  }
+
   // Load saved bed spawn point if exists
   if (savedMetadata?.bedSpawnPoint) {
     const sp = savedMetadata.bedSpawnPoint
@@ -536,22 +555,50 @@ const seaLevel = worldGenerator.getConfig().seaLevel
 
 // Create physics system
 const physicsWorld = new WorldPhysicsAdapter(world)
+// Rivers carry swimmers, mobs, drops and boats toward the sea; flowing water runs downhill
+physicsWorld.setWaterCurrents(new WaterCurrents(world, worldGenerator.getConfig().seed))
 const physicsEngine = new PhysicsEngine(physicsWorld)
 
+/** Which way a new world's player faces at spawn (the sea, from a coastal spawn), if anywhere in particular. */
+let spawnFacing = null as { x: number; z: number } | null
+
 /**
- * Find a spawn position in a biome that has wood (not desert or volcanic).
- * Searches in a spiral pattern from the default region (0,0) outward.
- * Returns world coordinates at the center of the suitable biome region.
+ * Find a spawn position in a biome that has wood (not desert or volcanic):
+ * on the coast nearest the origin, looking out to sea (coastalSpawn.ts), else
+ * searching in a spiral pattern from the default region (0,0) outward for the
+ * centre of a suitable biome region.
  */
 function findSuitableSpawnPosition(seed: number, seaLevelY: number): THREE.Vector3 {
-  // Biomes without wood - players should not spawn in these
-  const hostileBiomes: Set<string> = new Set(['desert', 'volcanic'])
+  // Biomes without wood - players should not spawn in these (nor out at sea)
+  const hostileBiomes: Set<string> = new Set(['desert', 'volcanic', 'ocean'])
+
+  const biomeAt = (x: number, z: number): string =>
+    biomeRegistry.selectBiomeForLayer(Math.floor(x / (BIOME_REGION_SIZE * 32)), Math.floor(z / (BIOME_REGION_SIZE * 32)), seed, 1)
+  const generators = new Map<string, ReturnType<NonNullable<ReturnType<typeof biomeRegistry.get>>['createGenerator']>>()
+  const landHeightAt = (x: number, z: number): number => {
+    const biome = biomeAt(x, z)
+    let generator = generators.get(biome)
+    if (!generator) {
+      generator = biomeRegistry.get(biome as Parameters<typeof biomeRegistry.get>[0])!.createGenerator(worldGenerator.getConfig())
+      generators.set(biome, generator)
+    }
+    return generator.getHeightAt(x, z)
+  }
+  // A clear coast first (a swamp's shore is murky), then any wooded one
+  const coast =
+    findCoastalSpawn(seed, (x, z) => { const b = biomeAt(x, z); return !hostileBiomes.has(b) && b !== 'swamp' }, landHeightAt) ??
+    findCoastalSpawn(seed, (x, z) => !hostileBiomes.has(biomeAt(x, z)), landHeightAt)
+  if (coast) {
+    spawnFacing = { x: coast.seaX, z: coast.seaZ }
+    console.log(`[spawn] On the coast in ${biomeAt(coast.x, coast.z)} at ${coast.x}, ${coast.z}`)
+    return new THREE.Vector3(coast.x + 0.5, seaLevelY + 20, coast.z + 0.5)
+  }
 
   // Check the default region (0, 0) first
   const defaultBiome = biomeRegistry.selectBiomeForLayer(0, 0, seed, 1)
   if (!hostileBiomes.has(defaultBiome)) {
     // Default spawn is fine - center of region (0,0)
-    return new THREE.Vector3(256, seaLevelY + 20, 256)
+    return onDryLand(seed, 256, 256, seaLevelY + 20)
   }
 
   // Search outward in a spiral for a suitable biome region
@@ -570,7 +617,7 @@ function findSuitableSpawnPosition(seed: number, seaLevelY: number): THREE.Vecto
           const worldX = dx * BIOME_REGION_SIZE * 32 + (BIOME_REGION_SIZE * 32) / 2
           const worldZ = dz * BIOME_REGION_SIZE * 32 + (BIOME_REGION_SIZE * 32) / 2
           console.log(`[spawn] Avoided ${defaultBiome} at origin, spawning in ${biome} at region (${dx}, ${dz})`)
-          return new THREE.Vector3(worldX, seaLevelY + 20, worldZ)
+          return onDryLand(seed, worldX, worldZ, seaLevelY + 20)
         }
       }
     }
@@ -578,7 +625,26 @@ function findSuitableSpawnPosition(seed: number, seaLevelY: number): THREE.Vecto
 
   // Fallback: no suitable biome found within search radius (very unlikely)
   console.warn('[spawn] Could not find non-hostile biome within search radius, using default')
-  return new THREE.Vector3(256, seaLevelY + 20, 256)
+  return onDryLand(seed, 256, 256, seaLevelY + 20)
+}
+
+/** The nearest column to (x, z) out of the sea and clear of rivers and their flood lakes (Hydrology), searched in rings 16 blocks apart. */
+function onDryLand(seed: number, x: number, z: number, y: number): THREE.Vector3 {
+  const hydrology = Hydrology.forSeed(seed)
+  const dry = (px: number, pz: number): boolean => {
+    const sample = hydrology.sample(px, pz)
+    return sample.continent > 0.03 && sample.valleyCap > WATER_SURFACE_Y + 3 && !sample.floodplain
+  }
+  for (let ring = 0; ring <= 24; ring++) {
+    const steps = Math.max(1, ring * 8)
+    for (let i = 0; i < steps; i++) {
+      const angle = (i / steps) * Math.PI * 2
+      const px = Math.round(x + Math.cos(angle) * ring * 16)
+      const pz = Math.round(z + Math.sin(angle) * ring * 16)
+      if (dry(px, pz)) return new THREE.Vector3(px + 0.5, y, pz + 0.5)
+    }
+  }
+  return new THREE.Vector3(x, y, z)
 }
 
 // Create player physics body at spawn position (above generated terrain)
@@ -611,6 +677,9 @@ const playerBody = new PhysicsBody(
   originalSpawnPoint,
   new THREE.Vector3(PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_DEPTH)
 )
+// The player floats with the eyes just above the water; the controls set the swim speed
+playerBody.buoyancy = PLAYER_BUOYANCY
+playerBody.swimSpeedFactor = 1
 physicsEngine.addBody(playerBody)
 
 // Create entity manager
@@ -660,6 +729,10 @@ entityManager.setLightQuery((x, y, z) => world.getPackedLightFast(x, y, z))
 // Set block query functions for entities that need world access (e.g., EmberRoach for pillar detection)
 entityManager.setBlockQuery((x, y, z) => world.getBlockIdFast(x, y, z))
 entityManager.setSolidQuery((x, y, z) => physicsWorld.isSolidBlock(x, y, z))
+entityManager.setLiquidQuery((x, y, z) => {
+  const props = world.getBlockFast(x, y, z).properties
+  return props.isLiquid === true || props.submergedIn !== undefined
+})
 
 // Connect camera controls to physics
 cameraControls.setPhysics(playerBody, physicsEngine)
@@ -721,8 +794,9 @@ playerHealth.setOnDeath(() => {
         )
         requestAnimationFrame(holdPlayer)
       } else {
-        // Release player after hold period
+        // Release player after hold period (to drop onto the spawn unhurt)
         fallDamageTracker.reset()
+        spawnDrop = true
         deathScreen.hide()
         // Control returns only in gameplay: an overlay still open (journal,
         // inventory, block UI, pause menu) holds the pointer and re-enables
@@ -845,6 +919,8 @@ renderer.camera.position.set(
   originalSpawnPoint.y + EYE_HEIGHT,
   originalSpawnPoint.z
 )
+// A new world opens looking out to sea (forward is (-sin yaw, -cos yaw))
+if (spawnFacing) cameraControls.setYaw(Math.atan2(-spawnFacing.x, -spawnFacing.z))
 
 // Set the scene and renderer for rendering and proper GPU cleanup
 world.setScene(renderer.scene)
@@ -966,6 +1042,7 @@ lighting.setShadowsEnabled(graphicsSettings.shadowsEnabled)
 const atmosphere = new BiomeAtmosphere()
 const sunDirection = lighting.getSunDirection(new THREE.Vector3())
 const fogColor = new THREE.Color()
+const liquidZenith = new THREE.Color()
 
 // Add skybox with sun positioned to match the directional light
 const skybox = new Skybox(atmosphere)
@@ -1150,6 +1227,7 @@ const throwStackFromPlayer = (item: IItem, count: number): boolean => {
 }
 inventoryInput.setThrowStackHandler(throwStackFromPlayer)
 blockInteractionHandler.setThrowStackHandler(throwStackFromPlayer)
+blockInteraction.setThrowStackHandler(throwStackFromPlayer)
 
 let frameCpuStart = 0
 let lastTickCount = 0
@@ -1207,10 +1285,9 @@ scheduler.createTask({
     playerHealth.update(dt)
 
     // Check for fall damage after physics (based on impact velocity)
-    const damage = applyDamageModifiers(
-      fallDamageTracker.update(playerBody.velocity.y, playerBody.isOnGround),
-      'fall'
-    )
+    const impact = fallDamageTracker.update(playerBody.velocity.y, playerBody.isOnGround)
+    const damage = spawnDrop ? 0 : applyDamageModifiers(impact, 'fall')
+    if (spawnDrop && (playerBody.isOnGround || playerBody.submerged > 0)) spawnDrop = false
     if (damage > 0) {
       playerHealth.takeDamage(damage)
       healthDisplay.flash()
@@ -1427,6 +1504,7 @@ scheduler.createTask({
     setWorldDaylight(atmosphere.daylight * dayNight.daylight * weatherAtmosphere.daylight + weatherAtmosphere.flash * 0.7 * surfaceWeight)
     // Liquids reflect the horizon sky at glancing angles; drift their textures
     setLiquidReflectionColor(fogColor)
+    setLiquidZenithColor(skybox.getZenithColor(liquidZenith))
     updateLiquidMaterials(dt)
     // Bioluminescent block textures breathe and twinkle; fires flicker
     advanceGlowTime(dt)
@@ -1653,6 +1731,55 @@ const armorSystem = setupArmorSystem({
   toolbarUI,
   domElement: renderer.renderer.domElement,
   persistenceManager,
+})
+
+// Water: the player's air under water, and the rest of the water's runtime (see src/water)
+setupWater({
+  scheduler,
+  entitySpawner,
+  entityManager,
+  seed: worldGenerator.getConfig().seed,
+  scene: renderer.scene,
+  camera: renderer.camera,
+  getViewportHeight: () => renderer.renderer.domElement.height,
+  playerBody,
+  world,
+  currentAt: (x, y, z, out) => physicsWorld.getWaterCurrent(x, y, z, out),
+  cameraControls,
+  playerHealth,
+  healthDisplay,
+})
+// Sailboats: put in on water, boarded with E, sailed on the wind; remembered where they were left
+setupBoats({
+  scheduler,
+  entityManager,
+  world: {
+    getBlockFast: (x, y, z) => world.getBlockFast(x, y, z),
+    isLoadedAt: (x, y, z) =>
+      world.getSubChunk({ x: BigInt(Math.floor(x / 32)), z: BigInt(Math.floor(z / 32)), subY: Math.floor(y / 32) })?.lightReady === true,
+  },
+  camera: renderer.camera,
+  cameraControls,
+  playerBody,
+  isPlayerDead: () => playerHealth.isDead,
+  getHeldItem: () => {
+    const toolbar = playerState.inventory.toolbar
+    return toolbar.getStack(toolbar.selectedIndex)?.item ?? null
+  },
+  consumeHeldItem: () => {
+    const toolbar = playerState.inventory.toolbar
+    const stack = toolbar.getStack(toolbar.selectedIndex)
+    if (!stack) return
+    if (stack.count <= 1) toolbar.clearSlot(toolbar.selectedIndex)
+    else stack.count -= 1
+    toolbarUI.syncFromState(toolbar.slots)
+  },
+  createItem: (id) => createItemFromId(id),
+  domElement: renderer.renderer.domElement,
+  setEntityInteractHandler: (handler) => blockInteractionHandler.setEntityInteractHandler(handler),
+  currentAt: (x, y, z, out) => physicsWorld.getWaterCurrent(x, y, z, out),
+  resetFall: () => fallDamageTracker.reset(),
+  persistence: persistenceManager,
 })
 
 // Weather: each biome's weathers drifting across the world - sky, fog, light, wind, rain and snow,

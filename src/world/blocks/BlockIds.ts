@@ -510,4 +510,9 @@ export enum BlockIds {
   FULGURITE = 514,               // sand fused to glass by a lightning strike
   STAR_FRAGMENT = 515,           // a fallen star (meteor showers), glowing
   STAR_LANTERN = 516,            // lantern of stardust (light 15)
+
+  // Water (530-549)
+  KELP = 530,                    // sea kelp stalk segment (stands in water)
+  KELP_TOP = 531,                // sea kelp crown
+  SEAGRASS = 532,                // seagrass on the beds of seas, rivers and lakes
 }

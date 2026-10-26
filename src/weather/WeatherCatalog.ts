@@ -598,6 +598,22 @@ export const BIOME_WEATHER: Readonly<Record<string, BiomeWeather>> = {
         .fallback('clear')
     },
   },
+  ocean: {
+    ids: ['clear', 'glowing_tide', 'sea_fog', 'overcast', 'gale', 'drizzle', 'rain_shower', 'squall', 'thunderstorm'],
+    present: (air, ctx, c) => {
+      // Nothing breaks the wind out at sea, and fog banks lie thick on the water
+      const wind = air.wind * 1.25
+      c.rule('thunderstorm', stormy(air))
+        .rule('squall', ramp(wind, 0.5, 0.75) * ramp(air.precip, 0.12, 0.3))
+        .rule('rain_shower', ramp(air.precip, 0.38, 0.58))
+        .rule('drizzle', ramp(air.precip, 0.08, 0.32))
+        .rule('gale', ramp(wind, 0.58, 0.82))
+        .rule('sea_fog', ramp(air.fog * 1.6, 0.3, 0.6))
+        .rule('overcast', overcast(air))
+        .rule('glowing_tide', night(ctx) * ctx.nightEvent(SALT.tide, TIDE_NIGHTS))
+        .fallback('clear')
+    },
+  },
 
   // Hell: the cavern has its own air (a separate set of systems) and no sky
   hell: {

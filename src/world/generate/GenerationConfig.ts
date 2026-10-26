@@ -10,6 +10,7 @@ export type BiomeType =
   | 'swamp'
   | 'pine-forest'
   | 'coastal-rainforest'
+  | 'ocean'
   // Layer 0 (the Hell layer)
   | 'hell' // the Molten Wastes
   | 'ossuary'

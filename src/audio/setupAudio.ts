@@ -11,6 +11,7 @@
  * idle calls.
  */
 
+import { waterAmbience } from '../water/WaterHooks.ts'
 import * as THREE from 'three'
 import type { TaskScheduler } from '../core/TaskScheduler.ts'
 import { TaskPriority } from '../core/interfaces/ITask.ts'
@@ -279,6 +280,7 @@ export function setupAudio(deps: AudioDeps): void {
             night: layer === 1 ? worldClock.nightAmount : 0,
             caveBiome: deps.getCaveBiome(),
             weather: getWeatherSnapshot(),
+            water: waterAmbience,
           },
           envDt,
         )

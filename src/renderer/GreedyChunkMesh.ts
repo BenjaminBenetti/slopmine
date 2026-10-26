@@ -13,7 +13,7 @@ import {
 } from './ChunkVertexFormat.ts'
 import { prepareInstancedBlockMaterial, writeInstanceLight } from './InstancedBlockLight.ts'
 import { setFlickerLights } from './FlickerLights.ts'
-import { LIQUID_GLOW_ATTRIBUTE } from './LiquidMaterials.ts'
+import { LIQUID_DEPTH_ATTRIBUTE, LIQUID_GLOW_ATTRIBUTE, LIQUID_SHORE_ATTRIBUTE } from './LiquidMaterials.ts'
 import { FoliageBatch, releaseFoliageMesh } from './foliage/FoliageRenderer.ts'
 import { isFoliageBlock } from '../world/blocks/foliage/FoliageSpec.ts'
 import { getMetadataFacing, getMetadataUses3DRotation, getMetadataFlipped, facingToEuler } from '../world/blocks/BlockFacing.ts'
@@ -132,7 +132,8 @@ export class GreedyChunkMesh implements IChunkMesh {
       response.nonGreedyLights,
       response.nonGreedyMetadata,
       response.nonGreedyFaceVisibility,
-      response.nonGreedyLiquidGlow ?? []
+      response.nonGreedyLiquidGlow ?? [],
+      response.nonGreedyLiquidDepth ?? []
     )
   }
 
@@ -152,6 +153,8 @@ export class GreedyChunkMesh implements IChunkMesh {
     geometry.setAttribute('position', new THREE.InterleavedBufferAttribute(interleaved, 4, CHUNK_VERTEX_POSITION_OFFSET))
     geometry.setAttribute('aTex', new THREE.InterleavedBufferAttribute(interleaved, 4, CHUNK_VERTEX_TEX_OFFSET))
     geometry.setAttribute('aLight', new THREE.InterleavedBufferAttribute(interleaved, 4, CHUNK_VERTEX_LIGHT_OFFSET))
+    // The same 4 position bytes again, for the pad byte (1 = the face lies under water: caustics)
+    geometry.setAttribute('aPos4', new THREE.InterleavedBufferAttribute(interleaved, 4, CHUNK_VERTEX_POSITION_OFFSET))
     const index = new THREE.BufferAttribute(meshGroup.indices, 1)
     index.onUpload(releaseArrayAfterUpload)
     geometry.setIndex(index)
@@ -189,11 +192,13 @@ export class GreedyChunkMesh implements IChunkMesh {
     nonGreedyLights: Array<[number, Uint8Array]>,
     nonGreedyMetadata: Array<[number, Uint8Array]>,
     nonGreedyFaceVisibility: Array<[number, Uint32Array]>,
-    nonGreedyLiquidGlow: Array<[number, Uint8Array]>
+    nonGreedyLiquidGlow: Array<[number, Uint8Array]>,
+    nonGreedyLiquidDepth: Array<[number, Uint8Array]>
   ): void {
     const matrix = new THREE.Matrix4()
     const faceVisMap = new Map(nonGreedyFaceVisibility)
     const liquidGlowMap = new Map(nonGreedyLiquidGlow)
+    const liquidDepthMap = new Map(nonGreedyLiquidDepth)
     const foliage = new FoliageBatch()
     const flickering: number[] = []
 
@@ -221,7 +226,7 @@ export class GreedyChunkMesh implements IChunkMesh {
       if (block.properties.isLiquid && faceVis) {
         const material = block.getInstanceMaterial()
         const mat = Array.isArray(material) ? material[0] : material
-        this.buildLiquidMesh(blockId, positions, lights, faceVis, liquidGlowMap.get(blockId) ?? null, material, mat)
+        this.buildLiquidMesh(blockId, positions, lights, faceVis, liquidGlowMap.get(blockId) ?? null, liquidDepthMap.get(blockId) ?? null, material, mat)
       }
       // Check if block supports multi-mesh rendering (multiple geometry/material pairs)
       else if (isMultiMeshBlock(block)) {
@@ -280,6 +285,7 @@ export class GreedyChunkMesh implements IChunkMesh {
     lights: Uint8Array,
     faceVisibility: Uint32Array,
     glow: Uint8Array | null,
+    depth: Uint8Array | null,
     material: THREE.Material | THREE.Material[],
     mat: THREE.Material | undefined
   ): void {
@@ -368,6 +374,10 @@ export class GreedyChunkMesh implements IChunkMesh {
     const colorArr = new Float32Array(totalFaces * 4 * 3)
     // Scatter glow of plants below (TOP faces; zero elsewhere and without glow)
     const glowArr = new Uint8Array(totalFaces * 4 * 3)
+    // Depth and shore at the TOP face's 4 corners, all four on every vertex
+    // (the shader blends them bilinearly - two triangles' linear blend creases)
+    const depthArr = new Uint8Array(totalFaces * 4 * 4)
+    const shoreArr = new Uint8Array(totalFaces * 4 * 4)
     const indices: number[] = []
 
     let vertOffset = 0
@@ -416,6 +426,12 @@ export class GreedyChunkMesh implements IChunkMesh {
           colorArr[vi + 1] = color.g
           colorArr[vi + 2] = color.b
 
+          if (depth && f === 0) {
+            for (let k = 0; k < 4; k++) {
+              depthArr[vertOffset * 4 + k] = depth[i * 8 + k]
+              shoreArr[vertOffset * 4 + k] = depth[i * 8 + 4 + k]
+            }
+          }
           if (glow && f === 0) {
             const gi = i * 12 + v * 3
             glowArr[vi] = glow[gi]
@@ -453,6 +469,8 @@ export class GreedyChunkMesh implements IChunkMesh {
     geometry.setAttribute('uv', attribute(uvArr, 2))
     geometry.setAttribute('color', attribute(colorArr, 3))
     geometry.setAttribute(LIQUID_GLOW_ATTRIBUTE, attribute(glowArr, 3, true))
+    geometry.setAttribute(LIQUID_DEPTH_ATTRIBUTE, attribute(depthArr, 4, true))
+    geometry.setAttribute(LIQUID_SHORE_ATTRIBUTE, attribute(shoreArr, 4, true))
 
     // Use Uint32Array if needed
     const indexArray = vertOffset > 65535 ? new Uint32Array(indices) : new Uint16Array(indices)

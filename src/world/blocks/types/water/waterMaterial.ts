@@ -18,4 +18,7 @@ export const waterMaterial = createLiquidMaterial(waterTexUrl, {
   reflectivity: 0.75,
   // The water texture's ripple highlights (texel luma ~p40-p90): a sun path
   glitterLuma: [0.1, 0.145],
+  // Clear shallows, deep blue depths, shore foam, ripples, sky and sun on the surface
+  depthLook: 1,
+  deepTint: [0.3, 0.5, 0.82],
 })

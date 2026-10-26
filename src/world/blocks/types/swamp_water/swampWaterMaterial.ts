@@ -17,4 +17,7 @@ export const swampWaterMaterial = createLiquidMaterial(swampWaterTexUrl, {
   reflectivity: 0.45,
   // The murky texture's few brighter texels: a dull, sparse sheen
   glitterLuma: [0.05, 0.08],
+  // Murky: depth shows only a little, the deep goes a dark olive
+  depthLook: 0.45,
+  deepTint: [0.55, 0.6, 0.45],
 })

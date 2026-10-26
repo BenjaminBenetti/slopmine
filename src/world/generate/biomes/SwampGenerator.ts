@@ -22,6 +22,7 @@ import type { TerrainConfig } from '../terrain/TerrainConfig.ts'
 import type { SimplexNoise } from '../SimplexNoise.ts'
 import { swampGroundCover } from '../features/natureGroundCover.ts'
 import { overworldMineshafts } from '../features/overworldMineshafts.ts'
+import { WATER_SURFACE_Y } from '../water/Hydrology.ts'
 
 /**
  * Swamp biome with mud surface, clay subsurface, and scattered giant
@@ -149,7 +150,7 @@ export class SwampGenerator extends BiomeGenerator {
       // Cattail reeds on the mud banks of the swamp pools (surface slow
       // falling ingredient); after the clay mounds so they root on both
       new CattailFeature({
-        waterLevel: 234,
+        waterLevel: WATER_SURFACE_Y,
         waterBlockId: BlockIds.SWAMP_WATER,
         maxHeightAboveWater: 1,
         zoneFrequency: 0.02,
@@ -161,7 +162,7 @@ export class SwampGenerator extends BiomeGenerator {
       // Glowkelp forests and lanternweed beds in the pools (after the reeds,
       // which check the water line for open water)
       new SubmergedPlantFeature({
-        waterLevel: 234,
+        waterLevel: WATER_SURFACE_Y,
         waterBlockId: BlockIds.SWAMP_WATER,
         validBedBlocks: [BlockIds.MUD, BlockIds.CLAY, BlockIds.MUDDY_GRASS, BlockIds.DIRT],
         strands: {
@@ -201,13 +202,14 @@ export class SwampGenerator extends BiomeGenerator {
       // The deep swamp caves are waterlogged
       floodLevel: 168,
       floodBlockId: BlockIds.SWAMP_WATER,
-      liquidSurfaceGuardY: 236,   // waterLevel 234 + 2: guards entrance mouths, pipes, and (partially) ravines under pools and shores
+      liquidSurfaceGuardY: WATER_SURFACE_Y + 2,   // waterLevel + 2: guards entrance mouths, pipes, and (partially) ravines under pools and shores
     },
-    // Swamp water - murky water pools throughout
+    // Swamp water - murky water pools throughout, level with the seas and
+    // rivers (whose own water stays clear through the swamp - the worker's water fill)
     water: {
       enabled: true,
       liquidBlock: BlockIds.SWAMP_WATER,
-      waterLevel: 234,
+      waterLevel: WATER_SURFACE_Y,
       frequency: 0.5,  // Lots of water in swamps
       minDepth: 2,     // Shallow pools
     },
@@ -229,7 +231,7 @@ export class SwampGenerator extends BiomeGenerator {
           weight: 0.3,
         },
       ],
-      baseHeight: -5, // Lower terrain so more is below water level
+      baseHeight: -1, // Low terrain, much of it just under the water level
       heightScale: 10, // Slightly more variation for water pools
       combineMode: 'add',
     } as TerrainConfig,
@@ -257,8 +259,8 @@ export class SwampGenerator extends BiomeGenerator {
       {
         entityType: 'alligator',
         spawnRate: 0.08, // Slightly rarer than slugs
-        minY: 230, // Near/below swamp water level (234)
-        maxY: 250,
+        minY: 234, // Near/below the water level (238)
+        maxY: 254,
         maxNearby: 6, // Fewer alligators - they're dangerous
         minLightLevel: 8, // Only spawn in well-lit areas (not caves)
         createEntity: (pos: THREE.Vector3) => new AlligatorEntity({ position: pos }),
@@ -367,7 +369,7 @@ export class SwampGenerator extends BiomeGenerator {
         // Top surface: muddy grass (or exposed mud near water for shoreline effect)
         if (mudStartY >= minY && mudStartY <= maxY && mudStartY >= terrainFloor) {
           const localY = mudStartY - minY
-          const waterLevel = this.properties.water?.waterLevel ?? 234
+          const waterLevel = this.properties.water?.waterLevel ?? WATER_SURFACE_Y
           // Use exposed mud within 2 blocks of water level for muddy shoreline;
           // glowmoss grows over anything above the water, banks included
           const isNearWater = height <= waterLevel + 2

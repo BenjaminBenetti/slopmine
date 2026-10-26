@@ -13,6 +13,11 @@ export class PhysicsBody implements IPhysicsBody {
   private grounded = false
   skipPhysics = false
   isClimbing = false
+  submerged = 0
+  waterSurfaceY = Number.NaN
+  // Mobs float low in the water (the head above it) and paddle at half speed
+  buoyancy = 0.62
+  swimSpeedFactor = 0.55
 
   // Pre-allocated AABBs for getAABBs() to avoid per-frame GC pressure
   private readonly aabbsCache: AABB[] = []

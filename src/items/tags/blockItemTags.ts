@@ -10,7 +10,7 @@ const COMPOSTABLE = new Set([
   'cave_fern', 'glow_bloom', 'cave_mushrooms', 'puffballs',
   // Older plants with their own block items
   'red_flower', 'yellow_flower', 'blue_flower', 'jungle_fern', 'coastal_fern', 'cattail', 'vine', 'cactus',
-  'glimmercap', 'lumen_fern', 'glowkelp', 'lanternweed', 'oak_leaves', 'redwood_leaves',
+  'glimmercap', 'lumen_fern', 'glowkelp', 'lanternweed', 'kelp', 'seagrass', 'oak_leaves', 'redwood_leaves',
   // Giant mushroom caps
   'mushroom_cap', 'blue_mushroom_cap', 'purple_mushroom_cap', 'foxfire_mushroom_cap', 'amber_mushroom_cap', 'pale_mushroom_cap',
 ])

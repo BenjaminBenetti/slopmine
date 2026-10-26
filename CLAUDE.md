@@ -52,7 +52,8 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
 9. **Gameplay wiring** (the "Depth expansion wiring" block near the end of main.ts, after the core
    tasks): chest loot tables, the 'status-effects' and 'biome-entry-events' tasks, then
    `setupProgression`, `setupBoneMeal`/`setupFarming`/`setupSlimeBounce`, `setupPlayerCombat`, `setupHellforge`,
-   `setupArmorSystem`, `setupWeather` (each biome's weathers, sky/fog/light modifiers, particles,
+   `setupArmorSystem`, `setupWater` + `setupBoats` (breath, fish, splashes, water ambience; sailboats and canoes - see Water),
+   `setupWeather` (each biome's weathers, sky/fog/light modifiers, particles,
    lightning, weather creatures - see Weather), `setupAlchemy` (must come after 'skybox': ember sight post-adjusts the light
    floor it sets), `setupDungeons`, one `setup<Biome>()` per Hell biome (castle tier loot tables,
    garrisons, guardian, procedural locator), `setupDayNight` + `setupNightfall` + `setupFireflies` +
@@ -84,7 +85,7 @@ The game initializes in `src/main.ts` in a carefully ordered sequence:
         ├─► CRITICAL: Camera, Physics, Mining, Atmosphere ('skybox'), Block Outline, Liquid Overlay,
         │             status effects + behaviours, combat cooldown, journal, biome-entry events,
         │             boss bar / Sigil Compass / dungeon-entered probe ('dungeons-hud'),
-        │             guardian + garrison spawners ('dungeons'), clock ('world-clock'), sound ('audio')
+        │             guardian + garrison spawners ('dungeons'), clock ('world-clock'), water + boats, sound ('audio')
         ├─► HIGH: Lighting (LightEngine queue)
         ├─► NORMAL: World Gen (+ feature work / sub-chunk unloads), LOD queue/apply, block systems,
         │           entities (EntityManager)
@@ -125,7 +126,7 @@ The core module provides the game loop infrastructure and frame budget managemen
   (atmosphere/sky/fog/daylight, block outline, underwater overlay - skipped frames showed stale sky),
   plus cheap gameplay clocks/polls: 'status-effects', 'alchemy-effects', 'player-combat',
   'progression', 'slime-bounce', 'biome-entry-events', 'dungeons-hud', 'dungeons' (spawners),
-  'world-clock' (time of day), 'fireflies', 'butterflies', 'farming-input', 'caves', 'points-of-interest', 'weather' (the live weather, sky/fog/light modifiers, particles, lightning), 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
+  'world-clock' (time of day), 'fireflies', 'butterflies', 'farming-input', 'caves', 'points-of-interest', 'weather' (the live weather, sky/fog/light modifiers, particles, lightning), 'water' (breath, splashes, water ambience), 'boats' (the ridden boat, boats in and out of the world), 'audio' (listener, footsteps, ambience, music, creature calls). NORMAL
   tasks registered late starve for long stretches while the world streams, so anything the player must see promptly
   (a timer, a toast, a boss bar) goes here - and stays cheap (poll at 1-2 Hz inside the task)
 - `HIGH` (1): Can defer briefly - the budgeted light queue ('lighting')
@@ -181,7 +182,7 @@ Three.js-based rendering with optimized voxel mesh handling.
 - `skybox/DayNightSky.ts` - Hour of day → sun/moon directions, the directional light (follows the sun, then the moon; elevation clamped), daylight and light-tint multipliers, the sky's night palette and twilight; eased to "no change" off the surface layer (Hell has no day or night)
 - `skybox/BiomeAtmosphere.ts` / `BiomeSkyboxManager.ts` - Per-biome sky/fog/light state (`SkyboxSettings` in `BiomeProperties`: colours in sRGB, light multipliers linear), blended across biome borders and eased (see Atmosphere below)
 - `DistanceFog.ts` - Owns the scene's ONE persistent `THREE.Fog` (never swapped - that recompiles every material): spherical edge fade + absolute aerial haze (1500 blocks in clear air ÷ biome `fogDensity`^1.5), so the long (LOD) view gets depth and hazy biomes tint rather than erase it, + the cavern ceiling haze (smoke under the Hell ceiling, density 0.12/block at Y 140 falling off over 8 blocks, none above it - shader constants, integrated along each view ray; the ceiling straight up is ~62% haze); `setViewDistance(blocks)` (applies immediately), `setColor`, `setDensity`, `setOverride` (underwater: haze + far)
-- `LiquidMaterials.ts` - One shared animated material per liquid family (water, swamp water, lava): liquid vertex colours carry light LEVELS `(sky/15, block/15, 1)` shaded with the world light model at render time (white = full light for icons), texture drift, sun glitter + Fresnel horizon reflection
+- `LiquidMaterials.ts` - One shared animated material per liquid family (water, swamp water, lava): liquid vertex colours carry light LEVELS `(sky/15, block/15, 1)` shaded with the world light model at render time (white = full light for icons), texture drift, sun glitter + Fresnel horizon reflection; water families (`depthLook` > 0) also read the per-corner depth (`LIQUID_DEPTH_ATTRIBUTE`): clear shallows, a `deepTint` deep, shore foam, wind-driven ripples (fading out 20-110 blocks - a moiré otherwise), a horizon-to-zenith sky reflection (`setLiquidZenithColor`) and a sun glint dimmed by cloud shadow (see Water)
 - `LiquidOverlay.ts` - Full-screen tint while the camera is inside a liquid; underwater fog is a
   `DistanceFog.setOverride()` on the same fog object (never a fog swap). Water and swamp-water
   haze + tint are scaled every frame by the world light model at the brighter of the camera cell
@@ -308,7 +309,20 @@ renderOrder 2 - after the liquids, depth-tested, no depth write: in full under w
 surface from above, a crown's halo rising out of it glows over the pool). Dark-only per instance
 light, faded 14-30 blocks, collapsed off screen by day. Halo colours are display values added as is
 (no colour-space conversion) and must stay faint: dozens overlap along a ray through a kelp forest. Non-chunk geometry drawn with these materials (icons) must carry WHITE vertex colours
-(`withWhiteVertexColors`, `liquidCubeGeometry`).
+(`withWhiteVertexColors`, `liquidCubeGeometry`; it adds the glow and a mid depth too).
+**Depth and caustics:** the mesh worker gives every liquid TOP face 4 corner depths
+(`liquidSurfaceDepth`: each of the 3×3 columns counts liquid cells down from the surface, capped at 16 - past
+the padded volume = deep; a corner averages its 4 columns, so depth falls to 0 at the bank) and 4 corner shore
+values (the share of those 4 columns that are bank, 0-0.75) in `nonGreedyLiquidDepth` (8 bytes per instance) → the
+`liquidDepth` and `liquidShore` vec4 attributes: every vertex carries all four corners and the shader blends them
+bilinearly by the face's uv (two triangles' linear blend creased into diamonds). The shore blend is the water's edge
+as a smooth line - a stepped diagonal bank comes out straight, coves round off - and the foam washes up and down it
+per texel (Ben: the foam followed the blocks and looked square). Anything animated per texel changes at each texel's own
+hashed moment, and wash phases come from noise patches: changes timed by a smooth field or a ramp across the world
+sweep visible lines over the water (Ben: "scan lines"). Shader hashes avoid `sin` (no precision at world-scale
+arguments). Greedy faces under clear liquid (`clear`, the liquid
+table's 5th field: water families, never lava) carry a wet flag in the vertex pad byte (`aPos4.w`, part of the
+greedy merge key), and `ChunkMaterial` adds animated caustics to their direct light (× cloud shadow).
 
 ---
 
@@ -420,7 +434,7 @@ dark; light is never persisted (recomputed on load).
   loadPlayerData<T>(key)` (null = never saved) after `initialize()`; `savePlayerData(key, data)` saves
   out of cycle. Stored in the player store as `data:<key>`. Keys: `progression` (journal),
   `equipment` (worn armor, max-health bonus, current health), `alchemy` (Return Idol cooldown),
-  `dungeons` (cleared dungeon keys), `pois` (discovered points of interest), `weather` (weathers seen, a rung Sky Bell's spell, the weather clock's offset). RULE: load first, then contribute (or contribute `undefined`
+  `dungeons` (cleared dungeon keys), `pois` (discovered points of interest), `weather` (weathers seen, a rung Sky Bell's spell, the weather clock's offset), `boats` (where the player's boats were left, and which kind). RULE: load first, then contribute (or contribute `undefined`
   until loaded) - a contributor registered before its load writes defaults over the save; on a
   failed load contribute nothing this session. Version the data and tolerate missing fields.
 - Mesh jobs: a sub-chunk is remeshed whenever any cell of its padded 34³ volume (itself + the
@@ -458,7 +472,7 @@ Block type definitions using flyweight pattern (stateless singletons).
   runestone, bookshelf, petrified wood, the keystone; 491-502 decorations, 495 the barrel a textured full block; 503 heaped
   gold, 504 fossil bone, 505-509 iron bars, minecart, telescope, stone bust, tankards, 510-511 sandstone bricks and carved
   sandstone); 512-516 weather (lightning rod, weathervane, fulgurite, star fragment, star lantern; 512-529 reserved);
-  highest 516). Shared registration files are grouped by header comments per feature area
+  530-532 water (kelp, kelp crown, seagrass; 530-549 reserved); highest 532). Shared registration files are grouped by header comments per feature area
   (`// Hell: Cocytus`) - add new entries to their area's group
 - `BlockRegistry.ts` - Singleton registry mapping IDs to block instances
 - `FaceTextureRegistry.ts` - Maps block+face to TextureId for greedy meshing. Greedy side faces
@@ -731,7 +745,8 @@ area, `norm() > 0.87` ≈ 5%) — tune with that in mind, not assuming a
 narrow bell curve.
 
 **Biomes:**
-- **Layer 1 (Surface, Y=128-511)**: Plains, Grassy Hills, Desert, Volcanic, Jungle, Swamp, Pine Forest, Coastal Rainforest
+- **Layer 1 (Surface, Y=128-511)**: Plains, Grassy Hills, Desert, Volcanic, Jungle, Swamp, Pine Forest, Coastal Rainforest,
+  Ocean (frequency 0: chosen by the continent field, not the weighted roll - see Water)
 - **Layer 0 (the Hell layer, Y=0-127)**: Molten Wastes, The Ossuary, Ember Grove, Crystal Abyss, Cocytus
 
 **Biome Layer System:**
@@ -987,6 +1002,14 @@ AABB-based collision detection with swept volume resolution.
 5. Resolve X-axis, then Z-axis
 6. Update position and zero velocity on collision axes
 
+**Water (buoyancy, swimming):** `IPhysicsWorld.getWaterFill` (a cell's water share: level/8, falling 1, a submerged
+plant 1, lava 0) and `getWaterCurrent` (`WaterCurrents`). Each step measures the body's `submerged` fraction and
+`waterSurfaceY`; buoyancy against the body's `buoyancy` (default 0.62 - floats awash; player `PLAYER_BUOYANCY` 0.8,
+dropped items 0.45) with a bob, vertical and horizontal drag (sinking capped at 6 b/s - so diving in never hurts),
+walking speed × `swimSpeedFactor` past `SWIM_DEPTH` (0.3; mobs 0.55, the player 1 - its controls swim), the current
+added as drift, a climb-out boost (6.2 b/s) against a wall at the surface; no sleeping in water. The player swims along the view (W), Space up / Shift down (`SWIM_UP/DOWN_VELOCITY`), and wades
+slower; `cameraControls.swimming` / `headUnderWater` / `mounted` (a boat seat: movement off).
+
 **Compound Hitbox:**
 Player uses cross/plus-shaped dual AABB to reduce corner-catching:
 - X-aligned box: full width, reduced depth
@@ -1130,7 +1153,7 @@ journal and by loot tables: never rename one.
 **No path may delete items:** what a full inventory can't take is thrown out of the player
 (`throwStackFromPlayer` in main.ts: a `DroppedItemEntity` thrown along the view, inert until the
 player has left its attraction radius once) - hand-crafting and woodworking-bench results and
-returned ingredients, the Hellforge's results (`dropOverflow`); a chest/bench whose contents don't
+returned ingredients, the Hellforge's results (`dropOverflow`), a kill's drops (`BlockInteraction.setThrowStackHandler`); a chest/bench whose contents don't
 fit stays unbroken; drag-drop swaps and half-stack drops never overwrite a stack, and a stack
 released over a panel is never thrown. New crafting/transfer code follows the same rule.
 
@@ -1169,6 +1192,7 @@ direct call.
 | `lightning-strike` | x/y/z (top of the block hit), distance, rod | `LightningSystem` (every strike around the player; `rod`: a lightning rod caught it) |
 | `lightning-flash` | distance | `LightningSystem` (a flash in far clouds, no strike: far thunder) |
 | `star-fallen` | x/y/z (where it lands), distance | `LightningSystem` (a meteor shower's shooting star starts to fall; it lands ~1.5 s later as a star fragment) |
+| `boat-boarded` | kind (`sailboat` / `canoe`), x/y/z | `setupBoats` (the player boards a boat) |
 
 ---
 
@@ -1215,6 +1239,7 @@ which asks `has`/`getLevel`:
 | `slowness` | Frostbite | walk speed −25 %/level (floor 25 %), frost vignette | `cameraControls.addSpeedModifier` |
 | `potion_sickness` | Potion Sickness | display-only healing-potion cooldown | gate in `HealingPotionCooldown.ts` |
 | `swiftness` | Swiftness | walk speed ×1.3 per level (stacks with Frostbite) | `getMovementSpeedMultiplier` (EffectBehaviours) |
+| `water_breathing` | Water Breathing | no air used under water | breath in `setupWater` |
 | `rootbound` (not in `StatusEffectIds`) | Rootbound | walk speed ×0.35 (Rootbound Warden snare, 2.5 s) | speed modifier in `enemies/rootbound_warden/RootboundEffect.ts`, installed by `setupEmberGrove` |
 
 `EffectBehaviours` runs in the CRITICAL 'alchemy-effects' task (with the frost vignette, Return
@@ -1291,6 +1316,7 @@ duration, level; drink 1 s, stack 16) brewed at the apothecary from `herb` + one
 | `ember_sight_potion` (`_long`) | `glowcap` (+ `corrupted_essence`) | 240 s (480 s) |
 | `strength_potion` | `prism_shard` | 120 s |
 | `iceskin_potion` | `rime_crystal` | resistance, 120 s |
+| `water_breathing_potion` | `glow_jelly` (jellyfish) | 180 s |
 
 Healing Potions I-III (heal 10/20/40) share a 10 s cooldown (`HealingPotionCooldown.ts`: the
 `potion_sickness` badge; `canConsume` refuses with a notice). **Return Idol** (`return_idol`,
@@ -1321,10 +1347,10 @@ crystal; hoe: rime sigil + rime crystal). Hoes: diamond hoe + 2 ingots → infer
 
 ### `src/progression/` - Journal
 
-- `milestones.ts` - Declarative data: 14 chapters (First Steps, Green Thumb, Into the Dark, Lost and Found, Under the Weather,
-  Nightfall, Metal Ages, Arms & Armor, Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane), 96 milestones
-  (Green Thumb's five, Into the Dark's seven, Lost and Found's seven, Under the Weather's eight and Nightfall's four are
-  optional side goals). Chapter and
+- `milestones.ts` - Declarative data: 15 chapters (First Steps, Green Thumb, Into the Dark, Lost and Found, Under the Weather,
+  Making Waves, Nightfall, Metal Ages, Arms & Armor, Alchemy, The Descent, The Five Circles, Infernal Age, Guardians, Hellbane),
+  104 milestones (Green Thumb's five, Into the Dark's seven, Lost and Found's seven, Under the Weather's eight, Making Waves'
+  eight and Nightfall's four are optional side goals). Chapter and
   milestone ids are persisted - never rename. `stage` orders the arc: the "next goal" is the
   unlocked, unfinished, non-optional milestone with the lowest stage. `requires` must be TRUE
   implications (completing a milestone completes its prerequisites silently). `legacy` milestones
@@ -1575,8 +1601,11 @@ Worked example: `kits/reference/ReferenceKeepKit.ts` (dev only - deliberately NO
   `setPlayerDamageCallback` (`(damage, knockback, source?)`), `setWorldQueryFns`,
   `setEntitySpawnFn` / `setEntityRemoveFn` (minions, projectiles). An ACTIVE entity found
   `!isAlive` (killed outside its own update, by another entity or a system) is reaped. Despawn
-  radius = max(1, `chunkDistance` − 2) chunks, horizontal, block entities exempt (at render
+  radius = max(1, `chunkDistance` − 2) chunks, horizontal, block entities and `keepLoaded` entities
+  (boats - their registry puts them away) exempt (at render
   distance 2 a zero radius removed guardians, projectiles and drops right after spawning).
+  `setLiquidQuery` (wired to every `PeacefulEntity`): land animals keep out of water - wander targets and
+  paths avoid wet columns; one that ends up in water floats (buoyancy) and swims to the nearest shore.
 - `spawning/EntitySpawner.ts` (LOW) + `EntitySpawnConfig.ts` - Mobs come from the biome's
   `entitySpawns` (`entityType`, `spawnRate` roll, `minY`/`maxY`, `maxNearby` - counts every loaded
   entity of the type, light bounds, `validGroundBlocks`, `searchFromSky`, `createEntity`) plus any
@@ -1584,12 +1613,14 @@ Worked example: `kits/reference/ReferenceKeepKit.ts` (dev only - deliberately NO
   workers, so main-thread-only spawns go through a provider); `condition`, `maxSpawnDistance`,
   `minSkyLight`/`maxBlockLight` and `veto` narrow a config. The layer is picked from the player's Y,
   ground searched near the player's Y, ≥ 24 blocks away. Underground spawns never set
-  `searchFromSky` and keep `minY`/`maxY` inside the cavern.
+  `searchFromSky` and keep `minY`/`maxY` inside the cavern. A land spawn never lands with its feet in
+  liquid; `medium: 'water'` (fish) searches a water column instead (`waters` families, `minWaterDepth`).
 - `PlayerDamageHandler.ts` - Entity → player damage (see Player Damage)
 - `AggressiveEntity.ts` / `PeacefulEntity.ts` - Config-driven mobs; `onPlayerInteract` takes damage
   and knockback from `getPlayerAttackDamage` / `getPlayerAttackKnockback`
-- `interfaces/IEntity.ts` - Adds `countsAsKill?` (false: no `entity-killed`) and `spawnedChildren?`
-  (entities this one put into the world itself, so an owning guardian can clear them)
+- `interfaces/IEntity.ts` - Adds `countsAsKill?` (false: no `entity-killed`), `spawnedChildren?`
+  (entities this one put into the world itself, so an owning guardian can clear them) and `keepLoaded?`
+- `aquatic/` - fish (see Water)
 - `guardians/`, `projectiles/` - see Dungeons & Guardians
 
 **New mob checklist:** materials through `registerMaterialForLighting`, then `optimizeEntityMesh(root,
@@ -2066,6 +2097,94 @@ cloud layer built from the same air, moving with it, casting shadows that drift 
 - Insects (fireflies, butterflies) scale by `calmWeather()`; sound reads the snapshot (weather beds, thunder - see
   `src/audio/`); journal chapter Under the Weather.
 
+### Water (`src/water/`, `generate/water/Hydrology.ts`, `liquid/WaterCurrents.ts`, `entities/aquatic/`)
+
+Ben's ask: "make water amazing" - oceans, bigger bodies of water, streams, water physics, swimming, a boat ("try not to make it
+too much like the Minecraft boat"), fish like the land animals, and land animals that swim instead of walking along the bottom
+("rabbits underwater").
+- **Hydrology** (`Hydrology.forSeed(seed)`, pure, worker-safe): `WATER_SURFACE_Y` 238 is the surface of every ocean, river and
+  lake. A domain-warped continent field (1/2600, warp 420; `CONTINENT_BIAS` -0.11 → about a third of the world is sea; land
+  boosted within 1500 blocks of the origin, so the spawn is on a continent): below 0 the land sinks to a sea floor that reaches
+  44 blocks down at -0.28 (the shelf), a coastal band above 0 eases the land down to beaches, islands peak out at sea. Rivers
+  (1/900, half-width 3-7.5, depth 5-7.5) and streams (1/380, 1.2-2.6 wide) are zero-crossings of domain-warped noise cut down
+  below the surface at every altitude (all water lies level with the sea - no flowing water needed), with valleys, springs (a
+  mask breaks networks into reaches) and estuaries at the coast. `shapeHeight(h, x, z, dryness)` only lowers terrain (dry
+  biomes - desert, volcanic - also raise banks, below), monotone in h: applied in the worker's blended height
+  (`getBlendedHeightAt`, not for `absoluteHeight` biomes) and in `BiomeGenerator.getHeightAt`, so LOD, surface bands,
+  decorations and spawn agree. `flowAt`: the river's direction (downhill on the continent field) for currents.
+- **Water fill** (`hydrologyWaterFill`, `water/hydrologyFill.ts`: the worker's Phase 2.5, a per-column `WaterColumnFill` for
+  `WaterFeature`): every surface biome's water stands at 238 (the swamp's too - at 234 its pools met the rivers and the sea
+  as 4-block water cliffs; its terrain was raised by as much). A biome with pools of its own fills every hollow below the
+  water level with its liquid, but Hydrology's seas and channels (`isWaterBody`) are clear water everywhere - a river runs
+  on through the swamp's murky pools instead of changing colour at the region's straight edge. A biome without (`water.enabled:
+  false`: desert, volcanic) fills only Hydrology's water: the sea with water, its channels with its `water.liquidBlock` -
+  the volcanic lands' rivers run with lava (on basalt). A dry biome's land below the water line would stand dry beside its
+  rivers (Ben saw rivers on 3-block levees crossing low land "like aqueducts"), so a channel floods low land within its
+  flood reach (`floodplain`: rivers 22, streams 9 blocks past the edge, ×0.55-1.45 by noise, growing from nothing at the
+  spring) - a lake around the river - and past the reach the land is raised to the water line (`bankFloor`: 3 blocks flat,
+  then falling 0.4 per block; upstream of a spring it sinks back into the land); dry coasts slope up to the water line the
+  same way. The desert stands 6 blocks higher than it did (`baseHeight` 6, like the pine forest: low desert flooded around
+  every river - Ben found it far too wet; its inland water fell from 7% to 3.5% of its area), and the plains 1 block (their
+  hollows held too many lakes: 16% → 8% of the plains). Measured on desert terrain: water standing 3+ blocks above dry land within 4 blocks 17% → 0.7%, man-made cliffs
+  ~1500 → 0, open water walls ~2600 → 0. `inChannel` is decided after the spring rise (it once marked dry ghost channels
+  upstream of springs). Where a lava channel would touch water - near the coast (continent
+  < 0.004-0.01) or within 4-9 blocks of a region border whose rivers are water - it is a cooled obsidian plug from bed to
+  surface, so lava and water never meet (the liquid physics would just leave them side by side). LOD tiles treat lava as a
+  solid top (a liquid top above a bed is shaded as water).
+- **Ocean biome** (`OceanGenerator`, `frequency: 0`): `BiomeRegistry` makes a region ocean when the continent value at its
+  centre is below `OCEAN_REGION_CONTINENT` (-0.1); every other region keeps its weighted roll, so the land biomes have
+  coastal waters of their own. Seabed sand with gravel beds and clay flats, sandy islands, coastal ground cover, crabs and
+  sea stars; weather (`BIOME_WEATHER.ocean`), music weights, Thunderhead. Ravines never cross under it.
+- **Water plants** (`features/waterPlants.ts`, `SubmergedPlantFeature`): `seaPlants()` (ocean: kelp forests from 4+ cells of
+  water, seagrass meadows) and `freshwaterPlants(beds, kelp?)` (plains, hills, pine, coastal - with kelp -, jungle on mud).
+  `KELP`/`KELP_TOP`/`SEAGRASS` are submerged blocks (`submergedIn: 'water'`, see Liquids) with swaying cutout sprites
+  (`kelp/waterPlantMaterial.ts`). Only the surface's sub-chunk grows them (beds ≤ 14 deep): the deep sea stays bare.
+- **Currents** (`WaterCurrents.currentAt`): falling water pulls down (3.5 b/s), flowing water toward lower neighbours, still
+  river water along `flowAt` near the surface (cached per column, fading with depth). Physics drift, boats and particles use it.
+- **Coastal spawn** (`water/coastalSpawn.ts`, called by main.ts's `findSuitableSpawnPosition`): a new world starts on the
+  coast nearest the origin (Ben loves the coastline) - dry land just inland of a beach (continent 0.012-0.03), outside river
+  valleys and flood lakes, looking over open sea (150 blocks out is well below the waterline), in a wooded biome (not
+  desert, volcanic, ocean; a swamp's murky shore only if nothing else is found), facing the sea (`spawnFacing` →
+  `cameraControls.setYaw`). Pure, ~1 ms; usually 0.2-1.5 km from the origin. Saved worlds keep the spawn stored in their
+  metadata (`originalSpawnPoint`, restored on load - before, it was recomputed from the seed on every load).
+- **Breath** (`setupWater`, CRITICAL 'water'): 15 s of air (`BreathDisplay`: 10 bubbles above the hearts while under), refills
+  6/s at the surface; out of air: 2 'magic' damage per second; `water_breathing` stops it.
+- **Fish** (`FishEntity` + `FishSpecies.ts`, PeacefulEntity with `skipPhysics`: it swims itself): minnow (schools of 5-9, no
+  drop), trout, salmon, catfish (on the bottom), cod (deep sea), reef fish (4 palettes, shallow sea), jellyfish (glow after dark,
+  drops `glow_jelly`). Box models; schools spawn together (`spawnFn`), wander around the school centre at their depth band
+  (shallow / mid / deep / bottom), leash 28, dart off when the player comes within 3.2; out of water they flop (hop, 1 HP per
+  2.5 s). Spawned by an `EntitySpawner` provider: `SEA_FISH` wherever `hydrology.isOcean`, else `FRESHWATER_FISH[biome]`
+  (`medium: 'water'`). Fish types are persisted and matched by milestones - never rename.
+- **Boats** (`BoatEntity` base, `setupBoats`): float with a bob, carried by currents, run aground (only a move from water onto
+  land is blocked, checked in 0.4-block steps so a fast boat never jumps a sandbar), a wake (foam) and bow spray; speed eases
+  toward what the boat's `drive` asks (time constants: a boat picks up way and glides on), turning capped by `turnMax` (wide
+  turns at speed). Right-click water with the item to put one in; E boards / leaves, Shift leaves; hits break it back into its
+  item. CRITICAL 'boats': the ridden boat steps there (the rider's body and camera at its seat, `seatForward`/`seatUp`);
+  boats are records (`BOAT_KINDS`: kind = item id) that become entities within 128 blocks and are put away beyond 160
+  (`keepLoaded`), saved under `boats` (v2 adds `kind`; a v1 boat is a sailboat). Hulls sit below the waterline, so each
+  boat lays a water mask (`addWaterMask`: an invisible depth-only lid inside its walls, above the waterline in any heel,
+  renderOrder 1 - after the opaque world, before the liquids' transparent pass) - the water's surface never shows inside
+  the hull (Ben: the boats looked full of water). A new kind: a `BoatEntity` subclass (handling, `drive`, `animate`, model
+  + its mask) + a `BOAT_KINDS` entry + its item + an `EntityVoices` entry.
+  - **Sailboat** (`SailboatEntity`, item `sailboat`: 6 planks + 2 sticks + 4 hemp fiber + rope): sails on the wind
+    (`windUniform`) by points of sail - nothing head to wind (W paddles at 2.4), best on a beam reach, 0.72 of it running,
+    0.35 close-hauled. Beam-reach speed 14 + 32 × wind (capped at 0.5): ~19 b/s in a breeze, ~24 fresh, 30 in a gale - Ben
+    asked for 5x the first one (~4.6 in a breeze: "the bodies of water are large", and hemp and rope are work). It picks up
+    way slowly (4.5 s time constant) as the sail fills; a hard turn spills 30% of it. Sail swings out and fills, pennant, heel.
+  - **Canoe** (`CanoeEntity`, item `canoe`: 5 planks + 1 stick - all wood): paddled at 9.5 b/s whatever the wind (2x the
+    first sailboat), up to speed in ~2 s, turns on the spot; the rider strokes the paddle on alternate sides (a splash each),
+    which lies along the canoe at rest. 3 hits break it.
+- **Splashes** (`WaterParticles.ts`: 1400 GPU points, one draw, renderOrder 3 - droplets, bubbles, foam rings; hooks in
+  `WaterEffects.ts`: `waterSplash`, `waterBubbles`, `waterWake`): the player landing in water, swim strokes, breath bubbles,
+  entities splashing in, boat wakes.
+- **Look** (see Liquids): depth-tinted clear water, caustics on beds under clear water, ripples, sky reflection, glint. LOD
+  water: `LodMesher` flags water cells in the slot byte (`LOD_WATER_FLAG` 64, `LOD_DEEP_WATER_FLAG` 128 - masked `& 63` for
+  the slot; merges never cross a flag change) and `LodMaterial` shades them like the near water (deep tint, Fresnel sky, glint).
+- **Items**: raw/cooked trout, salmon, catfish, cod, reef fish (forge), glow jelly, water breathing potion (herb + glow jelly,
+  apothecary), sailboat, canoe, kelp, seagrass (`items/water/registerWaterItems.ts`, `crafting/recipes/WaterRecipes.ts`). Journal
+  chapter Making Waves.
+- **Existing worlds**: saved sub-chunks never regenerate - the seas, rivers and plants appear only in newly generated land.
+
 ### `src/audio/` - Sound (effects, ambience, music)
 
 Every sound is procedural: recipes in `synth/` render samples in `AudioSynthWorker` at startup or
@@ -2124,7 +2243,9 @@ player's hurt is a voiced cry, not a thump.
   frogs - more often after dark, cave drips, lava pops, bone chimes, spore puffs, crystal pings, ice
   creaks); weather beds from `getWeatherSnapshot()` (`weatherBedWeights`: rain light/heavy, drizzle, hail,
   gale, sandstorm, blizzard, embers, shimmer, aurora, and rain on the roof while sheltered - weights ×
-  shelter; birds stop and crickets hush in wet weather). Thunder (`weather.thunder.near/far`, delayed
+  shelter; birds stop and crickets hush in wet weather); water beds (`synth/waterSounds.ts`: `surf` by the
+  sea's share around the player, `stream` by the river current close by, `lapping` under a boat - from
+  `waterAmbience`, `src/water/WaterHooks.ts`). Thunder (`weather.thunder.near/far`, delayed
   distance / 90 s), `weather.zap`, meteor whoosh/impact and `weather.skybell` from the weather events
   (`synth/weatherSounds.ts`)
 - `music/` - generative score, mostly silence. `MusicMoods.ts` (22 moods, at least two per place

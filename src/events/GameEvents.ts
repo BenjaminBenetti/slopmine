@@ -90,6 +90,8 @@ export type GameEvent =
   | { type: 'lightning-flash'; distance: number }
   /** A shooting star began to fall (a meteor shower): it lands as a star fragment at x/y/z about 1.5 s later. */
   | { type: 'star-fallen'; x: number; y: number; z: number; distance: number }
+  /** The player boarded a boat (setupBoats; kind: 'sailboat' | 'canoe'). */
+  | { type: 'boat-boarded'; kind: string; x: number; y: number; z: number }
 
 export type GameEventType = GameEvent['type']
 export type GameEventOf<T extends GameEventType> = Extract<GameEvent, { type: T }>

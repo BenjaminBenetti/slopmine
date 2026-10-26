@@ -79,6 +79,15 @@ export interface EntitySpawnConfig {
   veto?: (x: number, y: number, z: number) => boolean
 
   /**
+   * Where it spawns: on solid ground (default), or 'water' - inside water of
+   * one of `waters` (liquid families) at least `minWaterDepth` blocks deep,
+   * at a random depth (fish). Water spawns skip the ground and light checks.
+   */
+  medium?: 'ground' | 'water'
+  waters?: readonly string[]
+  minWaterDepth?: number
+
+  /**
    * Factory function to create the entity at the given position.
    */
   createEntity: (position: THREE.Vector3) => IEntity

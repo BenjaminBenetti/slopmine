@@ -129,16 +129,19 @@ export interface MesherTables {
   readonly faceLayer: Uint8Array
   /** 1 = the face's texture is turned a quarter (QUARTER_TURN_FACES), per blockId * 6 + face. */
   readonly quarterTurn: Uint8Array
+  /** 1 = a water-like liquid: a face looking into it is under water (caustics - the vertex pad byte). */
+  readonly clearLiquid: Uint8Array
 }
 
 // Per-slice scratch (reused). Mask keys are exact integers below 2^53:
 // ((material * 4 + class) * 2^18 + cornerA) * 2^18 + cornerB, 0 = no face,
 // negative = unique (never merges). material = layer, quarter turn and
-// cutout flag (< 2^11).
+// cutout and under-water flags (< 2^12).
 const mask = new Float64Array(SIZE * SIZE)
 const cellLayer = new Uint8Array(SIZE * SIZE)
 const cellCutout = new Uint8Array(SIZE * SIZE)
 const cellTurn = new Uint8Array(SIZE * SIZE)
+const cellWet = new Uint8Array(SIZE * SIZE)
 const cellMerge = new Uint8Array(SIZE * SIZE)
 const cellCorners = new Uint32Array(SIZE * SIZE * 4)
 
@@ -206,7 +209,7 @@ function shadeFace(volume: PaddedVolume, opaque: Uint8Array, f: number, uDelta: 
  * Classify a shaded cell and write its merge key. Corners are in CORNER order:
  * c0 (0,0), c1 (1,0), c2 (1,1), c3 (0,1).
  */
-function writeMergeKey(i: number, layer: number, cutout: number, turn: number): void {
+function writeMergeKey(i: number, layer: number, cutout: number, turn: number, wet: number): void {
   const o = i * 4
   const c0 = cellCorners[o]
   const c1 = cellCorners[o + 1]
@@ -232,7 +235,7 @@ function writeMergeKey(i: number, layer: number, cutout: number, turn: number): 
     return
   }
   cellMerge[i] = merge
-  const material = ((layer + 1) * 2 + turn) * 2 + cutout
+  const material = (((layer + 1) * 2 + turn) * 2 + cutout) * 2 + wet
   mask[i] = ((material * 4 + merge) * CORNER_VALUES + c0) * CORNER_VALUES + cornerB
 }
 
@@ -254,7 +257,8 @@ function emitQuad(
   height: number,
   layer: number,
   turn: number,
-  cornerBase: number
+  cornerBase: number,
+  wet: number
 ): void {
   const base = writer.beginQuad()
   const plane = slice + axes.planeOffset
@@ -276,7 +280,7 @@ function emitQuad(
       pos[0], pos[1], pos[2],
       texU, texV, layer, axes.face,
       (corner >> CORNER_SKY_SHIFT) & 0xFF, (corner >> CORNER_BLOCK_SHIFT) & 0xFF, AO_BYTE[corner & 3],
-      du | (dv << 1)
+      du | (dv << 1), wet
     )
   }
 
@@ -305,7 +309,7 @@ export function meshGreedyFaces(
   opaqueWriter: ChunkGeometryWriter,
   cutoutWriter: ChunkGeometryWriter
 ): void {
-  const { opaque, nonGreedy, faceLayer, quarterTurn } = tables
+  const { opaque, nonGreedy, faceLayer, quarterTurn, clearLiquid } = tables
   const blocks = volume.blocks
   const faceLayerLength = faceLayer.length
 
@@ -341,7 +345,9 @@ export function meshGreedyFaces(
           cellLayer[i] = layer
           cellCutout[i] = cutout
           cellTurn[i] = turn
-          writeMergeKey(i, layer, cutout, turn)
+          const wet = clearLiquid[neighbor]
+          cellWet[i] = wet
+          writeMergeKey(i, layer, cutout, turn, wet)
           faces++
         }
       }
@@ -376,7 +382,7 @@ export function meshGreedyFaces(
           }
 
           const writer = cellCutout[i] === 1 ? cutoutWriter : opaqueWriter
-          emitQuad(writer, axes, slice, u, v, width, height, cellLayer[i], cellTurn[i], i * 4)
+          emitQuad(writer, axes, slice, u, v, width, height, cellLayer[i], cellTurn[i], i * 4, cellWet[i])
         }
       }
     }

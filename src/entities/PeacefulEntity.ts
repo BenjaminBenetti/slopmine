@@ -14,6 +14,8 @@ const DEFAULT_WANDER_MAX_DISTANCE = 8.0 // blocks
 const DEFAULT_JUMP_VELOCITY = 8.0 // blocks per second
 const DEFAULT_STUCK_MOVEMENT_RATIO = 0.2 // if moving less than 20% of expected, we're stuck
 const DEFAULT_STUCK_TIME_THRESHOLD = 0.4 // seconds of being stuck before reacting
+/** How far (blocks) an animal in the water looks for dry ground to swim to */
+const SHORE_SEARCH_RADIUS = 16
 
 // Default combat constants
 const DEFAULT_MAX_HEALTH = 10
@@ -109,6 +111,7 @@ export abstract class PeacefulEntity extends Entity {
   private readonly lastPosition = new THREE.Vector3()
   private stuckTime: number = 0
   private hasTriedJump: boolean = false
+  private liquidAt: ((x: number, y: number, z: number) => boolean) | null = null
 
   // Animation state (protected for subclass access)
   protected isWalking = false
@@ -215,7 +218,7 @@ export abstract class PeacefulEntity extends Entity {
         // Jump 1-block obstacles just like wandering does; if a jump didn't
         // clear it (wall too high), deflect the escape route sideways instead
         // of pinning against the wall
-        if (this.handleObstacleWhileMoving(body, this.fleeDirection, this.fleeSpeed, deltaTime)) {
+        if (this.handleObstacleWhileMoving(body, this.fleeDirection, this.fleeSpeed, deltaTime) || this.wetAhead(this.fleeDirection)) {
           const turn = (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2)
           const cos = Math.cos(turn)
           const sin = Math.sin(turn)
@@ -245,8 +248,8 @@ export abstract class PeacefulEntity extends Entity {
     // Update wander cooldown
     this.wanderCooldown -= deltaTime
 
-    // Check if we need a new wander target
-    if (this.wanderCooldown <= 0) {
+    // Check if we need a new wander target (in the water: at once, toward the shore)
+    if (this.wanderCooldown <= 0 || (this.isSwimming() && (!this.wanderTarget || this.isWetColumn(this.wanderTarget.x, this.wanderTarget.z)))) {
       this.pickNewWanderTarget()
       this.wanderCooldown = this.randomRange(this.wanderMinInterval, this.wanderMaxInterval)
     }
@@ -263,8 +266,8 @@ export abstract class PeacefulEntity extends Entity {
         this.wanderDirection.normalize()
 
         // Jump 1-block obstacles; if a jump didn't clear it, the obstacle is
-        // too high - pick a new direction
-        if (this.handleObstacleWhileMoving(body, this.wanderDirection, this.walkSpeed, deltaTime)) {
+        // too high - pick a new direction. Water ahead: keep out of it
+        if (this.handleObstacleWhileMoving(body, this.wanderDirection, this.walkSpeed, deltaTime) || this.wetAhead(this.wanderDirection)) {
           this.pickNewWanderTarget()
         }
 
@@ -353,15 +356,81 @@ export abstract class PeacefulEntity extends Entity {
   }
 
   private pickNewWanderTarget(): void {
-    // Pick a random direction and distance
-    const angle = Math.random() * Math.PI * 2
-    const distance = this.randomRange(this.wanderMinDistance, this.wanderMaxDistance)
+    // Without a world to look at: any random direction and distance
+    if (!this.liquidAt) {
+      const angle = Math.random() * Math.PI * 2
+      const distance = this.randomRange(this.wanderMinDistance, this.wanderMaxDistance)
+      this.wanderTarget = new THREE.Vector3(
+        this.position.x + Math.cos(angle) * distance,
+        this.position.y,
+        this.position.z + Math.sin(angle) * distance
+      )
+      return
+    }
 
-    this.wanderTarget = new THREE.Vector3(
-      this.position.x + Math.cos(angle) * distance,
-      this.position.y,
-      this.position.z + Math.sin(angle) * distance
-    )
+    // In the water: the nearest dry ground; on land: a random dry spot with no water on the way
+    const swimming = this.isSwimming()
+    if (swimming) {
+      for (let radius = 2; radius <= SHORE_SEARCH_RADIUS; radius += 2) {
+        const offset = Math.random() * Math.PI * 2
+        for (let i = 0; i < 12; i++) {
+          const angle = offset + (i / 12) * Math.PI * 2
+          const x = this.position.x + Math.cos(angle) * radius
+          const z = this.position.z + Math.sin(angle) * radius
+          if (!this.isWetColumn(x, z)) {
+            this.wanderTarget = new THREE.Vector3(x, this.position.y, z)
+            return
+          }
+        }
+      }
+    }
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const angle = Math.random() * Math.PI * 2
+      const distance = this.randomRange(this.wanderMinDistance, this.wanderMaxDistance)
+      const x = this.position.x + Math.cos(angle) * distance
+      const z = this.position.z + Math.sin(angle) * distance
+      if (this.isWetColumn(x, z) || (!swimming && this.pathCrossesWater(x, z))) continue
+      this.wanderTarget = new THREE.Vector3(x, this.position.y, z)
+      return
+    }
+    // Hemmed in by water: stay put (or, swimming far from any shore, drift on)
+    this.wanderTarget = null
+  }
+
+  /** Liquid (water, lava) in a block - wired by the EntityManager; land animals keep out of it. */
+  setLiquidQueryFn(liquidAt: (x: number, y: number, z: number) => boolean): void {
+    this.liquidAt = liquidAt
+  }
+
+  /** In the water: swimming rather than walking. */
+  protected isSwimming(): boolean {
+    return (this.getPhysicsBody()?.submerged ?? 0) > 0.2
+  }
+
+  /** Liquid where the feet would stand in the column at (x, z), or just below them. */
+  protected isWetColumn(x: number, z: number): boolean {
+    if (!this.liquidAt) return false
+    const y = Math.floor(this.position.y + 0.2)
+    const bx = Math.floor(x)
+    const bz = Math.floor(z)
+    return this.liquidAt(bx, y, bz) || this.liquidAt(bx, y - 1, bz)
+  }
+
+  /** Water on the straight walk from here to (x, z), checked every block. */
+  private pathCrossesWater(x: number, z: number): boolean {
+    const dx = x - this.position.x
+    const dz = z - this.position.z
+    const steps = Math.ceil(Math.hypot(dx, dz))
+    for (let i = 1; i <= steps; i++) {
+      if (this.isWetColumn(this.position.x + (dx * i) / steps, this.position.z + (dz * i) / steps)) return true
+    }
+    return false
+  }
+
+  /** On dry land, about to step into liquid along `direction`. */
+  private wetAhead(direction: THREE.Vector3): boolean {
+    if (!this.liquidAt || this.isSwimming()) return false
+    return this.isWetColumn(this.position.x + direction.x * 0.9, this.position.z + direction.z * 0.9)
   }
 
   onSpawn(): void {

@@ -48,14 +48,14 @@ export class ChunkGeometryWriter {
   pushVertex(
     x: number, y: number, z: number,
     u: number, v: number, layer: number, face: number,
-    sky: number, block: number, ao: number, corner: number
+    sky: number, block: number, ao: number, corner: number, wet = 0
   ): void {
     const vertices = this.vertices
     const o = this.vertexCount * CHUNK_VERTEX_STRIDE
     vertices[o] = x
     vertices[o + 1] = y
     vertices[o + 2] = z
-    vertices[o + 3] = 0
+    vertices[o + 3] = wet
     vertices[o + 4] = u
     vertices[o + 5] = v
     vertices[o + 6] = layer

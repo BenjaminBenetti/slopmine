@@ -89,6 +89,11 @@ export interface GreedyMeshResponse {
   // Scatter glow on liquid TOP faces, per instance: 4 corners (x0z0, x1z0,
   // x1z1, x0z1) × linear RGB as bytes (/255). Only lists that glow somewhere
   nonGreedyLiquidGlow: Array<[number, Uint8Array]>
+  // Water depth under liquid TOP faces, per instance of every liquid list: 4
+  // corners (as the glow) × blocks of liquid below, ×16 as bytes (255 = ~16+,
+  // deep water), then the 4 corners' share of bank around them (×255).
+  // Shallows show their bed, and foam lines the shore (LiquidMaterials)
+  nonGreedyLiquidDepth: Array<[number, Uint8Array]>
 }
 
 export interface GreedyMeshError {
@@ -110,6 +115,8 @@ const liquidLevelTable = new Uint8Array(0x10000)
 // The liquid block whose faces a cell draws when it isn't the block itself:
 // a submerged block (glowkelp) also emits its cell as its liquid's source
 const liquidDrawAsTable = new Uint16Array(0x10000)
+/** 1 = a water-like liquid (water, swamp water, the plants standing in them): faces under it get caustics. */
+const clearLiquidTable = new Uint8Array(0x10000)
 // Scatter glow per block id (linear RGB, `scatterGlow`) and whether it has any
 const liquidGlowTable = new Float32Array(0x10000 * 3)
 const liquidGlowSource = new Uint8Array(0x10000)
@@ -165,10 +172,12 @@ function updateLiquidTables(entries: readonly LiquidMeshEntry[]): void {
   liquidFamilyTable.fill(0)
   liquidLevelTable.fill(0)
   liquidDrawAsTable.fill(0)
-  for (const [id, family, level, drawAs] of entries) {
+  clearLiquidTable.fill(0)
+  for (const [id, family, level, drawAs, clear] of entries) {
     liquidFamilyTable[id] = family
     liquidLevelTable[id] = level
     if (drawAs !== id) liquidDrawAsTable[id] = drawAs
+    if (clear === 1) clearLiquidTable[id] = 1
   }
 }
 
@@ -194,6 +203,56 @@ function volumeHasGlowSources(): boolean {
 
 // Scratch for liquidSurfaceGlow: the 3×3 columns around a surface cell
 const columnGlow = new Float32Array(9 * 3)
+// Scratch for liquidSurfaceDepth: the 3×3 columns' depths
+const columnDepth = new Float32Array(9)
+/** Deeper than this (blocks) reads as deep water; the padded volume rarely sees further down. */
+const DEPTH_CAP = 16
+
+/**
+ * Water depth a liquid surface cell's TOP face shows at its 4 corners (into
+ * `out[0..3]`, blocks): each column around it counts liquid from the surface
+ * level down (DEPTH_CAP where it runs past the bottom of the padded volume -
+ * deep water); a column that is not liquid at the surface level (the bank,
+ * the shore) is 0, so the depth falls to nothing at the water's edge. Each
+ * corner averages its 4 columns, like the glow. And the shore (`out[4..7]`):
+ * each corner's share of those 4 columns that are bank (0-0.75) - blended
+ * over the face, the water's edge as a smooth line for the foam.
+ */
+function liquidSurfaceDepth(p: number, y: number, out: Float32Array): void {
+  const { blocks } = volume
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      let q = p + dz * PAD_STRIDE_Z + dx
+      let depth = 0
+      for (let d = 0; ; d++, q -= PAD_STRIDE_Y) {
+        if (y - d < -1) {
+          depth = DEPTH_CAP
+          break
+        }
+        const id = blocks[q]
+        if (liquidFamilyTable[id] === 0) break
+        depth++
+        if (depth >= DEPTH_CAP) break
+      }
+      columnDepth[(dz + 1) * 3 + dx + 1] = depth
+    }
+  }
+  const CORNERS = [0, 0, 1, 0, 1, 1, 0, 1]
+  for (let k = 0; k < 4; k++) {
+    const cx = CORNERS[k * 2], cz = CORNERS[k * 2 + 1]
+    let sum = 0
+    let bank = 0
+    for (let oz = 0; oz < 2; oz++) {
+      for (let ox = 0; ox < 2; ox++) {
+        const depth = columnDepth[(cz + oz) * 3 + cx + ox]
+        sum += depth
+        if (depth === 0) bank++
+      }
+    }
+    out[k] = sum * 0.25
+    out[4 + k] = bank * 0.25
+  }
+}
 
 /**
  * Glow a liquid surface cell's TOP face shows at its 4 corners (into `out`,
@@ -276,6 +335,7 @@ function emptyResponse(request: GreedyMeshRequest): GreedyMeshResponse {
     nonGreedyMetadata: [],
     nonGreedyFaceVisibility: [],
     nonGreedyLiquidGlow: [],
+    nonGreedyLiquidDepth: [],
   }
 }
 
@@ -314,6 +374,9 @@ function collectNonGreedy(request: GreedyMeshRequest, cells: Int32Array, count: 
   const glows = new Map<number, number[]>()
   const hasGlow = volumeHasGlowSources()
   const surfaceGlow = new Float32Array(12)
+  // Water depth and shore (8 values per instance) for every liquid list
+  const depths = new Map<number, number[]>()
+  const surfaceDepth = new Float32Array(8)
   const addGlow = (blockId: number, glow: Float32Array | null): void => {
     let list = glows.get(blockId)
     if (!list) {
@@ -324,7 +387,7 @@ function collectNonGreedy(request: GreedyMeshRequest, cells: Int32Array, count: 
     }
     for (let k = 0; k < 12; k++) list.push(glow ? glow[k] : 0)
   }
-  const addInstance = (blockId: number, x: number, y: number, z: number, light: number, meta: number, visibleFaces: number, glow: Float32Array | null = null): void => {
+  const addInstance = (blockId: number, x: number, y: number, z: number, light: number, meta: number, visibleFaces: number, glow: Float32Array | null = null, depth: Float32Array | null = null): void => {
     let list = positions.get(blockId)
     if (!list) {
       list = []
@@ -338,6 +401,11 @@ function collectNonGreedy(request: GreedyMeshRequest, cells: Int32Array, count: 
     metas.get(blockId)!.push(meta)
     faceVis.get(blockId)!.push(visibleFaces)
     addGlow(blockId, glow)
+    if (liquidFamilyTable[blockId] !== 0) {
+      let list = depths.get(blockId)
+      if (!list) depths.set(blockId, (list = []))
+      for (let k = 0; k < 8; k++) list.push(depth ? depth[k] : 0)
+    }
   }
 
   for (let n = 0; n < count; n++) {
@@ -417,10 +485,16 @@ function collectNonGreedy(request: GreedyMeshRequest, cells: Int32Array, count: 
         }
       }
     }
+    // Water depth under the surface (TOP faces)
+    let depth: Float32Array | null = null
+    if (family !== 0 && (visibleFaces & 1) !== 0) {
+      liquidSurfaceDepth(p, y, surfaceDepth)
+      depth = surfaceDepth
+    }
     // A submerged block's cell is also its liquid: draw the liquid's faces
     const drawAs = liquidDrawAsTable[blockId]
-    addInstance(blockId, x, y, z, packedLight, meta, visibleFaces, drawAs !== 0 ? null : glow)
-    if (drawAs !== 0) addInstance(drawAs, x, y, z, packedLight, 0, visibleFaces, glow)
+    addInstance(blockId, x, y, z, packedLight, meta, visibleFaces, drawAs !== 0 ? null : glow, drawAs !== 0 ? null : depth)
+    if (drawAs !== 0) addInstance(drawAs, x, y, z, packedLight, 0, visibleFaces, glow, depth)
   }
 
   for (const [blockId, list] of positions) {
@@ -433,6 +507,11 @@ function collectNonGreedy(request: GreedyMeshRequest, cells: Int32Array, count: 
     const bytes = new Uint8Array(list.length)
     for (let i = 0; i < list.length; i++) bytes[i] = Math.min(255, Math.round(list[i] * 255))
     response.nonGreedyLiquidGlow.push([blockId, bytes])
+  }
+  for (const [blockId, list] of depths) {
+    const bytes = new Uint8Array(list.length)
+    for (let i = 0; i < list.length; i++) bytes[i] = Math.min(255, Math.round(list[i] * ((i & 7) < 4 ? 16 : 255)))
+    response.nonGreedyLiquidDepth.push([blockId, bytes])
   }
 }
 
@@ -469,7 +548,7 @@ function processSubChunk(request: GreedyMeshRequest): GreedyMeshResponse {
   cutoutWriter.reset()
   meshGreedyFaces(
     volume,
-    { opaque: opaqueTable, nonGreedy: nonGreedyTable, faceLayer: faceLayerTable, quarterTurn: quarterTurnTable },
+    { opaque: opaqueTable, nonGreedy: nonGreedyTable, faceLayer: faceLayerTable, quarterTurn: quarterTurnTable, clearLiquid: clearLiquidTable },
     opaqueWriter,
     cutoutWriter
   )
@@ -535,6 +614,9 @@ self.onmessage = (event: MessageEvent<GreedyMeshRequest>) => {
     }
     for (const [, faceVis] of result.nonGreedyFaceVisibility) {
       transfer.push(faceVis.buffer)
+    }
+    for (const [, depth] of result.nonGreedyLiquidDepth) {
+      transfer.push(depth.buffer)
     }
     for (const [, glow] of result.nonGreedyLiquidGlow) {
       transfer.push(glow.buffer)

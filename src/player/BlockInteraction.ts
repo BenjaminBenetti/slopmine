@@ -66,6 +66,8 @@ export class BlockInteraction {
 
   private readonly maxReachDistance: number
   private readonly onItemsCollected?: () => void
+  /** Throws what a kill drops that the inventory can't take (no path may delete items) */
+  private throwStack: ((item: IItem, count: number) => boolean) | null = null
 
   private isMouseDown = false
   private unsubscribePointerMode: (() => void) | null = null
@@ -195,6 +197,11 @@ export class BlockInteraction {
   /**
    * Clean up resources.
    */
+  /** Where a kill's drops go when the inventory is full (main.ts: thrown out of the player). */
+  setThrowStackHandler(handler: (item: IItem, count: number) => boolean): void {
+    this.throwStack = handler
+  }
+
   dispose(): void {
     this.removeEventListeners()
     this.miningOverlay.dispose()
@@ -551,7 +558,8 @@ export class BlockInteraction {
     if ((!entity.isAlive || entity.isDying) && entity.getDrops) {
       const drops = entity.getDrops()
       for (const item of drops) {
-        this.playerState.addItem(item)
+        const leftover = this.playerState.addItemCounted(item, 1)
+        if (leftover > 0) this.throwStack?.(item, leftover)
       }
 
       // Notify listeners that items were collected

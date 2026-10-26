@@ -27,6 +27,8 @@ export type BedId =
   // Weather (synth/weatherSounds.ts)
   | 'bed.rain' | 'bed.rain_heavy' | 'bed.drizzle' | 'bed.hail' | 'bed.gale' | 'bed.sandstorm' | 'bed.blizzard'
   | 'bed.embers' | 'bed.shimmer' | 'bed.aurora' | 'bed.roof'
+  // Water (synth/waterSounds.ts)
+  | 'bed.surf' | 'bed.stream' | 'bed.lapping'
 
 export interface AmbienceContext {
   layer: 0 | 1
@@ -42,6 +44,8 @@ export interface AmbienceContext {
   caveBiome: string | null
   /** The weather where the player is (src/weather/), or null before it runs. */
   weather: WeatherSnapshot | null
+  /** The water around the player (src/water/WaterHooks.ts): surf, a river, a boat. */
+  water?: { readonly sea: number; readonly river: number; readonly boat: number }
 }
 
 interface Bed {
@@ -240,6 +244,14 @@ export class AmbienceController {
       'bed.wind': open * (0.45 + 0.55 * height) * (1 - 0.3 * night) * windFactor,
       'bed.night': open * night * chorus,
       'bed.cave': (1 - open) * (ctx.cameraY < 236 ? 0.9 : 0.4),
+    }
+    // The water: surf from the open sea, a river babbling by, the hull lapping under a boat
+    const water = ctx.water
+    if (water) {
+      const low = 1 - Math.max(0, Math.min(1, (ctx.cameraY - 246) / 40))
+      if (water.sea > 0.01) targets['bed.surf'] = water.sea * open * low * 0.85
+      if (water.river > 0.01) targets['bed.stream'] = water.river * open * low * 0.7
+      if (water.boat > 0.01) targets['bed.lapping'] = water.boat * 0.8
     }
     const caveBeds = ctx.caveBiome ? CAVE_BEDS[ctx.caveBiome] : undefined
     if (caveBeds) {

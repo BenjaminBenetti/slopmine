@@ -154,7 +154,7 @@ export class DesertGenerator extends BiomeGenerator {
           weight: 0.5,
         },
       ],
-      baseHeight: 0,
+      baseHeight: 6,  // as high as the pine forest: lower, every river flooded the desert's hollows into lakes
       heightScale: 12, // Slightly more dramatic than plains
       combineMode: 'add',
     } as TerrainConfig,

@@ -2,7 +2,9 @@ import * as THREE from 'three'
 import type { IPhysicsBody } from '../physics/interfaces/IPhysicsBody.ts'
 import type { IPhysicsWorld } from '../physics/interfaces/IPhysicsWorld.ts'
 import type { PhysicsEngine } from '../physics/PhysicsEngine.ts'
-import { EYE_HEIGHT, JUMP_VELOCITY, CLIMB_VELOCITY, STEP_HEIGHT } from '../physics/constants.ts'
+import {
+  EYE_HEIGHT, JUMP_VELOCITY, CLIMB_VELOCITY, STEP_HEIGHT, SWIM_DEPTH, SWIM_SPEED_FACTOR, SWIM_UP_VELOCITY, SWIM_DOWN_VELOCITY,
+} from '../physics/constants.ts'
 
 export interface FirstPersonCameraControlOptions {
   movementSpeed?: number
@@ -31,6 +33,15 @@ export class FirstPersonCameraControls implements CameraControls {
   private readonly lookSensitivity: number
 
   private inputEnabled = true
+  /** Swimming (more than SWIM_DEPTH under water), and the eyes under the surface - read by breath, sound and the view */
+  swimming = false
+  headUnderWater = false
+  /**
+   * Riding (a boat - setupBoats): the movement keys steer the mount
+   * (`getMovementKeys`) instead of walking; whoever carries the player moves
+   * the body (physics skipped), and the camera follows it, the view free.
+   */
+  mounted = false
 
   private yaw = 0
   private pitch = 0
@@ -106,6 +117,11 @@ export class FirstPersonCameraControls implements CameraControls {
   /**
    * Set the physics world for climbable block checks.
    */
+  /** Turn the view to a heading (radians; forward is (-sin yaw, -cos yaw)), e.g. a new world's first look. */
+  setYaw(yaw: number): void {
+    this.yaw = yaw
+  }
+
   setWorld(world: IPhysicsWorld): void {
     this.physicsWorld = world
   }
@@ -237,6 +253,16 @@ export class FirstPersonCameraControls implements CameraControls {
     this.shiftPressed = false
   }
 
+  /** The movement keys held (riding: they steer the mount). */
+  getMovementKeys(out: { forward: boolean; back: boolean; left: boolean; right: boolean; jump: boolean; sneak: boolean }): void {
+    out.forward = this.moveForward
+    out.back = this.moveBackward
+    out.left = this.moveLeft
+    out.right = this.moveRight
+    out.jump = this.jumpPressed
+    out.sneak = this.shiftPressed
+  }
+
   setInputEnabled(enabled: boolean): void {
     this.inputEnabled = enabled
     if (!enabled) {
@@ -290,9 +316,37 @@ export class FirstPersonCameraControls implements CameraControls {
       return
     }
 
-    // Calculate horizontal movement direction based on yaw using pre-allocated vectors
+    // Riding: the mount moves the body; the camera sits at the eyes
+    if (this.mounted) {
+      this.swimming = false
+      this.headUnderWater = false
+      this.camera.position.set(
+        this.physicsBody.position.x,
+        this.physicsBody.position.y + EYE_HEIGHT,
+        this.physicsBody.position.z
+      )
+      return
+    }
+
+    // Water: wading slows the player; swimming, W/S follow the view when diving
+    const body = this.physicsBody
+    const isClimbing = this.isInClimbableBlock()
+    const submerged = body.submerged
+    const swimming = submerged > SWIM_DEPTH && !isClimbing
+    const headUnder = submerged > 0 && body.position.y + EYE_HEIGHT < body.waterSurfaceY
+    // At the surface the player swims level unless looking well down
+    const diving = swimming && (headUnder || this.pitch < -0.55)
+    this.swimming = swimming
+    this.headUnderWater = headUnder
+
+    // Calculate movement direction based on yaw (and pitch while diving) using pre-allocated vectors
     this.tempDirection.set(0, 0, 0)
-    this.tempForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
+    if (diving) {
+      const level = Math.cos(this.pitch)
+      this.tempForward.set(-Math.sin(this.yaw) * level, Math.sin(this.pitch), -Math.cos(this.yaw) * level)
+    } else {
+      this.tempForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
+    }
     this.tempRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw))
 
     if (this.moveForward) this.tempDirection.add(this.tempForward)
@@ -303,7 +357,8 @@ export class FirstPersonCameraControls implements CameraControls {
     // Normalize and apply movement speed to horizontal velocity
     if (this.tempDirection.lengthSq() > 0) {
       this.tempDirection.normalize()
-      this.tempDirection.multiplyScalar(this.movementSpeed * this.getSpeedMultiplier())
+      const wade = submerged > 0 ? 1 - (1 - SWIM_SPEED_FACTOR) * Math.min(1, Math.max(0, (submerged - 0.05) / (SWIM_DEPTH - 0.05))) : 1
+      this.tempDirection.multiplyScalar(this.movementSpeed * this.getSpeedMultiplier() * wade)
     }
 
     // Set horizontal velocity = movement + knockback
@@ -329,9 +384,7 @@ export class FirstPersonCameraControls implements CameraControls {
       this.knockbackVelocity.z = 0
     }
 
-    // Handle climbing and jumping
-    const isClimbing = this.isInClimbableBlock()
-
+    // Handle climbing, swimming and jumping
     // Set climbing flag so physics engine skips gravity
     this.physicsBody.isClimbing = isClimbing
 
@@ -347,6 +400,16 @@ export class FirstPersonCameraControls implements CameraControls {
         // Not pressing jump or shift: stop in place
         this.physicsBody.velocity.y = 0
       }
+    } else if (swimming) {
+      // Swim up (Space) or down (Shift), or along the view while diving; idle, the water holds the player up
+      const ease = Math.min(1, 8 * _deltaTime)
+      let target: number | null = null
+      if (this.jumpPressed) target = SWIM_UP_VELOCITY
+      else if (this.shiftPressed) target = -SWIM_DOWN_VELOCITY
+      else if (diving && (this.moveForward || this.moveBackward)) target = this.tempDirection.y
+      if (target !== null) body.velocity.y += (target - body.velocity.y) * ease
+      // Standing on a shallow bed, Space still jumps
+      if (this.jumpPressed && body.isOnGround) this.physicsEngine.applyJump(body, JUMP_VELOCITY)
     } else if (this.jumpPressed) {
       // Normal jump when on ground
       this.physicsEngine.applyJump(this.physicsBody, JUMP_VELOCITY)

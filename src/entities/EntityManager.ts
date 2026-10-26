@@ -81,6 +81,7 @@ export class EntityManager implements ITask {
    * Used by entities that need collision info (like EmberRoach for pillar detection).
    */
   private solidQueryFn: ((x: number, y: number, z: number) => boolean) | null = null
+  private liquidQueryFn: ((x: number, y: number, z: number) => boolean) | null = null
 
   // Adaptive update rates based on distance from player
   // Tier 0: 0-32 blocks = 60 UPS (every frame)
@@ -162,6 +163,14 @@ export class EntityManager implements ITask {
    */
   setSolidQuery(fn: (x: number, y: number, z: number) => boolean): void {
     this.solidQueryFn = fn
+  }
+
+  /**
+   * Set the function telling liquid (water, lava) blocks: land animals keep
+   * out of it and swim for the shore (PeacefulEntity.setLiquidQueryFn).
+   */
+  setLiquidQuery(fn: (x: number, y: number, z: number) => boolean): void {
+    this.liquidQueryFn = fn
   }
 
   /**
@@ -490,7 +499,7 @@ export class EntityManager implements ITask {
       }
 
       // Check despawn distance from player (skip for block entities - they despawn with chunks)
-      if (this.playerBody && !isBlockEntity(entity)) {
+      if (this.playerBody && !isBlockEntity(entity) && !(entity as IEntity).keepLoaded) {
         this.tempVector.copy(entity.position).sub(this.playerBody.position)
         const distSq = this.tempVector.x ** 2 + this.tempVector.z ** 2
         if (distSq > despawnDistanceSq) {
@@ -578,6 +587,11 @@ export class EntityManager implements ITask {
         ) => void
       }
       worldAwareEntity.setWorldQueryFns(this.blockQueryFn, this.solidQueryFn)
+    }
+
+    // Liquid for land animals to keep out of
+    if (this.liquidQueryFn && 'setLiquidQueryFn' in entity) {
+      (entity as { setLiquidQueryFn: (fn: (x: number, y: number, z: number) => boolean) => void }).setLiquidQueryFn(this.liquidQueryFn)
     }
 
     // Let entities add/remove other entities (guardian minions, projectiles)

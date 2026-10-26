@@ -1,4 +1,5 @@
 import { TerrainGenerator } from './TerrainGenerator.ts'
+import { Hydrology } from './water/Hydrology.ts'
 import type { IChunkData } from '../interfaces/IChunkData.ts'
 import type { ISubChunkData } from '../interfaces/ISubChunkData.ts'
 import type { WorldManager } from '../WorldManager.ts'
@@ -20,14 +21,15 @@ import type { EntitySpawnConfig } from '../../entities/spawning/EntitySpawnConfi
  */
 export interface WaterSettings {
   /**
-   * Turns water generation on or off for this specific biome.
-   * If set to `false`, no water will appear in this biome.
+   * Whether the biome has pools of its own. If `false`, only Hydrology's seas
+   * and rivers run through it (see `hydrologyWaterFill`).
    */
   readonly enabled: boolean
 
   /**
-   * The block ID to use for water in this biome.
-   * Allows for different liquid types (e.g., water, swamp water, lava in future).
+   * The liquid of the biome's pools (water, swamp water). In a biome without
+   * pools of its own: the liquid its rivers and streams run with (the
+   * volcanic lands' lava rivers); its sea is water either way.
    */
   readonly liquidBlock: BlockId
 
@@ -295,7 +297,10 @@ export abstract class BiomeGenerator extends TerrainGenerator {
       worldZ,
       this.config.seaLevel
     )
-    return Math.floor(height)
+    if (this.properties.terrainConfig.absoluteHeight) return Math.floor(height)
+    // The oceans and rivers, as the worker's blended height shapes them (Hydrology)
+    const dryness = this.properties.water?.enabled ? 0 : 1
+    return Math.floor(Hydrology.forSeed(this.config.seed).shapeHeight(height, worldX, worldZ, dryness))
   }
 
   /**

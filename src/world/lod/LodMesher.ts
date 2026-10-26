@@ -402,8 +402,16 @@ function pushQuad(
 }
 
 /** Greedy-merge one chunk's top faces by (height, colour). Returns quads emitted. */
+/** Slot byte flags of a water top (LodMaterial): open water, and deep water (>= LOD_DEEP_WATER blocks). */
+export const LOD_WATER_FLAG = 64
+export const LOD_DEEP_WATER_FLAG = 128
+const LOD_DEEP_WATER = 5
+
 function emitTops(grid: CellGrid, slot: number, c: number, quads: IntBuffer): number {
-  const { n, perChunk, height, topRgb } = grid
+  const { n, perChunk, height, topRgb, floor } = grid
+  // A cell whose top stands above its bed is water: its quads carry the water flags in the slot byte
+  const waterFlags = (cell: number): number =>
+    floor[cell] < height[cell] ? LOD_WATER_FLAG | (height[cell] - floor[cell] >= LOD_DEEP_WATER ? LOD_DEEP_WATER_FLAG : 0) : 0
   const originX = (slot % LOD_REGION_CHUNKS) * perChunk
   const originZ = Math.floor(slot / LOD_REGION_CHUNKS) * perChunk
   const used = new Uint8Array(perChunk * perChunk)
@@ -417,17 +425,18 @@ function emitTops(grid: CellGrid, slot: number, c: number, quads: IntBuffer): nu
       const h = height[cell]
       if (h === 0) continue
       const rgb = topRgb[cell]
+      const water = waterFlags(cell)
 
       let width = 1
       while (x + width < perChunk && !used[z * perChunk + x + width] &&
-        height[cell + width] === h && topRgb[cell + width] === rgb) {
+        height[cell + width] === h && topRgb[cell + width] === rgb && waterFlags(cell + width) === water) {
         width++
       }
       let depth = 1
       grow: while (z + depth < perChunk) {
         const row = cell + depth * n
         for (let k = 0; k < width; k++) {
-          if (used[(z + depth) * perChunk + x + k] || height[row + k] !== h || topRgb[row + k] !== rgb) break grow
+          if (used[(z + depth) * perChunk + x + k] || height[row + k] !== h || topRgb[row + k] !== rgb || waterFlags(row + k) !== water) break grow
         }
         depth++
       }
@@ -439,7 +448,7 @@ function emitTops(grid: CellGrid, slot: number, c: number, quads: IntBuffer): nu
         quads, FACE_TOP, h * UNITS,
         (originX + x) * scale, (originX + x + width) * scale,
         (originZ + z) * scale, (originZ + z + depth) * scale,
-        rgb, slot
+        rgb, slot | water
       )
       emitted++
     }

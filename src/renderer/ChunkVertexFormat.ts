@@ -6,7 +6,9 @@
  * every attribute is a 4-component byte format (no CPU vertex conversion on
  * ANGLE/D3D11 or Metal):
  *
- *   bytes 0-3  `position`  x, y, z in sub-chunk local block units (0-32), pad
+ *   bytes 0-3  `position`  x, y, z in sub-chunk local block units (0-32), and
+ *                          1 when the face looks into water (caustics; read as
+ *                          `aPos4.w` - the same bytes bound a second time)
  *   bytes 4-7  `aTex`      u, v in block units (texture repeats per block),
  *                          texture-array layer, face index (0-5, BlockFace order)
  *   bytes 8-11 `aLight`    sky light ×16, block light ×16 (smooth-lit, 0-240),

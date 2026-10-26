@@ -32,12 +32,22 @@ export interface WaterEdgeEffects {
  * pools that naturally span chunk boundaries and reach the edge of
  * depressions like real water.
  */
+/**
+ * A column's own fill instead of the feature's settings, or null for none
+ * (the worker's Hydrology water: clear seas and rivers through the swamp,
+ * lava rivers in the volcanic lands). Asked only for columns below the water
+ * level, all fills sharing it; such columns get no shore sand.
+ */
+export type WaterColumnFill = (worldX: number, worldZ: number) => WaterSettings | null
+
 export class WaterFeature extends Feature {
   readonly settings: WaterSettings
+  private readonly columnFill: WaterColumnFill | undefined
 
-  constructor(settings: WaterSettings) {
+  constructor(settings: WaterSettings, columnFill?: WaterColumnFill) {
     super()
     this.settings = settings
+    this.columnFill = columnFill
   }
 
   async scan(context: FeatureContext): Promise<void> {
@@ -60,9 +70,7 @@ export class WaterFeature extends Feature {
     if (!this.settings.enabled) return edgeEffects
 
     const { chunk, getBaseHeightAt, frameBudget } = context
-    const { liquidBlock, waterLevel } = this.settings
-    const sandBlock = this.settings.sandBlock
-    const sandDepth = this.settings.sandDepth ?? 3
+    const { waterLevel } = this.settings
     const shoreRadius = this.settings.shoreRadius ?? 1
     const coord = chunk.coordinate
 
@@ -73,7 +81,7 @@ export class WaterFeature extends Feature {
     const subChunkMaxY = subChunkMinY + SUB_CHUNK_HEIGHT - 1
 
     // Skip if water level (and shore sand range) is entirely outside this sub-chunk's range
-    if (waterLevel < subChunkMinY && (!sandBlock || waterLevel + shoreRadius < subChunkMinY)) return edgeEffects
+    if (waterLevel < subChunkMinY && (!this.settings.sandBlock || waterLevel + shoreRadius < subChunkMinY)) return edgeEffects
 
     frameBudget?.startFrame()
 
@@ -88,6 +96,14 @@ export class WaterFeature extends Feature {
 
         // Get the BASE terrain height (before caves)
         const terrainHeight = getBaseHeightAt(worldX, worldZ)
+        let settings: WaterSettings | null = this.settings
+        if (this.columnFill) {
+          if (terrainHeight >= waterLevel) continue
+          settings = this.columnFill(worldX, worldZ)
+          if (!settings) continue
+        }
+        const { liquidBlock, sandBlock } = settings
+        const sandDepth = settings.sandDepth ?? 3
 
         if (terrainHeight < waterLevel) {
           // --- Underwater column: fill water and place sand on the bottom ---

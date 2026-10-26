@@ -35,7 +35,7 @@ import { FLICKER_GLSL, flickerSourcesUniform } from './FlickerLights.ts'
  * Curve constants come from lightCurve.ts (injected as defines).
  */
 
-const CHUNK_PROGRAM_KEY = 'slopmine-chunk-v6'
+const CHUNK_PROGRAM_KEY = 'slopmine-chunk-v7'
 
 /**
  * In-plane quad growth per unit of view depth (world units). Greedy quads meet
@@ -56,6 +56,8 @@ let layerGlowTexture: THREE.DataTexture | null = null
 const VERTEX_PARS = /* glsl */ `
 attribute vec4 aTex;
 attribute vec4 aLight;
+attribute vec4 aPos4;
+varying float vSlopWet;
 varying vec3 vBlockUv;
 varying vec3 vBlockLight;
 varying vec3 vSlopWorld;
@@ -94,6 +96,7 @@ vBlockLight = vec3( aLight.xy * ${(1 / CHUNK_LIGHT_SCALE).toFixed(6)}, aLight.z 
 vSlopWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
 vSlopFlicker = slopFlicker( vSlopWorld );
 vSlopNormal = SLOP_FACE_NORMALS[ int( aTex.w + 0.5 ) ];
+vSlopWet = aPos4.w;
 `
 
 const FRAGMENT_PARS = /* glsl */ `
@@ -106,6 +109,7 @@ varying vec3 vBlockLight;
 varying vec3 vSlopWorld;
 varying vec3 vSlopNormal;
 varying vec3 vSlopFlicker;
+varying float vSlopWet;
 float slopHash13( vec3 p3 ) {
   p3 = fract( p3 * 0.1031 );
   p3 += dot( p3, p3.zyx + 31.32 );
@@ -168,9 +172,24 @@ const FRAGMENT_GLOW = /* glsl */ `
 }
 `
 
+// Caustics on faces under water (the mesher's flag): sunlight focused by the
+// rippling surface above draws a net of bright lines that drifts and wobbles
+// over the bed - pixel-sharp (16 cells a block) like the textures, slid along
+// the light from the water surface so it follows the sun's angle. Direct light
+// only (none at night), so deeper water (less sky light) shows less of it.
 const FRAGMENT_LIGHT = /* glsl */ `
 #include <aomap_fragment>
 ${worldLightFragment('vBlockLight.x', 'vBlockLight.y', 'vBlockLight.z', 'vSlopFlicker')}
+if ( vSlopWet > 0.5 ) {
+  vec2 slopCp = vSlopWorld.xz + uCloudShadowParams.zw * ( 238.0 - vSlopWorld.y );
+  slopCp = ( floor( slopCp * 16.0 ) + 0.5 ) / 16.0;
+  float slopT = uGlowTime;
+  float slopW = sin( slopCp.x * 2.3 + slopT * 1.2 + sin( slopCp.y * 1.7 - slopT * 0.8 ) * 1.5 );
+  slopW += sin( slopCp.y * 2.9 - slopT * 1.0 + sin( slopCp.x * 1.9 + slopT * 0.9 ) * 1.3 );
+  slopW += sin( ( slopCp.x - slopCp.y ) * 1.6 + slopT * 1.5 );
+  float slopCaustic = smoothstep( 0.8, 0.97, 1.0 - abs( slopW ) / 3.0 );
+  reflectedLight.directDiffuse *= 0.72 + 1.9 * slopCaustic;
+}
 `
 
 function patchChunkShader(

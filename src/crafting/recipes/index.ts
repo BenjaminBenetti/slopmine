@@ -78,6 +78,7 @@ import { forageHandRecipes, forageSmeltingRecipes, forageBrewingRecipes } from '
 
 // Weather
 import { weatherHandRecipes, weatherSmeltingRecipes, weatherBrewingRecipes } from './WeatherRecipes.ts'
+import { waterHandRecipes, waterSmeltingRecipes, waterBrewingRecipes } from './WaterRecipes.ts'
 
 /**
  * Register all default recipes.
@@ -270,6 +271,11 @@ export function registerDefaultRecipes(): void {
   for (const recipe of weatherHandRecipes) recipeRegistry.register(recipe)
   for (const recipe of weatherSmeltingRecipes) smeltingRegistry.register(recipe)
   for (const recipe of weatherBrewingRecipes) brewingRegistry.register(recipe)
+
+  // Water: the sailboat and canoe, fish cooked in the forge, the water breathing potion
+  for (const recipe of waterHandRecipes) recipeRegistry.register(recipe)
+  for (const recipe of waterSmeltingRecipes) smeltingRegistry.register(recipe)
+  for (const recipe of waterBrewingRecipes) brewingRegistry.register(recipe)
 }
 
 export { woodToolRecipes } from './WoodToolRecipes.ts'

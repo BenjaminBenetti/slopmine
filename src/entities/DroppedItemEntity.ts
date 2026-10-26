@@ -129,6 +129,13 @@ export class DroppedItemEntity extends Entity {
     this.pickupDelay = config.pickupDelay ?? PICKUP_DELAY
     this.armed = !(config.requirePlayerExit ?? false)
 
+    // Drops float half under water and drift with the current (the engine carries them)
+    const floatBody = this.getPhysicsBody()
+    if (floatBody) {
+      floatBody.buoyancy = 0.45
+      floatBody.swimSpeedFactor = 1
+    }
+
     // Apply the initial pop velocity to the physics body
     if (config.velocity) {
       const body = this.getPhysicsBody()

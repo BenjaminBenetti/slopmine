@@ -248,6 +248,15 @@ export class EntitySpawner implements ITask {
       const worldX = chunkX * CHUNK_SIZE + Math.floor(Math.random() * CHUNK_SIZE) + 0.5
       const worldZ = chunkZ * CHUNK_SIZE + Math.floor(Math.random() * CHUNK_SIZE) + 0.5
 
+      if (config.medium === 'water') {
+        const waterY = this.findWaterSpawnY(worldX, worldZ, playerY, config)
+        if (waterY === null) continue
+        if (waterY < (config.minY ?? 0) || waterY > (config.maxY ?? 1024)) continue
+        if (config.veto?.(worldX, waterY, worldZ)) continue
+        this.tempPosition.set(worldX, waterY, worldZ)
+        return this.tempPosition.clone()
+      }
+
       // Player-relative search finds cavern floors in underground biomes but
       // cannot see surfaces above the player's feet; searchFromSky configs
       // (surface creatures on raised structures, e.g. bears on den mounds)
@@ -268,6 +277,9 @@ export class EntitySpawner implements ITask {
       // Feet just above the ground; the entity is fitted to the blocks around
       // it before it enters the world (slabs, steps, overhangs)
       const spawnY = groundY + 1 + SPAWN_FEET_CLEARANCE
+
+      // Never on a lake or river bed: land creatures stand on dry ground
+      if (this.isLiquidAt(worldX, groundY + 1, worldZ)) continue
 
       // Check Y range constraints
       const minY = config.minY ?? 0
@@ -307,6 +319,37 @@ export class EntitySpawner implements ITask {
     }
 
     return null
+  }
+
+  /**
+   * A water spawn in the column at (x, z): the first water of the config's
+   * families found scanning down from above the player, deep enough - a
+   * random height in it, or null.
+   */
+  private findWaterSpawnY(worldX: number, worldZ: number, playerY: number, config: EntitySpawnConfig): number | null {
+    const waters = config.waters ?? ['water']
+    const isWater = (y: number): boolean => {
+      const props = this.worldManager.getBlockFast(worldX, y, worldZ).properties
+      const family = props.isLiquid ? props.liquidFamily : props.submergedIn
+      return family !== undefined && waters.includes(family)
+    }
+    const top = Math.min(Math.floor(playerY) + 24, 320)
+    const bottom = Math.max(Math.floor(playerY) - 48, 140)
+    for (let y = top; y >= bottom; y--) {
+      if (!isWater(y)) continue
+      let depth = 1
+      while (depth < 48 && isWater(y - depth)) depth++
+      if (depth < (config.minWaterDepth ?? 2)) return null
+      // A random height in the water, clear of the surface and the bed
+      return y + 0.6 - (0.3 + Math.random() * Math.max(0, depth - 1.1))
+    }
+    return null
+  }
+
+  /** Liquid (water, lava, a plant standing in water) in the block. */
+  private isLiquidAt(worldX: number, y: number, worldZ: number): boolean {
+    const props = this.worldManager.getBlockFast(worldX, y, worldZ).properties
+    return props.isLiquid === true || props.submergedIn !== undefined
   }
 
   /** The first solid block at or up to 3 below y (plants and cover are not ground), or null. */

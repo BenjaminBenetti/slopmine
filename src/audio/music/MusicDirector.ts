@@ -56,6 +56,7 @@ const SURFACE_WEIGHTS: Record<string, readonly number[]> = {
   desert: [0.12, 0.14, 0.18, 0.12, 0.06, 0.38],
   swamp: [0.05, 0.15, 0.35, 0.08, 0.17, 0.2],
   volcanic: [0.03, 0.1, 0.42, 0.05, 0.05, 0.35],
+  ocean: [0.1, 0.38, 0.14, 0.2, 0.04, 0.14],
 }
 const DEFAULT_SURFACE_WEIGHTS = [0.22, 0.2, 0.14, 0.2, 0.12, 0.12]
 /** At night, multipliers on the surface weights (SURFACE_MOODS order): less meadow and wander, more drift and dusk. */

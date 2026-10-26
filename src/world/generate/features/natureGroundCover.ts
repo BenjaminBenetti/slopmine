@@ -1,5 +1,6 @@
 import { BlockIds } from '../../blocks/BlockIds.ts'
 import { GroundCoverFeature, type GroundCoverLayer } from './GroundCoverFeature.ts'
+import { WATER_SURFACE_Y } from '../water/Hydrology.ts'
 
 /**
  * The Nature Update's ground cover per overworld biome: one GroundCoverFeature
@@ -10,8 +11,7 @@ import { GroundCoverFeature, type GroundCoverLayer } from './GroundCoverFeature.
  * gets at most one plant.
  */
 
-const WATER_LEVEL = 238
-const SWAMP_WATER_LEVEL = 234
+const WATER_LEVEL = WATER_SURFACE_Y
 
 const { GRASS, SAND, PODZOL, SNOWY_GRASS, MOSS, MOSSY_STONE, MUDDY_GRASS, MUD, BASALT, WATER, SWAMP_WATER } = BlockIds
 
@@ -168,9 +168,9 @@ export function jungleGroundCover(): GroundCoverFeature {
 export function swampGroundCover(): GroundCoverFeature {
   return new GroundCoverFeature({
     salt: 16,
-    waterLevel: SWAMP_WATER_LEVEL,
+    waterLevel: WATER_LEVEL,
     layers: [
-      lilyPads(SWAMP_WATER, SWAMP_WATER_LEVEL, 0.3),
+      lilyPads(SWAMP_WATER, WATER_LEVEL, 0.3),
       { blocks: [BlockIds.BOG_COTTON], ground: [MUD, MUDDY_GRASS], density: 0.3, zoneFrequency: 0.04, zoneThreshold: 0.75, zoneFade: 0.08 },
       { blocks: [BlockIds.HORSETAIL], ground: [MUD, MUDDY_GRASS], density: 0.3, zoneFrequency: 0.035, zoneThreshold: 0.8, zoneFade: 0.06 },
       { blocks: [BlockIds.BROWN_MUSHROOMS, BlockIds.TOADSTOOL], ground: [MUDDY_GRASS], density: 0.01 },

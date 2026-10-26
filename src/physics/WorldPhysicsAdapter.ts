@@ -4,6 +4,7 @@ import type { WorldManager } from '../world/WorldManager.ts'
 import { AABB } from './collision/AABB.ts'
 import { BlockTags } from '../world/blocks/tags/BlockTags.ts'
 import { BlockFacing, getMetadataFacing, getMetadataFlipped } from '../world/blocks/BlockFacing.ts'
+import type { WaterCurrents } from '../world/liquid/WaterCurrents.ts'
 
 /** Shared sentinel for blocks that collide as the full cell */
 const FULL_CUBE = new Float32Array([0, 0, 0, 1, 1, 1])
@@ -21,6 +22,7 @@ interface ICollisionBlock {
  * Decouples physics from world implementation details.
  */
 export class WorldPhysicsAdapter implements IPhysicsWorld {
+  private currents: WaterCurrents | null = null
   // Pre-allocated AABB object pool. Grows on demand and is NEVER shrunk, so
   // the AABB (+ its two Vector3) objects are reused across every query. Each
   // query fills `results` (references only) up to its hit count and returns it.
@@ -133,6 +135,26 @@ export class WorldPhysicsAdapter implements IPhysicsWorld {
 
   isClimbableBlock(x: number, y: number, z: number): boolean {
     return this.world.getBlockFast(x, y, z).properties.tags.includes(BlockTags.CLIMBABLE)
+  }
+
+  /** The water currents (set once the world seed is known). */
+  setWaterCurrents(currents: WaterCurrents): void {
+    this.currents = currents
+  }
+
+  getWaterFill(x: number, y: number, z: number): number {
+    const props = this.world.getBlockFast(x, y, z).properties
+    if (props.isLiquid) {
+      if (props.liquidFamily === 'lava') return 0
+      return props.isFallingLiquid ? 1 : (props.liquidLevel ?? 8) / 8
+    }
+    // Plants standing in water (glowkelp, lanternweed...) stand in a full source
+    return props.submergedIn !== undefined && props.submergedIn !== 'lava' ? 1 : 0
+  }
+
+  getWaterCurrent(x: number, y: number, z: number, out: THREE.Vector3): void {
+    if (this.currents) this.currents.currentAt(x, y, z, out)
+    else out.set(0, 0, 0)
   }
 
   getBlockCollisions(region: AABB): AABB[] {

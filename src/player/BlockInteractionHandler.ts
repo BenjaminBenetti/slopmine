@@ -47,6 +47,9 @@ export class BlockInteractionHandler {
   /** Throws a dragged-out stack into the world (set from main.ts) */
   private throwStackHandler: ((item: IItem, count: number) => boolean) | null = null
 
+  /** E on an entity before blocks (boats) */
+  private entityInteract: (() => boolean) | null = null
+
   constructor(options: {
     camera: THREE.PerspectiveCamera
     worldManager: WorldManager
@@ -78,6 +81,14 @@ export class BlockInteractionHandler {
   /** Set the handler that throws a dragged-out stack into the world */
   setThrowStackHandler(handler: (item: IItem, count: number) => boolean): void {
     this.throwStackHandler = handler
+  }
+
+  /**
+   * Set what E does with an entity before any block or the inventory (boats:
+   * board the one in view, or step off it). Returns true when it used the key.
+   */
+  setEntityInteractHandler(handler: () => boolean): void {
+    this.entityInteract = handler
   }
 
   private setupEventListeners(): void {
@@ -119,6 +130,9 @@ export class BlockInteractionHandler {
     if (!hasGameplayPointer()) return
 
     event.preventDefault()
+
+    // An entity to use first (board or leave a boat)
+    if (this.entityInteract?.()) return
 
     // Targeting an interactable block takes priority; otherwise open inventory
     if (!this.tryOpenBlockUI()) {

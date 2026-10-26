@@ -96,6 +96,16 @@ const ENTITY_VOICES: Record<string, EntityVoice> = {
   dune_dervish: V('whirl', 'soft', 1, 10),
   whiteout_stalker: V('bigcat', 'flesh', 1, 18),
   marsh_wisp: V('will', 'ghost', 1, 11),
+  // The water: fish never call out; a boat's hits land as a blocked hit on wood (no cry)
+  minnow: V('small', 'flesh', 2.4, 0),
+  trout: V('small', 'flesh', 1.9, 0),
+  salmon: V('small', 'flesh', 1.8, 0),
+  catfish: V('small', 'flesh', 1.5, 0),
+  cod: V('small', 'flesh', 1.8, 0),
+  reef_fish: V('small', 'flesh', 2.2, 0),
+  jellyfish: V('small', 'soft', 2.6, 0),
+  sailboat: V('small', 'wood', 1, 0, { shield: 'wood' }),
+  canoe: V('small', 'wood', 1, 0, { shield: 'wood' }),
 
   // Guardians (a blocked hit: invulnerable, warded or shielded)
   bone_king: V('boss-bone', 'bone', 1, 9, { boss: true, shield: 'bone' }),

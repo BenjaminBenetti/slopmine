@@ -114,6 +114,9 @@ import { FrostCrystalFeature, type FrostCrystalFeatureSettings } from '../world/
 
 // Dungeons (procedural castles)
 import { ProceduralDungeonFeature, type ProceduralDungeonConfig } from '../world/generate/dungeons/ProceduralDungeonFeature.ts'
+import { Hydrology } from '../world/generate/water/Hydrology.ts'
+import { hydrologyWaterFill } from '../world/generate/water/hydrologyFill.ts'
+import { BlockIds } from '../world/blocks/BlockIds.ts'
 
 // Initialize block registry in worker context
 try {
@@ -546,18 +549,26 @@ function bilerp(values: [number, number, number, number], u: number, v: number):
   return lerp(top, bottom, v)
 }
 
+/** How much a biome lacks water of its own (desert, volcanic: 1) - Hydrology holds its seas and rivers in with banks. */
+function biomeDryness(biome: WorkerBiomeConfig): number {
+  return biome.water?.enabled ? 0 : 1
+}
+
 /**
  * Generate blended terrain height at a world position.
  * Uses NOISE-LEVEL BLENDING: evaluates each biome's terrain config separately,
  * then blends the resulting HEIGHT VALUES. This allows biomes with completely
- * different noise types to blend smoothly.
+ * different noise types to blend smoothly. Then the overworld's oceans and
+ * rivers shape it (Hydrology - every phase, LOD tiles included, reads this
+ * one height).
  */
 function getBlendedHeightAt(
   noise: SimplexNoise,
   worldX: number,
   worldZ: number,
   seaLevel: number,
-  biomeData: BiomeBlendData
+  biomeData: BiomeBlendData,
+  seed: number
 ): number {
   const { primary } = biomeData
   const primaryConfig = getTerrainConfig(primary)
@@ -572,14 +583,15 @@ function getBlendedHeightAt(
   // Evaluate primary biome's height
   const primaryHeight = evaluateTerrainConfig(noise, primaryConfig, worldX, worldZ, seaLevel)
 
+  // Blended height, and blended dryness with the same weights
+  let height: number
+  let dryness: number
   if (!xInBlend && !zInBlend) {
     // No blending needed - use primary biome only
-    return Math.floor(primaryHeight)
-  }
-
-  // NOISE-LEVEL BLENDING: Evaluate each biome separately, then blend heights
-
-  if (xInBlend && zInBlend) {
+    height = primaryHeight
+    dryness = biomeDryness(primary)
+  } else if (xInBlend && zInBlend) {
+    // NOISE-LEVEL BLENDING: Evaluate each biome separately, then blend heights
     // Corner case: bilinear interpolation of 4 biome heights
     const [b00, b10, b01, b11] = getCornerBiomes(
       biomeData,
@@ -598,7 +610,8 @@ function getBlendedHeightAt(
     const v = 0.5 * (1 - smoothstep(zBoundary.distance / BLEND_DISTANCE))
 
     // Bilinear interpolation of heights
-    return Math.floor(bilerp([h00, h10, h01, h11], u, v))
+    height = bilerp([h00, h10, h01, h11], u, v)
+    dryness = bilerp([biomeDryness(b00), biomeDryness(b10), biomeDryness(b01), biomeDryness(b11)], u, v)
   } else if (xInBlend) {
     // X-axis blending only
     const neighbor = xBoundary.neighborDirection === -1
@@ -609,7 +622,8 @@ function getBlendedHeightAt(
     )
     // t: 0.5 at boundary, 1.0 at edge of blend zone (fully primary)
     const t = 0.5 + 0.5 * smoothstep(xBoundary.distance / BLEND_DISTANCE)
-    return Math.floor(lerp(neighborHeight, primaryHeight, t))
+    height = lerp(neighborHeight, primaryHeight, t)
+    dryness = lerp(biomeDryness(neighbor), biomeDryness(primary), t)
   } else {
     // Z-axis blending only
     const neighbor = zBoundary.neighborDirection === -1
@@ -619,8 +633,13 @@ function getBlendedHeightAt(
       noise, getTerrainConfig(neighbor), worldX, worldZ, seaLevel
     )
     const t = 0.5 + 0.5 * smoothstep(zBoundary.distance / BLEND_DISTANCE)
-    return Math.floor(lerp(neighborHeight, primaryHeight, t))
+    height = lerp(neighborHeight, primaryHeight, t)
+    dryness = lerp(biomeDryness(neighbor), biomeDryness(primary), t)
   }
+
+  // The Hell layer has no sea; the overworld's oceans and rivers shape the land
+  if (primaryConfig.absoluteHeight) return Math.floor(height)
+  return Math.floor(Hydrology.forSeed(seed).shapeHeight(height, worldX, worldZ, dryness))
 }
 
 /**
@@ -682,7 +701,7 @@ function getColumnHeights(
     return heights
   }
   heights = new ColumnHeights(chunkX * CHUNK_SIZE_X, chunkZ * CHUNK_SIZE_Z, (worldX, worldZ) =>
-    getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData)
+    getBlendedHeightAt(noise, worldX, worldZ, seaLevel, biomeData, seed)
   )
   columnHeightCache.set(key, heights)
   if (columnHeightCache.size > COLUMN_HEIGHT_CACHE_SIZE) {
@@ -1167,10 +1186,15 @@ async function generateSubChunk(
     : undefined
 
   // Phase 2.5: Apply water to terrain depressions (after caves, before skylight)
-  // Water only fills open-air depressions above terrain surface, not caves
-  const waterSettings = biomeConfig.water
-  if (waterSettings?.enabled) {
-    const waterFeature = new WaterFeature(waterSettings)
+  // Water only fills open-air depressions above terrain surface, not caves. A
+  // biome without water of its own (desert, volcanic) still fills the seas and
+  // river channels running through it (Hydrology raised their banks) - the
+  // volcanic lands' rivers with lava
+  const waterFill = minWorldY >= LAYER_BOUNDARY_Y
+    ? hydrologyWaterFill(biomeData, seed, noise)
+    : biomeConfig.water?.enabled ? { settings: biomeConfig.water } : null
+  if (waterFill) {
+    const waterFeature = new WaterFeature(waterFill.settings, waterFill.columnFill)
     const waterContext: FeatureContext = {
       chunk: subChunk,
       world: null,
@@ -1407,13 +1431,17 @@ function getLodService(): LodWorkerService {
     // LOD surface blocks: greedy-meshed cubes and liquids. Skips cross
     // billboards (flowers, ferns), torches and other custom geometry.
     // Liquids (and plants standing in them) are marked separately so the
-    // builder finds the bed below.
+    // builder finds the bed below - except lava: opaque, its top is the
+    // surface (a liquid top above a bed is shaded as water - LodMesher)
     const ids = BlockRegistry.getInstance().getAllBlockIds()
     const surfaceKind = new Uint8Array(Math.max(...ids) + 1)
     for (const id of ids) {
       const block = getBlock(id)
       if (id === 0) continue
-      if (getCellLiquidFamily(block.properties)) {
+      const family = getCellLiquidFamily(block.properties)
+      if (family === 'lava') {
+        surfaceKind[id] = LOD_SURFACE_SOLID
+      } else if (family) {
         surfaceKind[id] = LOD_SURFACE_LIQUID
       } else if (block.isGreedyMeshable()) {
         surfaceKind[id] = LOD_SURFACE_SOLID

@@ -298,6 +298,9 @@ import { LumenFernBlock } from './types/lumen_fern/LumenFernBlock.ts'
 import { GlowkelpBlock } from './types/glowkelp/GlowkelpBlock.ts'
 import { GlowkelpTopBlock } from './types/glowkelp_top/GlowkelpTopBlock.ts'
 import { LanternweedBlock } from './types/lanternweed/LanternweedBlock.ts'
+import { KelpBlock } from './types/kelp/KelpBlock.ts'
+import { KelpTopBlock } from './types/kelp_top/KelpTopBlock.ts'
+import { SeagrassBlock } from './types/seagrass/SeagrassBlock.ts'
 
 /**
  * Register all default block types.
@@ -639,6 +642,10 @@ export function registerDefaultBlocks(): void {
   registerBlock(new GlowkelpBlock())
   registerBlock(new GlowkelpTopBlock())
   registerBlock(new LanternweedBlock())
+  // Water: sea kelp and seagrass
+  registerBlock(new KelpBlock())
+  registerBlock(new KelpTopBlock())
+  registerBlock(new SeagrassBlock())
 
   // Nature
   registerNatureBlocks()

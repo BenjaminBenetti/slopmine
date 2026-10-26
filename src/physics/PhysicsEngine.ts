@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import type { IPhysicsBody } from './interfaces/IPhysicsBody.ts'
 import type { IPhysicsWorld } from './interfaces/IPhysicsWorld.ts'
 import { CollisionDetector } from './collision/CollisionDetector.ts'
-import { GRAVITY, TERMINAL_VELOCITY } from './constants.ts'
+import { GRAVITY, SWIM_DEPTH, TERMINAL_VELOCITY } from './constants.ts'
 
 export interface PhysicsEngineConfig {
   gravity?: number
@@ -26,6 +26,20 @@ const MAX_STEP_DT = 0.1
  */
 const SLEEP_VELOCITY_EPSILON = 0.01
 
+// Water (bodies with `buoyancy` float, everything is slowed and carried by currents)
+/** Horizontal and vertical damping per second, fully under water. */
+const WATER_DRAG = 2.2
+const WATER_DRAG_Y = 3.2
+/** Fastest a body sinks in water: a fall into water never lands hard. */
+const WATER_SINK_LIMIT = 6
+/** Upward speed when swimming into a wall: climb out onto a shore, or up a sunken cliff. */
+const WATER_EXIT_SPEED = 6.2
+/** The float line bobs on a slow swell (share of `buoyancy`, and radians per second). */
+const BOB_AMPLITUDE = 0.07
+const BOB_RATE = 1.6
+/** Highest a body is buoyed: more than twice its float depth lifts no harder. */
+const MAX_LIFT = 2.2
+
 /**
  * While asleep, re-probe the support block under a body every this many of its
  * own steps and wake if the ground is gone. Conservative substitute for an
@@ -48,6 +62,8 @@ interface BodySimState {
   probeCounter: number
   /** Player body: always tier 0, never sleeps. */
   noSleep: boolean
+  /** Phase of the body's bob on the water (radians), so floating things don't bob in step. */
+  bobPhase: number
 }
 
 /**
@@ -66,6 +82,10 @@ export class PhysicsEngine {
   private readonly bodies: Set<IPhysicsBody> = new Set()
   private readonly simStates: Map<IPhysicsBody, BodySimState> = new Map()
   private readonly fitOffset = new THREE.Vector3()
+  private readonly current = new THREE.Vector3()
+  private readonly solveVelocity = new THREE.Vector3()
+  /** Seconds simulated (the water's bob). */
+  private time = 0
 
   constructor(world: IPhysicsWorld, config: PhysicsEngineConfig = {}) {
     this.gravity = config.gravity ?? GRAVITY
@@ -86,6 +106,7 @@ export class PhysicsEngine {
         asleep: false,
         probeCounter: 0,
         noSleep: false,
+        bobPhase: Math.random() * Math.PI * 2,
       })
     }
   }
@@ -142,6 +163,7 @@ export class PhysicsEngine {
    * @param deltaTime Time elapsed in seconds
    */
   update(deltaTime: number): void {
+    this.time += deltaTime
     for (const body of this.bodies) {
       if (body.skipPhysics) {
         // Skipped bodies (flying/noclip) do not integrate; drop any queued time
@@ -155,7 +177,7 @@ export class PhysicsEngine {
       if (state === undefined) {
         // Body registered without a state (shouldn't happen); fall back to
         // full-rate simulation to preserve behavior.
-        this.updateBody(body, Math.min(deltaTime, MAX_STEP_DT))
+        this.updateBody(body, Math.min(deltaTime, MAX_STEP_DT), 0)
         continue
       }
 
@@ -179,7 +201,7 @@ export class PhysicsEngine {
           state.probeCounter++
           if (state.probeCounter >= SUPPORT_PROBE_INTERVAL) {
             state.probeCounter = 0
-            if (!this.hasSupportBelow(body)) {
+            if (!this.hasSupportBelow(body) || this.isWaterAtFeet(body)) {
               state.asleep = false
             }
           }
@@ -189,10 +211,10 @@ export class PhysicsEngine {
         }
       }
 
-      this.updateBody(body, stepDt)
+      this.updateBody(body, stepDt, state.bobPhase)
 
-      // Fall asleep once grounded and idle (never for the player body).
-      if (!state.noSleep && body.isOnGround && !this.isVelocityAboveEpsilon(body)) {
+      // Fall asleep once grounded and idle (never for the player body, nor in water).
+      if (!state.noSleep && body.isOnGround && body.submerged === 0 && !this.isVelocityAboveEpsilon(body)) {
         state.asleep = true
         state.probeCounter = 0
         body.velocity.set(0, 0, 0)
@@ -203,28 +225,102 @@ export class PhysicsEngine {
   /**
    * Update a single physics body.
    */
-  private updateBody(body: IPhysicsBody, deltaTime: number): void {
-    // Apply gravity (skip when climbing to allow staying in place)
-    if (!body.isClimbing) {
-      body.velocity.y += this.gravity * deltaTime
+  private updateBody(body: IPhysicsBody, deltaTime: number, bobPhase: number): void {
+    const velocity = body.velocity
+    this.measureWater(body)
+    const submerged = body.submerged
+
+    if (body.isClimbing) {
+      // Climbing: no gravity, so the body can stay in place
+    } else if (submerged > 0) {
+      // Buoyancy: gravity is balanced where the body floats (on a slow swell), overcome deeper
+      const floatDepth = body.buoyancy * (1 + BOB_AMPLITUDE * Math.sin(this.time * BOB_RATE + bobPhase))
+      const lift = floatDepth > 0 ? Math.min(MAX_LIFT, submerged / floatDepth) : 0
+      velocity.y += this.gravity * deltaTime * (1 - lift)
+      velocity.y *= Math.exp(-WATER_DRAG_Y * submerged * deltaTime)
+      if (velocity.y < -WATER_SINK_LIMIT) velocity.y = -WATER_SINK_LIMIT
+      const drag = Math.exp(-WATER_DRAG * submerged * deltaTime)
+      velocity.x *= drag
+      velocity.z *= drag
+    } else {
+      velocity.y += this.gravity * deltaTime
 
       // Clamp to terminal velocity
-      if (body.velocity.y < this.terminalVelocity) {
-        body.velocity.y = this.terminalVelocity
+      if (velocity.y < this.terminalVelocity) {
+        velocity.y = this.terminalVelocity
       }
     }
+
+    // The movement solved: the body's own velocity (slowed while it swims) plus the water's current
+    const swimFactor = submerged > SWIM_DEPTH ? body.swimSpeedFactor : 1
+    const current = this.current.set(0, 0, 0)
+    if (submerged > 0 && this.world.getWaterCurrent) {
+      const p = body.position
+      this.world.getWaterCurrent(Math.floor(p.x), Math.floor(p.y + body.hitboxSize.y * Math.min(submerged, 1) * 0.5), Math.floor(p.z), current)
+      current.multiplyScalar(Math.min(1, submerged * 1.5))
+    }
+    const ownX = velocity.x
+    const ownY = velocity.y
+    const ownZ = velocity.z
+    this.solveVelocity.set(ownX * swimFactor + current.x, ownY + current.y, ownZ * swimFactor + current.z)
 
     // Resolve collisions and get new position (using compound hitbox)
     const result = this.collisionDetector.resolveMovementMulti(
       body.getAABBs(),
-      body.velocity,
+      this.solveVelocity,
       deltaTime
     )
 
-    // Update body state
+    // Update body state: its own velocity, stopped on the axes that hit something
     body.position.copy(result.position)
-    body.velocity.copy(result.velocity)
+    velocity.set(result.collidedX ? 0 : ownX, result.collidedY ? 0 : ownY, result.collidedZ ? 0 : ownZ)
     body.setOnGround(result.hitGround)
+
+    // Swimming into a wall: pull up it, out onto the shore (or up a sunken cliff)
+    if (submerged > 0.05 && (result.collidedX || result.collidedZ) && Math.abs(ownX) + Math.abs(ownZ) > 0.5) {
+      velocity.y = Math.max(velocity.y, WATER_EXIT_SPEED)
+    }
+  }
+
+  /** Measure how much of the body is under water, and the water surface above it. */
+  private measureWater(body: IPhysicsBody): void {
+    const getWaterFill = this.world.getWaterFill
+    body.submerged = 0
+    body.waterSurfaceY = Number.NaN
+    if (!getWaterFill) return
+    const p = body.position
+    const x = Math.floor(p.x)
+    const z = Math.floor(p.z)
+    const bottom = p.y
+    const top = p.y + body.hitboxSize.y
+    let wet = 0
+    let surface = Number.NaN
+    for (let cy = Math.floor(bottom); cy <= Math.floor(top); cy++) {
+      const fill = getWaterFill.call(this.world, x, cy, z)
+      if (fill <= 0) continue
+      const waterTop = cy + fill
+      const lo = Math.max(bottom, cy)
+      const hi = Math.min(top, waterTop)
+      if (hi > lo) wet += hi - lo
+      surface = waterTop
+    }
+    if (Number.isNaN(surface)) return
+    // Under water: find the surface above (the player's eyes, a sunken item)
+    if (surface >= top) {
+      for (let cy = Math.floor(top) + 1; cy <= Math.floor(top) + 8; cy++) {
+        const fill = getWaterFill.call(this.world, x, cy, z)
+        if (fill <= 0) break
+        surface = cy + fill
+      }
+    }
+    body.submerged = Math.min(1, wet / body.hitboxSize.y)
+    body.waterSurfaceY = surface
+  }
+
+  /** Water in the block at the body's feet (wakes a body that slept on a dry bed). */
+  private isWaterAtFeet(body: IPhysicsBody): boolean {
+    const p = body.position
+    return (this.world.getWaterFill?.(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) ?? 0) > 0
   }
 
   /**

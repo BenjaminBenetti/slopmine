@@ -24,6 +24,25 @@ export interface IPhysicsBody {
   /** When true, physics engine will skip gravity (for climbing ladders/vines) */
   isClimbing: boolean
 
+  /** Share of the body's height under water (0-1), measured by the engine every step */
+  submerged: number
+
+  /** World Y of the water surface at the body (NaN out of water), measured with `submerged` */
+  waterSurfaceY: number
+
+  /**
+   * How deep the body floats: the share of it under water where buoyancy
+   * balances gravity (deeper, it rises; shallower, it settles). 0 = sinks.
+   */
+  buoyancy: number
+
+  /**
+   * Horizontal speed multiplier the engine applies to the body's own velocity
+   * while it swims (more than 30% under water). 1 = the body's controller
+   * handles swimming itself (the player).
+   */
+  swimSpeedFactor: number
+
   /** Set the grounded state */
   setOnGround(grounded: boolean): void
 

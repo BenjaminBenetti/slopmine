@@ -9,6 +9,9 @@ import { JungleGenerator } from './JungleGenerator.ts'
 import { SwampGenerator } from './SwampGenerator.ts'
 import { PineForestGenerator } from './PineForestGenerator.ts'
 import { CoastalRainforestGenerator } from './CoastalRainforestGenerator.ts'
+import { OceanGenerator } from './OceanGenerator.ts'
+import { Hydrology, OCEAN_REGION_CONTINENT } from '../water/Hydrology.ts'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../../interfaces/IChunk.ts'
 import { HellGenerator } from './HellGenerator.ts'
 
 // Hell: The Ossuary
@@ -134,6 +137,14 @@ export class BiomeRegistry {
       frequency: coastalRainforestGen.getBiomeProperties().frequency,
       layer: 1,
       createGenerator: (config) => new CoastalRainforestGenerator(config),
+    })
+
+    // The open sea: frequency 0 - selectBiomeForLayer picks it by the continent field, not the roll
+    this.register({
+      type: 'ocean',
+      frequency: 0,
+      layer: 1,
+      createGenerator: (config) => new OceanGenerator(config),
     })
 
     // Layer 0 (underground) biomes
@@ -263,6 +274,14 @@ export class BiomeRegistry {
       return layerBiomes[0].type
     }
 
+    // A surface region whose centre lies far out at sea is ocean (Hydrology); every other
+    // region rolls as before, so adding the ocean left the rest of the biome map unchanged
+    if (layer === 1) {
+      const centreX = (biomeRegionX + 0.5) * BIOME_REGION_SIZE * CHUNK_SIZE_X
+      const centreZ = (biomeRegionZ + 0.5) * BIOME_REGION_SIZE * CHUNK_SIZE_Z
+      if (Hydrology.forSeed(seed).continent(centreX, centreZ) < OCEAN_REGION_CONTINENT) return 'ocean'
+    }
+
     // Use a different seed offset for each layer to avoid correlation
     const hash = this.hashRegion(biomeRegionX, biomeRegionZ, seed + layer * 12345)
     const normalized = (hash & 0x7fffffff) / 0x7fffffff
@@ -275,6 +294,10 @@ export class BiomeRegistry {
       }
     }
 
+    // (rounding at the very top of the roll: the last biome the roll can pick)
+    for (let i = layerBiomes.length - 1; i >= 0; i--) {
+      if (layerBiomes[i].frequency > 0) return layerBiomes[i].type
+    }
     return layerBiomes[layerBiomes.length - 1].type
   }
 

@@ -10,6 +10,7 @@ export const BIOME_DISPLAY_NAMES: Record<BiomeType, string> = {
   swamp: 'Swamp',
   'pine-forest': 'Pine Forest',
   'coastal-rainforest': 'Coastal Rainforest',
+  ocean: 'Ocean',
   hell: 'Molten Wastes',
   ossuary: 'The Ossuary',
   'ember-grove': 'Ember Grove',

@@ -150,7 +150,7 @@ const WEATHER_CREATURES: readonly WeatherCreatureDef[] = [
   {
     entityType: 'thunderhead',
     weathers: new Set(['thunderstorm', 'monsoon', 'cloudburst', 'volcanic_lightning', 'hailstorm']),
-    biomes: ['plains', 'grassy-hills', 'jungle', 'swamp', 'coastal-rainforest', 'desert', 'volcanic'],
+    biomes: ['plains', 'grassy-hills', 'jungle', 'swamp', 'coastal-rainforest', 'desert', 'volcanic', 'ocean'],
     config: { spawnRate: 0.06, maxNearby: 1, searchFromSky: true, minSkyLight: 12 },
     create: (p) => new ThunderheadEntity({ position: p }),
   },
